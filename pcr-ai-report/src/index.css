@@ -1,0 +1,579 @@
+:root {
+  color-scheme: dark;
+  --bg: #0d1117;
+  --surface-1: #161b22;
+  --surface-2: #0f141c;
+  --surface-3: #1c2330;
+  --border: rgba(240, 246, 252, 0.1);
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --accent: #58a6ff;
+  --accent-2: #a371f7;
+  --danger: #f85149;
+  --shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+  --radius: 14px;
+  --sans: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--text);
+  background: radial-gradient(
+      1200px 600px at 10% -10%,
+      rgba(88, 166, 255, 0.14),
+      transparent 55%
+    ),
+    radial-gradient(
+      900px 500px at 90% 0%,
+      rgba(163, 113, 247, 0.12),
+      transparent 50%
+    ),
+    var(--bg);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+a {
+  color: var(--accent);
+}
+
+code {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(240, 246, 252, 0.06);
+  border: 1px solid var(--border);
+}
+
+.app-shell {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 28px 22px 56px;
+}
+
+.app-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 28px;
+}
+
+.app-title-block h1 {
+  margin: 0 0 8px;
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+}
+
+.app-title-block p {
+  margin: 0;
+  color: var(--muted);
+  max-width: 52ch;
+}
+
+.app-intro {
+  margin: 0 0 20px;
+  padding: 14px 18px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: rgba(88, 166, 255, 0.06);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.55;
+  max-width: 72ch;
+}
+
+.app-intro strong {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.app-title-block .app-intro {
+  margin-top: 12px;
+  margin-bottom: 0;
+}
+
+.field-hint {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+  margin-top: 4px;
+  line-height: 1.35;
+}
+
+.api-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: min(420px, 100%);
+  padding: 16px 18px;
+  border-radius: var(--radius);
+  background: linear-gradient(
+      145deg,
+      rgba(88, 166, 255, 0.08),
+      rgba(163, 113, 247, 0.06)
+    ),
+    var(--surface-1);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+
+.api-panel label span {
+  display: block;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.api-panel input[type="text"] {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.api-panel input[type="text"]:focus {
+  outline: 2px solid rgba(88, 166, 255, 0.45);
+  outline-offset: 1px;
+}
+
+.api-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  background: rgba(240, 246, 252, 0.04);
+  color: var(--muted);
+}
+
+.pill strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.pill.ok {
+  border-color: rgba(63, 185, 80, 0.45);
+  color: #7ee787;
+}
+
+.pill.bad {
+  border-color: rgba(248, 81, 73, 0.5);
+  color: #ffa198;
+}
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.tab {
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--muted);
+  padding: 10px 16px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s;
+}
+
+.tab:hover {
+  color: var(--text);
+  border-color: rgba(88, 166, 255, 0.35);
+}
+
+.tab.active {
+  color: var(--text);
+  border-color: rgba(88, 166, 255, 0.55);
+  background: linear-gradient(
+    120deg,
+    rgba(88, 166, 255, 0.18),
+    rgba(163, 113, 247, 0.14)
+  );
+}
+
+.report-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.report-panel-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.report-panel h2 {
+  margin: 0 0 6px;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+.report-desc {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  max-width: 70ch;
+}
+
+.report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.btn {
+  cursor: pointer;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  transition: transform 0.08s ease, box-shadow 0.15s ease, opacity 0.15s;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn.primary {
+  color: #0d1117;
+  background: linear-gradient(135deg, #79c0ff, #a371f7);
+  box-shadow: 0 12px 40px rgba(88, 166, 255, 0.22);
+}
+
+.btn.secondary {
+  color: var(--text);
+  background: var(--surface-1);
+  border-color: var(--border);
+}
+
+.btn.ghost {
+  color: var(--muted);
+  background: transparent;
+  border-color: var(--border);
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px 14px;
+  padding: 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+}
+
+.filter-grid label > span:first-of-type {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.filter-grid input[type="text"],
+.filter-grid input[type="number"],
+.filter-grid input[type="datetime-local"] {
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.filter-grid input[type="datetime-local"] {
+  min-height: 40px;
+  color-scheme: dark;
+}
+
+.filter-grid input:focus {
+  outline: 2px solid rgba(88, 166, 255, 0.35);
+  outline-offset: 1px;
+}
+
+.filter-grid select.select-input,
+.filter-grid select {
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.filter-grid textarea.bin-filter-textarea {
+  width: 100%;
+  min-height: 88px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.preset-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.preset-chips-label {
+  font-size: 12px;
+  color: var(--muted);
+  width: 100%;
+}
+
+button.chip {
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: rgba(240, 246, 252, 0.05);
+  color: var(--muted);
+  transition: border-color 0.15s, color 0.15s;
+}
+
+button.chip:hover {
+  color: var(--text);
+  border-color: rgba(163, 113, 247, 0.45);
+}
+
+.rollup-dim-bar {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.preset-chips-wrap {
+  grid-column: span 2;
+}
+
+@media (max-width: 720px) {
+  .preset-chips-wrap {
+    grid-column: span 1;
+  }
+}
+
+.filter-grid .span-2 {
+  grid-column: span 2;
+}
+
+/**
+ * yield monitor：桌面宽度下固定 6 列，使首行 6 控件与次行（2 单列 + 时间段各占 2 列）垂直接缝对齐
+ */
+@media (min-width: 960px) {
+  .filter-grid.filter-grid--yield {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    align-items: start;
+  }
+
+  .filter-grid.filter-grid--yield .checkbox-field.span-2 {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 720px) {
+  .filter-grid .span-2 {
+    grid-column: span 1;
+  }
+}
+
+.checkbox-field {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.checkbox-field span {
+  margin: 0 !important;
+}
+
+.advanced-filters {
+  border-radius: var(--radius);
+  border: 1px dashed rgba(240, 246, 252, 0.14);
+  padding: 8px 14px 14px;
+  background: rgba(240, 246, 252, 0.02);
+}
+
+.advanced-filters summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 8px 0;
+}
+
+.advanced-filters .filter-grid {
+  margin-top: 8px;
+  border: none;
+  padding-left: 0;
+  padding-right: 0;
+  background: transparent;
+}
+
+.alert {
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.alert.error {
+  border: 1px solid rgba(248, 81, 73, 0.45);
+  background: rgba(248, 81, 73, 0.08);
+  color: #ffdcd7;
+}
+
+.report-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.report-meta strong {
+  color: var(--text);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.small {
+  font-size: 12px;
+}
+
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.chart-grid .span-2 {
+  grid-column: 1 / -1;
+}
+
+/* yield monitor：维度选择与「按列计数」条形图紧邻 */
+.chart-grid .chart-grid-rollup-toolbar {
+  align-self: stretch;
+}
+
+@media (max-width: 900px) {
+  .chart-grid .span-2 {
+    grid-column: span 1;
+  }
+}
+
+.card {
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  padding: 16px 18px;
+}
+
+.card-title {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.card-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.chart-card {
+  padding: 12px 8px 8px;
+  /* tooltip 由 ECharts appendToBody 绘制；此处不再 hidden，避免提示框被裁切 */
+  overflow: visible;
+}
+
+.chart-placeholder {
+  padding: 28px 20px;
+  text-align: center;
+}
+
+.chart-placeholder.subtle {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.manifest-panel pre {
+  margin: 0;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.4;
+  max-height: min(560px, 70vh);
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
