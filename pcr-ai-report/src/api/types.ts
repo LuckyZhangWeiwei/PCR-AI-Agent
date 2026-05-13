@@ -127,3 +127,60 @@ export type TableRowsResponse = {
   limit: number;
   rows: Record<string, unknown>[];
 };
+
+/** Single bin cell from v3 list row `bins[]` */
+export type InfcontrolBinCell = {
+  n: number;
+  value: number;
+  isGoodBin: boolean;
+};
+
+/** Typed v3 list row for JB START (infcontrol-layer-bins/v3) */
+export type InfcontrolLayerBinV3Row = {
+  KEYNUMBER?: number;
+  DEVICE?: string;
+  LOT?: string;
+  SLOT?: number;
+  MESLOT?: string;
+  TESTERID?: string;
+  TSTYPE?: string;
+  CARDID?: string;
+  PIBID?: string;
+  PROBE?: string;
+  GROSSDIE?: number;
+  PASSID?: number;
+  SESSIONNUMBER?: string;
+  TESTSTART?: string;
+  TESTEND?: string;
+  LAYERNAME?: string;
+  PASSTYPE?: string;
+  PASSBIN?: string;
+  passBinPair?: [number, number] | null;
+  bins: InfcontrolBinCell[];
+};
+
+/** Typed v3 list row for yield monitor (yield-monitor-triggers/v3) */
+export type YieldMonitorV3Row = {
+  ID?: string | number;
+  HOSTNAME?: string;
+  DEVICE?: string;
+  LOTID?: string;
+  WAFER?: string;
+  PASS?: number;
+  TYPE?: string;
+  TRIGGER_LABEL?: string;
+  TIME_STAMP?: string;
+  PROBECARD?: string;
+  dutNumber?: number | null;
+};
+
+/** GET …/yield-monitor-triggers/v3 (typed rows) */
+export type YieldMonitorV3Response = {
+  meta?: ApiMeta;
+  limit: number;
+  limitMax?: number;
+  orderBy: string;
+  filters: Record<string, unknown>;
+  count: number;
+  rows: YieldMonitorV3Row[];
+};
