@@ -20,7 +20,7 @@
 | **§4** | 本地 / 无库 / 发布对照 | **Dummy 唯一权威说明**（含 v3、**`dist` / production**、**`NODE_ENV=test`**） |
 | **§5** | Claude Code | 可贴系统提示的要点清单 |
 | **§6** | 查 v1 与健康端点 | **非 v3**：health、manifest、ping、层控 v1、层控 BIN 聚合 v1、产量 v1、table-rows、废弃说明 |
-| **§7** | 理解 v3 | 列表 vs 聚合、业务含义、与 v1 差异；**URL / curl / 参数简表**见 **§8**；**列表 SQL** 见 **API_V3.md** |
+| **§7** | 理解 v3 | 列表 vs 聚合；**§7.6 / §7.7** 为两个 **v3 聚合**的通俗说明与传参示例；**URL / curl** 见 **§8**；**列表 SQL** 见 **API_V3.md** |
 | **§8** | 复制粘贴 | **`{baseUrl}`** 示例、一览表、各路径 **HTTP + curl**（语义细节回链 **§6** / **§7**） |
 | **§9** | 改代码 | 源码路径索引 |
 
@@ -228,7 +228,7 @@ GET /api/v1/yield-monitor-triggers?device=D1&timeStampFrom=2026-01-01T00:00:00.0
 
 ## 7. v3 API（通俗说明；与 §8 对照阅读）
 
-本节说明 **四条 v3 路径**在业务上解决什么问题；**每条路径的查询键、示例 URL、cURL** 集中在 **§8.4.1**、**§8.4.2**、**§8.6.1**、**§8.6.2**；**列表 SQL** 见 [**API_V3.md**](./API_V3.md)；**Dummy / `dist` / production** 见 **§4**；字段级权威定义仍以 **`GET /api/v1/manifest`** 为准。
+本节说明 **四条 v3 路径**在业务上解决什么问题；**两个聚合**的详细通俗说明与传参示例见 **§7.6**、**§7.7**。**每条路径的查询键、示例 URL、cURL** 集中在 **§8.4.1**、**§8.4.2**、**§8.6.1**、**§8.6.2**；**列表 SQL** 见 [**API_V3.md**](./API_V3.md)；**Dummy / `dist` / production** 见 **§4**；字段级权威定义仍以 **`GET /api/v1/manifest`** 为准。
 
 ### 7.1 v3 是什么（与 v1/v2 的差别）
 
@@ -256,7 +256,87 @@ GET /api/v1/yield-monitor-triggers?device=D1&timeStampFrom=2026-01-01T00:00:00.0
 
 **`/yield-monitor-triggers/v3`**：全列、时间降序、**`FETCH FIRST`**。**`/yield-monitor-triggers/v3/aggregate`**：**必填 `dimensions`**（1–5 维），**`timeDay`** 与 **`timeHour`** 勿同现。
 
-### 7.6 文档与源码分工
+### 7.6 `GET /api/v1/infcontrol-layer-bins/v3/aggregate`：作用、通俗理解、传参示例
+
+**作用（官方一句话）**：与 **`/infcontrol-layer-bins/v3` 列表**使用**同一套筛选**（`PASSTYPE='TEST'` + v3 的 AND；字符串 **`UPPER(TRIM)`**），在**全部匹配明细行**上把 **BIN0…BIN255** 先 **UNPIVOT** 再按 **`groupBy`** 维度 **SUM**，按合计降序取前 **`groupTop`** 组。响应里的 **`groups[].count`** 是 **SUM（die 累计）**，不是行数；**`totalRowsMatching`** 是满足筛选的**明细行数**。
+
+**通俗理解**：先把「某 device / lot / 时间窗里所有层测行」圈出来，再把每一行里各个 BIN 列上的数字拆平后加总，最后回答「**哪一个（或哪一组 device+BIN）合计 die 最多**」。若只关心「哪个 BIN 号全库合计最高」，用 **`groupBy=bin`**（或省略 **`groupBy`**，与 v1 聚合一样默认按 BIN）；若关心「**每个 device 各自**哪些 BIN 最高」，用 **`groupBy=device,bin`**。
+
+**聚合专用参数**
+
+| 参数 | 必填 | 说明 |
+| --- | --- | --- |
+| **`groupBy`** | 否 | 逗号分隔，**须恰好出现一次** **`bin`**。可**整体省略**，省略时服务端等价 **`bin`**。可与 **`device`**、**`lot`**、**`slot`**、**`tstype`**、**`cardId`**、**`testerId`** 等复合（与 v1 **`/infcontrol-layer-bins/aggregate`** 规则一致，最多 8 维；详见 manifest）。 |
+| **`groupTop`** | 否 | 返回多少组，默认 **10**，最大 **50**。 |
+
+**与列表相同的筛选（节选）**：**`device`**、**`lot`**、**`slot`**、**`meslot`**、**`testerId`**、**`tstype`**、**`cardId`**、**`passId`**；**`testEndBegin` / `testEndEnd`**（或 **`testEndFrom` / `testEndTo`**）；**`testStart*`** 等同理。全部 **AND**；时间用 **ISO 8601**（建议 UTC + **`Z`**）。
+
+**传参示例**
+
+1. **默认：只按 BIN 排名**（不写 **`groupBy`** 或写 **`groupBy=bin`**），看这一批料里 BIN 合计 Top 10：
+
+```http
+GET /api/v1/infcontrol-layer-bins/v3/aggregate?device=WB10N57U&testEndBegin=2026-05-13T00:00:00.000Z&testEndEnd=2026-05-13T23:59:59.999Z&groupTop=10
+```
+
+2. **复合维度**：按 **device + BIN** 看「每个料号下各 BIN 合计」，仍取合计最高的 5 组：
+
+```http
+GET /api/v1/infcontrol-layer-bins/v3/aggregate?device=WB10N57U&testEndBegin=2026-05-13T00:00:00.000Z&testEndEnd=2026-05-13T23:59:59.999Z&groupBy=device,bin&groupTop=5
+```
+
+3. **更窄圈选**：叠加 **lot / slot / tstype / cardId**（与 v3 列表相同键名），再按 BIN Top 10：
+
+```http
+GET /api/v1/infcontrol-layer-bins/v3/aggregate?device=WB10N57U&lot=NF12615.1X&slot=1&tstype=CP&cardId=9400-01&testEndBegin=2026-05-13T00:00:00.000Z&testEndEnd=2026-05-13T23:59:59.999Z&groupBy=bin&groupTop=10
+```
+
+更多 **HTTP / curl** 见 **§8.4.2**。
+
+### 7.7 `GET /api/v1/yield-monitor-triggers/v3/aggregate`：作用、通俗理解、传参示例
+
+**作用**：与 **`/yield-monitor-triggers/v3` 列表**使用**同一套 WHERE**（字符串 **`UPPER(TRIM)`**、**`timeStampBegin`/`End`** 或 **`From`/`To`** 等），在**全部匹配行**上做 **`COUNT(*)`** + **`GROUP BY dimensions`**，按计数降序取前 **`groupTop`** 组。响应 **`groups[].count`** 为**该维度组合下的触发条数**；**`totalRowsMatching`** 为筛选后的**总行数**。
+
+**通俗理解**：先在「某段时间、某台机台 / 某类 type」里圈出所有触发记录，再按你选的 **`dimensions`** 做「**每个桶里有多少条**」——例如 **`type,device`** 看各类型在各料号上各触发多少次；**`timeDay`** 看**自然日**趋势；**`hostname`** 看哪台机触发最多。
+
+**聚合专用参数**
+
+| 参数 | 必填 | 说明 |
+| --- | --- | --- |
+| **`dimensions`** | **是** | 逗号分隔 **1–5** 项。允许取值：`type`、`device`、`hostname`、`lotId`、`wafer`、`probeCard`、`pass`、`triggerLabel`、**`timeDay`**（按日历日）、**`timeHour`**（按整点）。**`timeDay` 与 `timeHour` 不得同时出现**。 |
+| **`groupTop`** | 否 | 返回多少组，默认 **25**，最大 **100**。 |
+
+**与列表相同的筛选（节选）**：**`hostname`**、**`device`**、**`lotId`**、**`wafer`**、**`type`**、**`probeCard`**、**`pass`**；**`timeStampBegin` / `timeStampEnd`**（或 **`timeStampFrom` / `timeStampTo`**）。全部 **AND**。
+
+**传参示例**
+
+1. **按异常类型 + 料号**看分布（同一天 UTC 窗）：
+
+```http
+GET /api/v1/yield-monitor-triggers/v3/aggregate?dimensions=type,device&timeStampBegin=2026-05-13T00:00:00.000Z&timeStampEnd=2026-05-13T23:59:59.999Z&groupTop=20
+```
+
+2. **按机台**看谁触发最多：
+
+```http
+GET /api/v1/yield-monitor-triggers/v3/aggregate?dimensions=hostname&timeStampBegin=2026-05-13T00:00:00.000Z&timeStampEnd=2026-05-13T23:59:59.999Z&groupTop=15
+```
+
+3. **按自然日**看趋势（不要与 **`timeHour`** 同用）：
+
+```http
+GET /api/v1/yield-monitor-triggers/v3/aggregate?dimensions=timeDay,type&device=WA03P02G&timeStampBegin=2026-05-01T00:00:00.000Z&timeStampEnd=2026-05-31T23:59:59.999Z&groupTop=30
+```
+
+4. **先收窄再聚合**：例如只要某 **lotId** 下各 **type** 计数：
+
+```http
+GET /api/v1/yield-monitor-triggers/v3/aggregate?dimensions=type&lotId=DR31388.1N&timeStampBegin=2026-01-01T00:00:00.000Z&timeStampEnd=2026-01-31T23:59:59.999Z&groupTop=10
+```
+
+更多 **HTTP / curl** 见 **§8.6.2**。
+
+### 7.8 文档与源码分工
 
 - **`docs/API_V3.md`**：v3 **列表** SQL（`npm run docs:api-v3` 再生）。
 - **聚合**：**`yieldMonitorTriggerV3Aggregate.ts`**、**`infcontrolLayerBinV3Aggregate.ts`**（UNPIVOT 复用 **`infcontrolLayerBinAggregate.ts`**）。
@@ -386,7 +466,7 @@ curl -sS "{baseUrl}/api/v1/infcontrol-layer-bins/v3?device=WB10N57U&limit=200"
 
 ### 8.4.2 `GET /api/v1/infcontrol-layer-bins/v3/aggregate`（v3 · 聚合）
 
-**说明**：与 **§7** 及 **`GET /infcontrol-layer-bins/v3/aggregate`** 语义一致；**`documentation`** 字段为固定中文说明（列表 vs 聚合）。筛选参数与 **§8.4.1** 相同，另须 **`groupBy`**（须含 **`bin`** 一次）、**`groupTop`**。
+**说明**：与 **§7.6**（作用、通俗、传参示例）一致；**`documentation`** 为固定中文说明。筛选参数与 **§8.4.1** 相同，另须 **`groupBy`**（须含 **`bin`** 一次）、**`groupTop`**。
 
 ```http
 GET {baseUrl}/api/v1/infcontrol-layer-bins/v3/aggregate?device=WB10N57U&testEndBegin=2026-05-13T00:00:00.000Z&testEndEnd=2026-05-13T23:59:59.999Z&groupBy=bin&groupTop=10
@@ -475,7 +555,7 @@ curl -sS "{baseUrl}/api/v1/yield-monitor-triggers/v3?limit=100"
 
 ### 8.6.2 `GET /api/v1/yield-monitor-triggers/v3/aggregate`（v3 · 聚合）
 
-**说明**：与 **§7** 及 **`GET /yield-monitor-triggers/v3/aggregate`** 语义一致；**必填 `dimensions`**；**`documentation`** 为固定中文说明。时间窗等筛选与 **§8.6.1** 相同。
+**说明**：与 **§7.7**（作用、通俗、传参示例）一致；**必填 `dimensions`**；**`documentation`** 为固定中文说明。时间窗等筛选与 **§8.6.1** 相同。
 
 ```http
 GET {baseUrl}/api/v1/yield-monitor-triggers/v3/aggregate?dimensions=type,device&timeStampBegin=2026-05-13T00:00:00.000Z&timeStampEnd=2026-05-13T23:59:59.999Z&groupTop=20
