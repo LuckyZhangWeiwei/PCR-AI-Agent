@@ -754,7 +754,7 @@ export function InfcontrolReport({ apiBase }: Props) {
                   },
                 }}
               />
-              {drill?.parentDimKey === "lot_yield" && (
+              {drill?.parentDimKey === "lot" && (
                 <DrillDownPanel
                   title={`${drill.parentDimVal} · 下钻：按 ${drill.subDim}`}
                   groups={drill.groups}
