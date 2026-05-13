@@ -68,12 +68,13 @@ export async function apiGetJson<T>(
     },
   });
   const text = await res.text();
-  let body: unknown = null;
-  try {
-    body = text ? JSON.parse(text) : null;
-  } catch {
-    body = text;
-  }
+  const body: unknown = (() => {
+    try {
+      return text ? JSON.parse(text) : null;
+    } catch {
+      return text;
+    }
+  })();
   if (!res.ok) {
     const err = body as Partial<ApiErrorBody> | null;
     const msg =

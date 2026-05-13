@@ -1,0 +1,33 @@
+<h2>报表的主要使用场景是哪一种？</h2>
+<p class="subtitle">这决定了我们最该强化哪类分析能力。可以多选。</p>
+
+<div class="options" data-multiselect>
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>事中排查 / 根因分析</h3>
+      <p>拿到一个 LOT 或 DEVICE，要快速定位：哪个 Bin 多？哪个 Slot 差？哪张探针卡有问题？是 Pass 1 出的还是 Pass 3 出的？</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>日常 / 班次监控</h3>
+      <p>每天或每班定时看：最近 24h 触发了多少次？哪台机器触发多？不良 Bin 趋势有没有在变差？</p>
+    </div>
+  </div>
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>批次 / 产品汇总</h3>
+      <p>多个 LOT 的横向比较：各 LOT 的 yield 分布、各探针卡的不良排名、按 Device 维度汇总质量数据。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="d" onclick="toggleSelect(this)">
+    <div class="letter">D</div>
+    <div class="content">
+      <h3>Pass 间比对 / 重测分析</h3>
+      <p>同一 wafer 不同 Pass 的 Bin 分布变化，哪些 die 在 Pass 3 被收回？哪些 Bin 在 Pass 1 最严重？</p>
+    </div>
+  </div>
+</div>

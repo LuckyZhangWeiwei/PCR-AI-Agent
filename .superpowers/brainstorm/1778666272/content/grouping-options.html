@@ -1,0 +1,240 @@
+<h2>分组 & 嵌套分组 — 三种方案</h2>
+<p class="subtitle">现有 v3 aggregate API 支持任意多维 groupBy，问题是：如何在 UI 上呈现"组内再分组"？</p>
+
+<div class="options">
+
+  <!-- Option A -->
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>多维平铺表（最简单）</h3>
+      <p>用户勾选多个维度，一次请求返回多列扁平结果。<br>
+      示例：groupBy = lot + cardId + bin → 每行同时含 LOT、探针卡、BIN 三列</p>
+
+      <div class="mockup" style="padding:10px;font-size:11px">
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px">
+          <span style="background:#1e3a2f;color:#3fb950;border-radius:3px;padding:2px 7px">✓ lot</span>
+          <span style="background:#1e3a2f;color:#3fb950;border-radius:3px;padding:2px 7px">✓ cardId</span>
+          <span style="background:#1e3a2f;color:#3fb950;border-radius:3px;padding:2px 7px">✓ bin</span>
+          <span style="background:#1c2f4a;color:#58a6ff;border-radius:3px;padding:2px 7px">slot</span>
+          <span style="background:#1c2f4a;color:#58a6ff;border-radius:3px;padding:2px 7px">device</span>
+        </div>
+        <div style="border:1px solid #30363d;border-radius:4px;overflow:hidden">
+          <div style="display:grid;grid-template-columns:1fr 1fr 0.7fr 1fr;gap:0;background:#161b22">
+            <div style="padding:4px 8px;color:#8b949e;font-size:10px;border-bottom:1px solid #30363d">LOT</div>
+            <div style="padding:4px 8px;color:#8b949e;font-size:10px;border-bottom:1px solid #30363d">CARDID</div>
+            <div style="padding:4px 8px;color:#8b949e;font-size:10px;border-bottom:1px solid #30363d">BIN</div>
+            <div style="padding:4px 8px;color:#8b949e;font-size:10px;border-bottom:1px solid #30363d">COUNT</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 0.7fr 1fr;gap:0">
+            <div style="padding:3px 8px;color:#e6edf3;font-size:10px;border-bottom:1px solid #21262d">DR390</div>
+            <div style="padding:3px 8px;color:#e6edf3;font-size:10px;border-bottom:1px solid #21262d">9400-01</div>
+            <div style="padding:3px 8px;color:#ff7b72;font-size:10px;border-bottom:1px solid #21262d">Bin5</div>
+            <div style="padding:3px 8px;color:#e6edf3;font-size:10px;border-bottom:1px solid #21262d">142</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 0.7fr 1fr;gap:0">
+            <div style="padding:3px 8px;color:#e6edf3;font-size:10px;border-bottom:1px solid #21262d">DR390</div>
+            <div style="padding:3px 8px;color:#e6edf3;font-size:10px;border-bottom:1px solid #21262d">9400-01</div>
+            <div style="padding:3px 8px;color:#ff7b72;font-size:10px;border-bottom:1px solid #21262d">Bin3</div>
+            <div style="padding:3px 8px;color:#e6edf3;font-size:10px;border-bottom:1px solid #21262d">87</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 0.7fr 1fr;gap:0">
+            <div style="padding:3px 8px;color:#e6edf3;font-size:10px">DR390</div>
+            <div style="padding:3px 8px;color:#e6edf3;font-size:10px">9400-02</div>
+            <div style="padding:3px 8px;color:#ff7b72;font-size:10px">Bin5</div>
+            <div style="padding:3px 8px;color:#e6edf3;font-size:10px">56</div>
+          </div>
+        </div>
+        <div style="font-size:10px;color:#8b949e;margin-top:4px">可按任意列排序 · 无树状结构</div>
+      </div>
+
+      <div class="pros-cons" style="margin-top:8px">
+        <div class="pros"><h4>优点</h4><ul><li>实现最简单，一次 API 请求</li><li>支持无限维度组合</li><li>可导出 CSV</li></ul></div>
+        <div class="cons"><h4>缺点</h4><ul><li>行数多时看不清层级关系</li><li>同一 LOT 会重复出现多行</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Option B -->
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>两级下钻（推荐）</h3>
+      <p>上方展示第一级分组结果；点击某行 → 弹出/展开第二级细分。<br>
+      两次独立 API 请求，第二次自动带入点击行的筛选值。</p>
+
+      <div class="mockup" style="padding:10px;font-size:11px">
+        <!-- Level 1 -->
+        <div style="font-size:10px;color:#58a6ff;font-weight:600;margin-bottom:4px">第一级：groupBy = lot</div>
+        <div style="border:1px solid #30363d;border-radius:4px;overflow:hidden;margin-bottom:8px">
+          <div style="display:grid;grid-template-columns:1fr 0.8fr 0.8fr;background:#161b22">
+            <div style="padding:4px 8px;color:#8b949e;font-size:10px;border-bottom:1px solid #30363d">LOT</div>
+            <div style="padding:4px 8px;color:#8b949e;font-size:10px;border-bottom:1px solid #30363d">坏 die</div>
+            <div style="padding:4px 8px;color:#8b949e;font-size:10px;border-bottom:1px solid #30363d">Yield%</div>
+          </div>
+          <!-- Clickable row - highlighted -->
+          <div style="display:grid;grid-template-columns:1fr 0.8fr 0.8fr;background:#1c2f4a;border:1px solid #388bfd;cursor:pointer">
+            <div style="padding:3px 8px;color:#58a6ff;font-size:10px">▶ DR390 <span style="font-size:9px;color:#8b949e">点击下钻</span></div>
+            <div style="padding:3px 8px;color:#ff7b72;font-size:10px">285</div>
+            <div style="padding:3px 8px;color:#f0883e;font-size:10px">91.3%</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 0.8fr 0.8fr">
+            <div style="padding:3px 8px;color:#e6edf3;font-size:10px">NF880</div>
+            <div style="padding:3px 8px;color:#3fb950;font-size:10px">44</div>
+            <div style="padding:3px 8px;color:#3fb950;font-size:10px">97.8%</div>
+          </div>
+        </div>
+
+        <!-- Level 2 (drill-down panel) -->
+        <div style="border:1px solid #388bfd;border-radius:4px;padding:8px;background:#0d1929">
+          <div style="font-size:10px;color:#58a6ff;font-weight:600;margin-bottom:6px">
+            ↳ DR390 · 第二级细分：groupBy = cardId, bin
+          </div>
+          <div style="display:flex;gap:4px;margin-bottom:6px">
+            <span style="background:#161b22;color:#8b949e;border-radius:3px;padding:2px 7px;font-size:10px;cursor:pointer">按 cardId</span>
+            <span style="background:#1e3a2f;color:#3fb950;border-radius:3px;padding:2px 7px;font-size:10px">✓ 按 cardId + bin</span>
+            <span style="background:#161b22;color:#8b949e;border-radius:3px;padding:2px 7px;font-size:10px;cursor:pointer">按 slot</span>
+          </div>
+          <div style="border:1px solid #21262d;border-radius:3px;overflow:hidden">
+            <div style="display:grid;grid-template-columns:1fr 0.7fr 0.7fr;background:#161b22">
+              <div style="padding:3px 6px;color:#8b949e;font-size:10px;border-bottom:1px solid #21262d">CARDID</div>
+              <div style="padding:3px 6px;color:#8b949e;font-size:10px;border-bottom:1px solid #21262d">BIN</div>
+              <div style="padding:3px 6px;color:#8b949e;font-size:10px;border-bottom:1px solid #21262d">COUNT</div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 0.7fr 0.7fr">
+              <div style="padding:3px 6px;color:#e6edf3;font-size:10px;border-bottom:1px solid #21262d">9400-01</div>
+              <div style="padding:3px 6px;color:#ff7b72;font-size:10px;border-bottom:1px solid #21262d">Bin5</div>
+              <div style="padding:3px 6px;color:#e6edf3;font-size:10px;border-bottom:1px solid #21262d">142</div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 0.7fr 0.7fr">
+              <div style="padding:3px 6px;color:#e6edf3;font-size:10px">9400-02</div>
+              <div style="padding:3px 6px;color:#ff7b72;font-size:10px">Bin5</div>
+              <div style="padding:3px 6px;color:#e6edf3;font-size:10px">56</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pros-cons" style="margin-top:8px">
+        <div class="pros"><h4>优点</h4><ul><li>层级清晰，符合调查习惯</li><li>第二级维度可按需切换（cardId / slot / bin）</li><li>复用现有 v3 aggregate API，不需改后端</li></ul></div>
+        <div class="cons"><h4>缺点</h4><ul><li>两次请求（不过是并行或按需触发）</li><li>只支持两层（满足大多数场景）</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Option C -->
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>折叠树表（最强大）</h3>
+      <p>一次请求拉取多维度聚合数据，前端自动按选择的"主维度"分组折叠；
+      点击展开可见子行。支持任意层级。</p>
+
+      <div class="mockup" style="padding:10px;font-size:11px">
+        <div style="border:1px solid #30363d;border-radius:4px;overflow:hidden">
+          <!-- Header -->
+          <div style="display:grid;grid-template-columns:20px 1fr 0.7fr 0.7fr 0.7fr;background:#161b22">
+            <div style="padding:4px 4px;border-bottom:1px solid #30363d"></div>
+            <div style="padding:4px 8px;color:#8b949e;font-size:10px;border-bottom:1px solid #30363d">维度</div>
+            <div style="padding:4px 8px;color:#8b949e;font-size:10px;border-bottom:1px solid #30363d">坏 die</div>
+            <div style="padding:4px 8px;color:#8b949e;font-size:10px;border-bottom:1px solid #30363d">Yield%</div>
+            <div style="padding:4px 8px;color:#8b949e;font-size:10px;border-bottom:1px solid #30363d">BIN TOP</div>
+          </div>
+          <!-- LOT DR390 - expanded -->
+          <div style="display:grid;grid-template-columns:20px 1fr 0.7fr 0.7fr 0.7fr;background:#0d1929;border-bottom:1px solid #21262d">
+            <div style="padding:3px 4px;color:#58a6ff;font-size:11px;text-align:center">▼</div>
+            <div style="padding:3px 8px;color:#58a6ff;font-size:10px;font-weight:600">LOT: DR390</div>
+            <div style="padding:3px 8px;color:#ff7b72;font-size:10px">285</div>
+            <div style="padding:3px 8px;color:#f0883e;font-size:10px">91.3%</div>
+            <div style="padding:3px 8px;color:#ff7b72;font-size:10px">Bin5</div>
+          </div>
+          <!-- Sub: cardId 9400-01 - expanded -->
+          <div style="display:grid;grid-template-columns:20px 1fr 0.7fr 0.7fr 0.7fr;background:#101820;border-bottom:1px solid #21262d">
+            <div style="padding:3px 4px;color:#8b949e;font-size:11px;text-align:center">▼</div>
+            <div style="padding:3px 8px;color:#8b949e;font-size:10px;padding-left:20px">↳ CARD: 9400-01</div>
+            <div style="padding:3px 8px;color:#ff7b72;font-size:10px">198</div>
+            <div style="padding:3px 8px;color:#f0883e;font-size:10px">88.1%</div>
+            <div style="padding:3px 8px;color:#ff7b72;font-size:10px">Bin5</div>
+          </div>
+          <!-- Sub-sub: bin rows -->
+          <div style="display:grid;grid-template-columns:20px 1fr 0.7fr 0.7fr 0.7fr;border-bottom:1px solid #21262d">
+            <div style="padding:3px 4px"></div>
+            <div style="padding:3px 8px;color:#6e7681;font-size:10px;padding-left:36px">BIN: Bin5</div>
+            <div style="padding:3px 8px;color:#e6edf3;font-size:10px">142</div>
+            <div style="padding:3px 8px;color:#8b949e;font-size:10px">—</div>
+            <div style="padding:3px 8px"></div>
+          </div>
+          <div style="display:grid;grid-template-columns:20px 1fr 0.7fr 0.7fr 0.7fr;border-bottom:1px solid #21262d">
+            <div style="padding:3px 4px"></div>
+            <div style="padding:3px 8px;color:#6e7681;font-size:10px;padding-left:36px">BIN: Bin3</div>
+            <div style="padding:3px 8px;color:#e6edf3;font-size:10px">56</div>
+            <div style="padding:3px 8px;color:#8b949e;font-size:10px">—</div>
+            <div style="padding:3px 8px"></div>
+          </div>
+          <!-- LOT NF880 - collapsed -->
+          <div style="display:grid;grid-template-columns:20px 1fr 0.7fr 0.7fr 0.7fr;background:#0d1929">
+            <div style="padding:3px 4px;color:#58a6ff;font-size:11px;text-align:center">▶</div>
+            <div style="padding:3px 8px;color:#58a6ff;font-size:10px;font-weight:600">LOT: NF880</div>
+            <div style="padding:3px 8px;color:#3fb950;font-size:10px">44</div>
+            <div style="padding:3px 8px;color:#3fb950;font-size:10px">97.8%</div>
+            <div style="padding:3px 8px;color:#3fb950;font-size:10px">Bin2</div>
+          </div>
+        </div>
+        <div style="font-size:10px;color:#8b949e;margin-top:4px">主维度：lot → 子维度：cardId → 叶子：bin</div>
+      </div>
+
+      <div class="pros-cons" style="margin-top:8px">
+        <div class="pros"><h4>优点</h4><ul><li>层级最直观，一屏看全所有 Lot+Card+Bin</li><li>点击折叠/展开，不需要跳页</li><li>支持 3 层甚至更多</li></ul></div>
+        <div class="cons"><h4>缺点</h4><ul><li>前端实现最复杂（树表组件）</li><li>数据量大时行数可能很多</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div style="margin-top:20px;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:12px">
+  <div style="font-size:11px;color:#58a6ff;font-weight:600;margin-bottom:8px">两个 tab 的分组需求略有不同</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:10px">
+    <div>
+      <div style="color:#e6edf3;font-weight:600;margin-bottom:4px">⚡ Yield Monitor（yield trigger 分析）</div>
+      <div style="color:#8b949e;line-height:1.8">
+        自然分层：<br>
+        LOT → ProbeCard → DUT# → 触发次数<br>
+        LOT → 日期 → 触发趋势<br>
+        <span style="color:#58a6ff">主维度通常是 lot 或 device</span>
+      </div>
+    </div>
+    <div>
+      <div style="color:#e6edf3;font-weight:600;margin-bottom:4px">🔬 JB START（良率 / bad die 分析）</div>
+      <div style="color:#8b949e;line-height:1.8">
+        自然分层：<br>
+        LOT → Slot → 坏 die → Yield%<br>
+        LOT → ProbeCard → Bin → 坏 die 数<br>
+        <span style="color:#58a6ff">主维度通常是 lot；子维度 slot 或 cardId</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top:16px">
+  <h3>选哪种分组方式？</h3>
+  <p class="subtitle">也可以 A+B 组合：平铺表 + 点击行触发下钻</p>
+  <div class="options">
+    <div class="option" data-choice="a" onclick="toggleSelect(this)">
+      <div class="letter">A</div>
+      <div class="content"><h3>多维平铺表（快速实现）</h3></div>
+    </div>
+    <div class="option" data-choice="b" onclick="toggleSelect(this)">
+      <div class="letter">B</div>
+      <div class="content"><h3>两级下钻（推荐）</h3><p>主图按 lot/device 聚合，点击行展开子维度</p></div>
+    </div>
+    <div class="option" data-choice="c" onclick="toggleSelect(this)">
+      <div class="letter">C</div>
+      <div class="content"><h3>折叠树表（最强）</h3><p>三层展开：Lot → Card/Slot → Bin</p></div>
+    </div>
+    <div class="option" data-choice="bc" onclick="toggleSelect(this)">
+      <div class="letter">B+C</div>
+      <div class="content"><h3>图表用两级下钻 + 表格用折叠树</h3><p>图表交互 + 树表展示双管齐下</p></div>
+    </div>
+  </div>
+</div>

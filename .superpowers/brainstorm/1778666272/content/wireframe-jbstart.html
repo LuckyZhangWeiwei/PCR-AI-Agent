@@ -1,0 +1,163 @@
+<h2>JB START tab — 重建线框图</h2>
+<p class="subtitle">单一查询按钮，并行触发三路 API（列表 + 不良排名 + 聚合）。核心新增：Yield% 计算、探针卡对比、Slot 趋势。</p>
+
+<div class="mockup">
+  <div class="mockup-header">JB START（重建后）</div>
+  <div class="mockup-body" style="padding:12px;display:flex;flex-direction:column;gap:10px">
+
+    <!-- Filter Section -->
+    <div style="border:1px solid #30363d;border-radius:6px;padding:10px;background:#0d1117">
+      <div style="font-size:11px;color:#58a6ff;font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">筛选条件（任意组合）</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:8px">
+        <div style="background:#161b22;border-radius:4px;padding:6px 8px">
+          <div style="color:#8b949e;font-size:10px">Device</div>
+          <div class="mock-input" style="margin-top:2px;font-size:11px;padding:3px 6px">WB10N57U</div>
+        </div>
+        <div style="background:#161b22;border-radius:4px;padding:6px 8px">
+          <div style="color:#8b949e;font-size:10px">Lot</div>
+          <div class="mock-input" style="margin-top:2px;font-size:11px;padding:3px 6px;color:#8b949e">（留空）</div>
+        </div>
+        <div style="background:#161b22;border-radius:4px;padding:6px 8px">
+          <div style="color:#8b949e;font-size:10px">Slot（wafer 号）</div>
+          <div class="mock-input" style="margin-top:2px;font-size:11px;padding:3px 6px;color:#8b949e">（留空）</div>
+        </div>
+        <div style="background:#161b22;border-radius:4px;padding:6px 8px">
+          <div style="color:#8b949e;font-size:10px">ProbeCard（CARDID）</div>
+          <div class="mock-input" style="margin-top:2px;font-size:11px;padding:3px 6px;color:#8b949e">（留空）</div>
+        </div>
+        <div style="background:#161b22;border-radius:4px;padding:6px 8px">
+          <div style="color:#8b949e;font-size:10px">Tester Type</div>
+          <div class="mock-input" style="margin-top:2px;font-size:11px;padding:3px 6px;color:#8b949e">UFLEX ▾</div>
+        </div>
+        <div style="background:#161b22;border-radius:4px;padding:6px 8px">
+          <div style="color:#8b949e;font-size:10px">TesterID（机台）</div>
+          <div class="mock-input" style="margin-top:2px;font-size:11px;padding:3px 6px;color:#8b949e">（留空）</div>
+        </div>
+        <div style="background:#161b22;border-radius:4px;padding:6px 8px">
+          <div style="color:#8b949e;font-size:10px">PassID</div>
+          <div class="mock-input" style="margin-top:2px;font-size:11px;padding:3px 6px;color:#8b949e">全部 ▾</div>
+        </div>
+        <div style="background:#161b22;border-radius:4px;padding:6px 8px">
+          <div style="color:#8b949e;font-size:10px">MES Slot</div>
+          <div class="mock-input" style="margin-top:2px;font-size:11px;padding:3px 6px;color:#8b949e">（留空）</div>
+        </div>
+        <div style="background:#161b22;border-radius:4px;padding:6px 8px;grid-column:span 2">
+          <div style="color:#8b949e;font-size:10px">测试结束时间范围（testEndFrom / To）</div>
+          <div style="display:flex;gap:4px;margin-top:2px">
+            <div class="mock-input" style="flex:1;font-size:10px;padding:3px 5px">2026-05-01 00:00</div>
+            <div style="color:#8b949e;font-size:11px;line-height:24px">→</div>
+            <div class="mock-input" style="flex:1;font-size:10px;padding:3px 5px">2026-05-13 23:59</div>
+          </div>
+          <div style="display:flex;gap:4px;margin-top:4px">
+            <div style="background:#1c2f4a;border-radius:3px;padding:2px 6px;font-size:10px;color:#58a6ff">今天</div>
+            <div style="background:#1c2f4a;border-radius:3px;padding:2px 6px;font-size:10px;color:#58a6ff">近7天</div>
+            <div style="background:#1c2f4a;border-radius:3px;padding:2px 6px;font-size:10px;color:#58a6ff">本月</div>
+          </div>
+        </div>
+        <div style="background:#161b22;border-radius:4px;padding:6px 8px;grid-column:span 2">
+          <div style="color:#8b949e;font-size:10px">聚合维度（groupBy，可自由组合）</div>
+          <div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap">
+            <div style="background:#1e3a2f;color:#3fb950;border-radius:3px;padding:2px 7px;font-size:10px">✓ bin</div>
+            <div style="background:#1c2f4a;color:#58a6ff;border-radius:3px;padding:2px 7px;font-size:10px">lot</div>
+            <div style="background:#1c2f4a;color:#58a6ff;border-radius:3px;padding:2px 7px;font-size:10px">device</div>
+            <div style="background:#1c2f4a;color:#58a6ff;border-radius:3px;padding:2px 7px;font-size:10px">cardId</div>
+            <div style="background:#1c2f4a;color:#58a6ff;border-radius:3px;padding:2px 7px;font-size:10px">slot</div>
+            <div style="background:#1c2f4a;color:#58a6ff;border-radius:3px;padding:2px 7px;font-size:10px">tstype</div>
+            <div style="background:#1c2f4a;color:#58a6ff;border-radius:3px;padding:2px 7px;font-size:10px">passId</div>
+            <div style="background:#1c2f4a;color:#58a6ff;border-radius:3px;padding:2px 7px;font-size:10px">testerId</div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <span style="font-size:10px;color:#8b949e">生效筛选：</span>
+        <span style="background:#1c2f4a;color:#58a6ff;border-radius:12px;padding:2px 8px;font-size:10px">Device = WB10N57U ✕</span>
+        <span style="background:#1c2f4a;color:#58a6ff;border-radius:12px;padding:2px 8px;font-size:10px">TSTYPE = UFLEX ✕</span>
+        <span style="background:#1c2f4a;color:#58a6ff;border-radius:12px;padding:2px 8px;font-size:10px">testEnd ≥ 2026-05-01 ✕</span>
+        <div class="mock-button" style="margin-left:auto;font-size:11px;padding:5px 16px">查询</div>
+      </div>
+    </div>
+
+    <!-- KPI Cards -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+      <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px;text-align:center">
+        <div style="font-size:10px;color:#8b949e">匹配 Wafer 数</div>
+        <div style="font-size:22px;font-weight:700;color:#e6edf3;margin:2px 0">148</div>
+        <div style="font-size:10px;color:#8b949e">条 Pass 记录</div>
+      </div>
+      <div style="background:#0d1117;border:1px solid #238636;border-radius:6px;padding:10px;text-align:center">
+        <div style="font-size:10px;color:#8b949e">综合 Yield%</div>
+        <div style="font-size:22px;font-weight:700;color:#3fb950;margin:2px 0">94.7%</div>
+        <div style="font-size:10px;color:#8b949e">（前端计算：坏 die / GROSSDIE）</div>
+      </div>
+      <div style="background:#0d1117;border:1px solid #da3633;border-radius:6px;padding:10px;text-align:center">
+        <div style="font-size:10px;color:#8b949e">最差探针卡</div>
+        <div style="font-size:16px;font-weight:700;color:#ff7b72;margin:2px 0">9400-01</div>
+        <div style="font-size:10px;color:#8b949e">坏 die 最多</div>
+      </div>
+      <div style="background:#0d1117;border:1px solid #9e6a03;border-radius:6px;padding:10px;text-align:center">
+        <div style="font-size:10px;color:#8b949e">Top 不良 Bin</div>
+        <div style="font-size:22px;font-weight:700;color:#d29922;margin:2px 0">Bin 5</div>
+        <div style="font-size:10px;color:#8b949e">全量最高不良</div>
+      </div>
+    </div>
+
+    <!-- Charts Grid -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px;height:80px;display:flex;align-items:center;justify-content:center">
+        <div style="text-align:center">
+          <div style="font-size:12px;color:#3fb950;font-weight:600">🟢 各 LOT Yield% 条形图</div>
+          <div style="font-size:10px;color:#8b949e;margin-top:2px">每个 Lot 的良率，颜色编码：绿≥95% / 黄80-95% / 红&lt;80%</div>
+        </div>
+      </div>
+      <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px;height:80px;display:flex;align-items:center;justify-content:center">
+        <div style="text-align:center">
+          <div style="font-size:12px;color:#ff7b72;font-weight:600">🔴 不良 BIN 全量排名</div>
+          <div style="font-size:10px;color:#8b949e;margin-top:2px">全量匹配行汇总，不受 limit 限制</div>
+        </div>
+      </div>
+      <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px;height:80px;display:flex;align-items:center;justify-content:center">
+        <div style="text-align:center">
+          <div style="font-size:12px;color:#e6edf3;font-weight:600">🃏 ProbeCard 不良对比</div>
+          <div style="font-size:10px;color:#8b949e;margin-top:2px">groupBy=cardId,bin · 哪张探针卡贡献坏 die 最多</div>
+        </div>
+      </div>
+      <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px;height:80px;display:flex;align-items:center;justify-content:center">
+        <div style="text-align:center">
+          <div style="font-size:12px;color:#d2a8ff;font-weight:600">📊 Slot 趋势（wafer 间比较）</div>
+          <div style="font-size:10px;color:#8b949e;margin-top:2px">各 Slot 坏 die 合计 · 识别边缘/中心规律</div>
+        </div>
+      </div>
+      <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px;height:80px;display:flex;align-items:center;justify-content:center;grid-column:span 2">
+        <div style="text-align:center">
+          <div style="font-size:12px;color:#58a6ff;font-weight:600">🔢 自由维度聚合图表</div>
+          <div style="font-size:10px;color:#8b949e;margin-top:2px">点击筛选区的维度标签切换 · groupBy 最多8维 · 支持 lot、device、cardId、slot、tstype、passId、testerId 组合</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Detail Table Preview -->
+    <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px;font-size:11px">
+      <div style="color:#e6edf3;font-weight:600;margin-bottom:6px">明细表 — 含 Yield% 列（前端计算）</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 0.5fr 1fr 0.7fr 1fr 0.7fr;gap:2px;color:#8b949e;font-size:10px;border-bottom:1px solid #30363d;padding-bottom:4px">
+        <div>TESTEND</div><div>DEVICE / LOT</div><div>SLOT</div><div>CARDID</div><div>PASSID</div><div style="color:#3fb950">Yield%</div><div>Top Bad Bin</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 0.5fr 1fr 0.7fr 1fr 0.7fr;gap:2px;color:#e6edf3;font-size:10px;padding-top:4px">
+        <div>2026-05-13…</div><div>WB10N57U / DR390</div><div>3</div><div>9400-01</div><div>1</div><div style="color:#3fb950">93.2%</div><div>Bin 5</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top:16px">
+  <h3>JBStart 布局是否合适？</h3>
+  <div class="options">
+    <div class="option" data-choice="ok" onclick="toggleSelect(this)">
+      <div class="letter">✓</div>
+      <div class="content"><h3>合适，开始写设计文档</h3></div>
+    </div>
+    <div class="option" data-choice="adjust" onclick="toggleSelect(this)">
+      <div class="letter">✎</div>
+      <div class="content"><h3>需要调整</h3><p>告诉我哪里需要改</p></div>
+    </div>
+  </div>
+</div>

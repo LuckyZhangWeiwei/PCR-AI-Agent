@@ -1,0 +1,87 @@
+<h2>三种改造方向</h2>
+<p class="subtitle">选一种你倾向的方向，我会基于它设计具体方案。</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>原地打补丁</h3>
+      <p style="margin-bottom:10px">在现有两个 tab 内各加若干图表：JBStart 加 yield% 计算和 slot 趋势，yield monitor 加 DUT 分布和时间趋势。不动框架结构。</p>
+      <div class="mockup" style="padding:10px;font-size:12px">
+        <div class="mock-nav" style="font-size:11px">API目录 | yield monitor | JB START | 表浏览</div>
+        <div style="border:1px dashed #555;padding:8px;margin-top:6px;border-radius:4px">
+          <div style="color:#aaa;font-size:11px">现有筛选区（不变）</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
+            <div style="background:#1e3a2f;padding:6px;border-radius:3px;font-size:11px">现有图表（保留）</div>
+            <div style="background:#1a3050;padding:6px;border-radius:3px;font-size:11px">✚ yield% 条形图</div>
+            <div style="background:#1a3050;padding:6px;border-radius:3px;font-size:11px">✚ DUT 触发分布</div>
+            <div style="background:#1a3050;padding:6px;border-radius:3px;font-size:11px">✚ 时间趋势</div>
+          </div>
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:10px">
+        <div class="pros"><h4>优点</h4><ul><li>改动最小，风险低</li></ul></div>
+        <div class="cons"><h4>缺点</h4><ul><li>3个查询按钮的问题没解决</li><li>页面越来越长，难找信息</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>新增专项分析 tab（推荐）</h3>
+      <p style="margin-bottom:10px">保留现有两个 tab 不动，新增两个专项 tab：<strong>根因排查</strong> 和 <strong>批次汇总</strong>，每个 tab 一键查询、图表从全局到细节分层展示。</p>
+      <div class="mockup" style="padding:10px;font-size:12px">
+        <div class="mock-nav" style="font-size:11px">API目录 | yield monitor | JB START | <strong style="color:#58a6ff">根因排查 ✚</strong> | <strong style="color:#58a6ff">批次汇总 ✚</strong> | 表浏览</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+          <div style="border:1px solid #444;border-radius:4px;padding:8px">
+            <div style="font-size:11px;color:#58a6ff;font-weight:bold;margin-bottom:6px">根因排查 tab</div>
+            <div style="font-size:11px;color:#aaa">① Lot+Device 筛选</div>
+            <div style="font-size:11px;margin-top:4px">② 各 Slot 不良 die 条形图</div>
+            <div style="font-size:11px">③ Bin 分布 + yield% 数字</div>
+            <div style="font-size:11px">④ ProbeCard 对比</div>
+            <div style="font-size:11px">⑤ DUT 触发热度</div>
+          </div>
+          <div style="border:1px solid #444;border-radius:4px;padding:8px">
+            <div style="font-size:11px;color:#58a6ff;font-weight:bold;margin-bottom:6px">批次汇总 tab</div>
+            <div style="font-size:11px;color:#aaa">① Device + 时间范围</div>
+            <div style="font-size:11px;margin-top:4px">② 各 Lot yield% 排名</div>
+            <div style="font-size:11px">③ 趋势折线（按天）</div>
+            <div style="font-size:11px">④ 探针卡良率排名</div>
+            <div style="font-size:11px">⑤ 触发类型分布</div>
+          </div>
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:10px">
+        <div class="pros"><h4>优点</h4><ul><li>不破坏现有功能</li><li>用途明确，一键查询</li><li>DUT/probecard 成为核心维度</li></ul></div>
+        <div class="cons"><h4>缺点</h4><ul><li>tab 数量增加到6个</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>重建两个主 tab</h3>
+      <p style="margin-bottom:10px">把 yield monitor 和 JB START 两个 tab 推倒重来，单一「查询」按钮，结果分层呈现：汇总指标卡 → 主图 → 下钻图表，probe card 和 DUT 成为一级分析维度。</p>
+      <div class="mockup" style="padding:10px;font-size:12px">
+        <div style="border:1px solid #555;border-radius:4px;padding:8px">
+          <div style="display:flex;gap:8px;margin-bottom:8px">
+            <div style="background:#1e3a2f;padding:6px 12px;border-radius:3px;font-size:11px;flex:1;text-align:center">触发总数<br/><strong style="font-size:14px">1,284</strong></div>
+            <div style="background:#3a2020;padding:6px 12px;border-radius:3px;font-size:11px;flex:1;text-align:center">最差探针卡<br/><strong style="font-size:14px">8027-02</strong></div>
+            <div style="background:#1a3050;padding:6px 12px;border-radius:3px;font-size:11px;flex:1;text-align:center">主要 DUT<br/><strong style="font-size:14px">dut#3</strong></div>
+          </div>
+          <div style="height:60px;background:#161b22;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#aaa">时间趋势图（每日触发量）</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
+            <div style="height:50px;background:#161b22;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#aaa">ProbeCard 对比</div>
+            <div style="height:50px;background:#161b22;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#aaa">DUT 热度分布</div>
+          </div>
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:10px">
+        <div class="pros"><h4>优点</h4><ul><li>体验最连贯</li><li>指标卡一眼看到关键数字</li></ul></div>
+        <div class="cons"><h4>缺点</h4><ul><li>改动最大，要重写两个组件</li><li>旧功能要移植确保不丢</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>

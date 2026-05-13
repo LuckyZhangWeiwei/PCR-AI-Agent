@@ -1,0 +1,107 @@
+<h2>最终导航结构 — 5个 Tab</h2>
+<p class="subtitle">确认整体布局后，我将开始写设计文档。</p>
+
+<div style="margin-bottom:20px">
+  <div style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:16px">
+    <div style="display:flex;gap:2px;border-bottom:1px solid #30363d;padding-bottom:12px;margin-bottom:16px;flex-wrap:wrap;gap:4px">
+      <div style="padding:6px 14px;border-radius:6px 6px 0 0;font-size:12px;color:#8b949e;background:#161b22;border:1px solid #30363d;border-bottom:none">API 目录</div>
+      <div style="padding:6px 14px;border-radius:6px 6px 0 0;font-size:12px;font-weight:600;color:#58a6ff;background:#1c2f4a;border:1px solid #388bfd;border-bottom:none">⚡ yield monitor <span style="font-size:10px;color:#3fb950">重建</span></div>
+      <div style="padding:6px 14px;border-radius:6px 6px 0 0;font-size:12px;font-weight:600;color:#58a6ff;background:#1c2f4a;border:1px solid #388bfd;border-bottom:none">🔬 JB START <span style="font-size:10px;color:#3fb950">重建</span></div>
+      <div style="padding:6px 14px;border-radius:6px 6px 0 0;font-size:12px;font-weight:600;color:#d2a8ff;background:#1e1a2e;border:1px solid #8957e5;border-bottom:none">🤖 AI 助手 <span style="font-size:10px;color:#d2a8ff">预留</span></div>
+      <div style="padding:6px 14px;border-radius:6px 6px 0 0;font-size:12px;color:#8b949e;background:#161b22;border:1px solid #30363d;border-bottom:none">表浏览</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+      <div style="border:1px solid #388bfd;border-radius:6px;padding:12px;background:#0d1929">
+        <div style="font-size:11px;color:#58a6ff;font-weight:700;margin-bottom:6px">⚡ yield monitor（重建）</div>
+        <div style="font-size:10px;color:#8b949e;line-height:1.6">
+          ✦ 复合筛选 + 快捷时间按钮<br>
+          ✦ 4个 KPI 卡（总数/Lot数/最差ProbeCard/DUT）<br>
+          ✦ 每日触发趋势图（全宽）<br>
+          ✦ ProbeCard 触发排名<br>
+          ✦ DUT# 触发分布<br>
+          ✦ LOT 触发排名<br>
+          ✦ 自由维度聚合<br>
+          ✦ 明细表（含 dutNumber）
+        </div>
+      </div>
+      <div style="border:1px solid #388bfd;border-radius:6px;padding:12px;background:#0d1929">
+        <div style="font-size:11px;color:#58a6ff;font-weight:700;margin-bottom:6px">🔬 JB START（重建）</div>
+        <div style="font-size:10px;color:#8b949e;line-height:1.6">
+          ✦ 复合筛选 + 快捷时间按钮<br>
+          ✦ 4个 KPI 卡（Wafer数/Yield%/最差ProbeCard/Top Bin）<br>
+          ✦ 各 LOT Yield% 条形图（颜色编码）<br>
+          ✦ 不良 BIN 全量排名<br>
+          ✦ ProbeCard 不良 die 对比<br>
+          ✦ Slot 趋势（wafer间比较）<br>
+          ✦ 点击式维度聚合（8维）<br>
+          ✦ 明细表（含 Yield% 列）
+        </div>
+      </div>
+      <div style="border:1px solid #8957e5;border-radius:6px;padding:12px;background:#13101e">
+        <div style="font-size:11px;color:#d2a8ff;font-weight:700;margin-bottom:6px">🤖 AI 助手（预留）</div>
+        <div style="font-size:10px;color:#8b949e;line-height:1.6">
+          ✦ 对话框（用户输入自然语言）<br>
+          ✦ AI 思考过程展示区<br>
+          ✦ 工具调用状态指示器<br>
+          ✦ 结构化结果卡片（表格/图表）<br>
+          ✦ 对话历史<br><br>
+          <span style="color:#6e40c9">下一阶段接入 Node.js Agent<br>+ 硅基流动 Function Call</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div>
+  <h3>视觉风格：美观炫酷</h3>
+  <p class="subtitle">实现时将采用以下设计语言</p>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px">
+    <div style="background:linear-gradient(135deg,#0d1117,#1c2f4a);border:1px solid #388bfd;border-radius:8px;padding:12px">
+      <div style="font-size:12px;color:#58a6ff;font-weight:600;margin-bottom:4px">KPI 卡片</div>
+      <div style="font-size:10px;color:#8b949e">发光边框 + 渐变背景<br>数字动画（count-up）<br>趋势箭头颜色编码</div>
+      <div style="margin-top:8px;background:#0d1117;border-radius:4px;padding:8px;text-align:center;border:1px solid #388bfd;box-shadow:0 0 8px rgba(56,139,253,0.3)">
+        <div style="font-size:10px;color:#8b949e">触发总数</div>
+        <div style="font-size:20px;font-weight:700;color:#58a6ff">1,284</div>
+      </div>
+    </div>
+    <div style="background:linear-gradient(135deg,#0d1117,#1a1a2e);border:1px solid #8957e5;border-radius:8px;padding:12px">
+      <div style="font-size:12px;color:#d2a8ff;font-weight:600;margin-bottom:4px">图表</div>
+      <div style="font-size:10px;color:#8b949e">渐变填充 + 圆角柱<br>鼠标悬浮高亮<br>动画载入效果</div>
+      <div style="margin-top:8px;display:flex;align-items:flex-end;gap:3px;height:40px">
+        <div style="background:linear-gradient(to top,#1f6feb,#388bfd);width:14px;height:60%;border-radius:2px 2px 0 0"></div>
+        <div style="background:linear-gradient(to top,#1f6feb,#388bfd);width:14px;height:80%;border-radius:2px 2px 0 0"></div>
+        <div style="background:linear-gradient(to top,#da3633,#ff7b72);width:14px;height:100%;border-radius:2px 2px 0 0"></div>
+        <div style="background:linear-gradient(to top,#1f6feb,#388bfd);width:14px;height:45%;border-radius:2px 2px 0 0"></div>
+        <div style="background:linear-gradient(to top,#1f6feb,#388bfd);width:14px;height:70%;border-radius:2px 2px 0 0"></div>
+      </div>
+    </div>
+    <div style="background:linear-gradient(135deg,#0d1117,#1a2e1a);border:1px solid #238636;border-radius:8px;padding:12px">
+      <div style="font-size:12px;color:#3fb950;font-weight:600;margin-bottom:4px">筛选 Chips</div>
+      <div style="font-size:10px;color:#8b949e">毛玻璃效果标签<br>点击删除动画<br>快捷时间按钮</div>
+      <div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap">
+        <span style="background:rgba(56,139,253,0.15);color:#58a6ff;border:1px solid rgba(56,139,253,0.4);border-radius:12px;padding:2px 8px;font-size:10px">Device=WA03 ✕</span>
+        <span style="background:rgba(56,139,253,0.15);color:#58a6ff;border:1px solid rgba(56,139,253,0.4);border-radius:12px;padding:2px 8px;font-size:10px">近7天 ✕</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top:20px">
+  <div class="options">
+    <div class="option" data-choice="ok" onclick="toggleSelect(this)">
+      <div class="letter">✓</div>
+      <div class="content">
+        <h3>确认，开始写设计文档</h3>
+        <p>5个 tab，两个重建 + 一个 AI 助手预留</p>
+      </div>
+    </div>
+    <div class="option" data-choice="more" onclick="toggleSelect(this)">
+      <div class="letter">+</div>
+      <div class="content">
+        <h3>还有补充</h3>
+        <p>在终端告诉我</p>
+      </div>
+    </div>
+  </div>
+</div>

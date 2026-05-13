@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//d/AI/dotnet-AI-agnet-demos/AgentDemo/**)",
+      "Bash(Get-ChildItem -Recurse -Force)",
+      "Bash(Select-Object FullName)",
+      "Bash(dir \"D:\\\\AI\\\\dotnet-AI-agnet-demos\\\\AgentDemo\" /s /b)",
+      "Bash(C:/Users/zhang/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/scripts/start-server.sh --project-dir \"d:/AI/PCR-AI-Agent\")",
+      "Bash(C:/Users/zhang/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/brainstorming/scripts/start-server.sh --project-dir \"d:/AI/PCR-AI-Agent\")",
+      "PowerShell(Get-Command node)",
+      "PowerShell(Get-Process node -ErrorAction SilentlyContinue)",
+      "WebFetch(domain:localhost)",
+      "PowerShell(Invoke-RestMethod -Method Get -Uri \"http://localhost:54322/health\" -TimeoutSec 5 2>&1)",
+      "PowerShell(Invoke-RestMethod -Method Get -Uri \"http://localhost:54322/\" -TimeoutSec 5 2>&1)",
+      "PowerShell(Get-Process -Id 1812 2>&1)",
+      "PowerShell(Get-Process | Where-Object { $_.Id -eq 1812 } | Select-Object Name, Id, Path)",
+      "PowerShell(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Id -eq 1812 })",
+      "PowerShell(New-Item -ItemType Directory -Force -Path \"d:\\\\AI\\\\PCR-AI-Agent\\\\docs\\\\superpowers\\\\specs\")",
+      "Bash(npm run *)",
+      "Bash(npx tsc *)",
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "Bash(npm ci *)",
+      "Bash(npm install *)",
+      "Bash(where node *)",
+      "Bash(nvm list *)",
+      "Bash(fnm list *)",
+      "Bash(nvs list *)",
+      "PowerShell(node --version)",
+      "PowerShell(nvm list 2>$null)",
+      "PowerShell(fnm list 2>$null)",
+      "PowerShell(& \"C:\\\\Program Files\\\\nodejs\\\\node.exe\" --version)",
+      "PowerShell($env:PATH = \"C:\\\\Program Files\\\\nodejs;\" + $env:PATH; Set-Location \"d:\\\\AI\\\\PCR-AI-Agent\\\\pcr-ai-report\"; node --version)",
+      "PowerShell($env:PATH = \"C:\\\\Program Files\\\\nodejs;\" + $env:PATH; Set-Location \"d:\\\\AI\\\\PCR-AI-Agent\\\\pcr-ai-report\"; npm run lint 2>&1)"
+    ]
+  }
+}

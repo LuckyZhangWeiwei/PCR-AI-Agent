@@ -1,0 +1,142 @@
+<h2>Yield Monitor tab — 重建线框图</h2>
+<p class="subtitle">复合查询：所有筛选项均可组合，AND 语义，一键触发三路并行请求。点击下方选项告诉我布局是否合适。</p>
+
+<div class="mockup">
+  <div class="mockup-header">yield monitor（重建后）</div>
+  <div class="mockup-body" style="padding:12px;display:flex;flex-direction:column;gap:10px">
+
+    <!-- Filter Section -->
+    <div style="border:1px solid #30363d;border-radius:6px;padding:10px;background:#0d1117">
+      <div style="font-size:11px;color:#58a6ff;font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">筛选条件（任意组合，留空则不筛）</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:8px">
+        <div style="background:#161b22;border-radius:4px;padding:6px 8px;font-size:11px">
+          <div style="color:#8b949e;font-size:10px">Device</div>
+          <div class="mock-input" style="margin-top:2px;font-size:11px;padding:3px 6px">WA03P02G</div>
+        </div>
+        <div style="background:#161b22;border-radius:4px;padding:6px 8px;font-size:11px">
+          <div style="color:#8b949e;font-size:10px">LotID</div>
+          <div class="mock-input" style="margin-top:2px;font-size:11px;padding:3px 6px;color:#8b949e">（留空）</div>
+        </div>
+        <div style="background:#161b22;border-radius:4px;padding:6px 8px;font-size:11px">
+          <div style="color:#8b949e;font-size:10px">Wafer</div>
+          <div class="mock-input" style="margin-top:2px;font-size:11px;padding:3px 6px;color:#8b949e">（留空）</div>
+        </div>
+        <div style="background:#161b22;border-radius:4px;padding:6px 8px;font-size:11px">
+          <div style="color:#8b949e;font-size:10px">Hostname（机台）</div>
+          <div class="mock-input" style="margin-top:2px;font-size:11px;padding:3px 6px;color:#8b949e">（留空）</div>
+        </div>
+        <div style="background:#161b22;border-radius:4px;padding:6px 8px;font-size:11px">
+          <div style="color:#8b949e;font-size:10px">ProbeCard</div>
+          <div class="mock-input" style="margin-top:2px;font-size:11px;padding:3px 6px;color:#8b949e">（留空）</div>
+        </div>
+        <div style="background:#161b22;border-radius:4px;padding:6px 8px;font-size:11px">
+          <div style="color:#8b949e;font-size:10px">Pass</div>
+          <div class="mock-input" style="margin-top:2px;font-size:11px;padding:3px 6px;color:#8b949e">全部 ▾</div>
+        </div>
+        <div style="background:#161b22;border-radius:4px;padding:6px 8px;font-size:11px;grid-column:span 2">
+          <div style="color:#8b949e;font-size:10px">时间范围（TIME_STAMP）</div>
+          <div style="display:flex;gap:4px;margin-top:2px">
+            <div class="mock-input" style="flex:1;font-size:10px;padding:3px 5px">2026-05-01 00:00</div>
+            <div style="color:#8b949e;font-size:11px;line-height:24px">→</div>
+            <div class="mock-input" style="flex:1;font-size:10px;padding:3px 5px">2026-05-13 23:59</div>
+          </div>
+          <div style="display:flex;gap:4px;margin-top:4px">
+            <div style="background:#1c2f4a;border-radius:3px;padding:2px 6px;font-size:10px;color:#58a6ff;cursor:pointer">今天</div>
+            <div style="background:#1c2f4a;border-radius:3px;padding:2px 6px;font-size:10px;color:#58a6ff;cursor:pointer">近7天</div>
+            <div style="background:#1c2f4a;border-radius:3px;padding:2px 6px;font-size:10px;color:#58a6ff;cursor:pointer">本月</div>
+          </div>
+        </div>
+      </div>
+      <!-- Active filter chips -->
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <span style="font-size:10px;color:#8b949e">生效筛选：</span>
+        <span style="background:#1c2f4a;color:#58a6ff;border-radius:12px;padding:2px 8px;font-size:10px">Device = WA03P02G ✕</span>
+        <span style="background:#1c2f4a;color:#58a6ff;border-radius:12px;padding:2px 8px;font-size:10px">时间 ≥ 2026-05-01 ✕</span>
+        <div class="mock-button" style="margin-left:auto;font-size:11px;padding:5px 16px">查询</div>
+      </div>
+    </div>
+
+    <!-- KPI Cards -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+      <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px;text-align:center">
+        <div style="font-size:10px;color:#8b949e">触发总数</div>
+        <div style="font-size:22px;font-weight:700;color:#e6edf3;margin:2px 0">1,284</div>
+        <div style="font-size:10px;color:#3fb950">↑ 较前期 +12%</div>
+      </div>
+      <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px;text-align:center">
+        <div style="font-size:10px;color:#8b949e">涉及 Lot 数</div>
+        <div style="font-size:22px;font-weight:700;color:#e6edf3;margin:2px 0">23</div>
+        <div style="font-size:10px;color:#8b949e">个独立 LotID</div>
+      </div>
+      <div style="background:#0d1117;border:1px solid #da3633;border-radius:6px;padding:10px;text-align:center">
+        <div style="font-size:10px;color:#8b949e">触发最多探针卡</div>
+        <div style="font-size:16px;font-weight:700;color:#ff7b72;margin:2px 0">8027-02</div>
+        <div style="font-size:10px;color:#8b949e">共 312 次</div>
+      </div>
+      <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px;text-align:center">
+        <div style="font-size:10px;color:#8b949e">触发最多 DUT</div>
+        <div style="font-size:22px;font-weight:700;color:#e6edf3;margin:2px 0">dut#3</div>
+        <div style="font-size:10px;color:#8b949e">共 278 次</div>
+      </div>
+    </div>
+
+    <!-- Charts Grid -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px;grid-column:span 2;height:80px;display:flex;align-items:center;justify-content:center">
+        <div style="text-align:center">
+          <div style="font-size:12px;color:#e6edf3;font-weight:600">📈 每日触发量趋势（timeDay 聚合）</div>
+          <div style="font-size:10px;color:#8b949e;margin-top:2px">横轴：日期 · 纵轴：触发次数 · 一眼判断质量是否在变差</div>
+        </div>
+      </div>
+      <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px;height:80px;display:flex;align-items:center;justify-content:center">
+        <div style="text-align:center">
+          <div style="font-size:12px;color:#e6edf3;font-weight:600">🔴 ProbeCard 触发排名</div>
+          <div style="font-size:10px;color:#8b949e;margin-top:2px">全量匹配行 · 横向条形图</div>
+        </div>
+      </div>
+      <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px;height:80px;display:flex;align-items:center;justify-content:center">
+        <div style="text-align:center">
+          <div style="font-size:12px;color:#e6edf3;font-weight:600">🎯 DUT# 触发分布</div>
+          <div style="font-size:10px;color:#8b949e;margin-top:2px">哪个测试位最多触发 · 按 dut# 计数</div>
+        </div>
+      </div>
+      <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px;height:80px;display:flex;align-items:center;justify-content:center">
+        <div style="text-align:center">
+          <div style="font-size:12px;color:#e6edf3;font-weight:600">📦 LOT 触发排名</div>
+          <div style="font-size:10px;color:#8b949e;margin-top:2px">哪些 lot 触发最多 · lotId 维度聚合</div>
+        </div>
+      </div>
+      <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px;height:80px;display:flex;align-items:center;justify-content:center">
+        <div style="text-align:center">
+          <div style="font-size:12px;color:#e6edf3;font-weight:600">🔢 自由维度聚合</div>
+          <div style="font-size:10px;color:#8b949e;margin-top:2px">自选2~5个维度（现有功能保留并强化）</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Detail Table -->
+    <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px;font-size:11px">
+      <div style="color:#e6edf3;font-weight:600;margin-bottom:6px">明细表（含 dutNumber 列）</div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;color:#8b949e;font-size:10px;border-bottom:1px solid #30363d;padding-bottom:4px">
+        <div>TIME_STAMP</div><div>HOSTNAME</div><div>DEVICE</div><div>LOTID</div><div>WAFER</div><div>PROBECARD</div><div style="color:#58a6ff">dutNumber</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;color:#e6edf3;font-size:10px;padding-top:4px">
+        <div>2026-05-13…</div><div>TESTER-01</div><div>WA03P02G</div><div>NF12615</div><div>W03</div><div>8027-02</div><div style="color:#58a6ff">3</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top:16px">
+  <h3>这个布局方向是否合适？</h3>
+  <div class="options">
+    <div class="option" data-choice="ok" onclick="toggleSelect(this)">
+      <div class="letter">✓</div>
+      <div class="content"><h3>合适，继续看 JBStart tab</h3></div>
+    </div>
+    <div class="option" data-choice="adjust" onclick="toggleSelect(this)">
+      <div class="letter">✎</div>
+      <div class="content"><h3>需要调整</h3><p>在下方告诉我哪里需要改</p></div>
+    </div>
+  </div>
+</div>
