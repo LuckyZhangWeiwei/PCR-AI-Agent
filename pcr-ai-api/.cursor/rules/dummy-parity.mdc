@@ -1,0 +1,16 @@
+---
+description: Production and dummy code paths must stay in sync (highest priority).
+alwaysApply: true
+---
+
+# 正式环境与 Dummy 逻辑同步（最高优先级）
+
+凡涉及 **既有 Oracle/正式路径**，又存在 **dummy / 内存样本路径**（例如 `yield-monitor-triggers`、`infcontrol-layer-bins` 及后续同类端点）时：
+
+- **任何业务逻辑调整**（查询参数解析、WHERE 条件含义、排序、limit、响应字段形状、边界行为等）必须 **同时修改两处**：
+  1. **正式环境**：`parse*Query`、`build*Sql`、`api.ts` 中的真实查询路径等。
+  2. **Dummy 环境**：对应的 `*Dummy.ts` 中的筛选/排序/截断逻辑及（如有）样本数据结构。
+
+- 禁止只改一侧留下漂移；改完应自检两条路径对 **同一组 `filters` / 查询参数** 的行为是否仍一致。
+
+说明：**`/yield-monitor-triggers/aggregate`** 已从路由关闭；**`/infcontrol-layer-bins/aggregate`** 已恢复，须与 `infcontrolLayerBinAggregate.ts`、`aggregateInfcontrolLayerBinDummyRows` 保持 **Oracle ↔ dummy** 同步。

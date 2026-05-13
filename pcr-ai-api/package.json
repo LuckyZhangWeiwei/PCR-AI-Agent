@@ -1,0 +1,33 @@
+{
+  "name": "pcr-ai-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "RESTful API for PCR AI backed by Oracle (oracledb pool)",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "pm2:start": "npm run build && pm2 start ecosystem.config.cjs",
+    "pm2:reload": "npm run build && pm2 reload ecosystem.config.cjs"
+  },
+  "engines": {
+    "node": ">=18.12.1"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "oracledb": "^6.6.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "~18.19.64",
+    "@types/oracledb": "^6.10.3",
+    "tsx": "^4.19.2",
+    "typescript": "~5.3.3"
+  }
+}
