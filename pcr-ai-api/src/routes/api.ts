@@ -27,7 +27,9 @@ import {
 import {
   aggregateInfcontrolLayerBinDummyRows,
   aggregateInfcontrolLayerBinV2BadBinsDummy,
+  aggregateInfcontrolLayerBinV3DummyRows,
   filterInfcontrolLayerBinV2DummyRows,
+  filterInfcontrolLayerBinV3DummyRows,
   filterInfcontrolLayerDummyRows,
   infcontrolLayerBinsUseDummy,
 } from "../lib/infcontrolLayerBinDummy.js";
@@ -37,6 +39,10 @@ import {
   buildInfcontrolLayerBinMatchingCountSql,
   parseInfcontrolLayerBinAggregateQuery,
 } from "../lib/infcontrolLayerBinAggregate.js";
+import {
+  INFCONTROL_V3_AGGREGATE_DOCUMENTATION,
+  parseInfcontrolLayerBinsV3AggregateQuery,
+} from "../lib/infcontrolLayerBinV3Aggregate.js";
 import {
   enrichInfcontrolLayerBinRow,
   enrichInfcontrolLayerBinRowV2,
@@ -48,14 +54,23 @@ import {
   parseYieldMonitorTriggerV3Query,
 } from "../lib/yieldMonitorTriggerFilters.js";
 import {
+  YIELD_MONITOR_V3_AGGREGATE_DOCUMENTATION,
+  buildYieldMonitorTriggerV3AggregateSql,
+  buildYieldMonitorTriggerV3AggregateTotalSql,
+  buildYieldMonitorV3AggregateGroupParts,
+  parseYieldMonitorTriggerV3AggregateQuery,
+} from "../lib/yieldMonitorTriggerV3Aggregate.js";
+import {
   buildYieldMonitorHostnameSummarySql,
   buildYieldMonitorProbeCardSummarySql,
   buildYieldMonitorTriggerTopSql,
 } from "../lib/yieldMonitorTriggerSql.js";
 import {
+  aggregateYieldMonitorV3DummyRows,
   buildYieldMonitorHostnameSummaryDummy,
   buildYieldMonitorProbeCardSummaryDummy,
   filterYieldMonitorDummyRows,
+  filterYieldMonitorDummyRowsV3,
   yieldMonitorTriggersUseDummy,
 } from "../lib/yieldMonitorTriggerDummy.js";
 import {
@@ -248,11 +263,9 @@ apiRouter.get("/infcontrol-layer-bins/v2", async (req, res) => {
 });
 
 /**
- * **v3** 层控 + 层 BIN：INFCONTROL ⋈ INFLAYERBINLIST（`PASSTYPE='TEST'`），**始终走主库 Oracle**，
- * 不受 `INFCONTROL_LAYER_BINS_DUMMY` 影响。支持 **`limit`**（默认 200，最大 **`limitMax`**；**键名不区分大小写**）及
- * **device, lot, slot, meslot, testerId, tstype, cardId, passId** 与 **TESTSTART / TESTEND** 时间窗（见 manifest）。
- * 字符串筛选值与库列 **不区分大小写**（`UPPER(TRIM(列)) = UPPER(:bind)`；样例见 `docs/JBStart.xlsx`）。
- * 行形状与 **v2** 一致（`enrichInfcontrolLayerBinRowV2`）。
+ * **v3** 层控 + 层 BIN：INFCONTROL ⋈ INFLAYERBINLIST（`PASSTYPE='TEST'`）。**`INFCONTROL_LAYER_BINS_DUMMY=true`**（且非 `dist`/production 强制走库）时走 **`docs/JBStart.xlsx`** 内存样本；否则 **主库 Oracle**。
+ * 支持 **`limit`**（默认 200，最大 **`limitMax`**；键名不区分大小写）及 **device, lot, slot, meslot, testerId, tstype, cardId, passId** 与 **TESTSTART / TESTEND** 时间窗。
+ * 字符串筛选 Dummy 侧等价 **`UPPER(TRIM)`**（trim + 大小写不敏感）。行形状与 **v2** 一致。
  */
 apiRouter.get("/infcontrol-layer-bins/v3", async (req, res) => {
   const parsed = parseInfcontrolLayerBinsV3Query(
@@ -273,6 +286,26 @@ apiRouter.get("/infcontrol-layer-bins/v3", async (req, res) => {
     200,
     API_V3_LIST_LIMIT_MAX
   );
+
+  if (infcontrolLayerBinsUseDummy()) {
+    const rows = filterInfcontrolLayerBinV3DummyRows(parsed.applied, limit);
+    const enriched = rows.map((row) =>
+      enrichInfcontrolLayerBinRowV2(row as Record<string, unknown>)
+    );
+    return res.json({
+      meta: {
+        apiVersion: "3",
+        requestId: reqId(req),
+      },
+      limit,
+      limitMax: API_V3_LIST_LIMIT_MAX,
+      orderBy: "TESTEND DESC NULLS LAST, SLOT, PASSID, PASSNUM",
+      filters: { ...parsed.applied, limit },
+      count: enriched.length,
+      rows: enriched,
+    });
+  }
+
   const sql = buildInfcontrolLayerBinsV3Sql(parsed.whereAndSql);
   const binds: BindParameters = { ...parsed.binds, lim: limit };
 
@@ -297,6 +330,120 @@ apiRouter.get("/infcontrol-layer-bins/v3", async (req, res) => {
       filters: { ...parsed.applied, limit },
       count: enriched.length,
       rows: enriched,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return sendAgentError(
+      res,
+      500,
+      "ORACLE_QUERY_FAILED",
+      "Oracle query failed",
+      enrichOracleDriverDetail(message)
+    );
+  }
+});
+
+/**
+ * **v3 层控 BIN 聚合**：与 **`/infcontrol-layer-bins/v3`** 相同筛选语义。**Dummy 开启**（且非 `dist`/production）时在 **JBStart** 内存行上聚合；否则 Oracle。
+ * 响应体含 **`documentation`**。详见 manifest 与 **`docs/AI_AGENT_API.md`**。
+ */
+apiRouter.get("/infcontrol-layer-bins/v3/aggregate", async (req, res) => {
+  const parsed = parseInfcontrolLayerBinsV3AggregateQuery(
+    req.query as Record<string, unknown>
+  );
+  if (!parsed.ok) {
+    return sendAgentError(
+      res,
+      400,
+      "VALIDATION_ERROR",
+      parsed.error,
+      "See GET /api/v1/manifest infcontrol-layer-bins/v3/aggregate."
+    );
+  }
+
+  if (infcontrolLayerBinsUseDummy()) {
+    const { totalRowsMatching, groups } = aggregateInfcontrolLayerBinV3DummyRows(
+      parsed.applied,
+      parsed.groupBy,
+      parsed.groupTop
+    );
+    return res.json({
+      meta: {
+        apiVersion: "3",
+        requestId: reqId(req),
+        aggregatePath: "infcontrol-layer-bins/v3/aggregate",
+      },
+      documentation: INFCONTROL_V3_AGGREGATE_DOCUMENTATION,
+      groupBy: parsed.groupBy,
+      groupTop: parsed.groupTop,
+      orderBy: "SUM(unpivoted bin column) DESC NULLS LAST",
+      filters: parsed.applied,
+      totalRowsMatching,
+      groups,
+    });
+  }
+
+  const aggSql = buildInfcontrolLayerBinAggregateSql(
+    parsed.whereSql,
+    parsed.groupBy
+  );
+  const countSql = buildInfcontrolLayerBinMatchingCountSql(parsed.whereSql);
+  const bindAgg: BindParameters = {
+    ...parsed.binds,
+    agg_lim: parsed.groupTop,
+  };
+
+  try {
+    const [aggRows, countRows] = await withConnection(async (conn) => {
+      const aggResult = await conn.execute(aggSql, bindAgg, {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+      });
+      const countResult = await conn.execute(countSql, parsed.binds, {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+      });
+      return [aggResult.rows || [], countResult.rows || []] as const;
+    });
+
+    const totalObj =
+      (countRows[0] as Record<string, unknown> | undefined) ?? {};
+    const totalRaw =
+      totalObj.TOTAL_MATCHING ?? totalObj.total_matching ?? totalObj.TOTAL;
+    const totalRowsMatching =
+      totalRaw != null && totalRaw !== "" ? Number(totalRaw) : 0;
+
+    const groups = (aggRows as Record<string, unknown>[])
+      .filter((row) => {
+        const cntRaw = row.CNT ?? row.cnt;
+        return cntRaw != null && cntRaw !== "";
+      })
+      .map((row) => {
+        const keyRaw = row.GRP_KEY ?? row.grp_key;
+        const cntRaw = row.CNT ?? row.cnt;
+        const keyStr = keyRaw == null ? "" : String(keyRaw);
+        const n = Number(cntRaw);
+        return {
+          key: keyStr,
+          count: Number.isFinite(n) ? n : 0,
+          parts: buildInfcontrolLayerBinAggregateGroupParts(
+            keyStr,
+            parsed.groupBy
+          ),
+        };
+      });
+
+    return res.json({
+      meta: {
+        apiVersion: "3",
+        requestId: reqId(req),
+        aggregatePath: "infcontrol-layer-bins/v3/aggregate",
+      },
+      documentation: INFCONTROL_V3_AGGREGATE_DOCUMENTATION,
+      groupBy: parsed.groupBy,
+      groupTop: parsed.groupTop,
+      orderBy: "SUM(unpivoted bin column) DESC NULLS LAST",
+      filters: parsed.applied,
+      totalRowsMatching,
+      groups,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -647,13 +794,8 @@ apiRouter.get("/yield-monitor-triggers", async (req, res) => {
 });
 
 /**
- * **v3** 产量监控：`YMWEB_YIELDMONITORTRIGGER` 全列，**始终走 probeweb Oracle**，
- * 不受 `YIELD_MONITOR_TRIGGERS_DUMMY` 影响。
- *
- * 查询参数（均可选，键名不区分大小写）：**`limit`**（默认 200，最大 **`limitMax`**；**`limit` 键名本身**亦不区分大小写）；
- * **`hostname`**, **`device`**, **`lotId`**, **`pass`**, **`wafer`**, **`type`**, **`probeCard`**（字符串值与库列 **不区分大小写**，`UPPER(TRIM)`；样例见 `docs/delta-diff.xlsx`）；
- * 时间窗：**`timeStampBegin` / `timeStampEnd`** 或 **`timeStampFrom` / `timeStampTo`**（ISO 8601，对应 `TIME_STAMP` 闭区间下界 / 上界）。
- * 条件均为 **AND**。
+ * **v3** 产量监控：`YMWEB_YIELDMONITORTRIGGER` 全列。**`YIELD_MONITOR_TRIGGERS_DUMMY=true`**（且非 `dist`/production）时走 **`docs/delta-diff.xlsx`** 内存样本；否则 **probeweb Oracle**。
+ * 查询参数与 **v3** 列表一致（`UPPER(TRIM)` 字符串、时间窗等）。
  */
 apiRouter.get("/yield-monitor-triggers/v3", async (req, res) => {
   const parsed = parseYieldMonitorTriggerV3Query(
@@ -674,6 +816,23 @@ apiRouter.get("/yield-monitor-triggers/v3", async (req, res) => {
     200,
     API_V3_LIST_LIMIT_MAX
   );
+
+  if (yieldMonitorTriggersUseDummy()) {
+    const rows = filterYieldMonitorDummyRowsV3(parsed.applied, limit);
+    return res.json({
+      meta: {
+        apiVersion: "3",
+        requestId: reqId(req),
+      },
+      limit,
+      limitMax: API_V3_LIST_LIMIT_MAX,
+      orderBy: "TIME_STAMP DESC NULLS LAST",
+      filters: { ...parsed.applied, limit },
+      count: rows.length,
+      rows,
+    });
+  }
+
   const sql = buildYieldMonitorTriggersV3Sql(parsed.whereSql);
   const binds: BindParameters = { ...parsed.binds, lim: limit };
 
@@ -695,6 +854,119 @@ apiRouter.get("/yield-monitor-triggers/v3", async (req, res) => {
       filters: { ...parsed.applied, limit },
       count: rows.length,
       rows,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return sendAgentError(
+      res,
+      500,
+      "ORACLE_QUERY_FAILED",
+      "Oracle query failed",
+      enrichOracleDriverDetail(message)
+    );
+  }
+});
+
+/**
+ * **v3 产量聚合**：与 **`/yield-monitor-triggers/v3`** 相同 **WHERE**。**Dummy 开启**时在 **delta-diff** 内存行上 `COUNT`+`GROUP BY`；否则 Oracle。
+ */
+apiRouter.get("/yield-monitor-triggers/v3/aggregate", async (req, res) => {
+  const parsed = parseYieldMonitorTriggerV3AggregateQuery(
+    req.query as Record<string, unknown>
+  );
+  if (!parsed.ok) {
+    return sendAgentError(
+      res,
+      400,
+      "VALIDATION_ERROR",
+      parsed.error,
+      "See GET /api/v1/manifest yield-monitor-triggers/v3/aggregate."
+    );
+  }
+
+  if (yieldMonitorTriggersUseDummy()) {
+    const { totalRowsMatching, groups } = aggregateYieldMonitorV3DummyRows(
+      parsed.applied,
+      parsed.dimensions,
+      parsed.groupTop
+    );
+    return res.json({
+      meta: {
+        apiVersion: "3",
+        requestId: reqId(req),
+        aggregatePath: "yield-monitor-triggers/v3/aggregate",
+      },
+      documentation: YIELD_MONITOR_V3_AGGREGATE_DOCUMENTATION,
+      dimensions: parsed.dimensions,
+      groupTop: parsed.groupTop,
+      orderBy: "COUNT(*) DESC NULLS LAST",
+      filters: parsed.applied,
+      totalRowsMatching,
+      groups,
+    });
+  }
+
+  const aggSql = buildYieldMonitorTriggerV3AggregateSql(
+    parsed.whereSql,
+    parsed.dimensions
+  );
+  const totalSql = buildYieldMonitorTriggerV3AggregateTotalSql(parsed.whereSql);
+  const bindAgg: BindParameters = {
+    ...parsed.binds,
+    agg_lim: parsed.groupTop,
+  };
+
+  try {
+    const [aggRows, countRows] = await withProbeWebConnection(async (conn) => {
+      const aggResult = await conn.execute(aggSql, bindAgg, {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+      });
+      const countResult = await conn.execute(totalSql, parsed.binds, {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+      });
+      return [aggResult.rows || [], countResult.rows || []] as const;
+    });
+
+    const totalObj =
+      (countRows[0] as Record<string, unknown> | undefined) ?? {};
+    const totalRaw =
+      totalObj.TOTAL_MATCHING ?? totalObj.total_matching ?? totalObj.TOTAL;
+    const totalRowsMatching =
+      totalRaw != null && totalRaw !== "" ? Number(totalRaw) : 0;
+
+    const groups = (aggRows as Record<string, unknown>[])
+      .filter((row) => {
+        const cntRaw = row.CNT ?? row.cnt;
+        return cntRaw != null && cntRaw !== "";
+      })
+      .map((row) => {
+        const keyRaw = row.GRP_KEY ?? row.grp_key;
+        const cntRaw = row.CNT ?? row.cnt;
+        const keyStr = keyRaw == null ? "" : String(keyRaw);
+        const n = Number(cntRaw);
+        return {
+          key: keyStr,
+          count: Number.isFinite(n) ? n : 0,
+          parts: buildYieldMonitorV3AggregateGroupParts(
+            parsed.dimensions,
+            keyStr
+          ),
+        };
+      });
+
+    return res.json({
+      meta: {
+        apiVersion: "3",
+        requestId: reqId(req),
+        aggregatePath: "yield-monitor-triggers/v3/aggregate",
+      },
+      documentation: YIELD_MONITOR_V3_AGGREGATE_DOCUMENTATION,
+      dimensions: parsed.dimensions,
+      groupTop: parsed.groupTop,
+      orderBy: "COUNT(*) DESC NULLS LAST",
+      filters: parsed.applied,
+      totalRowsMatching,
+      groups,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);

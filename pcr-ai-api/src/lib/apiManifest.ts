@@ -10,7 +10,7 @@ export const apiManifest = {
   apiVersion: "1",
   title: "pcr-ai-api",
   description:
-    "Read-only Oracle-backed HTTP API for PCR workflows. All query keys are case-insensitive. v3 list routes (infcontrol-layer-bins/v3, yield-monitor-triggers/v3) use fixed SQL and always hit Oracle (dummy env flags are ignored). deprecatedEndpoints lists routes removed from the router (yield-monitor-triggers/aggregate only).",
+    "Read-only Oracle-backed HTTP API for PCR workflows. All query keys are case-insensitive. v3 routes use fixed SQL; when dummy env flags are set and the process is not dist/production (see listDummyRuntime.ts), v3 list and v3 aggregate use in-memory Excel samples like v1/v2; otherwise v3 hits Oracle. v3 aggregate GROUP BY is documented in manifest purpose + JSON documentation field. deprecatedEndpoints lists routes removed from the router (yield-monitor-triggers/aggregate only).",
   mediaType: "application/json",
   endpoints: [
     {
@@ -349,7 +349,7 @@ export const apiManifest = {
       path: "/api/v1/infcontrol-layer-bins/v3",
       method: "GET",
       purpose:
-        "INFCONTROL t1 INNER JOIN INFLAYERBINLIST t2 ON KEYNUMBER, WHERE PASSTYPE='TEST' plus optional AND filters (case-insensitive TRIM equality on device, lot, meslot, testerId, tstype, cardId via UPPER(TRIM(col))=UPPER(:bind); exact match on slot, passId; TESTSTART/TESTEND windows), then ORDER BY TESTEND DESC NULLS LAST, SLOT, PASSID, PASSNUM, FETCH FIRST :lim ROWS ONLY. Always main Oracle pool (INFCONTROL_LAYER_BINS_DUMMY ignored). Row shape matches infcontrol-layer-bins/v2. Query keys are case-insensitive (including limit).",
+        "INFCONTROL t1 INNER JOIN INFLAYERBINLIST t2 ON KEYNUMBER, WHERE PASSTYPE='TEST' plus optional AND filters (case-insensitive TRIM equality on device, lot, meslot, testerId, tstype, cardId via UPPER(TRIM(col))=UPPER(:bind); exact match on slot, passId; TESTSTART/TESTEND windows), then ORDER BY TESTEND DESC NULLS LAST, SLOT, PASSID, PASSNUM, FETCH FIRST :lim ROWS ONLY. When INFCONTROL_LAYER_BINS_DUMMY is true and the process is not dist/production, serves rows from docs/JBStart.xlsx in memory (listDummyRuntime); otherwise main Oracle pool. Row shape matches infcontrol-layer-bins/v2. Query keys are case-insensitive (including limit).",
       queryParameters: [
         {
           name: "limit",
@@ -427,10 +427,99 @@ export const apiManifest = {
         "/api/v1/infcontrol-layer-bins/v3?device=WB10N57U&lot=NF12615.1X&testEndBegin=2026-05-13T00:00:00.000Z&testEndEnd=2026-05-13T23:59:59.999Z&limit=200",
     },
     {
+      path: "/api/v1/infcontrol-layer-bins/v3/aggregate",
+      method: "GET",
+      purpose:
+        "v3 infcontrol BIN aggregate: same filter semantics as GET /infcontrol-layer-bins/v3 (PASSTYPE=TEST on INFLAYERBINLIST plus v3 AND filters; UPPER(TRIM) string equality). Over ALL matching joined rows (not capped by list limit), UNPIVOT BIN0…BIN255 and SUM per groupBy dimensions; same BIN1/PASSBIN edge rules as GET /infcontrol-layer-bins/aggregate. Returns top groupTop groups by SUM (default 10, max 50). When INFCONTROL_LAYER_BINS_DUMMY is true and not dist/production, uses JBStart.xlsx in-memory rows; else main Oracle. Response includes documentation (Chinese). Requires groupBy with exactly one bin (same rules as v1 aggregate).",
+      queryParameters: [
+        {
+          name: "groupBy",
+          type: "string",
+          optional: true,
+          note:
+            'Default bin if omitted. Comma-separated; must include "bin" once (max 8 dims). Same tokens as /infcontrol-layer-bins/aggregate.',
+        },
+        {
+          name: "groupTop",
+          type: "number",
+          optional: true,
+          note: "default 10, max 50",
+        },
+        { name: "device", type: "string", optional: true },
+        { name: "lot", type: "string", optional: true },
+        { name: "slot", type: "number", optional: true },
+        { name: "meslot", type: "string", optional: true },
+        { name: "testerId", type: "string", optional: true },
+        { name: "tstype", type: "string", optional: true },
+        { name: "cardId", type: "string", optional: true },
+        { name: "passId", type: "number", optional: true },
+        {
+          name: "testStartBegin",
+          type: "datetime",
+          optional: true,
+          note: "ISO 8601; t2.TESTSTART >= (alias testStartFrom)",
+        },
+        {
+          name: "testStartEnd",
+          type: "datetime",
+          optional: true,
+          note: "ISO 8601; t2.TESTSTART <= (alias testStartTo)",
+        },
+        {
+          name: "testStartFrom",
+          type: "datetime",
+          optional: true,
+          note: "Alias for testStartBegin",
+        },
+        {
+          name: "testStartTo",
+          type: "datetime",
+          optional: true,
+          note: "Alias for testStartEnd",
+        },
+        {
+          name: "testEndBegin",
+          type: "datetime",
+          optional: true,
+          note: "ISO 8601; t2.TESTEND >= (alias testEndFrom)",
+        },
+        {
+          name: "testEndEnd",
+          type: "datetime",
+          optional: true,
+          note: "ISO 8601; t2.TESTEND <= (alias testEndTo)",
+        },
+        {
+          name: "testEndFrom",
+          type: "datetime",
+          optional: true,
+          note: "Alias for testEndBegin",
+        },
+        {
+          name: "testEndTo",
+          type: "datetime",
+          optional: true,
+          note: "Alias for testEndEnd",
+        },
+      ],
+      responseShape: {
+        meta: "{ apiVersion: '3', requestId, aggregatePath }",
+        documentation: "string (fixed Chinese explanation: full population vs v3 list limit)",
+        groupBy: "string[]",
+        groupTop: "number",
+        orderBy: "string",
+        filters: "object",
+        totalRowsMatching: "number",
+        groups: "array of { key, count (SUM), parts }",
+      },
+      example:
+        "/api/v1/infcontrol-layer-bins/v3/aggregate?device=WB10N57U&testEndBegin=2026-05-13T00:00:00.000Z&testEndEnd=2026-05-13T23:59:59.999Z&groupBy=bin&groupTop=10",
+    },
+    {
       path: "/api/v1/yield-monitor-triggers/v3",
       method: "GET",
       purpose:
-        "SELECT * FROM YMWEB_YIELDMONITORTRIGGER with optional AND filters (case-insensitive TRIM on string columns: HOSTNAME, DEVICE, LOTID, WAFER, TYPE, PROBECARD; exact PASS; TIME_STAMP window), then ORDER BY TIME_STAMP DESC NULLS LAST FETCH FIRST :lim ROWS ONLY. Always probeweb pool (YIELD_MONITOR_TRIGGERS_DUMMY ignored). Query keys are case-insensitive (including limit).",
+        "SELECT * FROM YMWEB_YIELDMONITORTRIGGER with optional AND filters (case-insensitive TRIM on string columns: HOSTNAME, DEVICE, LOTID, WAFER, TYPE, PROBECARD; exact PASS; TIME_STAMP window), then ORDER BY TIME_STAMP DESC NULLS LAST FETCH FIRST :lim ROWS ONLY. When YIELD_MONITOR_TRIGGERS_DUMMY is true and not dist/production, serves rows from docs/delta-diff.xlsx in memory; else probeweb Oracle. Query keys are case-insensitive (including limit).",
       queryParameters: [
         {
           name: "limit",
@@ -481,6 +570,70 @@ export const apiManifest = {
       },
       example:
         "/api/v1/yield-monitor-triggers/v3?device=WA03P02G&timeStampBegin=2026-05-13T00:00:00.000Z&timeStampEnd=2026-05-13T23:59:59.999Z&limit=200",
+    },
+    {
+      path: "/api/v1/yield-monitor-triggers/v3/aggregate",
+      method: "GET",
+      purpose:
+        "v3 yield aggregate: same WHERE as GET /yield-monitor-triggers/v3 (UPPER(TRIM) on string columns; TIME_STAMP window; etc.). Over ALL matching rows (not limited to FETCH FIRST list cap), COUNT(*) GROUP BY requested dimensions, order by count DESC, return top groupTop groups (default 25, max 100). Required query parameter dimensions: comma-separated from type, device, hostname, lotId, wafer, probeCard, pass, triggerLabel, timeDay, timeHour (max 5 dims; timeDay and timeHour mutually exclusive). When YIELD_MONITOR_TRIGGERS_DUMMY is true and not dist/production, uses delta-diff.xlsx in-memory rows; else probeweb Oracle. JSON documentation field explains difference vs v3 list.",
+      queryParameters: [
+        {
+          name: "dimensions",
+          type: "string",
+          optional: false,
+          note:
+            "Required. Comma-separated: type, device, hostname, lotId, wafer, probeCard, pass, triggerLabel, timeDay, timeHour (max 5). Cannot combine timeDay+timeHour.",
+        },
+        {
+          name: "groupTop",
+          type: "number",
+          optional: true,
+          note: "max groups returned; default 25, max 100",
+        },
+        { name: "hostname", type: "string", optional: true },
+        { name: "device", type: "string", optional: true },
+        { name: "lotId", type: "string", optional: true },
+        { name: "pass", type: "number", optional: true },
+        { name: "wafer", type: "string", optional: true },
+        { name: "type", type: "string", optional: true },
+        { name: "probeCard", type: "string", optional: true },
+        {
+          name: "timeStampBegin",
+          type: "datetime",
+          optional: true,
+          note: "ISO 8601; TIME_STAMP >= (alias timeStampFrom)",
+        },
+        {
+          name: "timeStampEnd",
+          type: "datetime",
+          optional: true,
+          note: "ISO 8601; TIME_STAMP <= (alias timeStampTo)",
+        },
+        {
+          name: "timeStampFrom",
+          type: "datetime",
+          optional: true,
+          note: "Alias for timeStampBegin",
+        },
+        {
+          name: "timeStampTo",
+          type: "datetime",
+          optional: true,
+          note: "Alias for timeStampEnd",
+        },
+      ],
+      responseShape: {
+        meta: "{ apiVersion: '3', requestId, aggregatePath }",
+        documentation: "string (fixed Chinese explanation)",
+        dimensions: "string[] (normalized)",
+        groupTop: "number",
+        orderBy: "string",
+        filters: "object",
+        totalRowsMatching: "number",
+        groups: "array of { key, count (row count per group), parts }",
+      },
+      example:
+        "/api/v1/yield-monitor-triggers/v3/aggregate?dimensions=type,device&timeStampBegin=2026-05-13T00:00:00.000Z&timeStampEnd=2026-05-13T23:59:59.999Z&groupTop=20",
     },
     {
       path: "/api/v1/db/ping",

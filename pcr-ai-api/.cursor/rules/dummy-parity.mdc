@@ -13,4 +13,10 @@ alwaysApply: true
 
 - 禁止只改一侧留下漂移；改完应自检两条路径对 **同一组 `filters` / 查询参数** 的行为是否仍一致。
 
-说明：**`/yield-monitor-triggers/aggregate`** 已从路由关闭；**`/infcontrol-layer-bins/aggregate`** 已恢复，须与 `infcontrolLayerBinAggregate.ts`、`aggregateInfcontrolLayerBinDummyRows` 保持 **Oracle ↔ dummy** 同步。
+- **任何业务逻辑调整**（查询参数解析、WHERE 条件含义、排序、limit、响应字段形状、边界行为等）必须 **同时修改两处**：
+  1. **正式环境**：`parse*Query`、`build*Sql`、`api.ts` 中的真实查询路径等。
+  2. **Dummy 环境**：对应的 `*Dummy.ts` 中的筛选/排序/截断逻辑及（如有）样本数据结构。
+
+- 禁止只改一侧留下漂移；改完应自检两条路径对 **同一组 `filters` / 查询参数** 的行为是否仍一致。
+
+说明：**`/yield-monitor-triggers/aggregate`** 已从路由关闭；**`/infcontrol-layer-bins/aggregate`** 已恢复。**v3** 列表与 **v3 aggregate**（`/infcontrol-layer-bins/v3*`、`/yield-monitor-triggers/v3*`）在 Dummy 开启且非 `dist`/production 时，须与 **`filterInfcontrolLayerBinV3DummyRows*`**、**`aggregateInfcontrolLayerBinV3DummyRows`**、**`filterYieldMonitorDummyRowsV3`**、**`aggregateYieldMonitorV3DummyRows`** 保持与 Oracle 路径一致。

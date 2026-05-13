@@ -253,16 +253,23 @@ export function buildInfcontrolBinUnpivotInList(): string {
   return parts.join(",\n          ");
 }
 
+export type ParseInfcontrolLayerBinAggregateGroupSpecFail = {
+  ok: false;
+  error: string;
+};
+export type ParseInfcontrolLayerBinAggregateGroupSpecOk = {
+  ok: true;
+  groupBy: InfcontrolLayerBinGroupBy[];
+  groupTop: number;
+};
+
 /**
- * 与列表接口相同的筛选；**groupBy** 可选，省略时视为 **`bin`**（按 BIN0…BIN255 合计取 Top）；
- * 若传入则须**恰好含一个 `bin`**（可与 device、lot、slot、tstype、cardId 等复合）。可选 **groupTop**（默认 10，最大 50）。
- * 聚合指标为各组内 **SUM(BIN 列数值)**（先 UNPIVOT 再 SUM），取 SUM 最大的 Top groupTop 组。
+ * 仅解析 **groupBy** / **groupTop**（与 v1 `/aggregate` 及 **v3 aggregate** 共用规则）。
  */
-export function parseInfcontrolLayerBinAggregateQuery(
+export function parseInfcontrolLayerBinAggregateGroupSpec(
   q: Record<string, unknown>
-): ParseFail | ParseOk {
+): ParseInfcontrolLayerBinAggregateGroupSpecFail | ParseInfcontrolLayerBinAggregateGroupSpecOk {
   const groupRaw = firstString(firstQueryValue(q, "groupBy"));
-  /** 未传或空串时默认只按 BIN 列排名（最常见：先筛 device/lot/slot/tstype/cardId/testEnd… 再取 bin Top N） */
   const rawForTokens = groupRaw ?? "bin";
 
   const tokens = rawForTokens
@@ -313,6 +320,23 @@ export function parseInfcontrolLayerBinAggregateQuery(
     }
     groupTop = Math.min(n, INFCONTROL_LAYER_BIN_AGGREGATE_MAX_TOP);
   }
+
+  return { ok: true, groupBy, groupTop };
+}
+
+/**
+ * 与列表接口相同的筛选；**groupBy** 可选，省略时视为 **`bin`**（按 BIN0…BIN255 合计取 Top）；
+ * 若传入则须**恰好含一个 `bin`**（可与 device、lot、slot、tstype、cardId 等复合）。可选 **groupTop**（默认 10，最大 50）。
+ * 聚合指标为各组内 **SUM(BIN 列数值)**（先 UNPIVOT 再 SUM），取 SUM 最大的 Top groupTop 组。
+ */
+export function parseInfcontrolLayerBinAggregateQuery(
+  q: Record<string, unknown>
+): ParseFail | ParseOk {
+  const gs = parseInfcontrolLayerBinAggregateGroupSpec(q);
+  if (!gs.ok) {
+    return gs;
+  }
+  const { groupBy, groupTop } = gs;
 
   const base = parseInfcontrolLayerBinQuery(q);
   if (!base.ok) {

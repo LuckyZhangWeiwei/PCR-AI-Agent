@@ -3,6 +3,7 @@ import {
   YIELD_MONITOR_AGGREGATE_KEY_SEP,
 } from "./yieldMonitorTriggerAggregate.js";
 import { YIELD_MONITOR_TRIGGER_TOP } from "./yieldMonitorTriggerFilters.js";
+import type { YieldMonitorV3AggDim } from "./yieldMonitorTriggerV3Aggregate.js";
 import { loadYieldMonitorTriggerRowsFromDeltaDiffXlsx } from "./dummyRowsFromExcel.js";
 import { listApisForceOracleNoDummy } from "./listDummyRuntime.js";
 
@@ -225,6 +226,141 @@ export function aggregateYieldMonitorDummyRows(
       parts[d] = valueForDimension(row, d);
     }
     const key = groupBy.map((d) => parts[d]).join(YIELD_MONITOR_AGGREGATE_KEY_SEP);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+    if (!firstParts.has(key)) {
+      firstParts.set(key, parts);
+    }
+  }
+
+  const groups = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, groupTop)
+    .map(([key, count]) => ({
+      key,
+      count,
+      parts: firstParts.get(key) ?? {},
+    }));
+
+  return { totalRowsMatching: rows.length, groups };
+}
+
+function valueForYieldV3Dimension(
+  row: YieldMonitorTriggerDummyRow,
+  d: YieldMonitorV3AggDim
+): string {
+  switch (d) {
+    case "hostname":
+      return row.HOSTNAME;
+    case "device":
+      return row.DEVICE;
+    case "lotId":
+      return row.LOTID;
+    case "wafer":
+      return row.WAFER;
+    case "type":
+      return row.TYPE;
+    case "probeCard":
+      return row.PROBECARD;
+    case "pass":
+      return String(row.PASS);
+    case "triggerLabel":
+      return row.TRIGGER_LABEL;
+    case "timeDay": {
+      const t = new Date(row.TIME_STAMP).getTime();
+      if (Number.isNaN(t)) return "";
+      const d0 = new Date(t);
+      d0.setUTCHours(0, 0, 0, 0);
+      return d0.toISOString().replace("T", " ").slice(0, 19);
+    }
+    case "timeHour": {
+      const t = new Date(row.TIME_STAMP).getTime();
+      if (Number.isNaN(t)) return "";
+      const h = new Date(t);
+      h.setUTCMinutes(0, 0, 0);
+      return h.toISOString().replace("T", " ").slice(0, 19);
+    }
+    default: {
+      const _e: never = d;
+      return _e;
+    }
+  }
+}
+
+/** 与 v3 Oracle **`UPPER(TRIM)`** 及 **`timeStampBegin`/`End`** 别名一致（Dummy 用 trim + toUpperCase）。 */
+export function filterYieldMonitorDummyRowsMatchingV3(
+  applied: Record<string, unknown>
+): YieldMonitorTriggerDummyRow[] {
+  let rows = [...getYieldMonitorTriggerDummyRowsInternal()];
+
+  const ci = (param: keyof YieldMonitorTriggerDummyRow, key: string) => {
+    const v = applied[key];
+    if (v === undefined) return;
+    const want = String(v).trim().toUpperCase();
+    rows = rows.filter(
+      (r) => String(r[param]).trim().toUpperCase() === want
+    );
+  };
+
+  ci("HOSTNAME", "hostname");
+  ci("DEVICE", "device");
+  ci("LOTID", "lotId");
+  ci("WAFER", "wafer");
+  ci("TYPE", "type");
+  ci("PROBECARD", "probeCard");
+
+  if (applied.pass !== undefined) {
+    const n = Number(applied.pass);
+    rows = rows.filter((r) => r.PASS === n);
+  }
+
+  const tsLo = applied.timeStampBegin ?? applied.timeStampFrom;
+  const tsHi = applied.timeStampEnd ?? applied.timeStampTo;
+  if (tsLo !== undefined) {
+    const from = new Date(String(tsLo)).getTime();
+    rows = rows.filter((r) => new Date(r.TIME_STAMP).getTime() >= from);
+  }
+  if (tsHi !== undefined) {
+    const to = new Date(String(tsHi)).getTime();
+    rows = rows.filter((r) => new Date(r.TIME_STAMP).getTime() <= to);
+  }
+
+  return rows;
+}
+
+/** v3 列表 Dummy：按 **`TIME_STAMP`** 降序后截断 **`limit`**（上限 500，与路由 clamp 一致）。 */
+export function filterYieldMonitorDummyRowsV3(
+  applied: Record<string, unknown>,
+  limit: number
+): YieldMonitorTriggerDummyRow[] {
+  const rows = filterYieldMonitorDummyRowsMatchingV3(applied);
+  rows.sort(
+    (a, b) =>
+      new Date(b.TIME_STAMP).getTime() - new Date(a.TIME_STAMP).getTime()
+  );
+  const cap =
+    Number.isFinite(limit) && limit >= 1 ? Math.floor(limit) : 200;
+  const maxCap = Math.min(cap, 500);
+  return rows.slice(0, maxCap);
+}
+
+/** v3 产量聚合 Dummy：与 **`/yield-monitor-triggers/v3/aggregate`** Oracle 语义一致（`COUNT(*)` + 维度 bucket）。 */
+export function aggregateYieldMonitorV3DummyRows(
+  applied: Record<string, unknown>,
+  dimensions: YieldMonitorV3AggDim[],
+  groupTop: number
+): { totalRowsMatching: number; groups: YieldMonitorDummyAggregateGroup[] } {
+  const rows = filterYieldMonitorDummyRowsMatchingV3(applied);
+  const counts = new Map<string, number>();
+  const firstParts = new Map<string, Record<string, string>>();
+
+  for (const row of rows) {
+    const parts: Record<string, string> = {};
+    for (const d of dimensions) {
+      parts[d] = valueForYieldV3Dimension(row, d);
+    }
+    const key = dimensions
+      .map((d) => parts[d] ?? "")
+      .join(YIELD_MONITOR_AGGREGATE_KEY_SEP);
     counts.set(key, (counts.get(key) ?? 0) + 1);
     if (!firstParts.has(key)) {
       firstParts.set(key, parts);

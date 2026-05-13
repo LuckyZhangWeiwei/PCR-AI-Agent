@@ -418,3 +418,133 @@ export function aggregateInfcontrolLayerBinDummyRows(
 
   return { totalRowsMatching: rows.length, groups };
 }
+
+/** v3：与 `parseInfcontrolLayerBinsV3Query` 的 applied 键一致；**PASSTYPE=TEST**；字符串等价 Oracle **`UPPER(TRIM)`**（Dummy 内用 trim + toUpperCase）。 */
+export function filterInfcontrolLayerBinV3DummyRowsMatching(
+  applied: Record<string, unknown>
+): InfcontrolLayerBinDummyRow[] {
+  let rows = [...getInfcontrolLayerBinDummyRowsInternal()].filter(
+    (r) => String(r.PASSTYPE).trim().toUpperCase() === "TEST"
+  );
+
+  const ci = (col: string, param: string) => {
+    const v = applied[param];
+    if (v === undefined) return;
+    const want = String(v).trim().toUpperCase();
+    rows = rows.filter((r) => String(r[col]).trim().toUpperCase() === want);
+  };
+
+  ci("DEVICE", "device");
+  ci("LOT", "lot");
+  ci("MESLOT", "meslot");
+  ci("TESTERID", "testerId");
+  ci("TSTYPE", "tstype");
+  ci("CARDID", "cardId");
+
+  if (applied.slot !== undefined) {
+    const n = Number(applied.slot);
+    rows = rows.filter((r) => Number(r.SLOT) === n);
+  }
+  if (applied.passId !== undefined) {
+    const n = Number(applied.passId);
+    rows = rows.filter((r) => Number(r.PASSID) === n);
+  }
+
+  const tsLo = applied.testStartBegin ?? applied.testStartFrom;
+  const tsHi = applied.testStartEnd ?? applied.testStartTo;
+  if (tsLo !== undefined) {
+    const from = new Date(String(tsLo)).getTime();
+    rows = rows.filter(
+      (r) => new Date(String(r.TESTSTART)).getTime() >= from
+    );
+  }
+  if (tsHi !== undefined) {
+    const to = new Date(String(tsHi)).getTime();
+    rows = rows.filter((r) => new Date(String(r.TESTSTART)).getTime() <= to);
+  }
+
+  const teLo = applied.testEndBegin ?? applied.testEndFrom;
+  const teHi = applied.testEndEnd ?? applied.testEndTo;
+  if (teLo !== undefined) {
+    const from = new Date(String(teLo)).getTime();
+    rows = rows.filter((r) => new Date(String(r.TESTEND)).getTime() >= from);
+  }
+  if (teHi !== undefined) {
+    const to = new Date(String(teHi)).getTime();
+    rows = rows.filter((r) => new Date(String(r.TESTEND)).getTime() <= to);
+  }
+
+  return rows;
+}
+
+/** v3 列表 Dummy：排序与 Oracle v3 列表一致，再 **`limit`** 截断。 */
+export function filterInfcontrolLayerBinV3DummyRows(
+  applied: Record<string, unknown>,
+  limit: number
+): InfcontrolLayerBinDummyRow[] {
+  let rows = filterInfcontrolLayerBinV3DummyRowsMatching(applied);
+  rows.sort((a, b) => {
+    const tb = new Date(String(b.TESTEND)).getTime();
+    const ta = new Date(String(a.TESTEND)).getTime();
+    if (tb !== ta) return tb - ta;
+    if (Number(b.SLOT) !== Number(a.SLOT)) return Number(b.SLOT) - Number(a.SLOT);
+    if (Number(b.PASSID) !== Number(a.PASSID))
+      return Number(b.PASSID) - Number(a.PASSID);
+    return Number(b.PASSNUM) - Number(a.PASSNUM);
+  });
+  const cap =
+    Number.isFinite(limit) && limit >= 1 ? Math.floor(limit) : INFCONTROL_LAYER_BIN_TOP;
+  return rows.slice(0, cap);
+}
+
+/** v3 聚合 Dummy：在 v3 匹配行上做与 Oracle 相同的 UNPIVOT+SUM 语义（复用 `binColumnIndexIsGood`）。 */
+export function aggregateInfcontrolLayerBinV3DummyRows(
+  applied: Record<string, unknown>,
+  groupBy: InfcontrolLayerBinGroupBy[],
+  groupTop: number
+): {
+  totalRowsMatching: number;
+  groups: InfcontrolLayerBinDummyAggregateGroup[];
+} {
+  const rows = filterInfcontrolLayerBinV3DummyRowsMatching(applied);
+  const sums = new Map<string, number>();
+  const firstParts = new Map<string, Record<string, string>>();
+
+  for (const row of rows) {
+    for (let binIdx = 0; binIdx < 256; binIdx++) {
+      if (binIdx === 1) continue;
+      if (binColumnIndexIsGood(row.PASSBIN, binIdx)) continue;
+      const rawVal = row[`BIN${binIdx}`];
+      if (rawVal == null || rawVal === "") continue;
+      const add = Number(rawVal);
+      if (!Number.isFinite(add)) continue;
+
+      const parts: Record<string, string> = {};
+      for (const d of groupBy) {
+        if (d === "bin") {
+          parts[d] = String(binIdx);
+        } else {
+          parts[d] = valueForInfcontrolDimension(row, d);
+        }
+      }
+      const key = groupBy
+        .map((d) => parts[d])
+        .join(INFCONTROL_LAYER_BIN_AGGREGATE_KEY_SEP);
+      sums.set(key, (sums.get(key) ?? 0) + add);
+      if (!firstParts.has(key)) {
+        firstParts.set(key, parts);
+      }
+    }
+  }
+
+  const groups = [...sums.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, groupTop)
+    .map(([key, count]) => ({
+      key,
+      count,
+      parts: firstParts.get(key) ?? {},
+    }));
+
+  return { totalRowsMatching: rows.length, groups };
+}
