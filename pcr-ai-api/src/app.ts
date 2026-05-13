@@ -1,5 +1,7 @@
 import cors from "cors";
 import express, { type ErrorRequestHandler } from "express";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { sendAgentError } from "./lib/agentResponse.js";
 import { requestIdMiddleware } from "./middleware/requestId.js";
 import { apiRouter } from "./routes/api.js";
@@ -34,6 +36,14 @@ export function createApp() {
   app.use("/api/v1", apiRouter);
   /** Same router as **`/api/v1`**; **`/api/v3/manifest`** returns v3-focused paths (no `/api/v1` in catalog URLs). */
   app.use("/api/v3", apiRouter);
+
+  const publicDir = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "public"
+  );
+  /** 本地 v3 联调页：`public/v3-api-tester.html` → `GET /v3-api-tester.html` */
+  app.use(express.static(publicDir));
 
   app.use((req, res) => {
     sendAgentError(res, 404, "NOT_FOUND", "Not Found", req.path);

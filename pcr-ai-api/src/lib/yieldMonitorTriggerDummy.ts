@@ -257,8 +257,6 @@ function valueForYieldV3Dimension(
       return row.LOTID;
     case "wafer":
       return row.WAFER;
-    case "type":
-      return row.TYPE;
     case "probeCard":
       return row.PROBECARD;
     case "pass":
@@ -305,7 +303,6 @@ export function filterYieldMonitorDummyRowsMatchingV3(
   ci("DEVICE", "device");
   ci("LOTID", "lotId");
   ci("WAFER", "wafer");
-  ci("TYPE", "type");
   ci("PROBECARD", "probeCard");
 
   if (applied.pass !== undefined) {

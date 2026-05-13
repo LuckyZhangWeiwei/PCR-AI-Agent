@@ -348,6 +348,8 @@ function valueForInfcontrolDimension(
       return String(row.PIBID);
     case "probe":
       return String(row.PROBE);
+    case "probeCard":
+      return String(row.PROBE);
     case "layerName":
       return String(row.LAYERNAME);
     case "passResume":

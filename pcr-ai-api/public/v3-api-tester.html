@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>pcr-ai-api · v3 端点联调</title>
+    <style>
+      :root {
+        --bg: #0f1419;
+        --panel: #1a2332;
+        --border: #2d3a4d;
+        --text: #e6edf3;
+        --muted: #8b9cb3;
+        --accent: #58a6ff;
+        --ok: #3fb950;
+        --warn: #d29922;
+        --err: #f85149;
+        --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.45;
+        min-height: 100vh;
+      }
+      header {
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid var(--border);
+        background: var(--panel);
+      }
+      header h1 {
+        margin: 0 0 0.35rem;
+        font-size: 1.15rem;
+        font-weight: 600;
+      }
+      header p {
+        margin: 0;
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+      main {
+        padding: 1rem 1.25rem 2rem;
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 1rem;
+        align-items: center;
+        margin-bottom: 0.75rem;
+      }
+      label {
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+      input[type="text"] {
+        flex: 1;
+        min-width: 200px;
+        padding: 0.45rem 0.6rem;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: 0.8rem;
+      }
+      button {
+        cursor: pointer;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        color: var(--text);
+        padding: 0.45rem 0.85rem;
+        border-radius: 6px;
+        font-size: 0.85rem;
+      }
+      button:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      button.primary {
+        background: #1f6feb;
+        border-color: #1f6feb;
+        color: #fff;
+      }
+      button.primary:hover {
+        filter: brightness(1.08);
+        color: #fff;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+      .grid {
+        display: grid;
+        gap: 0.6rem;
+        margin-top: 1rem;
+      }
+      .card {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 0.65rem 0.85rem;
+        background: var(--panel);
+      }
+      .card h3 {
+        margin: 0 0 0.35rem;
+        font-size: 0.9rem;
+        font-weight: 600;
+      }
+      .card .purpose {
+        font-size: 0.75rem;
+        color: var(--muted);
+        margin-bottom: 0.45rem;
+      }
+      .card .url {
+        width: 100%;
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        padding: 0.4rem;
+        border-radius: 4px;
+        border: 1px solid var(--border);
+        background: var(--bg);
+        color: var(--accent);
+        margin-bottom: 0.4rem;
+      }
+      .card .actions {
+        display: flex;
+        gap: 0.4rem;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .card-response {
+        margin-top: 0.55rem;
+        padding-top: 0.55rem;
+        border-top: 1px solid var(--border);
+      }
+      .card-response .resp-head {
+        font-size: 0.72rem;
+        color: var(--muted);
+        margin-bottom: 0.3rem;
+      }
+      .card-response pre.resp-body {
+        margin: 0;
+        max-height: 320px;
+        overflow: auto;
+        padding: 0.45rem 0.5rem;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: var(--bg);
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        white-space: pre-wrap;
+        word-break: break-word;
+        color: var(--text);
+      }
+      .badge {
+        font-size: 0.72rem;
+        padding: 0.15rem 0.45rem;
+        border-radius: 999px;
+        font-family: var(--mono);
+      }
+      .badge.ok {
+        background: rgba(63, 185, 80, 0.2);
+        color: var(--ok);
+      }
+      .badge.err {
+        background: rgba(248, 81, 73, 0.2);
+        color: var(--err);
+      }
+      .badge.pending {
+        background: rgba(210, 153, 34, 0.2);
+        color: var(--warn);
+      }
+      #out {
+        margin-top: 1.25rem;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 0.75rem;
+        background: var(--panel);
+        max-height: 420px;
+        overflow: auto;
+      }
+      #out pre {
+        margin: 0;
+        font-family: var(--mono);
+        font-size: 0.75rem;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      #log {
+        margin-top: 0.75rem;
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        color: var(--muted);
+        max-height: 120px;
+        overflow: auto;
+      }
+      .section-title {
+        margin: 1.25rem 0 0.5rem;
+        font-size: 0.85rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>pcr-ai-api · v3 联调台</h1>
+      <p>
+        与 API 同源打开本页（默认用当前站点根）。先 <strong>加载 manifest</strong>，再单条运行或
+        <strong>全部运行</strong>。每个接口卡片下方展示<strong>该接口返回的 JSON</strong>（含
+        <code>httpStatus</code>、<code>body</code>）；页面底部为最近一次请求的全局预览。
+      </p>
+    </header>
+    <main>
+      <div class="row">
+        <label for="base">站点根（可选）</label>
+        <input
+          id="base"
+          type="text"
+          placeholder="留空 = 当前页面 origin，例如联调 http://10.192.130.89:30008"
+          autocomplete="off"
+        />
+      </div>
+      <div class="row">
+        <button type="button" class="primary" id="btnLoad">加载 manifest</button>
+        <button type="button" id="btnRunAll">全部运行</button>
+        <button type="button" id="btnClear">清空输出</button>
+      </div>
+
+      <p class="section-title">catalogScope = v3 的端点（来自 manifest）</p>
+      <div id="endpoints" class="grid"></div>
+
+      <p class="section-title">额外（不在 v3 manifest 精简目录内）</p>
+      <div id="extra" class="grid"></div>
+
+      <p class="section-title">最近一次请求（全局预览）</p>
+      <div id="out"><pre id="outPre">（尚未请求）</pre></div>
+      <div id="log"></div>
+    </main>
+
+    <script>
+      (function () {
+        const baseInput = document.getElementById("base");
+        const endpointsEl = document.getElementById("endpoints");
+        const extraEl = document.getElementById("extra");
+        const outPre = document.getElementById("outPre");
+        const logEl = document.getElementById("log");
+        const btnLoad = document.getElementById("btnLoad");
+        const btnRunAll = document.getElementById("btnRunAll");
+        const btnClear = document.getElementById("btnClear");
+
+        /** @type {{ id: string, title: string, purpose: string, href: string, fromManifest: boolean }[]} */
+        let rows = [];
+
+        function siteRoot() {
+          const raw = baseInput.value.trim();
+          if (raw) return raw.replace(/\/$/, "");
+          return window.location.origin;
+        }
+
+        function joinUrl(pathOrUrl) {
+          const p = pathOrUrl.startsWith("/") ? pathOrUrl : "/" + pathOrUrl;
+          return new URL(p, siteRoot() + "/").href;
+        }
+
+        function logLine(msg) {
+          const t = new Date().toISOString().slice(11, 23);
+          logEl.textContent = `[${t}] ${msg}\n` + logEl.textContent;
+        }
+
+        function showJson(obj) {
+          outPre.textContent =
+            typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
+        }
+
+        /** @param {HTMLElement} card */
+        function setCardResponseJson(card, payload) {
+          const pre = card.querySelector("pre.resp-body");
+          if (!pre) return;
+          pre.textContent =
+            typeof payload === "string"
+              ? payload
+              : JSON.stringify(payload, null, 2);
+        }
+
+        async function runFetch(href, label) {
+          logLine(`${label} → GET ${href}`);
+          const r = await fetch(href, { method: "GET" });
+          const text = await r.text();
+          let body;
+          try {
+            body = JSON.parse(text);
+          } catch {
+            body = text;
+          }
+          return { ok: r.ok, status: r.status, body };
+        }
+
+        function render() {
+          endpointsEl.innerHTML = "";
+          extraEl.innerHTML = "";
+          const manifestRows = rows.filter((r) => r.fromManifest);
+          const extraRows = rows.filter((r) => !r.fromManifest);
+          if (!manifestRows.length) {
+            const p = document.createElement("p");
+            p.className = "purpose";
+            p.textContent =
+              "点击「加载 manifest」后，此处会列出 v3 目录中的 GET 端点（含 manifest 自带的 example 查询串）。";
+            endpointsEl.appendChild(p);
+          }
+          for (const r of manifestRows) {
+            appendCard(endpointsEl, r);
+          }
+          for (const r of extraRows) {
+            appendCard(extraEl, r);
+          }
+          if (!extraRows.length) {
+            const p = document.createElement("p");
+            p.className = "purpose";
+            p.textContent = manifestRows.length
+              ? "（无额外端点）"
+              : "加载 manifest 后会追加 table-rows 开发端点。";
+            extraEl.appendChild(p);
+          }
+        }
+
+        function appendCard(wrap, r) {
+          const card = document.createElement("div");
+          card.className = "card";
+          card.dataset.id = r.id;
+          const h = document.createElement("h3");
+          h.textContent = r.title;
+          const pu = document.createElement("div");
+          pu.className = "purpose";
+          pu.textContent = r.purpose || "—";
+          const inp = document.createElement("input");
+          inp.type = "text";
+          inp.className = "url";
+          inp.value = r.href;
+          inp.autocomplete = "off";
+          const actions = document.createElement("div");
+          actions.className = "actions";
+          const go = document.createElement("button");
+          go.type = "button";
+          go.textContent = "运行";
+          const badge = document.createElement("span");
+          badge.className = "badge pending";
+          badge.textContent = "—";
+          badge.dataset.badge = "1";
+          go.addEventListener("click", async () => {
+            badge.className = "badge pending";
+            badge.textContent = "…";
+            go.disabled = true;
+            setCardResponseJson(card, { message: "请求中…" });
+            try {
+              const res = await runFetch(inp.value.trim(), r.title);
+              badge.className = "badge " + (res.ok ? "ok" : "err");
+              badge.textContent = String(res.status);
+              const payload = {
+                requestUrl: inp.value.trim(),
+                httpStatus: res.status,
+                ok: res.ok,
+                body: res.body,
+              };
+              setCardResponseJson(card, payload);
+              showJson(payload);
+            } catch (e) {
+              badge.className = "badge err";
+              badge.textContent = "ERR";
+              const payload = {
+                requestUrl: inp.value.trim(),
+                error: String(e),
+              };
+              setCardResponseJson(card, payload);
+              showJson(payload);
+            } finally {
+              go.disabled = false;
+            }
+          });
+          actions.append(go, badge);
+          const respWrap = document.createElement("div");
+          respWrap.className = "card-response";
+          const rh = document.createElement("div");
+          rh.className = "resp-head";
+          rh.textContent = "响应 JSON（本接口）";
+          const rpre = document.createElement("pre");
+          rpre.className = "resp-body";
+          rpre.textContent = "（尚未请求）";
+          respWrap.append(rh, rpre);
+          card.append(h, pu, inp, actions, respWrap);
+          wrap.appendChild(card);
+        }
+
+        function endpointHref(ep) {
+          if (ep.example && typeof ep.example === "string") return ep.example;
+          return ep.path;
+        }
+
+        btnLoad.addEventListener("click", async () => {
+          btnLoad.disabled = true;
+          rows = [];
+          try {
+            const manUrl = joinUrl("/api/v3/manifest");
+            const res = await runFetch(manUrl, "manifest");
+            const loadPayload = {
+              requestUrl: manUrl,
+              httpStatus: res.status,
+              ok: res.ok,
+              body: res.body,
+            };
+            showJson(loadPayload);
+            if (!res.ok) throw new Error("manifest HTTP " + res.status);
+            const eps = res.body.endpoints || [];
+            let i = 0;
+            for (const ep of eps) {
+              if (ep.method && ep.method !== "GET") continue;
+              const pathOrEx = endpointHref(ep);
+              rows.push({
+                id: "m" + i++,
+                title: ep.path || pathOrEx,
+                purpose: ep.purpose || "",
+                href: joinUrl(pathOrEx),
+                fromManifest: true,
+              });
+            }
+            rows.push({
+              id: "x-table-rows",
+              title: "GET /api/v3/table-rows（开发）",
+              purpose:
+                "需 Oracle 与 ORACLE_DEFAULT_TABLE 或 ?table=；无库时多为 500。",
+              href: joinUrl("/api/v3/table-rows?limit=5"),
+              fromManifest: false,
+            });
+            render();
+            logLine("已加载 " + eps.length + " 条 manifest 端点 + 1 条额外 table-rows");
+          } catch (e) {
+            showJson({ error: String(e) });
+            logLine("加载失败: " + e);
+          } finally {
+            btnLoad.disabled = false;
+          }
+        });
+
+        btnRunAll.addEventListener("click", async () => {
+          if (!rows.length) {
+            alert("请先「加载 manifest」");
+            return;
+          }
+          btnRunAll.disabled = true;
+          const cards = [...document.querySelectorAll(".card")];
+          const summary = [];
+          for (let idx = 0; idx < cards.length; idx++) {
+            const card = cards[idx];
+            const inp = card.querySelector("input.url");
+            const badge = card.querySelector("[data-badge]");
+            const title = card.querySelector("h3")?.textContent || "";
+            const href = inp.value.trim();
+            badge.className = "badge pending";
+            badge.textContent = "…";
+            setCardResponseJson(card, { message: "请求中…" });
+            try {
+              const res = await runFetch(href, title);
+              badge.className = "badge " + (res.ok ? "ok" : "err");
+              badge.textContent = String(res.status);
+              const payload = {
+                requestUrl: href,
+                httpStatus: res.status,
+                ok: res.ok,
+                body: res.body,
+              };
+              setCardResponseJson(card, payload);
+              summary.push({ title, status: res.status, ok: res.ok });
+              showJson({
+                batchIndex: idx + 1,
+                total: cards.length,
+                current: payload,
+              });
+            } catch (e) {
+              badge.className = "badge err";
+              badge.textContent = "ERR";
+              const payload = { requestUrl: href, error: String(e) };
+              setCardResponseJson(card, payload);
+              summary.push({ title, status: "ERR", ok: false, error: String(e) });
+            }
+          }
+          showJson({ batchComplete: true, summary });
+          btnRunAll.disabled = false;
+        });
+
+        btnClear.addEventListener("click", () => {
+          outPre.textContent = "（已清空）";
+          logEl.textContent = "";
+          document.querySelectorAll("pre.resp-body").forEach((el) => {
+            el.textContent = "（尚未请求）";
+          });
+        });
+
+        render();
+      })();
+    </script>
+  </body>
+</html>

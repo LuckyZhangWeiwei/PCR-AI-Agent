@@ -11,6 +11,7 @@ const app = createApp();
 
 app.listen(port, () => {
   console.log(`pcr-ai-api listening on http://localhost:${port}`);
+  console.log(`  v3 联调页: http://localhost:${port}/v3-api-tester.html`);
   const forcedOracle = listApisForceOracleNoDummy();
   console.log(
     `[dummy] yield-monitor-triggers=${yieldMonitorTriggersUseDummy()} (env YIELD_MONITOR_TRIGGERS_DUMMY=${JSON.stringify(process.env.YIELD_MONITOR_TRIGGERS_DUMMY)}; forcedOracle=${forcedOracle})`

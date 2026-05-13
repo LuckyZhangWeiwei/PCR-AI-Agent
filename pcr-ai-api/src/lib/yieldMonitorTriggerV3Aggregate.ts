@@ -14,7 +14,6 @@ export const YIELD_MONITOR_V3_AGG_MAX_TOP = 100;
 export const YIELD_MONITOR_V3_AGG_MAX_DIMENSIONS = 5;
 
 export type YieldMonitorV3AggDim =
-  | "type"
   | "device"
   | "hostname"
   | "lotId"
@@ -57,7 +56,6 @@ function firstString(raw: unknown): string | undefined {
 function parseDimToken(raw: string): YieldMonitorV3AggDim | undefined {
   const t = raw.trim().toLowerCase();
   const map: Record<string, YieldMonitorV3AggDim> = {
-    type: "type",
     device: "device",
     hostname: "hostname",
     lotid: "lotId",
@@ -77,11 +75,6 @@ function dimSql(d: YieldMonitorV3AggDim): {
   grpKeyFrag: string;
 } {
   switch (d) {
-    case "type":
-      return {
-        groupByExpr: 't."TYPE"',
-        grpKeyFrag: 'NVL(t."TYPE", \'\')',
-      };
     case "device":
       return {
         groupByExpr: "t.DEVICE",
@@ -143,7 +136,7 @@ const GRP_SEP = "|";
  * 在**全量匹配行**上做 `COUNT(*)`、`GROUP BY` 指定维度，再按计数降序取 Top **`groupTop`** 组。
  *
  * **必填**：**`dimensions`**（逗号分隔，至少 1 项，至多 5 项），取值：
- * `type`, `device`, `hostname`, `lotId`, `wafer`, `probeCard`, `pass`, `triggerLabel`, `timeDay`, `timeHour`。
+ * `device`, `hostname`, `lotId`, `wafer`, `probeCard`, `pass`, `triggerLabel`, `timeDay`, `timeHour`。
  * **`timeDay`** 与 **`timeHour`** 不可同时出现。
  */
 export function parseYieldMonitorTriggerV3AggregateQuery(
@@ -154,7 +147,7 @@ export function parseYieldMonitorTriggerV3AggregateQuery(
     return {
       ok: false,
       error:
-        'Missing required "dimensions" (comma-separated: type, device, hostname, lotId, wafer, probeCard, pass, triggerLabel, timeDay, timeHour)',
+        'Missing required "dimensions" (comma-separated: device, hostname, lotId, wafer, probeCard, pass, triggerLabel, timeDay, timeHour)',
     };
   }
 

@@ -152,6 +152,30 @@ describe(
       assert.ok(Array.isArray(b.groups));
     });
 
+    test("GET /api/v3/infcontrol-layer-bins/v3/aggregate groupBy=probeCard,bin（dummy）", async () => {
+      const qs = new URLSearchParams(icExampleQs);
+      qs.set("groupBy", "probeCard,bin");
+      qs.set("groupTop", "5");
+      const { status, body } = await getJson(
+        `${API}/infcontrol-layer-bins/v3/aggregate?${qs.toString()}`
+      );
+      assertOkJson(status, body);
+      const b = body as { groups?: unknown[] };
+      assert.ok(Array.isArray(b.groups));
+    });
+
+    test("GET /api/v3/infcontrol-layer-bins/v3/aggregate groupBy 同时含 probe 与 probeCard → 400", async () => {
+      const qs = new URLSearchParams(icExampleQs);
+      qs.set("groupBy", "probe,probeCard,bin");
+      qs.set("groupTop", "5");
+      const { status, body } = await getJson(
+        `${API}/infcontrol-layer-bins/v3/aggregate?${qs.toString()}`
+      );
+      assert.equal(status, 400);
+      assert.ok(body && typeof body === "object");
+      assert.equal((body as { code?: string }).code, "VALIDATION_ERROR");
+    });
+
     test("GET /api/v3/infcontrol-layer-bins/v2/top-bad-bins（dummy）", async () => {
       const { status, body } = await getJson(
         `${API}/infcontrol-layer-bins/v2/top-bad-bins?${icExampleQs}&rankTop=10`
@@ -195,9 +219,20 @@ describe(
       assert.ok(b.rows!.length > 0, "delta-diff dummy 应至少返回一行");
     });
 
+    test("GET /api/v3/yield-monitor-triggers/v3 带 type 查询参数 → 400", async () => {
+      const qs = new URLSearchParams(yExampleQs);
+      qs.set("type", "delta_diff");
+      const { status, body } = await getJson(
+        `${API}/yield-monitor-triggers/v3?${qs.toString()}`
+      );
+      assert.equal(status, 400);
+      assert.ok(body && typeof body === "object");
+      assert.equal((body as { code?: string }).code, "VALIDATION_ERROR");
+    });
+
     test("GET /api/v3/yield-monitor-triggers/v3/aggregate（v3 聚合 · dummy）", async () => {
       const qs = new URLSearchParams(yExampleQs);
-      qs.set("dimensions", "device,type");
+      qs.set("dimensions", "device,hostname");
       qs.set("groupTop", "10");
       const { status, body } = await getJson(
         `${API}/yield-monitor-triggers/v3/aggregate?${qs.toString()}`

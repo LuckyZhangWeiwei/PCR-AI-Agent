@@ -20,6 +20,7 @@ export type InfcontrolLayerBinGroupBy =
   | "cardId"
   | "pibId"
   | "probe"
+  | "probeCard"
   | "layerName"
   | "passResume"
   | "passResult"
@@ -82,6 +83,7 @@ function parseGroupByToken(
     cardid: "cardId",
     pibid: "pibId",
     probe: "probe",
+    probecard: "probeCard",
     layername: "layerName",
     passresume: "passResume",
     passresult: "passResult",
@@ -126,6 +128,8 @@ export function infcontrolLayerBinNonBinSelectSql(
       return "lb.PIBID AS PIBID";
     case "probe":
       return "lb.PROBE AS PROBE";
+    case "probeCard":
+      return "lb.PROBE AS PROBECARD";
     case "grossDie":
       return "lb.GROSSDIE AS GROSSDIE";
     case "passId":
@@ -191,6 +195,8 @@ function oracleGroupColumnName(d: Exclude<InfcontrolLayerBinGroupBy, "bin">): st
       return "PIBID";
     case "probe":
       return "PROBE";
+    case "probeCard":
+      return "PROBECARD";
     case "layerName":
       return "LAYERNAME";
     case "passResume":
@@ -304,6 +310,13 @@ export function parseInfcontrolLayerBinAggregateGroupSpec(
     groupBy.push(g);
   }
 
+  if (groupBy.includes("probe") && groupBy.includes("probeCard")) {
+    return {
+      ok: false,
+      error:
+        'groupBy cannot list both "probe" and "probeCard" (same column INFLAYERBINLIST.PROBE)',
+    };
+  }
   if (!groupBy.includes("bin")) {
     return {
       ok: false,
@@ -326,7 +339,7 @@ export function parseInfcontrolLayerBinAggregateGroupSpec(
 
 /**
  * 与列表接口相同的筛选；**groupBy** 可选，省略时视为 **`bin`**（按 BIN0…BIN255 合计取 Top）；
- * 若传入则须**恰好含一个 `bin`**（可与 device、lot、slot、tstype、cardId 等复合）。可选 **groupTop**（默认 10，最大 50）。
+ * 若传入则须**恰好含一个 `bin`**（可与 device、lot、slot、tstype、cardId、**`probe` / `probeCard`**（同列 **`PROBE`**，二者勿同列）等复合）。可选 **groupTop**（默认 10，最大 50）。
  * 聚合指标为各组内 **SUM(BIN 列数值)**（先 UNPIVOT 再 SUM），取 SUM 最大的 Top groupTop 组。
  */
 export function parseInfcontrolLayerBinAggregateQuery(

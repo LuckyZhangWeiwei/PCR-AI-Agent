@@ -148,7 +148,8 @@ export type ParseYieldMonitorV3Ok = {
 
 /**
  * **v3** `GET /yield-monitor-triggers/v3`：与库表列对应的 AND 筛选（无 triggerLabel / id）。
- * 字符串列：`UPPER(TRIM(列)) = UPPER(:bind)`，与库内实际大小写（如样例 `docs/delta-diff.xlsx` 中 HOSTNAME 小写、TYPE 如 `delta_diff`）无关地匹配。
+ * 字符串列：`UPPER(TRIM(列)) = UPPER(:bind)`，与库内实际大小写（如样例 `docs/delta-diff.xlsx` 中 HOSTNAME 小写）无关地匹配。
+ * **`type`（库列 `TYPE`）**：v3 **不提供**按异常类型筛选；传入 **`type`** 查询参数将返回校验错误。
  * 时间：`timeStampBegin` & `timeStampEnd`（ISO 8601），或与 v1 相同的 `timeStampFrom` / `timeStampTo` 别名。
  */
 export function parseYieldMonitorTriggerV3Query(
@@ -159,6 +160,14 @@ export function parseYieldMonitorTriggerV3Query(
   const applied: Record<string, unknown> = {};
 
   try {
+    if (firstString(firstQueryValue(q, "type")) !== undefined) {
+      return {
+        ok: false,
+        error:
+          'Query parameter "type" is not supported on v3 yield endpoints (list or aggregate)',
+      };
+    }
+
     const strEqTrimCi = (param: string, columnSql: string, bindName: string) => {
       const v = firstString(firstQueryValue(q, param));
       if (v === undefined) return;
@@ -173,7 +182,6 @@ export function parseYieldMonitorTriggerV3Query(
     strEqTrimCi("device", "t.DEVICE", "v3_device");
     strEqTrimCi("lotId", "t.LOTID", "v3_lotid");
     strEqTrimCi("wafer", "t.WAFER", "v3_wafer");
-    strEqTrimCi("type", 't."TYPE"', "v3_type");
     strEqTrimCi("probeCard", "t.PROBECARD", "v3_probecard");
 
     const passN = parseOptionalNumber(firstQueryValue(q, "pass"), "pass");

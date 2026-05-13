@@ -222,7 +222,7 @@ export const apiManifest = {
           type: "string",
           optional: true,
           note:
-            'Default bin if omitted. Otherwise comma-separated; must include "bin" once (max 8 dims). Example: bin | device,bin | testerId,cardId,lot,bin',
+            'Default bin if omitted. Otherwise comma-separated; must include "bin" once (max 8 dims). probeCard maps to INFLAYERBINLIST.PROBE (same as probe; do not combine both). Example: bin | device,bin | testerId,cardId,lot,bin',
         },
         {
           name: "groupTop",
@@ -437,7 +437,7 @@ export const apiManifest = {
           type: "string",
           optional: true,
           note:
-            'Default bin if omitted. Comma-separated; must include "bin" once (max 8 dims). Same tokens as /infcontrol-layer-bins/aggregate.',
+            'Default bin if omitted. Comma-separated; must include "bin" once (max 8 dims). Tokens include probeCard (INFLAYERBINLIST.PROBE, alias for yield-style naming; mutually exclusive with probe in the same request). Same rules as /infcontrol-layer-bins/aggregate.',
         },
         {
           name: "groupTop",
@@ -519,7 +519,7 @@ export const apiManifest = {
       path: "/api/v1/yield-monitor-triggers/v3",
       method: "GET",
       purpose:
-        "SELECT * FROM YMWEB_YIELDMONITORTRIGGER with optional AND filters (case-insensitive TRIM on string columns: HOSTNAME, DEVICE, LOTID, WAFER, TYPE, PROBECARD; exact PASS; TIME_STAMP window), then ORDER BY TIME_STAMP DESC NULLS LAST FETCH FIRST :lim ROWS ONLY. When YIELD_MONITOR_TRIGGERS_DUMMY is true and not dist/production, serves rows from docs/delta-diff.xlsx in memory; else probeweb Oracle. Query keys are case-insensitive (including limit).",
+        "SELECT * FROM YMWEB_YIELDMONITORTRIGGER with optional AND filters (case-insensitive TRIM on string columns: HOSTNAME, DEVICE, LOTID, WAFER, PROBECARD; exact PASS; TIME_STAMP window), then ORDER BY TIME_STAMP DESC NULLS LAST FETCH FIRST :lim ROWS ONLY. Query parameter type is not supported on v3 (rows still include TYPE column in each object). When YIELD_MONITOR_TRIGGERS_DUMMY is true and not dist/production, serves rows from docs/delta-diff.xlsx in memory; else probeweb Oracle. Query keys are case-insensitive (including limit).",
       queryParameters: [
         {
           name: "limit",
@@ -532,7 +532,6 @@ export const apiManifest = {
         { name: "lotId", type: "string", optional: true },
         { name: "pass", type: "number", optional: true },
         { name: "wafer", type: "string", optional: true },
-        { name: "type", type: "string", optional: true },
         { name: "probeCard", type: "string", optional: true },
         {
           name: "timeStampBegin",
@@ -575,14 +574,14 @@ export const apiManifest = {
       path: "/api/v1/yield-monitor-triggers/v3/aggregate",
       method: "GET",
       purpose:
-        "v3 yield aggregate: same WHERE as GET /yield-monitor-triggers/v3 (UPPER(TRIM) on string columns; TIME_STAMP window; etc.). Over ALL matching rows (not limited to FETCH FIRST list cap), COUNT(*) GROUP BY requested dimensions, order by count DESC, return top groupTop groups (default 25, max 100). Required query parameter dimensions: comma-separated from type, device, hostname, lotId, wafer, probeCard, pass, triggerLabel, timeDay, timeHour (max 5 dims; timeDay and timeHour mutually exclusive). When YIELD_MONITOR_TRIGGERS_DUMMY is true and not dist/production, uses delta-diff.xlsx in-memory rows; else probeweb Oracle. JSON documentation field explains difference vs v3 list.",
+        "v3 yield aggregate: same WHERE as GET /yield-monitor-triggers/v3 (UPPER(TRIM) on string columns; TIME_STAMP window; etc.). Over ALL matching rows (not limited to FETCH FIRST list cap), COUNT(*) GROUP BY requested dimensions, order by count DESC, return top groupTop groups (default 25, max 100). Required query parameter dimensions: comma-separated from device, hostname, lotId, wafer, probeCard, pass, triggerLabel, timeDay, timeHour (max 5 dims; timeDay and timeHour mutually exclusive). Query parameter type is not supported on v3 yield endpoints. When YIELD_MONITOR_TRIGGERS_DUMMY is true and not dist/production, uses delta-diff.xlsx in-memory rows; else probeweb Oracle. JSON documentation field explains difference vs v3 list.",
       queryParameters: [
         {
           name: "dimensions",
           type: "string",
           optional: false,
           note:
-            "Required. Comma-separated: type, device, hostname, lotId, wafer, probeCard, pass, triggerLabel, timeDay, timeHour (max 5). Cannot combine timeDay+timeHour.",
+            "Required. Comma-separated: device, hostname, lotId, wafer, probeCard, pass, triggerLabel, timeDay, timeHour (max 5). Cannot combine timeDay+timeHour. Parameter type is not supported on v3.",
         },
         {
           name: "groupTop",
@@ -595,7 +594,6 @@ export const apiManifest = {
         { name: "lotId", type: "string", optional: true },
         { name: "pass", type: "number", optional: true },
         { name: "wafer", type: "string", optional: true },
-        { name: "type", type: "string", optional: true },
         { name: "probeCard", type: "string", optional: true },
         {
           name: "timeStampBegin",
@@ -633,7 +631,7 @@ export const apiManifest = {
         groups: "array of { key, count (row count per group), parts }",
       },
       example:
-        "/api/v1/yield-monitor-triggers/v3/aggregate?dimensions=type,device&timeStampBegin=2026-05-13T00:00:00.000Z&timeStampEnd=2026-05-13T23:59:59.999Z&groupTop=20",
+        "/api/v1/yield-monitor-triggers/v3/aggregate?dimensions=device,hostname&timeStampBegin=2026-05-13T00:00:00.000Z&timeStampEnd=2026-05-13T23:59:59.999Z&groupTop=20",
     },
     {
       path: "/api/v1/db/ping",

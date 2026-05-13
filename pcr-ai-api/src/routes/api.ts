@@ -796,7 +796,7 @@ apiRouter.get("/yield-monitor-triggers", async (req, res) => {
 
 /**
  * **v3** 产量监控：`YMWEB_YIELDMONITORTRIGGER` 全列。**`YIELD_MONITOR_TRIGGERS_DUMMY=true`**（且非 `dist`/production）时走 **`docs/delta-diff.xlsx`** 内存样本；否则 **probeweb Oracle**。
- * 查询参数与 **v3** 列表一致（`UPPER(TRIM)` 字符串、时间窗等）。
+ * 查询参数：`UPPER(TRIM)` 字符串筛选、时间窗等（**不支持** **`type`** 查询参数；**`TYPE`** 仍出现在每行对象中，仅不能按该列筛选）。
  */
 apiRouter.get("/yield-monitor-triggers/v3", async (req, res) => {
   const parsed = parseYieldMonitorTriggerV3Query(
