@@ -2,13 +2,14 @@ import { useCallback, useLayoutEffect, useState } from "react";
 import { apiGetJson } from "./api/client";
 import { API_PREFIX } from "./api/paths";
 import { usePersistedApiBase } from "./hooks/usePersistedApiBase";
+import { AiAgentReport } from "./reports/AiAgentReport";
 import { InfcontrolReport } from "./reports/InfcontrolReport";
 import { OverviewReport } from "./reports/OverviewReport";
 import { TableRowsReport } from "./reports/TableRowsReport";
 import { YieldMonitorReport } from "./reports/YieldMonitorReport";
 import "./index.css";
 
-type Tab = "overview" | "yield" | "infcontrol" | "table";
+type Tab = "overview" | "yield" | "infcontrol" | "ai" | "table";
 
 export default function App() {
   const [apiBase, setApiBase, resetApiBase] = usePersistedApiBase();
@@ -146,6 +147,13 @@ export default function App() {
         </button>
         <button
           type="button"
+          className={`tab ${tab === "ai" ? "active" : ""}`}
+          onClick={() => setTab("ai")}
+        >
+          🤖 AI 助手
+        </button>
+        <button
+          type="button"
           className={`tab ${tab === "table" ? "active" : ""}`}
           onClick={() => setTab("table")}
         >
@@ -161,6 +169,9 @@ export default function App() {
       </div>
       <div className="tab-panel" hidden={tab !== "infcontrol"}>
         <InfcontrolReport apiBase={apiBase} />
+      </div>
+      <div className="tab-panel" hidden={tab !== "ai"}>
+        <AiAgentReport apiBase={apiBase} />
       </div>
       <div className="tab-panel" hidden={tab !== "table"}>
         <TableRowsReport apiBase={apiBase} />
