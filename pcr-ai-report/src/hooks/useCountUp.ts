@@ -8,10 +8,11 @@ export function useCountUp(target: number, duration = 600): number {
       setDisplay(0);
       return;
     }
+    setDisplay(0);   // reset before new animation starts
     let startTs = 0;
     let raf = 0;
     const step = (ts: number) => {
-      if (!startTs) startTs = ts;
+      if (startTs === 0) startTs = ts;
       const progress = Math.min((ts - startTs) / duration, 1);
       setDisplay(Math.round(progress * target));
       if (progress < 1) raf = requestAnimationFrame(step);

@@ -2,7 +2,7 @@
 
 // ── Yield% ─────────────────────────────────────────────────────────────────
 
-export type BinCell = { n: number; value: number; isGoodBin: boolean };
+type BinCell = { n: number; value: number; isGoodBin: boolean };
 
 /**
  * Compute Yield% for an array of v3 list rows.
