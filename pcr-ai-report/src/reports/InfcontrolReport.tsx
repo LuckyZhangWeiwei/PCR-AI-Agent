@@ -1,452 +1,396 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import ReactECharts from "echarts-for-react";
 import { apiGetJson } from "../api/client";
 import { API_PREFIX } from "../api/paths";
 import type {
+  AggregateGroup,
   InfcontrolAggregateResponse,
   InfcontrolLayerBinsV3Response,
-  InfcontrolTopBadBinsResponse,
+  InfcontrolLayerBinV3Row,
 } from "../api/types";
 import { DarkChart } from "../components/DarkChart";
 import { DataTable } from "../components/DataTable";
+import { DrillDownPanel } from "../components/DrillDownPanel";
+import { KpiCard } from "../components/KpiCard";
+import { TreeTable } from "../components/TreeTable";
 import {
   baseChartOption,
-  chartAccent,
-  chartAccent2,
-  chartAccent3,
   chartAxisColor,
   chartSplitLine,
   chartTextColor,
 } from "../theme/chartTheme";
-import type { EChartsOption } from "echarts";
 import { datetimeLocalToIso } from "../utils/datetimeLocal";
-import { sumBinsOnPage } from "../utils/rollup";
+import {
+  buildTree,
+  computeYieldPct,
+  dateShortcutLast7Days,
+  dateShortcutThisMonth,
+  dateShortcutToday,
+  yieldColor,
+} from "../utils/yieldCalc";
+import type { EChartsOption } from "echarts";
 
-/** JB START：Tester Type（TSTYPE）下拉固定选项 */
-const TSTYPE_OPTIONS = [
-  "UFLEX",
-  "J750",
-  "PS16",
-  "MST",
-  "FLEX",
-  "93K",
-  "J971",
-] as const;
+const TSTYPE_OPTIONS = ["UFLEX", "J750", "PS16", "MST", "FLEX", "93K", "J971"] as const;
 
-type Props = {
-  apiBase: string;
-};
+type Props = { apiBase: string };
 
-/** 与 v3 列表 / v3 聚合筛选一致（不含 limit、rankTop、groupBy） */
 type FormState = {
   device: string;
   lot: string;
   slot: string;
-  meslot: string;
-  testerId: string;
-  tstype: string;
   cardId: string;
+  tstype: string;
+  testerId: string;
   passId: string;
-  testStartFrom: string;
-  testStartTo: string;
+  meslot: string;
   testEndFrom: string;
   testEndTo: string;
-  /** 列表行数上限 1…500，默认 200 */
   limit: string;
-  /** 不良 BIN 排名条数 5…10 */
-  rankTop: string;
-  /** v3 聚合：groupBy，须含 bin */
-  aggGroupBy: "bin" | "device,bin";
-  /** v3 聚合 groupTop 1…50 */
-  aggGroupTop: string;
 };
 
 const initialForm: FormState = {
   device: "",
   lot: "",
   slot: "",
-  meslot: "",
-  testerId: "",
-  tstype: "",
   cardId: "",
+  tstype: "",
+  testerId: "",
   passId: "",
-  testStartFrom: "",
-  testStartTo: "",
+  meslot: "",
   testEndFrom: "",
   testEndTo: "",
-  limit: "200",
-  rankTop: "10",
-  aggGroupBy: "bin",
-  aggGroupTop: "10",
+  limit: "500",
 };
 
-function numOrUndef(s: string): number | undefined {
-  if (!s.trim()) return undefined;
-  const n = Number(s);
-  return Number.isFinite(n) ? n : undefined;
-}
-
-function optTrim(s: string): string | undefined {
-  const t = s.trim();
-  return t === "" ? undefined : t;
-}
-
-/** v3 列表 / v3 聚合共用 WHERE 参数（与 `parseInfcontrolLayerBinsV3Query` 对齐） */
-function buildV3CoreParams(
-  f: FormState
-): Record<string, string | number | undefined> {
+function buildCoreParams(f: FormState): Record<string, string | number | undefined> {
   return {
-    device: optTrim(f.device),
-    lot: optTrim(f.lot),
-    slot: numOrUndef(f.slot),
-    meslot: optTrim(f.meslot),
-    testerId: optTrim(f.testerId),
-    tstype: optTrim(f.tstype),
-    cardId: optTrim(f.cardId),
-    passId: numOrUndef(f.passId),
-    testStartFrom: datetimeLocalToIso(f.testStartFrom),
-    testStartTo: datetimeLocalToIso(f.testStartTo),
+    device:      f.device   || undefined,
+    lot:         f.lot      || undefined,
+    slot:        f.slot     ? Number(f.slot)   : undefined,
+    cardId:      f.cardId   || undefined,
+    tstype:      f.tstype   || undefined,
+    testerId:    f.testerId || undefined,
+    passId:      f.passId   ? Number(f.passId) : undefined,
+    meslot:      f.meslot   || undefined,
     testEndFrom: datetimeLocalToIso(f.testEndFrom),
-    testEndTo: datetimeLocalToIso(f.testEndTo),
+    testEndTo:   datetimeLocalToIso(f.testEndTo),
   };
 }
 
-function buildV3ListParams(
-  f: FormState
-): Record<string, string | number | undefined> {
-  const lim = numOrUndef(f.limit);
+function buildListParams(f: FormState): Record<string, string | number | undefined> {
+  const lim = Number(f.limit);
   return {
-    ...buildV3CoreParams(f),
-    limit:
-      lim !== undefined
-        ? Math.min(500, Math.max(1, Math.floor(lim)))
-        : undefined,
+    ...buildCoreParams(f),
+    limit: Number.isFinite(lim) ? Math.min(500, Math.max(1, Math.floor(lim))) : 500,
   };
 }
 
-/** v2 top-bad-bins：与 v3 相同筛选项子集即可（多余键后端忽略） */
-function buildTopBadBinsParams(
-  f: FormState
-): Record<string, string | number | undefined> {
-  const rt = numOrUndef(f.rankTop);
-  const rankTop =
-    rt !== undefined ? Math.min(10, Math.max(5, Math.floor(rt))) : undefined;
-  return {
-    ...buildV3CoreParams(f),
-    rankTop,
-  };
-}
-
-function buildV3AggregateParams(
-  f: FormState
-): Record<string, string | number | undefined> {
-  const gt = numOrUndef(f.aggGroupTop);
-  const groupTop =
-    gt !== undefined ? Math.min(50, Math.max(1, Math.floor(gt))) : 10;
-  return {
-    ...buildV3CoreParams(f),
-    groupBy: f.aggGroupBy,
-    groupTop,
-  };
-}
-
-function stableParamsKey(
-  p: Record<string, string | number | undefined>
-): string {
-  const o: Record<string, string | number> = {};
-  for (const [k, v] of Object.entries(p)) {
-    if (v === undefined || v === null || v === "") continue;
-    o[k] = typeof v === "number" ? v : String(v);
+const HIDE_CHIPS = new Set(["testEndFrom", "testEndTo"]);
+function activeChips(f: FormState): { key: string; label: string }[] {
+  const chips: { key: string; label: string }[] = [];
+  for (const [k, v] of Object.entries(buildCoreParams(f))) {
+    if (v === undefined || HIDE_CHIPS.has(k)) continue;
+    chips.push({ key: k, label: `${k} = ${v}` });
   }
-  const keys = Object.keys(o).sort();
-  const sorted: Record<string, string | number> = {};
-  for (const kk of keys) sorted[kk] = o[kk];
-  return JSON.stringify(sorted);
+  if (f.testEndFrom || f.testEndTo) {
+    const label =
+      f.testEndFrom && f.testEndTo
+        ? `testEnd ${f.testEndFrom} → ${f.testEndTo}`
+        : f.testEndFrom
+        ? `testEnd ≥ ${f.testEndFrom}`
+        : `testEnd ≤ ${f.testEndTo}`;
+    chips.push({ key: "__time__", label });
+  }
+  return chips;
 }
 
-/** 明细表不展示：JOIN 键、PASSBIN、以及已剥离的 bins */
-function infcontrolRowsForDetailTable(
-  rows: Record<string, unknown>[]
-): Record<string, unknown>[] {
-  return rows.map((row) => {
-    const { bins: _b, ...rest } = row;
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(rest)) {
-      const lk = k.toLowerCase();
-      if (lk === "keynumber" || lk === "passbin" || lk === "notch") continue;
-      const outKey = lk === "passtype" ? "PASSTYPE" : k;
-      out[outKey] = v;
-    }
-    if (!Object.prototype.hasOwnProperty.call(out, "PASSTYPE")) {
-      const pv = row.PASSTYPE ?? row.passtype;
-      out.PASSTYPE = pv ?? "";
-    }
-    return out;
-  });
-}
-
-const LIST_COLUMNS_PREF = [
-  "TESTEND",
-  "DEVICE",
-  "LOT",
-  "SLOT",
-  "MESLOT",
-  "TSTYPE",
-  "PASSTYPE",
-  "CARDID",
-  "TESTERID",
-  "TESTSTART",
-  "PASSID",
-  "PIBID",
-  "PROBE",
+const FREE_DIMS: { label: string; value: string }[] = [
+  { label: "Bin",      value: "bin"      },
+  { label: "Lot",      value: "lot"      },
+  { label: "Device",   value: "device"   },
+  { label: "CardId",   value: "cardId"   },
+  { label: "Slot",     value: "slot"     },
+  { label: "TsType",   value: "tstype"   },
+  { label: "PassId",   value: "passId"   },
+  { label: "TesterId", value: "testerId" },
 ];
+
+type DrillState = {
+  parentDimKey: string;
+  parentDimVal: string;
+  subDim: string;
+  groups: AggregateGroup[];
+  loading: boolean;
+  error: string | null;
+};
+
+function lotYields(
+  rows: InfcontrolLayerBinV3Row[]
+): Array<{ lot: string; yieldPct: number }> {
+  const byLot = new Map<string, InfcontrolLayerBinV3Row[]>();
+  for (const r of rows) {
+    const lot = r.LOT ?? "—";
+    if (!byLot.has(lot)) byLot.set(lot, []);
+    byLot.get(lot)!.push(r);
+  }
+  const result: Array<{ lot: string; yieldPct: number }> = [];
+  for (const [lot, lotRows] of byLot.entries()) {
+    const yp = computeYieldPct(lotRows);
+    if (yp !== null) result.push({ lot, yieldPct: yp });
+  }
+  return result.sort((a, b) => a.yieldPct - b.yieldPct);
+}
 
 export function InfcontrolReport({ apiBase }: Props) {
   const [form, setForm] = useState<FormState>(initialForm);
-  const [list, setList] = useState<InfcontrolLayerBinsV3Response | null>(null);
-  const [badBins, setBadBins] = useState<InfcontrolTopBadBinsResponse | null>(
-    null
-  );
-  const [agg, setAgg] = useState<InfcontrolAggregateResponse | null>(null);
+  const [list,    setList]    = useState<InfcontrolLayerBinsV3Response | null>(null);
+  const [aggBin,  setAggBin]  = useState<InfcontrolAggregateResponse | null>(null);
+  const [aggCard, setAggCard] = useState<InfcontrolAggregateResponse | null>(null);
+  const [aggSlot, setAggSlot] = useState<InfcontrolAggregateResponse | null>(null);
+  const [aggTree, setAggTree] = useState<InfcontrolAggregateResponse | null>(null);
+  const [aggFree, setAggFree] = useState<InfcontrolAggregateResponse | null>(null);
+  const [freeDim, setFreeDim] = useState("bin");
+
   const [loadingList, setLoadingList] = useState(false);
-  const [loadingBad, setLoadingBad] = useState(false);
-  const [loadingAgg, setLoadingAgg] = useState(false);
-  const [errorList, setErrorList] = useState<string | null>(null);
-  const [errorBad, setErrorBad] = useState<string | null>(null);
-  const [errorAgg, setErrorAgg] = useState<string | null>(null);
+  const [loadingAgg,  setLoadingAgg]  = useState(false);
+  const [errorList,   setErrorList]   = useState<string | null>(null);
+  const [errorAgg,    setErrorAgg]    = useState<string | null>(null);
+  const [drill,       setDrill]       = useState<DrillState | null>(null);
 
-  const listParamsWhenFetchedRef = useRef<string | null>(null);
-  const badParamsWhenFetchedRef = useRef<string | null>(null);
-  const aggParamsWhenFetchedRef = useRef<string | null>(null);
+  const setField = useCallback(
+    <K extends keyof FormState>(k: K, v: FormState[K]) => {
+      setForm((f) => ({ ...f, [k]: v }));
+    },
+    []
+  );
 
-  const searchList = useCallback(async () => {
+  const clearFilter = useCallback((key: string) => {
+    if (key === "__time__")
+      setForm((f) => ({ ...f, testEndFrom: "", testEndTo: "" }));
+    else setForm((f) => ({ ...f, [key]: "" } as FormState));
+  }, []);
+
+  const applyDateShortcut = useCallback((fn: () => [string, string]) => {
+    const [from, to] = fn();
+    setForm((f) => ({ ...f, testEndFrom: from, testEndTo: to }));
+  }, []);
+
+  const fetchDrill = useCallback(
+    async (
+      parentDimKey: string,
+      parentDimVal: string,
+      subDim: string,
+      currentForm: FormState
+    ) => {
+      setDrill({
+        parentDimKey,
+        parentDimVal,
+        subDim,
+        groups: [],
+        loading: true,
+        error: null,
+      });
+      try {
+        const gby = subDim.includes("bin") ? subDim : `${subDim},bin`;
+        const params = {
+          ...buildCoreParams(currentForm),
+          [parentDimKey]: parentDimVal,
+          groupBy: gby,
+          groupTop: 25,
+        };
+        const res = await apiGetJson<InfcontrolAggregateResponse>(
+          apiBase,
+          `${API_PREFIX}/infcontrol-layer-bins/v3/aggregate`,
+          params
+        );
+        setDrill((d) =>
+          d && d.parentDimKey === parentDimKey && d.parentDimVal === parentDimVal
+            ? { ...d, groups: res.groups, loading: false }
+            : d
+        );
+      } catch (e) {
+        setDrill((d) =>
+          d && d.parentDimKey === parentDimKey && d.parentDimVal === parentDimVal
+            ? {
+                ...d,
+                loading: false,
+                error: e instanceof Error ? e.message : String(e),
+              }
+            : d
+        );
+      }
+    },
+    [apiBase]
+  );
+
+  const fetchFreeAgg = useCallback(
+    async (dim: string, currentForm: FormState) => {
+      try {
+        const gby = dim === "bin" ? "bin" : `${dim},bin`;
+        const res = await apiGetJson<InfcontrolAggregateResponse>(
+          apiBase,
+          `${API_PREFIX}/infcontrol-layer-bins/v3/aggregate`,
+          { ...buildCoreParams(currentForm), groupBy: gby, groupTop: 30 }
+        );
+        setAggFree(res);
+      } catch {
+        setAggFree(null);
+      }
+    },
+    [apiBase]
+  );
+
+  const query = useCallback(async () => {
     setLoadingList(true);
-    setErrorList(null);
-    try {
-      const params = buildV3ListParams(form);
-      const res = await apiGetJson<InfcontrolLayerBinsV3Response>(
-        apiBase,
-        `${API_PREFIX}/infcontrol-layer-bins/v3`,
-        params
-      );
-      setList(res);
-      listParamsWhenFetchedRef.current = stableParamsKey(params);
-    } catch (e: unknown) {
-      setList(null);
-      setErrorList(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoadingList(false);
-    }
-  }, [apiBase, form]);
-
-  const searchBadBins = useCallback(async () => {
-    setLoadingBad(true);
-    setErrorBad(null);
-    try {
-      const params = buildTopBadBinsParams(form);
-      const res = await apiGetJson<InfcontrolTopBadBinsResponse>(
-        apiBase,
-        `${API_PREFIX}/infcontrol-layer-bins/v2/top-bad-bins`,
-        params
-      );
-      setBadBins(res);
-      badParamsWhenFetchedRef.current = stableParamsKey(params);
-    } catch (e: unknown) {
-      setBadBins(null);
-      setErrorBad(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoadingBad(false);
-    }
-  }, [apiBase, form]);
-
-  const searchAggregate = useCallback(async () => {
     setLoadingAgg(true);
+    setErrorList(null);
     setErrorAgg(null);
-    try {
-      const params = buildV3AggregateParams(form);
-      const res = await apiGetJson<InfcontrolAggregateResponse>(
-        apiBase,
-        `${API_PREFIX}/infcontrol-layer-bins/v3/aggregate`,
-        params
+    setDrill(null);
+    const core = buildCoreParams(form);
+
+    const [listRes, binRes, cardRes, slotRes, treeRes] =
+      await Promise.allSettled([
+        apiGetJson<InfcontrolLayerBinsV3Response>(
+          apiBase,
+          `${API_PREFIX}/infcontrol-layer-bins/v3`,
+          buildListParams(form)
+        ),
+        apiGetJson<InfcontrolAggregateResponse>(
+          apiBase,
+          `${API_PREFIX}/infcontrol-layer-bins/v3/aggregate`,
+          { ...core, groupBy: "bin", groupTop: 30 }
+        ),
+        apiGetJson<InfcontrolAggregateResponse>(
+          apiBase,
+          `${API_PREFIX}/infcontrol-layer-bins/v3/aggregate`,
+          { ...core, groupBy: "cardId,bin", groupTop: 25 }
+        ),
+        apiGetJson<InfcontrolAggregateResponse>(
+          apiBase,
+          `${API_PREFIX}/infcontrol-layer-bins/v3/aggregate`,
+          { ...core, groupBy: "slot,bin", groupTop: 50 }
+        ),
+        apiGetJson<InfcontrolAggregateResponse>(
+          apiBase,
+          `${API_PREFIX}/infcontrol-layer-bins/v3/aggregate`,
+          { ...core, groupBy: "device,lot,cardId,bin", groupTop: 50 }
+        ),
+      ]);
+
+    setLoadingList(false);
+    setLoadingAgg(false);
+
+    if (listRes.status === "fulfilled") setList(listRes.value);
+    else
+      setErrorList(
+        listRes.reason instanceof Error
+          ? listRes.reason.message
+          : String(listRes.reason)
       );
-      setAgg(res);
-      aggParamsWhenFetchedRef.current = stableParamsKey(params);
-    } catch (e: unknown) {
-      setAgg(null);
-      setErrorAgg(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoadingAgg(false);
-    }
-  }, [apiBase, form]);
 
-  useEffect(() => {
-    const cur = stableParamsKey(buildV3ListParams(form));
-    if (
-      listParamsWhenFetchedRef.current !== null &&
-      cur !== listParamsWhenFetchedRef.current
-    ) {
-      setList(null);
-      setErrorList(null);
-    }
-  }, [form]);
+    if (binRes.status  === "fulfilled") setAggBin(binRes.value);
+    if (cardRes.status === "fulfilled") setAggCard(cardRes.value);
+    if (slotRes.status === "fulfilled") setAggSlot(slotRes.value);
+    if (treeRes.status === "fulfilled") setAggTree(treeRes.value);
+    if (binRes.status === "rejected")
+      setErrorAgg("BIN 聚合请求失败，部分图表不可用");
 
-  useEffect(() => {
-    const cur = stableParamsKey(buildTopBadBinsParams(form));
-    if (
-      badParamsWhenFetchedRef.current !== null &&
-      cur !== badParamsWhenFetchedRef.current
-    ) {
-      setBadBins(null);
-      setErrorBad(null);
-    }
-  }, [form]);
+    fetchFreeAgg(freeDim, form);
+  }, [apiBase, form, freeDim, fetchFreeAgg]);
 
-  useEffect(() => {
-    const cur = stableParamsKey(buildV3AggregateParams(form));
-    if (
-      aggParamsWhenFetchedRef.current !== null &&
-      cur !== aggParamsWhenFetchedRef.current
-    ) {
-      setAgg(null);
-      setErrorAgg(null);
-    }
-  }, [form]);
+  const handleFreeDimChange = useCallback(
+    (dim: string) => {
+      setFreeDim(dim);
+      if (list || aggBin) fetchFreeAgg(dim, form);
+    },
+    [list, aggBin, form, fetchFreeAgg]
+  );
 
-  const listDetailRows = useMemo(() => {
-    if (!list?.rows?.length) return [];
-    const mapped = infcontrolRowsForDetailTable(list.rows);
-    const base = Object.fromEntries(
-      LIST_COLUMNS_PREF.map((k) => [k, ""])
-    ) as Record<string, unknown>;
-    return mapped.map((r) => ({ ...base, ...r }));
+  // ── KPI derivations ──────────────────────────────────────────────────────
+
+  const totalWafers = aggBin?.totalRowsMatching ?? null;
+
+  const overallYield = useMemo(() => {
+    if (!list?.rows?.length) return null;
+    return computeYieldPct(list.rows as InfcontrolLayerBinV3Row[]);
   }, [list]);
 
-  const badBinsChartOption = useMemo((): EChartsOption | null => {
-    const bins = badBins?.bins ?? [];
-    if (!bins.length) return null;
-    const sorted = [...bins].sort((a, b) => a.badTotal - b.badTotal);
-    const base = baseChartOption();
-    const tipBase =
-      typeof base.tooltip === "object" && base.tooltip !== null
-        ? base.tooltip
-        : {};
+  const worstCard = useMemo(() => {
+    if (!aggCard?.groups?.length) return null;
+    const cardBad = new Map<string, number>();
+    for (const g of aggCard.groups) {
+      const c = g.parts.cardId ?? "";
+      if (c) cardBad.set(c, (cardBad.get(c) ?? 0) + g.count);
+    }
+    if (cardBad.size === 0) return null;
+    return [...cardBad.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  }, [aggCard]);
+
+  const topBin = useMemo(() => {
+    const groups = aggBin?.groups ?? [];
+    if (!groups.length) return null;
+    return `Bin ${groups[0].parts.bin ?? groups[0].key}`;
+  }, [aggBin]);
+
+  // ── Chart options ────────────────────────────────────────────────────────
+
+  const lotYieldData = useMemo(() => {
+    if (!list?.rows?.length) return [];
+    return lotYields(list.rows as InfcontrolLayerBinV3Row[]);
+  }, [list]);
+
+  const lotYieldOption = useMemo((): EChartsOption => {
+    const data = lotYieldData.slice(-30);
     return {
-      ...base,
-      tooltip: {
-        ...tipBase,
-        trigger: "item",
-        formatter(p: unknown) {
-          const params = p as { dataIndex?: number; value?: unknown };
-          const idx = params?.dataIndex ?? 0;
-          const row = sorted[idx];
-          if (!row) return "";
-          const raw = params?.value;
-          const val =
-            typeof raw === "number"
-              ? raw
-              : Array.isArray(raw)
-                ? Number(raw[0])
-                : row.badTotal;
-          return `Bin ${row.n}<br/>不良合计：${val}`;
-        },
-      },
-      grid: {
-        ...(base.grid as object),
-        top: 88,
-      },
-      title: {
-        text:
-          "不良 BIN 合计排名（全量匹配行，前 " +
-          String(badBins?.rankTop ?? sorted.length) +
-          " 名）",
-        subtext:
-          "服务端按 PASSBIN（- 分隔的 good bin 下标）判定不良后，对每列 BIN 求 SUM；与 v3 列表 bins[].isGoodBin 口径一致。",
-        left: 0,
-        top: 4,
-        textStyle: { color: chartTextColor, fontSize: 14, fontWeight: 600 },
-        subtextStyle: {
-          color: chartAxisColor,
-          fontSize: 11,
-          lineHeight: 16,
-        },
-      },
+      ...baseChartOption(),
       xAxis: {
         type: "value",
-        axisLabel: { color: chartAxisColor },
+        max: 100,
+        axisLabel: {
+          color: chartAxisColor,
+          formatter: "{value}%",
+        },
         splitLine: { lineStyle: { color: chartSplitLine } },
       },
       yAxis: {
         type: "category",
-        data: sorted.map((x) => "Bin " + String(x.n)),
-        axisLabel: {
-          color: chartAxisColor,
-          interval: 0,
-        },
+        data: data.map((d) => d.lot),
+        axisLabel: { color: chartTextColor, fontSize: 11 },
       },
       series: [
         {
           type: "bar",
-          data: sorted.map((x) => x.badTotal),
-          itemStyle: {
-            color: {
-              type: "linear",
-              x: 0,
-              y: 0,
-              x2: 1,
-              y2: 0,
-              colorStops: [
-                { offset: 0, color: chartAccent2 },
-                { offset: 1, color: chartAccent },
-              ],
+          data: data.map((d) => ({
+            value: Number(d.yieldPct.toFixed(2)),
+            itemStyle: {
+              color:
+                d.yieldPct >= 95
+                  ? "#238636"
+                  : d.yieldPct >= 80
+                  ? "#9e6a03"
+                  : "#da3633",
+              borderRadius: [0, 4, 4, 0] as unknown as number,
             },
+          })),
+          label: {
+            show: true,
+            position: "right",
+            color: chartAxisColor,
+            fontSize: 10,
+            formatter: "{c}%",
           },
+          animationDuration: 600,
         },
       ],
     };
-  }, [badBins]);
+  }, [lotYieldData]);
 
-  const aggChartOption = useMemo((): EChartsOption | null => {
-    const groups = agg?.groups ?? [];
-    if (!groups.length) return null;
-    const sorted = [...groups].sort((a, b) => a.count - b.count);
-    const base = baseChartOption();
-    const tipBase =
-      typeof base.tooltip === "object" && base.tooltip !== null
-        ? base.tooltip
-        : {};
+  const binRankOption = useMemo((): EChartsOption => {
+    const sorted = [...(aggBin?.groups ?? [])]
+      .sort((a, b) => a.count - b.count)
+      .slice(-20);
     return {
-      ...base,
-      tooltip: {
-        ...tipBase,
-        trigger: "item",
-        formatter(p: unknown) {
-          const params = p as { dataIndex?: number; value?: unknown };
-          const idx = params?.dataIndex ?? 0;
-          const row = sorted[idx];
-          if (!row) return "";
-          const raw = params?.value;
-          const val =
-            typeof raw === "number"
-              ? raw
-              : Array.isArray(raw)
-                ? Number(raw[0])
-                : row.count;
-          return `${row.key}<br/>坏 bin die 合计：${val}`;
-        },
-      },
-      grid: { ...(base.grid as object), top: 96 },
-      title: {
-        text: `v3 BIN 聚合（groupBy=${(agg?.groupBy ?? []).join(",")}，Top ${agg?.groupTop ?? sorted.length}）`,
-        subtext:
-          "SUM 仅累计坏 bin die（与 v3 列表 isGoodBin / top-bad-bins token 规则一致）；totalRowsMatching 为筛选下明细行数。",
-        left: 0,
-        top: 4,
-        textStyle: { color: chartTextColor, fontSize: 14, fontWeight: 600 },
-        subtextStyle: {
-          color: chartAxisColor,
-          fontSize: 11,
-          lineHeight: 16,
-        },
-      },
+      ...baseChartOption(),
       xAxis: {
         type: "value",
         axisLabel: { color: chartAxisColor },
@@ -454,81 +398,35 @@ export function InfcontrolReport({ apiBase }: Props) {
       },
       yAxis: {
         type: "category",
-        data: sorted.map((g) =>
-          g.key.length > 48 ? g.key.slice(0, 47) + "…" : g.key
-        ),
-        axisLabel: { color: chartAxisColor, width: 200, overflow: "truncate" },
+        data: sorted.map((g) => `Bin ${g.parts.bin ?? g.key}`),
+        axisLabel: { color: chartTextColor, fontSize: 11 },
       },
       series: [
         {
           type: "bar",
           data: sorted.map((g) => g.count),
-          itemStyle: {
-            color: {
-              type: "linear",
-              x: 0,
-              y: 0,
-              x2: 1,
-              y2: 0,
-              colorStops: [
-                { offset: 0, color: chartAccent3 },
-                { offset: 1, color: chartAccent },
-              ],
-            },
+          itemStyle: { color: "#ff7b72", borderRadius: [0, 4, 4, 0] as unknown as number },
+          label: {
+            show: true,
+            position: "right",
+            color: chartAxisColor,
+            fontSize: 10,
           },
+          animationDuration: 600,
         },
       ],
     };
-  }, [agg]);
+  }, [aggBin]);
 
-  const pageBinsOption = useMemo((): EChartsOption | null => {
-    const rows = list?.rows ?? [];
-    if (!rows.length) return null;
-    const top = sumBinsOnPage(rows, 22);
-    if (!top.length) return null;
-    const sorted = [...top].sort((a, b) => a.sum - b.sum);
-    const base = baseChartOption();
-    const tipBase =
-      typeof base.tooltip === "object" && base.tooltip !== null
-        ? base.tooltip
-        : {};
+  const cardOption = useMemo((): EChartsOption => {
+    const cardBad = new Map<string, number>();
+    for (const g of aggCard?.groups ?? []) {
+      const c = g.parts.cardId ?? "—";
+      cardBad.set(c, (cardBad.get(c) ?? 0) + g.count);
+    }
+    const sorted = [...cardBad.entries()].sort((a, b) => a[1] - b[1]).slice(-20);
     return {
-      ...base,
-      tooltip: {
-        ...tipBase,
-        trigger: "item",
-        formatter(p: unknown) {
-          const params = p as { dataIndex?: number; value?: unknown };
-          const idx = params?.dataIndex ?? 0;
-          const row = sorted[idx];
-          if (!row) return "";
-          const raw = params?.value;
-          const val =
-            typeof raw === "number"
-              ? raw
-              : Array.isArray(raw)
-                ? Number(raw[0])
-                : row.sum;
-          return `Bin ${row.bin}<br/>合计颗数：${val}`;
-        },
-      },
-      grid: {
-        ...(base.grid as object),
-        top: 88,
-      },
-      title: {
-        text: "本页不良 BIN 颗数合计",
-        subtext:
-          "按 v3 列表 bins[]：累加 isGoodBin 为 false 的 value；仅当前列表返回的若干行（由 limit 决定）。",
-        left: 0,
-        top: 4,
-        textStyle: { color: chartTextColor, fontSize: 14, fontWeight: 600 },
-        subtextStyle: {
-          color: chartAxisColor,
-          fontSize: 11,
-          lineHeight: 16,
-        },
-      },
+      ...baseChartOption(),
       xAxis: {
         type: "value",
         axisLabel: { color: chartAxisColor },
@@ -536,338 +434,586 @@ export function InfcontrolReport({ apiBase }: Props) {
       },
       yAxis: {
         type: "category",
-        data: sorted.map((x) => "Bin " + String(x.bin)),
-        axisLabel: {
-          color: chartAxisColor,
-          interval: 0,
-        },
+        data: sorted.map(([c]) => c),
+        axisLabel: { color: chartTextColor, fontSize: 11 },
       },
       series: [
         {
           type: "bar",
-          data: sorted.map((x) => x.sum),
-          itemStyle: {
-            color: chartAccent3,
-            borderRadius: [0, 4, 4, 0],
+          data: sorted.map(([, v]) => v),
+          itemStyle: { color: "#e6b450", borderRadius: [0, 4, 4, 0] as unknown as number },
+          label: {
+            show: true,
+            position: "right",
+            color: chartAxisColor,
+            fontSize: 10,
           },
+          animationDuration: 600,
         },
       ],
     };
+  }, [aggCard]);
+
+  const slotOption = useMemo((): EChartsOption => {
+    const slotBad = new Map<string, number>();
+    for (const g of aggSlot?.groups ?? []) {
+      const s = g.parts.slot ?? "—";
+      slotBad.set(s, (slotBad.get(s) ?? 0) + g.count);
+    }
+    const sorted = [...slotBad.entries()].sort(
+      (a, b) => Number(a[0]) - Number(b[0])
+    );
+    return {
+      ...baseChartOption(),
+      xAxis: {
+        type: "category",
+        data: sorted.map(([s]) => `Slot ${s}`),
+        axisLabel: { color: chartAxisColor, fontSize: 10, rotate: 30 },
+      },
+      yAxis: {
+        type: "value",
+        axisLabel: { color: chartAxisColor },
+        splitLine: { lineStyle: { color: chartSplitLine } },
+      },
+      series: [
+        {
+          type: "bar",
+          data: sorted.map(([, v]) => v),
+          itemStyle: { color: "#79c0ff", borderRadius: [4, 4, 0, 0] as unknown as number },
+          animationDuration: 600,
+        },
+      ],
+    };
+  }, [aggSlot]);
+
+  const freeOption = useMemo((): EChartsOption => {
+    const sorted = [...(aggFree?.groups ?? [])]
+      .sort((a, b) => a.count - b.count)
+      .slice(-25);
+    return {
+      ...baseChartOption(),
+      xAxis: {
+        type: "value",
+        axisLabel: { color: chartAxisColor },
+        splitLine: { lineStyle: { color: chartSplitLine } },
+      },
+      yAxis: {
+        type: "category",
+        data: sorted.map((g) => g.key),
+        axisLabel: { color: chartTextColor, fontSize: 10 },
+      },
+      series: [
+        {
+          type: "bar",
+          data: sorted.map((g) => g.count),
+          itemStyle: { color: "#58a6ff", borderRadius: [0, 4, 4, 0] as unknown as number },
+          animationDuration: 600,
+        },
+      ],
+    };
+  }, [aggFree]);
+
+  // ── Tree ─────────────────────────────────────────────────────────────────
+
+  const treeRoots = useMemo(() => {
+    if (!aggTree?.groups?.length) return [];
+    return buildTree(aggTree.groups, ["device", "lot", "cardId", "bin"]);
+  }, [aggTree]);
+
+  // ── Detail rows ──────────────────────────────────────────────────────────
+
+  const detailRows = useMemo(() => {
+    if (!list?.rows?.length) return [];
+    return (list.rows as InfcontrolLayerBinV3Row[]).map((r) => {
+      const yp = computeYieldPct([r]);
+      return {
+        TESTEND:  r.TESTEND ?? "",
+        DEVICE:   r.DEVICE ?? "",
+        LOT:      r.LOT ?? "",
+        SLOT:     r.SLOT ?? "",
+        CARDID:   r.CARDID ?? "",
+        PASSID:   r.PASSID ?? "",
+        "Yield%": yp !== null ? `${yp.toFixed(1)}%` : "—",
+      };
+    });
   }, [list]);
 
+  const chips = useMemo(() => activeChips(form), [form]);
+  const hasData = !!(list || aggBin || aggCard);
+
   return (
-    <section className="report-panel">
-      <header className="report-panel-header">
+    <div className="report-panel">
+      {/* ── Header ── */}
+      <div className="report-panel-header">
         <div>
-          <h2>JB START（v3）</h2>
+          <h2>🔬 JB START</h2>
           <p className="report-desc">
-            列表与 BIN 聚合：<code>{API_PREFIX}/infcontrol-layer-bins/v3</code>、
-            <code>{API_PREFIX}/infcontrol-layer-bins/v3/aggregate</code>
-            ；不良全量排名仍用{" "}
-            <code>{API_PREFIX}/infcontrol-layer-bins/v2/top-bad-bins</code>
-            。PASSBIN 以 <strong>-</strong> 分隔 good bin；明细{" "}
-            <code>bins[]</code> 含 <code>value</code>、<code>n</code>、
-            <code>isGoodBin</code>。
-            <br />
-            <span className="muted small">
-              修改条件后请再次点击各查询按钮，否则会清空旧结果以免误判。
-            </span>
+            层控 BIN 数据（PASSTYPE = TEST）。复合筛选，一键触发：明细 + BIN 排名 +
+            探针卡对比 + Slot 趋势。Yield% 由前端从 bins[].isGoodBin + GROSSDIE 计算。
           </p>
         </div>
-        <div className="report-actions">
-          <button
-            type="button"
-            className="btn secondary"
-            onClick={searchList}
-            disabled={loadingList}
-          >
-            {loadingList ? "查询中…" : "查列表"}
-          </button>
-          <button
-            type="button"
-            className="btn secondary"
-            onClick={searchAggregate}
-            disabled={loadingAgg}
-          >
-            {loadingAgg ? "聚合中…" : "查 BIN 聚合"}
-          </button>
-          <button
-            type="button"
-            className="btn primary"
-            onClick={searchBadBins}
-            disabled={loadingBad}
-          >
-            {loadingBad ? "统计中…" : "查不良排名"}
-          </button>
-        </div>
-      </header>
+      </div>
 
+      {/* ── Filter grid ── */}
       <div className="filter-grid">
-        <label>
-          <span>Device</span>
-          <input
-            value={form.device}
-            onChange={(e) =>
-              setForm((s) => ({ ...s, device: e.target.value }))
-            }
-          />
-        </label>
-        <label>
-          <span>LotID</span>
-          <input
-            value={form.lot}
-            onChange={(e) => setForm((s) => ({ ...s, lot: e.target.value }))}
-          />
-        </label>
-        <label>
-          <span>Slot</span>
-          <input
-            value={form.slot}
-            onChange={(e) => setForm((s) => ({ ...s, slot: e.target.value }))}
-          />
-        </label>
-        <label>
-          <span>MES Lot</span>
-          <input
-            value={form.meslot}
-            onChange={(e) =>
-              setForm((s) => ({ ...s, meslot: e.target.value }))
-            }
-          />
-        </label>
+        {(
+          [
+            ["Device",   "device"  ],
+            ["Lot",      "lot"     ],
+            ["Slot",     "slot"    ],
+            ["CardId",   "cardId"  ],
+            ["TesterID", "testerId"],
+            ["PassID",   "passId"  ],
+            ["MES Slot", "meslot"  ],
+          ] as [string, keyof FormState][]
+        ).map(([label, key]) => (
+          <label key={key}>
+            <span>{label}</span>
+            <input
+              type="text"
+              value={form[key]}
+              onChange={(e) => setField(key, e.target.value)}
+              placeholder="留空不筛"
+            />
+          </label>
+        ))}
+
         <label>
           <span>Tester Type</span>
           <select
             value={form.tstype}
-            onChange={(e) =>
-              setForm((s) => ({ ...s, tstype: e.target.value }))
-            }
+            onChange={(e) => setField("tstype", e.target.value)}
           >
-            <option value="">（不筛选）</option>
-            {TSTYPE_OPTIONS.map((v) => (
-              <option key={v} value={v}>
-                {v}
+            <option value="">全部</option>
+            {TSTYPE_OPTIONS.map((o) => (
+              <option key={o} value={o}>
+                {o}
               </option>
             ))}
           </select>
         </label>
-        <label>
-          <span>ProbeCardID</span>
-          <input
-            value={form.cardId}
-            onChange={(e) =>
-              setForm((s) => ({ ...s, cardId: e.target.value }))
-            }
-          />
-        </label>
-        <label>
-          <span>HostName（testerId）</span>
-          <input
-            value={form.testerId}
-            onChange={(e) =>
-              setForm((s) => ({ ...s, testerId: e.target.value }))
-            }
-          />
-        </label>
-        <label>
-          <span>PassID</span>
-          <select
-            value={form.passId}
-            onChange={(e) =>
-              setForm((s) => ({ ...s, passId: e.target.value }))
-            }
-          >
-            <option value="">（不筛选）</option>
-            <option value="1">1</option>
-            <option value="3">3</option>
-            <option value="5">5</option>
-          </select>
-        </label>
+
         <label className="span-2">
-          <span>测试开始 · 起始时间</span>
-          <input
-            type="datetime-local"
-            step={1}
-            value={form.testStartFrom}
-            onChange={(e) =>
-              setForm((s) => ({ ...s, testStartFrom: e.target.value }))
-            }
-          />
-        </label>
-        <label className="span-2">
-          <span>测试开始 · 结束时间</span>
-          <input
-            type="datetime-local"
-            step={1}
-            value={form.testStartTo}
-            onChange={(e) =>
-              setForm((s) => ({ ...s, testStartTo: e.target.value }))
-            }
-          />
-        </label>
-        <label className="span-2">
-          <span>测试结束 · 起始时间</span>
-          <input
-            type="datetime-local"
-            step={1}
-            value={form.testEndFrom}
-            onChange={(e) =>
-              setForm((s) => ({ ...s, testEndFrom: e.target.value }))
-            }
-          />
-        </label>
-        <label className="span-2">
-          <span>测试结束 · 结束时间</span>
-          <input
-            type="datetime-local"
-            step={1}
-            value={form.testEndTo}
-            onChange={(e) =>
-              setForm((s) => ({ ...s, testEndTo: e.target.value }))
-            }
-          />
-        </label>
-        <label>
-          <span>列表条数上限（1～500）</span>
-          <input
-            value={form.limit}
-            onChange={(e) =>
-              setForm((s) => ({ ...s, limit: e.target.value }))
-            }
-          />
-        </label>
-        <label>
-          <span>不良排名条数（5～10）</span>
-          <input
-            value={form.rankTop}
-            onChange={(e) =>
-              setForm((s) => ({ ...s, rankTop: e.target.value }))
-            }
-          />
-        </label>
-        <label>
-          <span>v3 聚合维度</span>
-          <select
-            value={form.aggGroupBy}
-            onChange={(e) =>
-              setForm((s) => ({
-                ...s,
-                aggGroupBy: e.target.value as FormState["aggGroupBy"],
-              }))
-            }
-            className="select-input"
-          >
-            <option value="bin">仅 BIN</option>
-            <option value="device,bin">Device + BIN</option>
-          </select>
-        </label>
-        <label>
-          <span>聚合返回组数（1～50）</span>
-          <input
-            value={form.aggGroupTop}
-            onChange={(e) =>
-              setForm((s) => ({ ...s, aggGroupTop: e.target.value }))
-            }
-          />
+          <span>测试结束时间（testEnd）</span>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              type="datetime-local"
+              value={form.testEndFrom}
+              onChange={(e) => setField("testEndFrom", e.target.value)}
+              style={{ flex: 1 }}
+            />
+            <span style={{ color: "#8b949e", fontSize: 12 }}>→</span>
+            <input
+              type="datetime-local"
+              value={form.testEndTo}
+              onChange={(e) => setField("testEndTo", e.target.value)}
+              style={{ flex: 1 }}
+            />
+          </div>
+          <div className="preset-chips" style={{ marginTop: 6 }}>
+            {(
+              [
+                ["今天", dateShortcutToday],
+                ["近7天", dateShortcutLast7Days],
+                ["本月", dateShortcutThisMonth],
+              ] as const
+            ).map(([lbl, fn]) => (
+              <button
+                key={lbl}
+                type="button"
+                className="chip"
+                onClick={() => applyDateShortcut(fn)}
+              >
+                {lbl}
+              </button>
+            ))}
+          </div>
         </label>
       </div>
 
-      {errorList ? <div className="alert error">{errorList}</div> : null}
-      {errorBad ? <div className="alert error">{errorBad}</div> : null}
-      {errorAgg ? <div className="alert error">{errorAgg}</div> : null}
-
-      {agg ? (
-        <div className="report-meta">
-          <span>
-            匹配明细行 <strong>{agg.totalRowsMatching}</strong> ·{" "}
-            {agg.orderBy}
+      {/* ── Chips + Query button ── */}
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 8,
+          alignItems: "center",
+        }}
+      >
+        {chips.length > 0 && (
+          <span style={{ fontSize: 11, color: "#8b949e" }}>生效筛选：</span>
+        )}
+        {chips.map((c) => (
+          <span
+            key={c.key}
+            style={{
+              background: "rgba(56,139,253,0.12)",
+              color: "#58a6ff",
+              border: "1px solid rgba(56,139,253,0.35)",
+              borderRadius: 999,
+              padding: "2px 10px",
+              fontSize: 12,
+              cursor: "pointer",
+            }}
+            onClick={() => clearFilter(c.key)}
+          >
+            {c.label} ✕
           </span>
-        </div>
-      ) : null}
+        ))}
+        <button
+          type="button"
+          className="btn primary"
+          style={{ marginLeft: "auto" }}
+          disabled={loadingList || loadingAgg}
+          onClick={query}
+        >
+          {loadingList || loadingAgg ? "查询中…" : "查询"}
+        </button>
+      </div>
 
-      {aggChartOption ? (
-        <div className="card chart-card">
-          <DarkChart option={aggChartOption} height={420} />
-        </div>
-      ) : null}
-
-      {agg?.groups?.length ? (
-        <div className="card">
-          <h3 className="card-title">v3 聚合组（前 {agg.groupTop} 组）</h3>
-          <DataTable
-            rows={agg.groups.map((g, i) => ({
-              _rank: i + 1,
-              key: g.key,
-              count: g.count,
-              parts: JSON.stringify(g.parts),
-            }))}
-            columnOrder={["_rank", "key", "count", "parts"]}
-          />
-        </div>
-      ) : null}
-
-      {badBins ? (
-        <div className="report-meta">
-          <span>
-            不良排名取前 <strong>{badBins.rankTop}</strong> 个 BIN（可调
-            5～10）
-          </span>
-          <span className="muted small">{badBins.orderBy}</span>
-        </div>
-      ) : null}
-
-      {badBinsChartOption ? (
-        <div className="card chart-card">
-          <DarkChart option={badBinsChartOption} height={420} />
-        </div>
-      ) : (
-        <div className="card chart-placeholder subtle">
-          <p>
-            点击 <strong>查不良排名</strong>{" "}
-            后，将在当前筛选下的<strong>全部匹配行</strong>上汇总不良 BIN 合计并绘图。
-          </p>
+      {(errorList || errorAgg) && (
+        <div
+          style={{
+            color: "#ff7b72",
+            fontSize: 13,
+            background: "rgba(248,81,73,0.08)",
+            padding: "8px 12px",
+            borderRadius: 6,
+          }}
+        >
+          {errorList || errorAgg}
         </div>
       )}
 
-      {badBins?.bins?.length ? (
-        <div className="card">
-          <h3 className="card-title">不良 BIN 排名表</h3>
-          <DataTable
-            rows={badBins.bins.map((b, i) => ({
-              _rank: i + 1,
-              binName: b.n,
-              badTotal: b.badTotal,
-            }))}
-            columnOrder={["_rank", "binName", "badTotal"]}
-          />
-        </div>
-      ) : null}
-
-      {list ? (
-        <div className="card">
-          <div className="card-head">
-            <h3 className="card-title">明细表（{list.count} 条）</h3>
-            <span className="muted small">
-              limit≤{list.limitMax} · {list.orderBy}
-            </span>
+      {hasData && (
+        <>
+          {/* ── KPI Cards ── */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4,1fr)",
+              gap: 12,
+            }}
+          >
+            <KpiCard label="匹配 Wafer 数" value={totalWafers} color="blue" />
+            <KpiCard
+              label="综合 Yield%"
+              value={
+                overallYield !== null ? `${overallYield.toFixed(1)}%` : null
+              }
+              color={
+                overallYield !== null
+                  ? overallYield >= 95
+                    ? "green"
+                    : overallYield >= 80
+                    ? "yellow"
+                    : "red"
+                  : "white"
+              }
+              subtext="前端计算"
+            />
+            <KpiCard
+              label="最差探针卡"
+              value={worstCard}
+              color="red"
+              subtext="坏 die 最多"
+            />
+            <KpiCard
+              label="Top 不良 Bin"
+              value={topBin}
+              color="yellow"
+              subtext="全量最高"
+            />
           </div>
-          <p className="muted small">
-            明细表不显示 KEYNUMBER、PASSBIN 及 BIN 展开列；本页不良 BIN 图仍基于接口返回的{" "}
-            <code>bins</code>。
-          </p>
-          <DataTable
-            rows={listDetailRows}
-            columnOrder={LIST_COLUMNS_PREF}
-            omitKeys={["NOTCH", "notch"]}
-          />
-        </div>
-      ) : null}
 
-      {pageBinsOption ? (
-        <div className="card chart-card">
-          <DarkChart option={pageBinsOption} height={380} />
-        </div>
-      ) : null}
-    </section>
+          {/* ── LOT Yield% bar (full width) ── */}
+          {lotYieldData.length > 0 && (
+            <div
+              style={{
+                background: "#0d1117",
+                border: "1px solid rgba(240,246,252,0.1)",
+                borderRadius: 8,
+                padding: 16,
+              }}
+            >
+              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
+                🟢 各 LOT Yield%（绿≥95% / 黄80-95% / 红&lt;80%）
+              </div>
+              <ReactECharts
+                option={lotYieldOption}
+                style={{
+                  height: Math.max(180, lotYieldData.length * 22 + 60),
+                  width: "100%",
+                }}
+                opts={{ renderer: "canvas" }}
+                notMerge
+                lazyUpdate
+                onEvents={{
+                  click: (params: { name: string }) => {
+                    fetchDrill("lot", params.name, "slot", form);
+                  },
+                }}
+              />
+              {drill?.parentDimKey === "lot_yield" && (
+                <DrillDownPanel
+                  title={`${drill.parentDimVal} · 下钻：按 ${drill.subDim}`}
+                  groups={drill.groups}
+                  loading={drill.loading}
+                  error={drill.error}
+                  activeSubDim={drill.subDim}
+                  subDimOptions={[
+                    { label: "CardId", value: "cardId" },
+                    { label: "Slot",   value: "slot"   },
+                    { label: "Bin",    value: "bin"    },
+                  ]}
+                  onSubDimChange={(d) =>
+                    fetchDrill("lot", drill.parentDimVal, d, form)
+                  }
+                  onClose={() => setDrill(null)}
+                />
+              )}
+            </div>
+          )}
+
+          {/* ── Charts 2×2 ── */}
+          <div
+            style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
+          >
+            {/* BIN ranking */}
+            <div
+              style={{
+                background: "#0d1117",
+                border: "1px solid rgba(240,246,252,0.1)",
+                borderRadius: 8,
+                padding: 16,
+              }}
+            >
+              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
+                🔴 不良 BIN 全量排名
+              </div>
+              {aggBin && (
+                <ReactECharts
+                  option={binRankOption}
+                  style={{
+                    height: Math.max(180, (aggBin.groups?.length ?? 0) * 22 + 60),
+                    width: "100%",
+                  }}
+                  opts={{ renderer: "canvas" }}
+                  notMerge
+                  lazyUpdate
+                  onEvents={{
+                    click: (params: { name: string }) => {
+                      const bin = params.name.replace(/^Bin /, "");
+                      fetchDrill("bin", bin, "cardId", form);
+                    },
+                  }}
+                />
+              )}
+              {drill?.parentDimKey === "bin" && (
+                <DrillDownPanel
+                  title={`Bin ${drill.parentDimVal} · 下钻：按 ${drill.subDim}`}
+                  groups={drill.groups}
+                  loading={drill.loading}
+                  error={drill.error}
+                  activeSubDim={drill.subDim}
+                  subDimOptions={[
+                    { label: "CardId", value: "cardId" },
+                    { label: "Lot",    value: "lot"    },
+                    { label: "Slot",   value: "slot"   },
+                  ]}
+                  onSubDimChange={(d) =>
+                    fetchDrill("bin", drill.parentDimVal, d, form)
+                  }
+                  onClose={() => setDrill(null)}
+                />
+              )}
+            </div>
+
+            {/* ProbeCard comparison */}
+            <div
+              style={{
+                background: "#0d1117",
+                border: "1px solid rgba(240,246,252,0.1)",
+                borderRadius: 8,
+                padding: 16,
+              }}
+            >
+              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
+                🃏 ProbeCard 不良对比
+              </div>
+              {aggCard && (
+                <ReactECharts
+                  option={cardOption}
+                  style={{
+                    height: Math.max(
+                      180,
+                      new Map(
+                        aggCard.groups?.map((g) => [g.parts.cardId, 1]) ?? []
+                      ).size *
+                        22 +
+                        60
+                    ),
+                    width: "100%",
+                  }}
+                  opts={{ renderer: "canvas" }}
+                  notMerge
+                  lazyUpdate
+                  onEvents={{
+                    click: (params: { name: string }) => {
+                      fetchDrill("cardId", params.name, "slot", form);
+                    },
+                  }}
+                />
+              )}
+              {drill?.parentDimKey === "cardId" && (
+                <DrillDownPanel
+                  title={`${drill.parentDimVal} · 下钻：按 ${drill.subDim}`}
+                  groups={drill.groups}
+                  loading={drill.loading}
+                  error={drill.error}
+                  activeSubDim={drill.subDim}
+                  subDimOptions={[
+                    { label: "Slot", value: "slot" },
+                    { label: "Bin",  value: "bin"  },
+                    { label: "Lot",  value: "lot"  },
+                  ]}
+                  onSubDimChange={(d) =>
+                    fetchDrill("cardId", drill.parentDimVal, d, form)
+                  }
+                  onClose={() => setDrill(null)}
+                />
+              )}
+            </div>
+
+            {/* Slot trend */}
+            <div
+              style={{
+                background: "#0d1117",
+                border: "1px solid rgba(240,246,252,0.1)",
+                borderRadius: 8,
+                padding: 16,
+              }}
+            >
+              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
+                📊 Slot 趋势（wafer 间比较）
+              </div>
+              {aggSlot && <DarkChart option={slotOption} height={240} />}
+            </div>
+
+            {/* Free-dim aggregate */}
+            <div
+              style={{
+                background: "#0d1117",
+                border: "1px solid rgba(240,246,252,0.1)",
+                borderRadius: 8,
+                padding: 16,
+              }}
+            >
+              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 6 }}>
+                🔢 自由维度聚合
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 6,
+                  flexWrap: "wrap",
+                  marginBottom: 8,
+                }}
+              >
+                {FREE_DIMS.map((d) => (
+                  <button
+                    key={d.value}
+                    type="button"
+                    className="chip"
+                    style={
+                      d.value === freeDim
+                        ? {
+                            background: "rgba(56,139,253,0.2)",
+                            borderColor: "#388bfd",
+                            color: "#58a6ff",
+                          }
+                        : undefined
+                    }
+                    onClick={() => handleFreeDimChange(d.value)}
+                  >
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+              {aggFree && (
+                <DarkChart
+                  option={freeOption}
+                  height={Math.max(
+                    180,
+                    (aggFree.groups?.length ?? 0) * 22 + 60
+                  )}
+                />
+              )}
+            </div>
+          </div>
+
+          {/* ── Tree table ── */}
+          {treeRoots.length > 0 && (
+            <div
+              style={{
+                background: "#0d1117",
+                border: "1px solid rgba(240,246,252,0.1)",
+                borderRadius: 8,
+                padding: 16,
+              }}
+            >
+              <div
+                style={{ fontSize: 12, color: "#8b949e", marginBottom: 10 }}
+              >
+                📊 分组汇总（Device → LOT → CardId → Bin）
+              </div>
+              <TreeTable
+                roots={treeRoots}
+                totalHeader="坏 die"
+                renderExtra={(node, depth) => {
+                  if (depth > 1) return null;
+                  const device =
+                    node.dimKey === "device" ? node.dimValue : undefined;
+                  const lot =
+                    node.dimKey === "lot" ? node.dimValue : undefined;
+                  if (!list?.rows?.length) return null;
+                  const filtered = (
+                    list.rows as InfcontrolLayerBinV3Row[]
+                  ).filter((r) => {
+                    if (device && r.DEVICE !== device) return false;
+                    if (lot && r.LOT !== lot) return false;
+                    return true;
+                  });
+                  const yp = computeYieldPct(filtered);
+                  if (yp === null) return null;
+                  return (
+                    <span style={{ fontSize: 11, color: yieldColor(yp) }}>
+                      {yp.toFixed(1)}%
+                    </span>
+                  );
+                }}
+              />
+            </div>
+          )}
+
+          {/* ── Detail table ── */}
+          {detailRows.length > 0 && (
+            <div
+              style={{
+                background: "#0d1117",
+                border: "1px solid rgba(240,246,252,0.1)",
+                borderRadius: 8,
+                padding: 16,
+              }}
+            >
+              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
+                明细表 — 共 {list?.count ?? 0} 条（含 Yield%）
+              </div>
+              <DataTable rows={detailRows} maxHeight={400} />
+            </div>
+          )}
+        </>
+      )}
+    </div>
   );
 }
