@@ -96,6 +96,13 @@ pm2 startup
 
 ## 5. 注意事项
 
+### 5.1 路由与 manifest（发布后仍 404 时先看这里）
+
+- **`/api/v1`** 与 **`/api/v3`** 挂载**同一**路由表（见 `src/app.ts`）。业务 URL **推荐** **`/api/v3/...`**，旧集成仍可用 **`/api/v1/...`**。
+- **`GET /api/v3/manifest`**：仅含 v3 列表/聚合、**`db/ping`**、**`/health`**；**`catalogScope`** 为 **`v3-surfaces-only`**；**`path` / `example`** 与 **`/api/v3`** 对齐（实现：`src/lib/rebaseApiManifest.ts`）。
+- **`GET /api/v1/manifest`**：**全量**端点目录，**`catalogScope`** 为 **`full`**。
+- 若 **`/api/v3/.../aggregate`** 返回 **404**，多为线上仍是**旧 `dist`**（未含当前路由）。在本机 **`npm run build`** 后 **`pm2 reload`**，并对照 **`GET …/api/v3/manifest`** 是否已列出该 **`path`**。
+
 - **生产不要用 `npm install` 代替 `npm ci`**：除非你有意放宽锁文件；CI/正式环境通常用 `npm ci` 保证与 `package-lock.json` 一致。
 - **`NODE_ENV`**：由 `ecosystem.config.cjs` 设为 `production`；不要用测试用的 dummy 开关冒充正式数据（见 `.env.example` 中 `YIELD_MONITOR_TRIGGERS_DUMMY` / `INFCONTROL_LAYER_BINS_DUMMY`）。
 - **监听端口**：由环境变量 `PORT` 控制；防火墙 / 反向代理需与之一致。
@@ -108,7 +115,7 @@ pm2 startup
 
 **常见误操作**：只在 **`.env.example`** 里写了 `INFCONTROL_LAYER_BINS_DUMMY=true`。该文件是模板，**运行时不会被加载**；必须把变量写在项目根目录的 **`.env`**（一般由 `copy .env.example .env` 得到）。修改 `.env` 后需重启 PM2。
 
-**层控 BIN**（`/infcontrol-layer-bins`、**`/infcontrol-layer-bins/aggregate`**）仅在下列任一成立时使用内存数据：
+**层控 v3**（例如 **`GET /api/v3/infcontrol-layer-bins/v3`**、**`GET /api/v3/infcontrol-layer-bins/v3/aggregate`**；与 **`/api/v1/...`** 同路由）在下列任一成立且满足 **`listDummyRuntime`**（非 `dist`、非 `production`）时，可走 **`JBStart.xlsx`** 内存样本：
 
 - 环境变量 **`INFCONTROL_LAYER_BINS_DUMMY=true`**（或 `1` / `yes`，大小写不敏感），或  
 - **`NODE_ENV=test`**（一般不用于 PM2 正式进程）。

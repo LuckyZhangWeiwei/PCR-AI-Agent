@@ -1,6 +1,6 @@
 import { Router, type Request } from "express";
 import oracledb, { type BindParameters } from "oracledb";
-import { apiManifest } from "../lib/apiManifest.js";
+import { buildManifestResponseJson } from "../lib/rebaseApiManifest.js";
 import { enrichOracleDriverDetail, sendAgentError } from "../lib/agentResponse.js";
 import {
   INFCONTROL_LAYER_BIN_TOP,
@@ -86,9 +86,9 @@ function reqId(req: Request): string | undefined {
   return (req as Request & { requestId?: string }).requestId;
 }
 
-/** AI agent 工具发现：参数说明、示例与错误格式约定 */
-apiRouter.get("/manifest", (_req, res) => {
-  res.json(apiManifest);
+/** AI agent 工具发现：参数说明、示例与错误格式约定（**`/api/v1/manifest`** 全量；**`/api/v3/manifest`** 仅 v3 相关且 path 为 `/api/v3/...`） */
+apiRouter.get("/manifest", (req, res) => {
+  res.json(buildManifestResponseJson(req.baseUrl || "/api/v1"));
 });
 
 /**

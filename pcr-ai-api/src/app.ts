@@ -32,6 +32,8 @@ export function createApp() {
 
   app.use(healthRouter);
   app.use("/api/v1", apiRouter);
+  /** Same router as **`/api/v1`**; **`/api/v3/manifest`** returns v3-focused paths (no `/api/v1` in catalog URLs). */
+  app.use("/api/v3", apiRouter);
 
   app.use((req, res) => {
     sendAgentError(res, 404, "NOT_FOUND", "Not Found", req.path);

@@ -10,7 +10,7 @@ export const apiManifest = {
   apiVersion: "1",
   title: "pcr-ai-api",
   description:
-    "Read-only Oracle-backed HTTP API for PCR workflows. All query keys are case-insensitive. v3 routes use fixed SQL; when dummy env flags are set and the process is not dist/production (see listDummyRuntime.ts), v3 list and v3 aggregate use in-memory Excel samples like v1/v2; otherwise v3 hits Oracle. v3 aggregate GROUP BY is documented in manifest purpose + JSON documentation field. deprecatedEndpoints lists routes removed from the router (yield-monitor-triggers/aggregate only).",
+    "Read-only Oracle-backed HTTP API for PCR workflows. All query keys are case-insensitive. The same Express router is mounted at /api/v1 (full catalog in GET /api/v1/manifest) and /api/v3 (GET /api/v3/manifest returns v3-only endpoints with /api/v3-prefixed paths). v3 routes use fixed SQL; when dummy env flags are set and the process is not dist/production (see listDummyRuntime.ts), v3 list and v3 aggregate use in-memory Excel samples like v1/v2; otherwise v3 hits Oracle. v3 aggregate GROUP BY is documented in manifest purpose + JSON documentation field. deprecatedEndpoints lists routes removed from the router (yield-monitor-triggers/aggregate only).",
   mediaType: "application/json",
   endpoints: [
     {

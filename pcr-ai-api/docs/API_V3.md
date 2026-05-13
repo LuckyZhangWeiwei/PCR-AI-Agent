@@ -1,8 +1,8 @@
 # API v3（层控 / 产量监控）
 
-本文档记录 **v3** 路由的**原始 SQL 模板**（与当前编译产物 `dist/lib/apiV3ListSql.js` 一致）。业务说明、通俗理解见主文档 [**AI_AGENT_API.md**](./AI_AGENT_API.md) **§7**；**可复制 URL 与 curl** 见 **§8**；筛选参数表亦见 **§8.4.1**、**§8.6.1**。
+本文档记录 **v3** 路由的**原始 SQL 模板**（与当前编译产物 `dist/lib/apiV3ListSql.js` 一致）。**HTTP 前缀**推荐 **/api/v3**（与 **/api/v1** 同路由器；manifest 行为见 [**AI_AGENT_API.md**](./AI_AGENT_API.md) 文首表、**§6.2**、**§8.3**）。业务说明、通俗理解见主文档 **§7**；**可复制 URL 与 curl** 见 **§8**；筛选参数表亦见 **§8.4**、**§8.6**。
 
-**v3 聚合**（`/infcontrol-layer-bins/v3/aggregate`、`/yield-monitor-triggers/v3/aggregate`）的 SQL 不在此文件展开，见源码 **`src/lib/yieldMonitorTriggerV3Aggregate.ts`**、**`src/lib/infcontrolLayerBinV3Aggregate.ts`**（层控 UNPIVOT 复用 **`infcontrolLayerBinAggregate.ts`**）。
+**v3 聚合**（`/infcontrol-layer-bins/v3/aggregate`、`/yield-monitor-triggers/v3/aggregate`）的 SQL 不在此文件展开，见源码 **`src/lib/yieldMonitorTriggerV3Aggregate.ts`**、**`src/lib/infcontrolLayerBinV3Aggregate.ts`**（层控 UNPIVOT 与 **`infcontrolLayerBinAggregate.ts`** 共用 SQL 片段）。
 
 字符串筛选由解析器生成 **`UPPER(TRIM(列)) = UPPER(:bind)`**，与仓库样例表 **`docs/JBStart.xlsx`**（层控）、**`docs/delta-diff.xlsx`**（产量）中的大小写习惯一致；查询参数**键名**不区分大小写（含 `limit`）。
 
@@ -21,7 +21,7 @@
 
 ---
 
-## 1. `GET /api/v1/infcontrol-layer-bins/v3`
+## 1. `GET /api/v3/infcontrol-layer-bins/v3`
 
 ### 1.1 无额外筛选（仅 `PASSTYPE = 'TEST'`）
 
@@ -601,7 +601,7 @@ FETCH FIRST :lim ROWS ONLY
 
 ---
 
-## 2. `GET /api/v1/yield-monitor-triggers/v3`
+## 2. `GET /api/v3/yield-monitor-triggers/v3`
 
 ### 2.1 无 `WHERE`
 
