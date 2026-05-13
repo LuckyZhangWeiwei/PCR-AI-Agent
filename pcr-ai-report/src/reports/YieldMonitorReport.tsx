@@ -1,6 +1,10 @@
 import { useCallback, useMemo, useState } from "react";
 import { apiGetJson } from "../api/client";
-import type { YieldMonitorResponse } from "../api/types";
+import { API_PREFIX } from "../api/paths";
+import type {
+  YieldMonitorResponse,
+  YieldMonitorV3AggregateResponse,
+} from "../api/types";
 import { DarkChart } from "../components/DarkChart";
 import { DataTable } from "../components/DataTable";
 import {
@@ -38,12 +42,15 @@ type FormState = {
   lotId: string;
   wafer: string;
   type: string;
-  triggerLabel: string;
   probeCard: string;
   pass: string;
   timeStampFrom: string;
   timeStampTo: string;
-  includeProbeCardSummary: boolean;
+  /** v3 列表 limit 1…500 */
+  limit: string;
+  /** v3 聚合 dimensions（逗号分隔，见 manifest：type,device,hostname,…） */
+  aggDimensions: string;
+  aggGroupTop: string;
 };
 
 const initialForm: FormState = {
@@ -52,33 +59,61 @@ const initialForm: FormState = {
   lotId: "",
   wafer: "",
   type: "",
-  triggerLabel: "",
   probeCard: "",
   pass: "",
   timeStampFrom: "",
   timeStampTo: "",
-  includeProbeCardSummary: true,
+  limit: "200",
+  aggDimensions: "type,device",
+  aggGroupTop: "20",
 };
 
-function buildParams(
+const AGG_DIM_PRESETS: { label: string; value: string }[] = [
+  { label: "类型 + 设备", value: "type,device" },
+  { label: "机台 + 类型", value: "hostname,type" },
+  { label: "Lot + Wafer", value: "lotId,wafer" },
+  { label: "探针卡 + 设备", value: "probeCard,device" },
+  { label: "按日 + 类型", value: "timeDay,type" },
+  { label: "按小时 + 设备", value: "timeHour,device" },
+];
+
+function buildV3ListParams(
   f: FormState
 ): Record<string, string | number | boolean | undefined> {
   const num = (s: string) => {
     const n = Number(s);
     return Number.isFinite(n) ? n : undefined;
   };
+  const limRaw = num(f.limit);
+  const limit =
+    limRaw !== undefined
+      ? Math.min(500, Math.max(1, Math.floor(limRaw)))
+      : undefined;
   return {
     hostname: f.hostname || undefined,
     device: f.device || undefined,
     lotId: f.lotId || undefined,
     wafer: f.wafer || undefined,
     type: f.type || undefined,
-    triggerLabel: f.triggerLabel || undefined,
     probeCard: f.probeCard || undefined,
     pass: f.pass ? num(f.pass) : undefined,
     timeStampFrom: datetimeLocalToIso(f.timeStampFrom),
     timeStampTo: datetimeLocalToIso(f.timeStampTo),
-    includeProbeCardSummary: f.includeProbeCardSummary,
+    limit,
+  };
+}
+
+function buildYieldAggParams(
+  f: FormState
+): Record<string, string | number | boolean | undefined> {
+  const gt = Number(f.aggGroupTop);
+  const groupTop = Number.isFinite(gt)
+    ? Math.min(100, Math.max(1, Math.floor(gt)))
+    : 20;
+  return {
+    ...buildV3ListParams(f),
+    dimensions: f.aggDimensions.trim() || "type,device",
+    groupTop,
   };
 }
 
@@ -125,6 +160,24 @@ function hostnameSummaryFromPageRows(
     .map(([hostname, count]) => ({ hostname, count }));
 }
 
+/** v3 列表无全量 PROBECARD 汇总时，用本页行聚合（与 hostname 兜底一致）。 */
+function probeCardSummaryFromPageRows(
+  rows: Record<string, unknown>[]
+): { probeCard: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    const raw = r.PROBECARD ?? r.probecard ?? r.ProbeCard;
+    const k =
+      raw === null || raw === undefined || String(raw).trim() === ""
+        ? ""
+        : String(raw).trim();
+    counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([probeCard, count]) => ({ probeCard, count }));
+}
+
 /** Oracle / JSON 可能返回 ISO 字符串或毫秒级时间戳 */
 function parseYieldMonitorTimeMs(ts: unknown): number {
   if (ts == null || ts === "") return NaN;
@@ -143,39 +196,90 @@ export function YieldMonitorReport({ apiBase }: Props) {
   const [form, setForm] = useState<FormState>(initialForm);
   const [rollupDim, setRollupDim] = useState<string>("DEVICE");
   const [data, setData] = useState<YieldMonitorResponse | null>(null);
+  const [aggData, setAggData] = useState<YieldMonitorV3AggregateResponse | null>(
+    null
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [aggError, setAggError] = useState<string | null>(null);
 
   const runSearch = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setAggError(null);
+    setAggData(null);
     try {
-      const res = await apiGetJson<YieldMonitorResponse>(
+      const listRes = await apiGetJson<YieldMonitorResponse>(
         apiBase,
-        "/api/v1/yield-monitor-triggers",
-        buildParams(form)
+        `${API_PREFIX}/yield-monitor-triggers/v3`,
+        buildV3ListParams(form)
       );
-      setData(res);
+      setData(listRes);
     } catch (e: unknown) {
       setData(null);
       setError(e instanceof Error ? e.message : String(e));
+      setLoading(false);
+      return;
+    }
+    try {
+      const aggRes = await apiGetJson<YieldMonitorV3AggregateResponse>(
+        apiBase,
+        `${API_PREFIX}/yield-monitor-triggers/v3/aggregate`,
+        buildYieldAggParams(form)
+      );
+      setAggData(aggRes);
+    } catch (e: unknown) {
+      setAggData(null);
+      setAggError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
   }, [apiBase, form]);
 
+  const probeChartSource = useMemo((): {
+    summary: { probeCard: string; count: number }[];
+    scope: "full" | "page";
+  } | null => {
+    const api = data?.probeCardSummary;
+    if (api && api.length > 0) {
+      return { summary: api, scope: "full" };
+    }
+    const pageRows = data?.rows ?? [];
+    if (!pageRows.length) return null;
+    const fromPage = probeCardSummaryFromPageRows(pageRows);
+    return fromPage.length > 0
+      ? { summary: fromPage, scope: "page" }
+      : null;
+  }, [data]);
+
   const probeChartOption = useMemo((): EChartsOption | null => {
-    const summary = data?.probeCardSummary;
-    if (!summary?.length) return null;
-    const sorted = [...summary].sort((a, b) => a.count - b.count);
+    const src = probeChartSource;
+    if (!src?.summary.length) return null;
+    const sorted = [...src.summary].sort((a, b) => a.count - b.count);
     const labels = sorted.map((s) => s.probeCard || "（空）");
     const values = sorted.map((s) => s.count);
+    const base = baseChartOption();
+    const gridTop = src.scope === "page" ? 112 : 76;
     return {
-      ...baseChartOption(),
+      ...base,
+      grid: {
+        ...(base.grid as object),
+        top: gridTop,
+      },
       title: {
-        text: "探针卡出现次数（符合您筛选条件的全部记录）",
+        text: "探针卡（PROBECARD）出现次数",
+        subtext:
+          src.scope === "full"
+            ? "符合筛选条件的全量匹配行（与列表条数上限无关）"
+            : `基于本页至多 ${data?.limit ?? ""} 条明细；全量分布请使用下方「维度聚合」或调大 limit`,
         left: 0,
+        top: 4,
         textStyle: { color: chartTextColor, fontSize: 14, fontWeight: 600 },
+        subtextStyle: {
+          color: chartAxisColor,
+          fontSize: 11,
+          lineHeight: 16,
+        },
       },
       xAxis: {
         type: "value",
@@ -207,9 +311,9 @@ export function YieldMonitorReport({ apiBase }: Props) {
         },
       ],
     };
-  }, [data]);
+  }, [data?.limit, probeChartSource]);
 
-  /** 优先用工接口 hostnameSummary；若无则用本页 rows 兜底（旧 API / 空数组） */
+  /** 优先用工接口 hostnameSummary（v1）；v3 列表通常无此项，则用本页 rows 兜底 */
   const hostnameChartSource = useMemo((): {
     summary: { hostname: string; count: number }[];
     scope: "full" | "page";
@@ -246,7 +350,7 @@ export function YieldMonitorReport({ apiBase }: Props) {
         subtext:
           src.scope === "full"
             ? "符合您筛选条件的全部记录"
-            : "基于本页至多 200 条明细；全量机台分布请部署含 hostnameSummary 的最新 API 后重试",
+            : `基于本页至多 ${data?.limit ?? ""} 条明细；全量机台分布请使用下方「维度聚合」（如 hostname,type）`,
         left: 0,
         top: 4,
         textStyle: { color: chartTextColor, fontSize: 14, fontWeight: 600 },
@@ -286,7 +390,7 @@ export function YieldMonitorReport({ apiBase }: Props) {
         },
       ],
     };
-  }, [hostnameChartSource]);
+  }, [data?.limit, hostnameChartSource]);
 
   const typeMixOption = useMemo((): EChartsOption | null => {
     const rows = data?.rows ?? [];
@@ -352,7 +456,7 @@ export function YieldMonitorReport({ apiBase }: Props) {
     return {
       ...baseChartOption(),
       title: {
-        text: `按「${ROLLUP_DIMENSIONS.find((d) => d.value === rollupDim)?.label ?? rollupDim}」计数（本页最多约 200 条）`,
+        text: `按「${ROLLUP_DIMENSIONS.find((d) => d.value === rollupDim)?.label ?? rollupDim}」计数（本页最多 ${data?.limit ?? "—"} 条）`,
         left: 0,
         textStyle: { color: chartTextColor, fontSize: 14, fontWeight: 600 },
       },
@@ -389,6 +493,73 @@ export function YieldMonitorReport({ apiBase }: Props) {
       ],
     };
   }, [data, rollupDim]);
+
+  const yieldAggChartOption = useMemo((): EChartsOption | null => {
+    if (!aggData?.groups?.length) return null;
+    const ad = aggData;
+    const groups = ad.groups;
+    const sorted = [...groups].sort((a, b) => a.count - b.count);
+    const labels = sorted.map((g) =>
+      g.key.length > 52 ? `${g.key.slice(0, 52)}…` : g.key
+    );
+    const values = sorted.map((g) => g.count);
+    const dims = (ad.dimensions ?? []).join(", ");
+    const base = baseChartOption();
+    return {
+      ...base,
+      grid: { ...(base.grid as object), top: 108 },
+      title: {
+        text: "v3 维度聚合（全量匹配行）",
+        subtext: `维度：${dims} · 匹配总行数 ${ad.totalRowsMatching ?? "—"} · 展示组数 ${sorted.length}`,
+        left: 0,
+        top: 4,
+        textStyle: { color: chartTextColor, fontSize: 14, fontWeight: 600 },
+        subtextStyle: {
+          color: chartAxisColor,
+          fontSize: 11,
+          lineHeight: 16,
+        },
+      },
+      xAxis: {
+        type: "value",
+        axisLabel: { color: chartAxisColor },
+        splitLine: { lineStyle: { color: chartSplitLine } },
+      },
+      yAxis: {
+        type: "category",
+        data: labels,
+        axisLabel: { color: chartAxisColor, width: 200, overflow: "truncate" },
+      },
+      series: [
+        {
+          type: "bar",
+          data: values,
+          itemStyle: {
+            color: {
+              type: "linear",
+              x: 0,
+              y: 0,
+              x2: 1,
+              y2: 0,
+              colorStops: [
+                { offset: 0, color: chartAccent2 },
+                { offset: 1, color: chartAccent },
+              ],
+            },
+          },
+        },
+      ],
+    };
+  }, [aggData]);
+
+  const aggTableRows = useMemo((): Record<string, unknown>[] => {
+    if (!aggData?.groups?.length) return [];
+    return aggData.groups.map((g) => ({
+      compositeKey: g.key,
+      count: g.count,
+      ...g.parts,
+    }));
+  }, [aggData]);
 
   const timelineChart = useMemo((): {
     option: EChartsOption | null;
@@ -542,11 +713,12 @@ export function YieldMonitorReport({ apiBase }: Props) {
     <section className="report-panel">
       <header className="report-panel-header">
         <div>
-          <h2>yield monitor</h2>
+          <h2>yield monitor（v3）</h2>
           <p className="report-desc">
-            查看产量相关的触发记录。可先选时间范围，再按需填写机台、批次、器件等。
-            表格最多展示约 200 条；探针卡与机台分布图在勾选汇总时按<strong>全部</strong>符合筛选的记录统计。标注「本页」的图表仅基于这
-            200 条。
+            数据来自 <code>{API_PREFIX}/yield-monitor-triggers/v3</code>
+            与 <code>…/v3/aggregate</code>。列表按时间倒序，最多{" "}
+            <strong>500</strong> 条（可在下方设置）；探针卡 / 机台条形图默认基于<strong>本页</strong>行聚合，全量匹配行请看「维度聚合」图表与表格。
+            v3 列表<strong>不支持</strong>按 TRIGGER_LABEL 筛选，该维度仅用于聚合。
           </p>
         </div>
         <div className="report-actions">
@@ -609,15 +781,10 @@ export function YieldMonitorReport({ apiBase }: Props) {
             ))}
           </select>
         </label>
-        <label>
-          <span>触发说明（须与系统里完全一致）</span>
-          <input
-            value={form.triggerLabel}
-            onChange={(e) =>
-              setForm((s) => ({ ...s, triggerLabel: e.target.value }))
-            }
-          />
-        </label>
+        <p className="field-hint span-2 muted small">
+          v3 列表不按 TRIGGER_LABEL 筛选；若需按触发说明统计，请在下方「维度聚合」的 dimensions 中加入{" "}
+          <code>triggerLabel</code>（与 <code>timeDay</code> / <code>timeHour</code> 等组合时勿超过接口上限）。
+        </p>
         <label>
           <span>PROBECARD</span>
           <input
@@ -644,6 +811,65 @@ export function YieldMonitorReport({ apiBase }: Props) {
             ))}
           </select>
         </label>
+        <label>
+          <span>列表条数上限（1–500）</span>
+          <input
+            type="number"
+            min={1}
+            max={500}
+            value={form.limit}
+            onChange={(e) =>
+              setForm((s) => ({ ...s, limit: e.target.value }))
+            }
+          />
+        </label>
+        <label className="span-2">
+          <span>维度聚合 preset</span>
+          <select
+            className="select-input"
+            aria-label="维度聚合快捷模板"
+            value=""
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v)
+                setForm((s) => ({ ...s, aggDimensions: v }));
+              e.target.value = "";
+            }}
+          >
+            <option value="">选择模板填入 dimensions…</option>
+            {AGG_DIM_PRESETS.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}（{p.value}）
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="span-2">
+          <span>维度聚合 dimensions（逗号分隔）</span>
+          <span className="field-hint">
+            例如 type,device 或 hostname,type；最多 5 维；timeDay 与 timeHour 勿同用。
+          </span>
+          <input
+            value={form.aggDimensions}
+            onChange={(e) =>
+              setForm((s) => ({ ...s, aggDimensions: e.target.value }))
+            }
+            spellCheck={false}
+            placeholder="type,device"
+          />
+        </label>
+        <label>
+          <span>聚合 Top 组数（1–100）</span>
+          <input
+            type="number"
+            min={1}
+            max={100}
+            value={form.aggGroupTop}
+            onChange={(e) =>
+              setForm((s) => ({ ...s, aggGroupTop: e.target.value }))
+            }
+          />
+        </label>
         <label className="span-2">
           <span>起始时间</span>
           <span className="field-hint">点选日期与时间；用于限定「从何时起」的记录。</span>
@@ -668,28 +894,20 @@ export function YieldMonitorReport({ apiBase }: Props) {
             }
           />
         </label>
-        <label className="checkbox-field span-2">
-          <input
-            type="checkbox"
-            checked={form.includeProbeCardSummary}
-            onChange={(e) =>
-              setForm((s) => ({
-                ...s,
-                includeProbeCardSummary: e.target.checked,
-              }))
-            }
-          />
-          <span>同时统计各探针卡与各机台（HOSTNAME）出现次数（推荐勾选）</span>
-        </label>
       </div>
 
       {error ? <div className="alert error">{error}</div> : null}
+      {aggError ? (
+        <div className="alert error">
+          维度聚合请求失败（列表结果仍可能已显示）：{aggError}
+        </div>
+      ) : null}
 
       {data ? (
         <div className="report-meta">
           <span>
-            本页共 <strong>{data.count}</strong> 条（单次最多 {data.limit}{" "}
-            条）
+            本页共 <strong>{data.count}</strong> 条（本次 limit={data.limit}
+            {data.limitMax != null ? `，接口上限 ${data.limitMax}` : ""}）
           </span>
           <span className="muted small">排序：{data.orderBy}</span>
         </div>
@@ -703,7 +921,7 @@ export function YieldMonitorReport({ apiBase }: Props) {
         ) : (
           <div className="card chart-placeholder subtle">
             <p>
-              勾选「同时统计各探针卡与各机台」并查询后，此处显示探针卡分布图。
+              查询后若有 PROBECARD 列数据，此处显示分布图（v3 默认按本页行聚合；全量请看维度聚合）。
             </p>
           </div>
         )}
@@ -714,8 +932,7 @@ export function YieldMonitorReport({ apiBase }: Props) {
         ) : (
           <div className="card chart-placeholder subtle">
             <p>
-              勾选汇总并查询后显示机台图；若明细里有机台列仍无图，请确认已部署返回{" "}
-              <code>hostnameSummary</code> 的 API。
+              查询后若明细含 HOSTNAME，此处显示机台图（v3 默认按本页行聚合；全量请看维度聚合）。
             </p>
           </div>
         )}
@@ -743,6 +960,25 @@ export function YieldMonitorReport({ apiBase }: Props) {
         {rollupByDimOption ? (
           <div className="card chart-card span-2">
             <DarkChart option={rollupByDimOption} height={400} />
+          </div>
+        ) : null}
+        {yieldAggChartOption ? (
+          <div className="card chart-card span-2">
+            <DarkChart option={yieldAggChartOption} height={420} />
+          </div>
+        ) : null}
+        {aggTableRows.length ? (
+          <div className="card span-2">
+            <h3 className="card-title">维度聚合结果（Top 组）</h3>
+            {aggData?.documentation ? (
+              <p className="muted small" style={{ marginBottom: "0.75rem" }}>
+                {aggData.documentation}
+              </p>
+            ) : null}
+            <DataTable
+              rows={aggTableRows}
+              columnOrder={["compositeKey", "count"]}
+            />
           </div>
         ) : null}
         {timelineChart.option ? (

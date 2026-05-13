@@ -1,15 +1,18 @@
 import { useCallback, useLayoutEffect, useState } from "react";
 import { apiGetJson } from "./api/client";
+import { API_PREFIX } from "./api/paths";
 import { usePersistedApiBase } from "./hooks/usePersistedApiBase";
 import { InfcontrolReport } from "./reports/InfcontrolReport";
+import { OverviewReport } from "./reports/OverviewReport";
+import { TableRowsReport } from "./reports/TableRowsReport";
 import { YieldMonitorReport } from "./reports/YieldMonitorReport";
 import "./index.css";
 
-type Tab = "yield" | "infcontrol";
+type Tab = "overview" | "yield" | "infcontrol" | "table";
 
 export default function App() {
   const [apiBase, setApiBase, resetApiBase] = usePersistedApiBase();
-  const [tab, setTab] = useState<Tab>("yield");
+  const [tab, setTab] = useState<Tab>("overview");
 
   /** 切换 tab 时子面板从隐藏变为可见，通知图表重新计算尺寸（ECharts） */
   useLayoutEffect(() => {
@@ -41,7 +44,7 @@ export default function App() {
     try {
       const d = await apiGetJson<{ ok?: boolean }>(
         apiBase,
-        "/api/v1/db/ping",
+        `${API_PREFIX}/db/ping`,
         undefined,
         { cache: "no-store" }
       );
@@ -64,7 +67,7 @@ export default function App() {
           <p className="app-intro">
             <strong>怎么用：</strong>
             下面选一个主题 → 按需填写筛选项（留空表示不按该项筛选）→ 点「查询」。
-            JB START 明细列表条数可在页面设置（默认约 200，上限见接口）；需要更细条件时请缩小时间范围或加上批次、设备等。
+            数据请求统一走 <strong>v3</strong> 前缀（见「API 目录」页）；JB START / yield 的条数与聚合选项以各页说明为准。
           </p>
         </div>
 
@@ -122,6 +125,13 @@ export default function App() {
       <nav className="tabs" aria-label="报表切换">
         <button
           type="button"
+          className={`tab ${tab === "overview" ? "active" : ""}`}
+          onClick={() => setTab("overview")}
+        >
+          API 目录
+        </button>
+        <button
+          type="button"
           className={`tab ${tab === "yield" ? "active" : ""}`}
           onClick={() => setTab("yield")}
         >
@@ -134,13 +144,26 @@ export default function App() {
         >
           JB START
         </button>
+        <button
+          type="button"
+          className={`tab ${tab === "table" ? "active" : ""}`}
+          onClick={() => setTab("table")}
+        >
+          表浏览
+        </button>
       </nav>
 
+      <div className="tab-panel" hidden={tab !== "overview"}>
+        <OverviewReport apiBase={apiBase} />
+      </div>
       <div className="tab-panel" hidden={tab !== "yield"}>
         <YieldMonitorReport apiBase={apiBase} />
       </div>
       <div className="tab-panel" hidden={tab !== "infcontrol"}>
         <InfcontrolReport apiBase={apiBase} />
+      </div>
+      <div className="tab-panel" hidden={tab !== "table"}>
+        <TableRowsReport apiBase={apiBase} />
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { apiGetJson } from "../api/client";
+import { API_PREFIX } from "../api/paths";
 import type { TableRowsResponse } from "../api/types";
 import { DataTable } from "../components/DataTable";
 
@@ -34,7 +35,7 @@ export function TableRowsReport({ apiBase }: Props) {
     try {
       const res = await apiGetJson<TableRowsResponse>(
         apiBase,
-        "/api/v1/table-rows",
+        `${API_PREFIX}/table-rows`,
         requestParams
       );
       setData(res);

@@ -533,6 +533,41 @@ button.chip:hover {
   padding: 16px 18px;
 }
 
+.card.subtle {
+  background: rgba(240, 246, 252, 0.03);
+}
+
+.endpoint-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.endpoint-card {
+  padding: 14px 16px;
+}
+
+.endpoint-card-path {
+  margin: 0 0 8px;
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.endpoint-card-purpose {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.overview-meta p {
+  margin: 0 0 8px;
+}
+
+.overview-meta p:last-child {
+  margin-bottom: 0;
+}
+
 .card-title {
   margin: 0 0 12px;
   font-size: 16px;
