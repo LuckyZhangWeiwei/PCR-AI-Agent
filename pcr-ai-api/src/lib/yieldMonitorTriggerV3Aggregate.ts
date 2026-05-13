@@ -3,7 +3,7 @@ import { parseYieldMonitorTriggerV3Query } from "./yieldMonitorTriggerFilters.js
 
 /** 随 JSON 返回的固定说明（给人与 Agent；与 manifest `purpose` 一致） */
 export const YIELD_MONITOR_V3_AGGREGATE_DOCUMENTATION =
-  "v3 产量聚合：在「与 GET /yield-monitor-triggers/v3 相同的 WHERE」所匹配的**全部行**上执行 COUNT(*) 与 GROUP BY，" +
+  "v3 产量聚合：在「与 GET /yield-monitor-triggers/v3 相同的 WHERE」（含固定 **TYPE = delta_diff**）所匹配的**全部行**上执行 COUNT(*) 与 GROUP BY，" +
   "再按计数降序取 Top groupTop 组。与 v3 **列表**不同：列表按 TIME_STAMP 排序后 FETCH FIRST :lim，仅最多 500 条**明细**；" +
   "聚合统计的是时间窗/设备筛选下的**全量匹配行**。必填 dimensions（逗号分隔）。" +
   "当 **`YIELD_MONITOR_TRIGGERS_DUMMY=true`** 且进程非 `dist`/production 时，数据来自 **`docs/delta-diff.xlsx`** 内存样本；否则走 probeweb Oracle。";

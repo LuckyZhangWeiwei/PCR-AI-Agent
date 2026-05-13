@@ -49,7 +49,7 @@ FETCH FIRST :lim ROWS ONLY
 }
 
 /**
- * probeweb：`YMWEB_YIELDMONITORTRIGGER` 全列；可选 `whereClause`（`WHERE ...` 或空），
+ * probeweb：`YMWEB_YIELDMONITORTRIGGER` 全列；**`whereClause`** 由 **`parseYieldMonitorTriggerV3Query`** 生成（**恒含** **`TYPE = delta_diff`**），为 **`WHERE …`** 或空串；
  * `ORDER BY` + `FETCH FIRST :lim ROWS ONLY`。
  */
 export function buildYieldMonitorTriggersV3Sql(whereClause: string): string {

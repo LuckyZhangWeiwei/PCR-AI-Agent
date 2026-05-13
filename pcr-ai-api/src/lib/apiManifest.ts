@@ -519,7 +519,7 @@ export const apiManifest = {
       path: "/api/v1/yield-monitor-triggers/v3",
       method: "GET",
       purpose:
-        "SELECT * FROM YMWEB_YIELDMONITORTRIGGER with optional AND filters (case-insensitive TRIM on string columns: HOSTNAME, DEVICE, LOTID, WAFER, PROBECARD; exact PASS; TIME_STAMP window), then ORDER BY TIME_STAMP DESC NULLS LAST FETCH FIRST :lim ROWS ONLY. Query parameter type is not supported on v3 (rows still include TYPE column in each object). When YIELD_MONITOR_TRIGGERS_DUMMY is true and not dist/production, serves rows from docs/delta-diff.xlsx in memory; else probeweb Oracle. Query keys are case-insensitive (including limit).",
+        "SELECT * FROM YMWEB_YIELDMONITORTRIGGER with fixed WHERE UPPER(TRIM(TYPE)) = 'DELTA_DIFF' (bind :v3_type_scope; echoed as filters.typeScope) AND optional AND filters (case-insensitive TRIM on string columns: HOSTNAME, DEVICE, LOTID, WAFER, PROBECARD; exact PASS; TIME_STAMP window), then ORDER BY TIME_STAMP DESC NULLS LAST FETCH FIRST :lim ROWS ONLY. Query parameter type is not supported on v3 (cannot override TYPE scope; rows still include TYPE in each object). When YIELD_MONITOR_TRIGGERS_DUMMY is true and not dist/production, serves matching rows from docs/delta-diff.xlsx in memory; else probeweb Oracle. Query keys are case-insensitive (including limit).",
       queryParameters: [
         {
           name: "limit",
@@ -563,9 +563,11 @@ export const apiManifest = {
         limit: "number",
         limitMax: "number (500)",
         orderBy: "string",
-        filters: "object (echo of applied filters plus limit)",
+        filters:
+          "object (echo of applied filters plus limit; always includes typeScope: 'delta_diff' — server-fixed TYPE filter)",
         count: "number",
-        rows: "array of row objects (all columns from the table)",
+        rows:
+          "array of row objects (all DB columns plus dutNumber: number | null — DUT id parsed from TRIGGER_LABEL when it contains “on dut# …”, else null)",
       },
       example:
         "/api/v1/yield-monitor-triggers/v3?device=WA03P02G&timeStampBegin=2026-05-13T00:00:00.000Z&timeStampEnd=2026-05-13T23:59:59.999Z&limit=200",
@@ -574,7 +576,7 @@ export const apiManifest = {
       path: "/api/v1/yield-monitor-triggers/v3/aggregate",
       method: "GET",
       purpose:
-        "v3 yield aggregate: same WHERE as GET /yield-monitor-triggers/v3 (UPPER(TRIM) on string columns; TIME_STAMP window; etc.). Over ALL matching rows (not limited to FETCH FIRST list cap), COUNT(*) GROUP BY requested dimensions, order by count DESC, return top groupTop groups (default 25, max 100). Required query parameter dimensions: comma-separated from device, hostname, lotId, wafer, probeCard, pass, triggerLabel, timeDay, timeHour (max 5 dims; timeDay and timeHour mutually exclusive). Query parameter type is not supported on v3 yield endpoints. When YIELD_MONITOR_TRIGGERS_DUMMY is true and not dist/production, uses delta-diff.xlsx in-memory rows; else probeweb Oracle. JSON documentation field explains difference vs v3 list.",
+        "v3 yield aggregate: same WHERE as GET /yield-monitor-triggers/v3 (fixed TYPE=delta_diff via UPPER(TRIM(TYPE)); UPPER(TRIM) on other string columns; TIME_STAMP window; etc.). Over ALL matching rows (not limited to FETCH FIRST list cap), COUNT(*) GROUP BY requested dimensions, order by count DESC, return top groupTop groups (default 25, max 100). Required query parameter dimensions: comma-separated from device, hostname, lotId, wafer, probeCard, pass, triggerLabel, timeDay, timeHour (max 5 dims; timeDay and timeHour mutually exclusive). Query parameter type is not supported on v3 yield endpoints. When YIELD_MONITOR_TRIGGERS_DUMMY is true and not dist/production, uses delta-diff.xlsx in-memory rows; else probeweb Oracle. JSON documentation field explains difference vs v3 list.",
       queryParameters: [
         {
           name: "dimensions",
@@ -626,7 +628,8 @@ export const apiManifest = {
         dimensions: "string[] (normalized)",
         groupTop: "number",
         orderBy: "string",
-        filters: "object",
+        filters:
+          "object (includes typeScope: 'delta_diff' plus dimensions, groupTop, and list filters)",
         totalRowsMatching: "number",
         groups: "array of { key, count (row count per group), parts }",
       },

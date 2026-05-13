@@ -2,7 +2,10 @@ import {
   type YieldMonitorGroupBy,
   YIELD_MONITOR_AGGREGATE_KEY_SEP,
 } from "./yieldMonitorTriggerAggregate.js";
-import { YIELD_MONITOR_TRIGGER_TOP } from "./yieldMonitorTriggerFilters.js";
+import {
+  YIELD_MONITOR_TRIGGER_TOP,
+  YIELD_MONITOR_V3_TYPE_SCOPE,
+} from "./yieldMonitorTriggerFilters.js";
 import type { YieldMonitorV3AggDim } from "./yieldMonitorTriggerV3Aggregate.js";
 import { loadYieldMonitorTriggerRowsFromDeltaDiffXlsx } from "./dummyRowsFromExcel.js";
 import { listApisForceOracleNoDummy } from "./listDummyRuntime.js";
@@ -63,7 +66,11 @@ export function getYieldMonitorDummyExampleQuery(): string {
   if (listApisForceOracleNoDummy()) return MANIFEST_YIELD_EXAMPLE_FALLBACK;
   const rows = getYieldMonitorTriggerDummyRowsInternal();
   if (!rows.length) return MANIFEST_YIELD_EXAMPLE_FALLBACK;
-  return buildYieldDummyExampleQuery(rows[0]!);
+  const delta = rows.find(
+    (r) =>
+      String(r.TYPE).trim().toLowerCase() === YIELD_MONITOR_V3_TYPE_SCOPE
+  );
+  return buildYieldDummyExampleQuery(delta ?? rows[0]!);
 }
 
 function yieldMonitorTriggersDummyEnvTrue(raw: string | undefined): boolean {
@@ -284,11 +291,14 @@ function valueForYieldV3Dimension(
   }
 }
 
-/** 与 v3 Oracle **`UPPER(TRIM)`** 及 **`timeStampBegin`/`End`** 别名一致（Dummy 用 trim + toUpperCase）。 */
+/** 与 v3 Oracle **`UPPER(TRIM)`**、**`TYPE = delta_diff`** 及 **`timeStampBegin`/`End`** 别名一致（Dummy 用 trim + toUpperCase）。 */
 export function filterYieldMonitorDummyRowsMatchingV3(
   applied: Record<string, unknown>
 ): YieldMonitorTriggerDummyRow[] {
-  let rows = [...getYieldMonitorTriggerDummyRowsInternal()];
+  let rows = [...getYieldMonitorTriggerDummyRowsInternal()].filter(
+    (r) =>
+      String(r.TYPE).trim().toLowerCase() === YIELD_MONITOR_V3_TYPE_SCOPE
+  );
 
   const ci = (param: keyof YieldMonitorTriggerDummyRow, key: string) => {
     const v = applied[key];

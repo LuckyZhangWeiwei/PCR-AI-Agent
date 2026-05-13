@@ -73,6 +73,7 @@ import {
   filterYieldMonitorDummyRowsV3,
   yieldMonitorTriggersUseDummy,
 } from "../lib/yieldMonitorTriggerDummy.js";
+import { addDutNumberToYieldMonitorV3Row } from "../lib/yieldTriggerLabelDut.js";
 import {
   clampLimit,
   clampLimitFromQuery,
@@ -795,8 +796,8 @@ apiRouter.get("/yield-monitor-triggers", async (req, res) => {
 });
 
 /**
- * **v3** 产量监控：`YMWEB_YIELDMONITORTRIGGER` 全列。**`YIELD_MONITOR_TRIGGERS_DUMMY=true`**（且非 `dist`/production）时走 **`docs/delta-diff.xlsx`** 内存样本；否则 **probeweb Oracle**。
- * 查询参数：`UPPER(TRIM)` 字符串筛选、时间窗等（**不支持** **`type`** 查询参数；**`TYPE`** 仍出现在每行对象中，仅不能按该列筛选）。
+ * **v3** 产量监控：`YMWEB_YIELDMONITORTRIGGER` 全列；**固定** **`TYPE = delta_diff`**（Oracle **`UPPER(TRIM(t."TYPE"))`**；Dummy 同步）。每行 JSON 另含 **`dutNumber`**（从 **`TRIGGER_LABEL`** 中 **`on dut# …`** 解析，无则 **`null`**）。**`YIELD_MONITOR_TRIGGERS_DUMMY=true`**（且非 `dist`/production）时走 **`docs/delta-diff.xlsx`** 内存样本；否则 **probeweb Oracle**。
+ * 查询参数：`UPPER(TRIM)` 字符串筛选、时间窗等（**不支持** **`type`** 查询参数；**`TYPE`** 仍出现在每行对象中，**不能**用查询参数覆盖固定范围）。
  */
 apiRouter.get("/yield-monitor-triggers/v3", async (req, res) => {
   const parsed = parseYieldMonitorTriggerV3Query(
@@ -819,7 +820,9 @@ apiRouter.get("/yield-monitor-triggers/v3", async (req, res) => {
   );
 
   if (yieldMonitorTriggersUseDummy()) {
-    const rows = filterYieldMonitorDummyRowsV3(parsed.applied, limit);
+    const rows = filterYieldMonitorDummyRowsV3(parsed.applied, limit).map((r) =>
+      addDutNumberToYieldMonitorV3Row(r as Record<string, unknown>)
+    );
     return res.json({
       meta: {
         apiVersion: "3",
@@ -844,6 +847,9 @@ apiRouter.get("/yield-monitor-triggers/v3", async (req, res) => {
       });
       return result.rows || [];
     });
+    const withDut = (rows as Record<string, unknown>[]).map((row) =>
+      addDutNumberToYieldMonitorV3Row(row)
+    );
     return res.json({
       meta: {
         apiVersion: "3",
@@ -853,8 +859,8 @@ apiRouter.get("/yield-monitor-triggers/v3", async (req, res) => {
       limitMax: API_V3_LIST_LIMIT_MAX,
       orderBy: "TIME_STAMP DESC NULLS LAST",
       filters: { ...parsed.applied, limit },
-      count: rows.length,
-      rows,
+      count: withDut.length,
+      rows: withDut,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -869,7 +875,7 @@ apiRouter.get("/yield-monitor-triggers/v3", async (req, res) => {
 });
 
 /**
- * **v3 产量聚合**：与 **`/yield-monitor-triggers/v3`** 相同 **WHERE**。**Dummy 开启**时在 **delta-diff** 内存行上 `COUNT`+`GROUP BY`；否则 Oracle。
+ * **v3 产量聚合**：与 **`/yield-monitor-triggers/v3`** 相同 **WHERE**（含固定 **`TYPE = delta_diff`**）。**Dummy 开启**时在 **delta-diff** 内存行上 `COUNT`+`GROUP BY`；否则 Oracle。
  */
 apiRouter.get("/yield-monitor-triggers/v3/aggregate", async (req, res) => {
   const parsed = parseYieldMonitorTriggerV3AggregateQuery(

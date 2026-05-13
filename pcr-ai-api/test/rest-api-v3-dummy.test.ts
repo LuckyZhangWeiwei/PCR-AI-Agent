@@ -11,6 +11,8 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { after, before, describe, test } from "node:test";
 
+import { parseDutNumberFromTriggerLabel } from "../src/lib/yieldTriggerLabelDut.js";
+
 const API = "/api/v3";
 
 describe(
@@ -210,13 +212,45 @@ describe(
       assertOkJson(status, body);
       const b = body as {
         meta?: { apiVersion?: string };
-        rows?: unknown[];
+        rows?: Record<string, unknown>[];
         count?: number;
+        filters?: Record<string, unknown>;
       };
       assert.equal(b.meta?.apiVersion, "3");
+      assert.equal(b.filters?.typeScope, "delta_diff");
       assert.ok(Array.isArray(b.rows));
       assert.equal(b.count, b.rows!.length);
       assert.ok(b.rows!.length > 0, "delta-diff dummy 应至少返回一行");
+      let withDut = 0;
+      for (const row of b.rows!) {
+        assert.ok("dutNumber" in row);
+        assert.equal(
+          String(row.TYPE ?? "").trim().toLowerCase(),
+          "delta_diff",
+          "v3 列表仅应返回 TYPE=delta_diff 行"
+        );
+        const label = row.TRIGGER_LABEL != null ? String(row.TRIGGER_LABEL) : "";
+        assert.equal(
+          row.dutNumber,
+          parseDutNumberFromTriggerLabel(label),
+          "dutNumber 须与 TRIGGER_LABEL 中 on dut# 解析一致"
+        );
+        if (row.dutNumber != null) withDut++;
+      }
+      assert.ok(withDut > 0, "样本中应至少有一行含 on dut# 且 dutNumber 非 null");
+    });
+
+    test("parseDutNumberFromTriggerLabel（TRIGGER_LABEL 片段）", () => {
+      assert.equal(
+        parseDutNumberFromTriggerLabel(
+          "Min Yield(Dut#6): 0.0% on dut# 6 is less than 0.0%"
+        ),
+        6
+      );
+      assert.equal(parseDutNumberFromTriggerLabel("on dut# 21 "), 21);
+      assert.equal(parseDutNumberFromTriggerLabel("ON DUT#2"), 2);
+      assert.equal(parseDutNumberFromTriggerLabel("Bin# 8 Count: 1"), null);
+      assert.equal(parseDutNumberFromTriggerLabel(undefined), null);
     });
 
     test("GET /api/v3/yield-monitor-triggers/v3 带 type 查询参数 → 400", async () => {
@@ -242,8 +276,10 @@ describe(
         meta?: { apiVersion?: string };
         groups?: unknown[];
         totalRowsMatching?: number;
+        filters?: Record<string, unknown>;
       };
       assert.equal(b.meta?.apiVersion, "3");
+      assert.equal(b.filters?.typeScope, "delta_diff");
       assert.ok(typeof b.totalRowsMatching === "number");
       assert.ok(Array.isArray(b.groups));
     });

@@ -6,7 +6,7 @@
 
 **层控 `…/v3/aggregate`（仅坏 bin die）**：Oracle 路径 **`buildInfcontrolLayerBinAggregateSql(..., "v3-hyphen-tokens")`**；**PASSBIN** 按 **-** 拆出的整段下标为 **good bin**，**SUM** 不累计其 die（与 v3 列表 **`bins[].isGoodBin`**、**/v2/top-bad-bins** 的 token 规则一致）。**INFCONTROL_LAYER_BINS_DUMMY=true** 时 **`infcontrolLayerBinDummy.ts`** 内 **`forEachBadBinDieContribution`** 与 v2 top-bad-bins dummy 共用循环。见 [**AI_AGENT_API.md**](./AI_AGENT_API.md) **§4**、**§7.6**。
 
-字符串筛选由解析器生成 **`UPPER(TRIM(列)) = UPPER(:bind)`**，与仓库样例表 **`docs/JBStart.xlsx`**（层控）、**`docs/delta-diff.xlsx`**（产量）中的大小写习惯一致；查询参数**键名**不区分大小写（含 `limit`）。
+字符串筛选由解析器生成 **`UPPER(TRIM(列)) = UPPER(:bind)`**，与仓库样例表 **`docs/JBStart.xlsx`**（层控）、**`docs/delta-diff.xlsx`**（产量）中的大小写习惯一致；查询参数**键名**不区分大小写（含 `limit`）。**产量 v3**（`/yield-monitor-triggers/v3` 与 `/v3/aggregate`）在 **`parseYieldMonitorTriggerV3Query`** 中**恒**追加 **`UPPER(TRIM(t."TYPE")) = UPPER(:v3_type_scope)`**（`:v3_type_scope` = **`delta_diff`**）；Dummy 路径由 **`filterYieldMonitorDummyRowsMatchingV3`** 同步筛选 **`TYPE`**。
 
 ## 源码位置
 
@@ -605,25 +605,28 @@ FETCH FIRST :lim ROWS ONLY
 
 ## 2. `GET /api/v3/yield-monitor-triggers/v3`
 
-### 2.1 无 `WHERE`
+### 2.1 仅固定 `TYPE`（`delta_diff`），无其它可选筛选
+
+`parseYieldMonitorTriggerV3Query` 始终包含 **`UPPER(TRIM(t."TYPE")) = UPPER(:v3_type_scope)`**（`:v3_type_scope` 绑定为 `delta_diff`）；响应 `filters.typeScope` 回显。再与其余 AND 条件拼接。
 
 ```sql
 SELECT *
 FROM YMWEB_YIELDMONITORTRIGGER t
+WHERE UPPER(TRIM(t."TYPE")) = UPPER(:v3_type_scope)
 ORDER BY t.TIME_STAMP DESC NULLS LAST
 FETCH FIRST :lim ROWS ONLY
 ```
 
-### 2.2 有筛选时
+### 2.2 另有设备 / 时间等筛选时
 
 `parseYieldMonitorTriggerV3Query` 生成完整 `WHERE ...` 行（含 `WHERE` 关键字），插入在 `FROM` 与 `ORDER BY` 之间。
 
-**示例**：
+**示例**（`device` + `timeStampBegin`，且含固定 `TYPE`）：
 
 ```sql
 SELECT *
 FROM YMWEB_YIELDMONITORTRIGGER t
-WHERE UPPER(TRIM(t.DEVICE)) = UPPER(:v3_device) AND t.TIME_STAMP >= :v3_ts_lo
+WHERE UPPER(TRIM(t."TYPE")) = UPPER(:v3_type_scope) AND UPPER(TRIM(t.DEVICE)) = UPPER(:v3_device) AND t.TIME_STAMP >= :v3_ts_lo
 ORDER BY t.TIME_STAMP DESC NULLS LAST
 FETCH FIRST :lim ROWS ONLY
 ```

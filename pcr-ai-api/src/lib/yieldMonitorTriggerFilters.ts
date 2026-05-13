@@ -146,10 +146,14 @@ export type ParseYieldMonitorV3Ok = {
   applied: Record<string, unknown>;
 };
 
+/** v3 产量列表 / 聚合：与 Oracle **`UPPER(TRIM(t."TYPE"))`** 及 Dummy 筛选一致（仅 **`delta_diff`** 行）。 */
+export const YIELD_MONITOR_V3_TYPE_SCOPE = "delta_diff";
+
 /**
  * **v3** `GET /yield-monitor-triggers/v3`：与库表列对应的 AND 筛选（无 triggerLabel / id）。
  * 字符串列：`UPPER(TRIM(列)) = UPPER(:bind)`，与库内实际大小写（如样例 `docs/delta-diff.xlsx` 中 HOSTNAME 小写）无关地匹配。
- * **`type`（库列 `TYPE`）**：v3 **不提供**按异常类型筛选；传入 **`type`** 查询参数将返回校验错误。
+ * **固定**：始终 **`UPPER(TRIM(t."TYPE")) = UPPER(:v3_type_scope)`**，`:v3_type_scope` 为 **`delta_diff`**（响应 **`filters.typeScope`** 回显）；与 delta-diff 样本及 probeweb 中该类触发一致。
+ * **`type`（库列 `TYPE`）**：v3 **不提供**按异常类型**再**筛选；传入 **`type`** 查询参数将返回校验错误。
  * 时间：`timeStampBegin` & `timeStampEnd`（ISO 8601），或与 v1 相同的 `timeStampFrom` / `timeStampTo` 别名。
  */
 export function parseYieldMonitorTriggerV3Query(
@@ -167,6 +171,10 @@ export function parseYieldMonitorTriggerV3Query(
           'Query parameter "type" is not supported on v3 yield endpoints (list or aggregate)',
       };
     }
+
+    clauses.push(`UPPER(TRIM(t."TYPE")) = UPPER(:v3_type_scope)`);
+    (binds as Record<string, string>).v3_type_scope = YIELD_MONITOR_V3_TYPE_SCOPE;
+    applied.typeScope = YIELD_MONITOR_V3_TYPE_SCOPE;
 
     const strEqTrimCi = (param: string, columnSql: string, bindName: string) => {
       const v = firstString(firstQueryValue(q, param));
