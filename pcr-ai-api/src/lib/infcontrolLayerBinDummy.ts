@@ -7,13 +7,7 @@ import {
   binColumnIndexIsGood,
   parsePassBinHyphenGoodBins,
 } from "./passBinSemantics.js";
-
-/**
- * Dummy 联调：**与 manifest / 文档示例一致**的查询串片段（同一条件 AND 下至少命中一行，含 §3.4.1 聚合示例的时间窗）。
- * 正式库无此保证。
- */
-export const INFCONTROL_DUMMY_EXAMPLE_QUERY =
-  "device=WA00P69K&lot=DR39000.1N&slot=1&tstype=CP&cardId=9400-01&testEndFrom=2026-01-01T00:00:00.000Z&testEndTo=2026-01-31T23:59:59.999Z";
+import { loadInfcontrolLayerBinRowsFromJbStartXlsx } from "./dummyRowsFromExcel.js";
 
 /**
  * 与 INFCONTROL ⋈ INFLAYERBINLIST 查询列一致（Oracle 列名大写，含 BIN0…BIN255）。
@@ -50,81 +44,41 @@ export interface InfcontrolLayerBinDummyRow {
   PASSBIN: string;
 }
 
-function zeroBins(): Record<string, number> {
-  const o: Record<string, number> = {};
-  for (let i = 0; i < 256; i++) o[`BIN${i}`] = 0;
-  return o;
+/**
+ * Dummy 联调：查询串由 **`docs/JBStart.xlsx` Sheet1 首行** 推导（`device/lot/slot/tstype/cardId` + 该行 `TESTEND` 所在自然月的 `testEndFrom`/`testEndTo`），保证至少一行命中。
+ */
+function buildInfcontrolDummyExampleQuery(
+  first: InfcontrolLayerBinDummyRow
+): string {
+  const testEnd = new Date(String(first.TESTEND));
+  const y = Number.isNaN(testEnd.getTime())
+    ? 2026
+    : testEnd.getUTCFullYear();
+  const m = Number.isNaN(testEnd.getTime()) ? 0 : testEnd.getUTCMonth();
+  const testEndFrom = new Date(Date.UTC(y, m, 1)).toISOString();
+  const testEndTo = new Date(
+    Date.UTC(y, m + 1, 0, 23, 59, 59, 999)
+  ).toISOString();
+  return new URLSearchParams({
+    device: String(first.DEVICE),
+    lot: String(first.LOT),
+    slot: String(first.SLOT),
+    tstype: String(first.TSTYPE),
+    cardId: String(first.CARDID),
+    testEndFrom,
+    testEndTo,
+  }).toString();
 }
 
-function buildInfcontrolLayerBinDummyRows(): InfcontrolLayerBinDummyRow[] {
-  const list: InfcontrolLayerBinDummyRow[] = [];
-  /** i≥1 的行：测试结束时间螺旋（与 i=0 错开，避免占同一文档时间窗） */
-  const spiralAnchor = Date.parse("2026-05-09T12:00:00.000Z");
+const _jbStartRows = loadInfcontrolLayerBinRowsFromJbStartXlsx();
 
-  for (let i = 0; i < INFCONTROL_LAYER_BIN_TOP; i++) {
-    let testEnd: string;
-    let testStart: string;
-    if (i === 0) {
-      /** 锚点行：`tstype=CP`、`TESTEND` 落在 2026-01，与文档 aggregate / 列表示例时间筛选一致 */
-      testEnd = "2026-01-15T14:30:00.000Z";
-      testStart = "2026-01-15T11:00:00.000Z";
-    } else {
-      const testEndMs = spiralAnchor - i * 120_000;
-      testEnd = new Date(testEndMs).toISOString();
-      testStart = new Date(testEndMs - 3_600_000).toISOString();
-    }
-    const bins = zeroBins();
-
-    bins.BIN0 = 120 + (i % 40);
-    bins.BIN1 = i % 9;
-    bins.BIN2 = (i * 7) % 100;
-    bins.BIN3 = 1 + (i % 2);
-    bins.BIN8 = i % 5 === 0 ? 3 : 0;
-
-    const devicePool = ["WA00P69K", "WC03N09Z", "WK00N10K", "WB02N94R"];
-    const layerPool = ["LAYER_A", "LAYER_B", "MAP_TOP"];
-
-    const row: InfcontrolLayerBinDummyRow = {
-      ...bins,
-      KEYNUMBER: 9_000_000 + i,
-      DEVICE: devicePool[i % devicePool.length],
-      LOT: `DR${39000 + (i % 800)}.${1 + (i % 3)}N`,
-      CASSETTE: String((i % 25) + 1),
-      SLOT: (i % 24) + 1,
-      NOTCH: "DOWN",
-      MAPROWS: 80 + (i % 5),
-      MAPCOLS: 90 + (i % 4),
-      SAMPLETESTNUMBER: i % 4,
-      PDPW: 25 + (i % 10),
-      MESLOT: `MES${10000 + i}`,
-      /** i=0：T101、9400-01、CP，与 manifest 聚合示例一致 */
-      TESTERID: `T${100 + ((i + 1) % 8)}`,
-      TSTYPE: i === 0 ? "CP" : i % 3 === 0 ? "FT" : "CP",
-      CARDID: `${9400 + (i % 12)}-01`,
-      PIBID: `PIB${(i % 6) + 1}`,
-      PROBE: `${7700 + (i % 20)}-0${1 + (i % 8)}`,
-      GROSSDIE: 2000 + (i % 300),
-      PASSID: 500 + i,
-      SESSIONNUMBER: 1 + (i % 4),
-      PASSNUM: 1 + (i % 6),
-      TESTSTART: testStart,
-      TESTEND: testEnd,
-      LAYERNAME: layerPool[i % layerPool.length],
-      PASSRESUME: i % 2 === 0 ? "Y" : "N",
-      PASSRESULT: "PASS",
-      PASSTYPE: "TEST",
-      /** 半数样本为 `1-55`（PASSBIN 解析参考）；enrich 后 bins.isGood 依 BIN1 / PASSBIN 两端计算 */
-      PASSBIN: i % 2 === 0 ? "1-55" : `BIN${i % 12}`,
-    };
-    list.push(row);
-  }
-
-  return list;
-}
-
-/** 固定 200 条样本（结构与非 dummy 响应一致）；筛选逻辑与 SQL WHERE 等价 */
+/** 来自 `docs/JBStart.xlsx`（至多 **INFCONTROL_LAYER_BIN_TOP** 条）；筛选逻辑与 SQL WHERE 等价 */
 export const INFCONTROL_LAYER_BIN_DUMMY_ROWS: readonly InfcontrolLayerBinDummyRow[] =
-  buildInfcontrolLayerBinDummyRows();
+  _jbStartRows.slice(0, INFCONTROL_LAYER_BIN_TOP);
+
+export const INFCONTROL_DUMMY_EXAMPLE_QUERY = buildInfcontrolDummyExampleQuery(
+  INFCONTROL_LAYER_BIN_DUMMY_ROWS[0]!
+);
 
 function infcontrolLayerBinsDummyEnvTrue(raw: string | undefined): boolean {
   const v = raw?.trim().toLowerCase();

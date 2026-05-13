@@ -3,12 +3,7 @@ import {
   YIELD_MONITOR_AGGREGATE_KEY_SEP,
 } from "./yieldMonitorTriggerAggregate.js";
 import { YIELD_MONITOR_TRIGGER_TOP } from "./yieldMonitorTriggerFilters.js";
-
-/**
- * Dummy 联调：**与 manifest / 文档 §3.5 示例**一致（`device=D1` + 时间下界），保证至少一行。
- */
-export const YIELD_MONITOR_DUMMY_EXAMPLE_QUERY =
-  "device=D1&timeStampFrom=2026-01-01T00:00:00.000Z";
+import { loadYieldMonitorTriggerRowsFromDeltaDiffXlsx } from "./dummyRowsFromExcel.js";
 
 /** 与 Oracle 返回列一致（YMWEB_YIELDMONITORTRIGGER） */
 export type YieldMonitorTriggerDummyRow = {
@@ -25,113 +20,28 @@ export type YieldMonitorTriggerDummyRow = {
 };
 
 /**
- * 固定样本数据（结构与非 dummy 响应一致）；筛选逻辑与 SQL WHERE 等价。
- * 可按需替换或扩充。
+ * Dummy 联调：查询串由 **`docs/delta-diff.xlsx` Sheet1 首行** 推导（`device` + 该行 `TIME_STAMP` 所在自然月的 `timeStampFrom`），保证至少一行命中。
  */
+function buildYieldDummyExampleQuery(first: YieldMonitorTriggerDummyRow): string {
+  const t = new Date(first.TIME_STAMP);
+  const y = Number.isNaN(t.getTime()) ? 2026 : t.getUTCFullYear();
+  const mo = Number.isNaN(t.getTime()) ? 0 : t.getUTCMonth();
+  const timeStampFrom = new Date(Date.UTC(y, mo, 1)).toISOString();
+  return new URLSearchParams({
+    device: first.DEVICE,
+    timeStampFrom,
+  }).toString();
+}
+
+const _deltaDiffRows = loadYieldMonitorTriggerRowsFromDeltaDiffXlsx();
+
+/** 来自 `docs/delta-diff.xlsx`（至多 **YIELD_MONITOR_TRIGGER_TOP** 条）；筛选逻辑与 SQL WHERE 等价 */
 export const YIELD_MONITOR_TRIGGER_DUMMY_ROWS: readonly YieldMonitorTriggerDummyRow[] =
-  [
-    {
-      HOSTNAME: "dummy-anchor",
-      DEVICE: "D1",
-      LOTID: "DEMO.LOT.1N",
-      PASS: 1,
-      WAFER: "01",
-      TYPE: "delta_diff",
-      TRIGGER_LABEL:
-        "Dummy anchor row for manifest example (device=D1, Jan 2026).",
-      TIME_STAMP: "2026-01-15T12:00:00.000Z",
-      ID: 9_000_001,
-      PROBECARD: "9400-01",
-    },
-    {
-      HOSTNAME: "b3ps1601",
-      DEVICE: "WA00P69K",
-      LOTID: "DR31388.1N",
-      PASS: 3,
-      WAFER: "24",
-      TYPE: "delta_diff",
-      TRIGGER_LABEL:
-        "Bin# goodbin on dut# 11 Yield: 21.43, Min Yield(Dut#11): 21.43 Max Yield(Dut#5): 100.00 Delta exceed Delta Limit 60.",
-      TIME_STAMP: "2026-01-31T23:16:57.000Z",
-      ID: 1415861,
-      PROBECARD: "9464-01",
-    },
-    {
-      HOSTNAME: "b3ps1606",
-      DEVICE: "WC03N09Z",
-      LOTID: "DR40774.1N",
-      PASS: 1,
-      WAFER: "1",
-      TYPE: "delta_diff",
-      TRIGGER_LABEL:
-        "Bin# goodbin on dut# 4 Yield: 39.29, Min Yield(Dut#4): 39.29 Max Yield(Dut#25): 100.00 Delta exceed Delta Limit 60.",
-      TIME_STAMP: "2026-01-31T23:04:37.000Z",
-      ID: 1415841,
-      PROBECARD: "9407-01",
-    },
-    {
-      HOSTNAME: "b3flex24",
-      DEVICE: "WB02N94R",
-      LOTID: "TR14535.1C",
-      PASS: 1,
-      WAFER: "6",
-      TYPE: "Consebin",
-      TRIGGER_LABEL: "Bin#2 on dut#0 Conse_Count: 25 exceed limit 25  .",
-      TIME_STAMP: "2026-01-31T22:19:06.000Z",
-      ID: 1415825,
-      PROBECARD: "7774-07",
-    },
-    {
-      HOSTNAME: "b3j75060",
-      DEVICE: "WK00N10K",
-      LOTID: "TR15696.1X",
-      PASS: 3,
-      WAFER: "10",
-      TYPE: "Consebin",
-      TRIGGER_LABEL: "Bin# 8 Count: 81, exceed limit 80 .",
-      TIME_STAMP: "2026-01-31T11:39:37.000Z",
-      ID: 1415581,
-      PROBECARD: "6095-02",
-    },
-    {
-      HOSTNAME: "b3j75026",
-      DEVICE: "WA01N13P",
-      LOTID: "DR39941.1X",
-      PASS: 1,
-      WAFER: "6",
-      TYPE: "ConseFail",
-      TRIGGER_LABEL:
-        "Totally no good die, exceed consecutive fail limit 100 .",
-      TIME_STAMP: "2026-01-31T10:19:04.000Z",
-      ID: 1415541,
-      PROBECARD: "6060-01",
-    },
-    {
-      HOSTNAME: "b3ps1617",
-      DEVICE: "WA11P07K",
-      LOTID: "DR39271.1A",
-      PASS: 1,
-      WAFER: "22",
-      TYPE: "low_yield",
-      TRIGGER_LABEL: "Bin goodbin yield 48.46 exceed lower yield limit 50 .",
-      TIME_STAMP: "2026-01-31T13:38:22.000Z",
-      ID: 1415621,
-      PROBECARD: "9459-10",
-    },
-    {
-      HOSTNAME: "b3flex06",
-      DEVICE: "WC08N87J",
-      LOTID: "TR14714.1A",
-      PASS: 1,
-      WAFER: "22",
-      TYPE: "delta_diff",
-      TRIGGER_LABEL:
-        "Bin# 1 on dut# 0 Yield: 77.17, Min Yield(Dut#0): 77.17 Max Yield(Dut#3): 98.15 Delta exceed Delta Limit 20.",
-      TIME_STAMP: "2026-01-31T01:03:12.000Z",
-      ID: 1415241,
-      PROBECARD: "7772-04",
-    },
-  ];
+  _deltaDiffRows.slice(0, YIELD_MONITOR_TRIGGER_TOP);
+
+export const YIELD_MONITOR_DUMMY_EXAMPLE_QUERY = buildYieldDummyExampleQuery(
+  YIELD_MONITOR_TRIGGER_DUMMY_ROWS[0]!
+);
 
 function yieldMonitorTriggersDummyEnvTrue(raw: string | undefined): boolean {
   const v = raw?.trim().toLowerCase();
