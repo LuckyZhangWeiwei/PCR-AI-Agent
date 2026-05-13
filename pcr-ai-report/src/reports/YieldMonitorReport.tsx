@@ -189,17 +189,19 @@ export function YieldMonitorReport({ apiBase }: Props) {
           params
         );
         setDrill((d) =>
-          d ? { ...d, groups: res.groups, loading: false } : null
+          d && d.parentDimKey === parentDimKey && d.parentDimVal === parentDimVal
+            ? { ...d, groups: res.groups, loading: false }
+            : d
         );
       } catch (e) {
         setDrill((d) =>
-          d
+          d && d.parentDimKey === parentDimKey && d.parentDimVal === parentDimVal
             ? {
                 ...d,
                 loading: false,
                 error: e instanceof Error ? e.message : String(e),
               }
-            : null
+            : d
         );
       }
     },
@@ -693,7 +695,7 @@ export function YieldMonitorReport({ apiBase }: Props) {
                 <ReactECharts
                   option={probeCardOption}
                   style={{
-                    height: Math.max(180, aggCard.groups.length * 22 + 60),
+                    height: Math.max(180, (aggCard.groups?.length ?? 0) * 22 + 60),
                     width: "100%",
                   }}
                   opts={{ renderer: "canvas" }}
@@ -763,7 +765,7 @@ export function YieldMonitorReport({ apiBase }: Props) {
                 <ReactECharts
                   option={lotOption}
                   style={{
-                    height: Math.max(180, aggLot.groups.length * 22 + 60),
+                    height: Math.max(180, (aggLot.groups?.length ?? 0) * 22 + 60),
                     width: "100%",
                   }}
                   opts={{ renderer: "canvas" }}
