@@ -430,7 +430,7 @@ export const apiManifest = {
       path: "/api/v1/infcontrol-layer-bins/v3/aggregate",
       method: "GET",
       purpose:
-        "v3 infcontrol BIN aggregate: same filter semantics as GET /infcontrol-layer-bins/v3 (PASSTYPE=TEST on INFLAYERBINLIST plus v3 AND filters; UPPER(TRIM) string equality). Over ALL matching joined rows (not capped by list limit), UNPIVOT BIN0…BIN255 and SUM per groupBy dimensions; same BIN1/PASSBIN edge rules as GET /infcontrol-layer-bins/aggregate. Returns top groupTop groups by SUM (default 10, max 50). When INFCONTROL_LAYER_BINS_DUMMY is true and not dist/production, uses JBStart.xlsx in-memory rows; else main Oracle. Response includes documentation (Chinese). Requires groupBy with exactly one bin (same rules as v1 aggregate).",
+        "v3 infcontrol BIN aggregate: same filter semantics as GET /infcontrol-layer-bins/v3 (PASSTYPE=TEST on INFLAYERBINLIST plus v3 AND filters; UPPER(TRIM) string equality). Over ALL matching joined rows (not capped by list limit), UNPIVOT BIN0…BIN255 and SUM per groupBy dimensions; SUM counts bad-bin die only—PASSBIN hyphen-separated whole tokens (0–255) are good bins (same token rule as /infcontrol-layer-bins/v2/top-bad-bins and v3 list bins[].isGoodBin), excluded from SUM (not v1 aggregate BIN1 + N-M pair rules). Returns top groupTop groups by SUM (default 10, max 50). When INFCONTROL_LAYER_BINS_DUMMY is true and not dist/production, uses JBStart.xlsx in-memory rows; else main Oracle. Response includes documentation (Chinese). Requires groupBy with exactly one bin (same rules as v1 aggregate).",
       queryParameters: [
         {
           name: "groupBy",

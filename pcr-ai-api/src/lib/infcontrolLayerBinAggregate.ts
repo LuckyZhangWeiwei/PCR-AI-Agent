@@ -359,18 +359,24 @@ export function parseInfcontrolLayerBinAggregateQuery(
   };
 }
 
+/** v1 **`/infcontrol-layer-bins/aggregate`**：BIN1 恒排除；**`PASSBIN`** 仅当整串为 **N-M** 两段数字时排除两端下标。 */
+export type InfcontrolLayerBinAggregateGoodBinMode = "v1-pair-and-bin1" | "v3-hyphen-tokens";
+
 /**
  * Top-N：按 SUM(BIN 列) DESC；GRP_KEY 为维度拼接（含 bin 下标字符串）。
+ *
+ * **`goodBinMode`**：**`v3-hyphen-tokens`** 用于 **`/infcontrol-layer-bins/v3/aggregate`**：与 v3 列表 **`bins[].isGoodBin`**、**`/v2/top-bad-bins`** 一致，**`PASSBIN`** 按 **`-`** 拆成若干 **0…255** 整数段，整段匹配的 BIN 列不计入 SUM（**`REGEXP_LIKE (^|-)k(-|$)`**）。**`v1-pair-and-bin1`**（默认）保持 v1 聚合原语义。
  */
 export function buildInfcontrolLayerBinAggregateSql(
   whereClause: string,
-  groupBys: InfcontrolLayerBinGroupBy[]
+  groupBys: InfcontrolLayerBinGroupBy[],
+  goodBinMode: InfcontrolLayerBinAggregateGoodBinMode = "v1-pair-and-bin1"
 ): string {
   const wc = whereClause.trim();
 
   const nonBinDims = groupBys.filter((d) => d !== "bin");
   const innerSelectParts: string[] = [];
-  /** 聚合时排除 PASSBIN「两端」good bin；UNPIVOT 后需能读到 PASSBIN */
+  /** 聚合时须能读到 PASSBIN（v3：整段 good 列表；v1：两端 + BIN1） */
   if (!nonBinDims.includes("passBin")) {
     innerSelectParts.push(`lb.PASSBIN AS PASSBIN`);
   }
@@ -387,8 +393,15 @@ export function buildInfcontrolLayerBinAggregateSql(
   const grpKeyExpr = buildGrpKeySelectExpr(groupBys, "u");
   const groupByList = groupBySqlExprs(groupBys, "u").join(", ");
 
-  /** BIN1 视为硬良品不计入；PASSBIN 为 N-M 时两端 BIN 亦不计入（与列表 passBinPair 一致） */
-  const sumCntExpr = `SUM(
+  const sumCntExpr =
+    goodBinMode === "v3-hyphen-tokens"
+      ? `SUM(
+      CASE
+        WHEN REGEXP_LIKE(TRIM(u.PASSBIN), '(^|-)' || TO_CHAR(u.bin_idx) || '(-|$)') THEN 0
+        ELSE u.cnt
+      END
+    )`
+      : `SUM(
       CASE
         WHEN u.bin_idx = 1 THEN 0
         WHEN REGEXP_LIKE(TRIM(u.PASSBIN), '^\\d+\\s*-\\s*\\d+$')

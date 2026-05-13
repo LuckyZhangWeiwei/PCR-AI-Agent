@@ -276,6 +276,25 @@ export function filterInfcontrolLayerBinV2DummyRows(
   return rows.slice(0, cap);
 }
 
+/**
+ * 对单行：按 **PASSBIN** **`-`** 分隔的 good 下标排除后，对每个 **坏 bin** 列调用 **`on(binIdx, die)`**（die>0）。
+ * 与 Oracle **`REGEXP_LIKE '(^|-)k(-|$)'`**（v3 aggregate）、**`aggregateInfcontrolLayerBinV2BadBinsDummy`** 语义一致。
+ */
+function forEachBadBinDieContribution(
+  row: InfcontrolLayerBinDummyRow,
+  on: (binIdx: number, die: number) => void
+): void {
+  const good = parsePassBinHyphenGoodBins(row.PASSBIN);
+  for (let k = 0; k < 256; k++) {
+    if (good.has(k)) continue;
+    const raw = row[`BIN${k}`];
+    if (raw == null || raw === "") continue;
+    const v = Number(raw);
+    if (!Number.isFinite(v) || v === 0) continue;
+    on(k, v);
+  }
+}
+
 /** v2 bad-bin 排行：与 Oracle **`REGEXP_LIKE` + SUM** 语义一致（dummy 全表匹配行上累计） */
 export function aggregateInfcontrolLayerBinV2BadBinsDummy(
   applied: Record<string, unknown>,
@@ -285,15 +304,9 @@ export function aggregateInfcontrolLayerBinV2BadBinsDummy(
   const totals = new Array<number>(256).fill(0);
 
   for (const row of rows) {
-    const good = parsePassBinHyphenGoodBins(row.PASSBIN);
-    for (let k = 0; k < 256; k++) {
-      const raw = row[`BIN${k}`];
-      if (raw == null || raw === "") continue;
-      const v = Number(raw);
-      if (!Number.isFinite(v) || v === 0) continue;
-      if (good.has(k)) continue;
+    forEachBadBinDieContribution(row, (k, v) => {
       totals[k] += v;
-    }
+    });
   }
 
   const pairs = totals.map((badTotal, n) => ({ n, badTotal }));
@@ -497,7 +510,7 @@ export function filterInfcontrolLayerBinV3DummyRows(
   return rows.slice(0, cap);
 }
 
-/** v3 聚合 Dummy：在 v3 匹配行上做与 Oracle 相同的 UNPIVOT+SUM 语义（复用 `binColumnIndexIsGood`）。 */
+/** v3 聚合 Dummy：与 Oracle **`v3-hyphen-tokens`** 及 **`forEachBadBinDieContribution`**（同 v2 top-bad-bins dummy）一致。 */
 export function aggregateInfcontrolLayerBinV3DummyRows(
   applied: Record<string, unknown>,
   groupBy: InfcontrolLayerBinGroupBy[],
@@ -511,14 +524,7 @@ export function aggregateInfcontrolLayerBinV3DummyRows(
   const firstParts = new Map<string, Record<string, string>>();
 
   for (const row of rows) {
-    for (let binIdx = 0; binIdx < 256; binIdx++) {
-      if (binIdx === 1) continue;
-      if (binColumnIndexIsGood(row.PASSBIN, binIdx)) continue;
-      const rawVal = row[`BIN${binIdx}`];
-      if (rawVal == null || rawVal === "") continue;
-      const add = Number(rawVal);
-      if (!Number.isFinite(add)) continue;
-
+    forEachBadBinDieContribution(row, (binIdx, add) => {
       const parts: Record<string, string> = {};
       for (const d of groupBy) {
         if (d === "bin") {
@@ -534,7 +540,7 @@ export function aggregateInfcontrolLayerBinV3DummyRows(
       if (!firstParts.has(key)) {
         firstParts.set(key, parts);
       }
-    }
+    });
   }
 
   const groups = [...sums.entries()]

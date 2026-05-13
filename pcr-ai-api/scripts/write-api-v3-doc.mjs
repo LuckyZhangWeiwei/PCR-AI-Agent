@@ -24,6 +24,8 @@ const md = `# API v3（层控 / 产量监控）
 
 **v3 聚合**（\`/infcontrol-layer-bins/v3/aggregate\`、\`/yield-monitor-triggers/v3/aggregate\`）的 SQL 不在此文件展开，见源码 **\`src/lib/yieldMonitorTriggerV3Aggregate.ts\`**、**\`src/lib/infcontrolLayerBinV3Aggregate.ts\`**（层控 UNPIVOT 与 **\`infcontrolLayerBinAggregate.ts\`** 共用 SQL 片段）。
 
+**层控 \`…/v3/aggregate\`（仅坏 bin die）**：Oracle 路径 **\`buildInfcontrolLayerBinAggregateSql(..., "v3-hyphen-tokens")\`**；**PASSBIN** 按 **-** 拆出的整段下标为 **good bin**，**SUM** 不累计其 die（与 v3 列表 **\`bins[].isGoodBin\`**、**/v2/top-bad-bins** 的 token 规则一致）。**INFCONTROL_LAYER_BINS_DUMMY=true** 时 **\`infcontrolLayerBinDummy.ts\`** 内 **\`forEachBadBinDieContribution\`** 与 v2 top-bad-bins dummy 共用循环。见 [**AI_AGENT_API.md**](./AI_AGENT_API.md) **§4**、**§7.6**。
+
 字符串筛选由解析器生成 **\`UPPER(TRIM(列)) = UPPER(:bind)\`**，与仓库样例表 **\`docs/JBStart.xlsx\`**（层控）、**\`docs/delta-diff.xlsx\`**（产量）中的大小写习惯一致；查询参数**键名**不区分大小写（含 \`limit\`）。
 
 ## 源码位置

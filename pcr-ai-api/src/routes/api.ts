@@ -344,7 +344,7 @@ apiRouter.get("/infcontrol-layer-bins/v3", async (req, res) => {
 });
 
 /**
- * **v3 层控 BIN 聚合**：与 **`/infcontrol-layer-bins/v3`** 相同筛选语义。**Dummy 开启**（且非 `dist`/production）时在 **JBStart** 内存行上聚合；否则 Oracle。
+ * **v3 层控 BIN 聚合**：与 **`/infcontrol-layer-bins/v3`** 相同筛选语义。**SUM** 仅累计 **坏 bin** die：与 v3 列表 **`bins[].isGoodBin`** 一致，**`PASSBIN`** 按 **`-`** 拆出的整段下标（**0…255**）视为 **good**，该列不计入（与 **`/infcontrol-layer-bins/v2/top-bad-bins`** 的 token 规则一致）。**Dummy** 开启时在 **JBStart** 内存行上聚合；否则 Oracle。
  * 响应体含 **`documentation`**。详见 manifest 与 **`docs/AI_AGENT_API.md`**。
  */
 apiRouter.get("/infcontrol-layer-bins/v3/aggregate", async (req, res) => {
@@ -385,7 +385,8 @@ apiRouter.get("/infcontrol-layer-bins/v3/aggregate", async (req, res) => {
 
   const aggSql = buildInfcontrolLayerBinAggregateSql(
     parsed.whereSql,
-    parsed.groupBy
+    parsed.groupBy,
+    "v3-hyphen-tokens"
   );
   const countSql = buildInfcontrolLayerBinMatchingCountSql(parsed.whereSql);
   const bindAgg: BindParameters = {
