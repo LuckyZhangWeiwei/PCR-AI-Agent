@@ -49,7 +49,7 @@ API 调用模式：
 2. 前端将扁平结果按主维度（`lot`）分组，构建三层树：`LOT → CardId/Slot → Bin`。
 3. 每个父节点展示汇总值（坏 die 合计、Yield% 加权平均）。
 4. 展开/折叠状态存于本地 `React.useState`，不重新请求。
-5. yield monitor 对应树结构：`LOT → ProbeCard → dutNumber`。
+5. yield monitor 对应树结构：`DEVICE → LOT → ProbeCard → dutNumber`。
 
 ---
 
@@ -92,9 +92,9 @@ API 调用模式：
 
 ### 4.4 折叠树聚合表
 
-- 请求：`dimensions=lotId,probeCard` + 现有筛选（yield monitor aggregate 端点）
-- 树结构：`LOT → ProbeCard → 触发次数`
-- 列：LOT | ProbeCard | 触发次数 | dutNumber 分布（前3个，前端从 list rows 中按 lot+probeCard 过滤统计）
+- 请求：`dimensions=device,lotId,probeCard` + 现有筛选（yield monitor aggregate 端点）
+- 树结构：`DEVICE → LOT → ProbeCard → 触发次数`（3层折叠）
+- 列：维度值 | 触发次数 | 占比
 
 ### 4.5 明细表
 
@@ -157,9 +157,9 @@ const yieldPct = totalGross > 0 ? (1 - totalBad / totalGross) * 100 : null;
 
 ### 5.4 折叠树聚合表
 
-- 请求：`groupBy=lot,cardId,bin` + 现有筛选
-- 树结构：`LOT → CardId → Bin`（3 层）
-- 列：LOT | CardId | Bin | 坏 die 数 | Yield%（仅 LOT 级别显示）
+- 请求：`groupBy=device,lot,cardId,bin` + 现有筛选（最多 8 维，在允许范围内）
+- 树结构：`DEVICE → LOT → CardId → Bin`（4 层折叠）
+- 列：维度值 | 坏 die 合计 | Yield%（仅 DEVICE/LOT 层级显示，需 GROSSDIE；可从 list rows 中按 device+lot 分组计算）
 
 ### 5.5 明细表
 
