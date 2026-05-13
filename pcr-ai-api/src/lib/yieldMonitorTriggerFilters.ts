@@ -138,3 +138,97 @@ export function parseYieldMonitorTriggerQuery(
     return { ok: false, error: message };
   }
 }
+
+export type ParseYieldMonitorV3Ok = {
+  ok: true;
+  whereSql: string;
+  binds: BindParameters;
+  applied: Record<string, unknown>;
+};
+
+/**
+ * **v3** `GET /yield-monitor-triggers/v3`：与库表列对应的 AND 筛选（无 triggerLabel / id）。
+ * 字符串列：`UPPER(TRIM(列)) = UPPER(:bind)`，与库内实际大小写（如样例 `docs/delta-diff.xlsx` 中 HOSTNAME 小写、TYPE 如 `delta_diff`）无关地匹配。
+ * 时间：`timeStampBegin` & `timeStampEnd`（ISO 8601），或与 v1 相同的 `timeStampFrom` / `timeStampTo` 别名。
+ */
+export function parseYieldMonitorTriggerV3Query(
+  q: Record<string, unknown>
+): ParseFail | ParseYieldMonitorV3Ok {
+  const clauses: string[] = [];
+  const binds: BindParameters = {};
+  const applied: Record<string, unknown> = {};
+
+  try {
+    const strEqTrimCi = (param: string, columnSql: string, bindName: string) => {
+      const v = firstString(firstQueryValue(q, param));
+      if (v === undefined) return;
+      const t = v.trim();
+      if (t === "") return;
+      clauses.push(`UPPER(TRIM(${columnSql})) = UPPER(:${bindName})`);
+      (binds as Record<string, string | number | Date>)[bindName] = t;
+      applied[param] = t;
+    };
+
+    strEqTrimCi("hostname", "t.HOSTNAME", "v3_hostname");
+    strEqTrimCi("device", "t.DEVICE", "v3_device");
+    strEqTrimCi("lotId", "t.LOTID", "v3_lotid");
+    strEqTrimCi("wafer", "t.WAFER", "v3_wafer");
+    strEqTrimCi("type", 't."TYPE"', "v3_type");
+    strEqTrimCi("probeCard", "t.PROBECARD", "v3_probecard");
+
+    const passN = parseOptionalNumber(firstQueryValue(q, "pass"), "pass");
+    if (passN !== undefined) {
+      parseRequiredFiniteNumber(passN, "pass");
+      clauses.push("t.PASS = :v3_pass");
+      binds.v3_pass = passN;
+      applied.pass = passN;
+    }
+
+    const tsLo =
+      parseOptionalDate(
+        firstQueryValue(q, "timeStampBegin"),
+        "timeStampBegin"
+      ) ??
+      parseOptionalDate(
+        firstQueryValue(q, "timeStampFrom"),
+        "timeStampFrom"
+      );
+    const tsHi =
+      parseOptionalDate(firstQueryValue(q, "timeStampEnd"), "timeStampEnd") ??
+      parseOptionalDate(firstQueryValue(q, "timeStampTo"), "timeStampTo");
+
+    if (tsLo !== undefined && tsHi !== undefined && tsLo > tsHi) {
+      return {
+        ok: false,
+        error:
+          "time window: lower bound must be <= upper bound (timeStampBegin/timeStampEnd or timeStampFrom/timeStampTo)",
+      };
+    }
+    if (tsLo !== undefined) {
+      clauses.push("t.TIME_STAMP >= :v3_ts_lo");
+      binds.v3_ts_lo = tsLo;
+      if (firstQueryValue(q, "timeStampBegin") != null) {
+        applied.timeStampBegin = tsLo.toISOString();
+      } else {
+        applied.timeStampFrom = tsLo.toISOString();
+      }
+    }
+    if (tsHi !== undefined) {
+      clauses.push("t.TIME_STAMP <= :v3_ts_hi");
+      binds.v3_ts_hi = tsHi;
+      if (firstQueryValue(q, "timeStampEnd") != null) {
+        applied.timeStampEnd = tsHi.toISOString();
+      } else {
+        applied.timeStampTo = tsHi.toISOString();
+      }
+    }
+
+    const whereSql =
+      clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+
+    return { ok: true, whereSql, binds, applied };
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: message };
+  }
+}

@@ -2,6 +2,7 @@ import "./loadEnv.js";
 
 import { createApp } from "./app.js";
 import { infcontrolLayerBinsUseDummy } from "./lib/infcontrolLayerBinDummy.js";
+import { listApisForceOracleNoDummy } from "./lib/listDummyRuntime.js";
 import { yieldMonitorTriggersUseDummy } from "./lib/yieldMonitorTriggerDummy.js";
 import { closeOraclePool, closeProbeWebPool } from "./oracle.js";
 
@@ -10,11 +11,12 @@ const app = createApp();
 
 app.listen(port, () => {
   console.log(`pcr-ai-api listening on http://localhost:${port}`);
+  const forcedOracle = listApisForceOracleNoDummy();
   console.log(
-    `[dummy] yield-monitor-triggers=${yieldMonitorTriggersUseDummy()} (env YIELD_MONITOR_TRIGGERS_DUMMY=${JSON.stringify(process.env.YIELD_MONITOR_TRIGGERS_DUMMY)})`
+    `[dummy] yield-monitor-triggers=${yieldMonitorTriggersUseDummy()} (env YIELD_MONITOR_TRIGGERS_DUMMY=${JSON.stringify(process.env.YIELD_MONITOR_TRIGGERS_DUMMY)}; forcedOracle=${forcedOracle})`
   );
   console.log(
-    `[dummy] infcontrol-layer-bins=${infcontrolLayerBinsUseDummy()} (env INFCONTROL_LAYER_BINS_DUMMY=${JSON.stringify(process.env.INFCONTROL_LAYER_BINS_DUMMY)})`
+    `[dummy] infcontrol-layer-bins=${infcontrolLayerBinsUseDummy()} (env INFCONTROL_LAYER_BINS_DUMMY=${JSON.stringify(process.env.INFCONTROL_LAYER_BINS_DUMMY)}; forcedOracle=${forcedOracle})`
   );
 });
 

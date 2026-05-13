@@ -5,6 +5,7 @@ import { enrichOracleDriverDetail, sendAgentError } from "../lib/agentResponse.j
 import {
   INFCONTROL_LAYER_BIN_TOP,
   parseInfcontrolLayerBinQuery,
+  parseInfcontrolLayerBinsV3Query,
 } from "../lib/infcontrolLayerBinFilters.js";
 import {
   INFCONTROL_LAYER_BIN_V2_BAD_RANK_MAX,
@@ -18,6 +19,11 @@ import {
   rankBadBinTotalsFromAggregateRow,
 } from "../lib/infcontrolLayerBinV2BadBinsSql.js";
 import { buildInfcontrolLayerBinV2TopSql } from "../lib/infcontrolLayerBinV2Sql.js";
+import {
+  API_V3_LIST_LIMIT_MAX,
+  buildInfcontrolLayerBinsV3Sql,
+  buildYieldMonitorTriggersV3Sql,
+} from "../lib/apiV3ListSql.js";
 import {
   aggregateInfcontrolLayerBinDummyRows,
   aggregateInfcontrolLayerBinV2BadBinsDummy,
@@ -39,6 +45,7 @@ import { buildInfcontrolLayerBinTopSql } from "../lib/infcontrolLayerBinSql.js";
 import {
   YIELD_MONITOR_TRIGGER_TOP,
   parseYieldMonitorTriggerQuery,
+  parseYieldMonitorTriggerV3Query,
 } from "../lib/yieldMonitorTriggerFilters.js";
 import {
   buildYieldMonitorHostnameSummarySql,
@@ -51,7 +58,11 @@ import {
   filterYieldMonitorDummyRows,
   yieldMonitorTriggersUseDummy,
 } from "../lib/yieldMonitorTriggerDummy.js";
-import { clampLimit, parseQualifiedTable } from "../lib/sqlIdent.js";
+import {
+  clampLimit,
+  clampLimitFromQuery,
+  parseQualifiedTable,
+} from "../lib/sqlIdent.js";
 import { withConnection, withProbeWebConnection } from "../oracle.js";
 
 export const apiRouter = Router();
@@ -223,6 +234,69 @@ apiRouter.get("/infcontrol-layer-bins/v2", async (req, res) => {
       filters: parsed.applied,
       count: withoutRnum.length,
       rows: withoutRnum,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return sendAgentError(
+      res,
+      500,
+      "ORACLE_QUERY_FAILED",
+      "Oracle query failed",
+      enrichOracleDriverDetail(message)
+    );
+  }
+});
+
+/**
+ * **v3** 层控 + 层 BIN：INFCONTROL ⋈ INFLAYERBINLIST（`PASSTYPE='TEST'`），**始终走主库 Oracle**，
+ * 不受 `INFCONTROL_LAYER_BINS_DUMMY` 影响。支持 **`limit`**（默认 200，最大 **`limitMax`**；**键名不区分大小写**）及
+ * **device, lot, slot, meslot, testerId, tstype, cardId, passId** 与 **TESTSTART / TESTEND** 时间窗（见 manifest）。
+ * 字符串筛选值与库列 **不区分大小写**（`UPPER(TRIM(列)) = UPPER(:bind)`；样例见 `docs/JBStart.xlsx`）。
+ * 行形状与 **v2** 一致（`enrichInfcontrolLayerBinRowV2`）。
+ */
+apiRouter.get("/infcontrol-layer-bins/v3", async (req, res) => {
+  const parsed = parseInfcontrolLayerBinsV3Query(
+    req.query as Record<string, unknown>
+  );
+  if (!parsed.ok) {
+    return sendAgentError(
+      res,
+      400,
+      "VALIDATION_ERROR",
+      parsed.error,
+      "See GET /api/v1/manifest infcontrol-layer-bins/v3."
+    );
+  }
+
+  const limit = clampLimitFromQuery(
+    req.query as Record<string, unknown>,
+    200,
+    API_V3_LIST_LIMIT_MAX
+  );
+  const sql = buildInfcontrolLayerBinsV3Sql(parsed.whereAndSql);
+  const binds: BindParameters = { ...parsed.binds, lim: limit };
+
+  try {
+    const rows = await withConnection(async (conn) => {
+      const result = await conn.execute(sql, binds, {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+      });
+      return result.rows || [];
+    });
+    const enriched = rows.map((row) =>
+      enrichInfcontrolLayerBinRowV2(row as Record<string, unknown>)
+    );
+    return res.json({
+      meta: {
+        apiVersion: "3",
+        requestId: reqId(req),
+      },
+      limit,
+      limitMax: API_V3_LIST_LIMIT_MAX,
+      orderBy: "TESTEND DESC NULLS LAST, SLOT, PASSID, PASSNUM",
+      filters: { ...parsed.applied, limit },
+      count: enriched.length,
+      rows: enriched,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -560,6 +634,68 @@ apiRouter.get("/yield-monitor-triggers", async (req, res) => {
     }
 
     return res.json(body);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return sendAgentError(
+      res,
+      500,
+      "ORACLE_QUERY_FAILED",
+      "Oracle query failed",
+      enrichOracleDriverDetail(message)
+    );
+  }
+});
+
+/**
+ * **v3** 产量监控：`YMWEB_YIELDMONITORTRIGGER` 全列，**始终走 probeweb Oracle**，
+ * 不受 `YIELD_MONITOR_TRIGGERS_DUMMY` 影响。
+ *
+ * 查询参数（均可选，键名不区分大小写）：**`limit`**（默认 200，最大 **`limitMax`**；**`limit` 键名本身**亦不区分大小写）；
+ * **`hostname`**, **`device`**, **`lotId`**, **`pass`**, **`wafer`**, **`type`**, **`probeCard`**（字符串值与库列 **不区分大小写**，`UPPER(TRIM)`；样例见 `docs/delta-diff.xlsx`）；
+ * 时间窗：**`timeStampBegin` / `timeStampEnd`** 或 **`timeStampFrom` / `timeStampTo`**（ISO 8601，对应 `TIME_STAMP` 闭区间下界 / 上界）。
+ * 条件均为 **AND**。
+ */
+apiRouter.get("/yield-monitor-triggers/v3", async (req, res) => {
+  const parsed = parseYieldMonitorTriggerV3Query(
+    req.query as Record<string, unknown>
+  );
+  if (!parsed.ok) {
+    return sendAgentError(
+      res,
+      400,
+      "VALIDATION_ERROR",
+      parsed.error,
+      "See GET /api/v1/manifest yield-monitor-triggers/v3."
+    );
+  }
+
+  const limit = clampLimitFromQuery(
+    req.query as Record<string, unknown>,
+    200,
+    API_V3_LIST_LIMIT_MAX
+  );
+  const sql = buildYieldMonitorTriggersV3Sql(parsed.whereSql);
+  const binds: BindParameters = { ...parsed.binds, lim: limit };
+
+  try {
+    const rows = await withProbeWebConnection(async (conn) => {
+      const result = await conn.execute(sql, binds, {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+      });
+      return result.rows || [];
+    });
+    return res.json({
+      meta: {
+        apiVersion: "3",
+        requestId: reqId(req),
+      },
+      limit,
+      limitMax: API_V3_LIST_LIMIT_MAX,
+      orderBy: "TIME_STAMP DESC NULLS LAST",
+      filters: { ...parsed.applied, limit },
+      count: rows.length,
+      rows,
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     return sendAgentError(

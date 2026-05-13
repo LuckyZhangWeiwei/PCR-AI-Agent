@@ -4,6 +4,7 @@ import {
 } from "./yieldMonitorTriggerAggregate.js";
 import { YIELD_MONITOR_TRIGGER_TOP } from "./yieldMonitorTriggerFilters.js";
 import { loadYieldMonitorTriggerRowsFromDeltaDiffXlsx } from "./dummyRowsFromExcel.js";
+import { listApisForceOracleNoDummy } from "./listDummyRuntime.js";
 
 /** 与 Oracle 返回列一致（YMWEB_YIELDMONITORTRIGGER） */
 export type YieldMonitorTriggerDummyRow = {
@@ -33,23 +34,48 @@ function buildYieldDummyExampleQuery(first: YieldMonitorTriggerDummyRow): string
   }).toString();
 }
 
-const _deltaDiffRows = loadYieldMonitorTriggerRowsFromDeltaDiffXlsx();
+const MANIFEST_YIELD_EXAMPLE_FALLBACK =
+  "device=D1&timeStampFrom=2026-01-01T00:00:00.000Z";
 
-/** 来自 `docs/delta-diff.xlsx`（至多 **YIELD_MONITOR_TRIGGER_TOP** 条）；筛选逻辑与 SQL WHERE 等价 */
-export const YIELD_MONITOR_TRIGGER_DUMMY_ROWS: readonly YieldMonitorTriggerDummyRow[] =
-  _deltaDiffRows.slice(0, YIELD_MONITOR_TRIGGER_TOP);
+let _yieldDummyRowsCache: readonly YieldMonitorTriggerDummyRow[] | undefined;
 
-export const YIELD_MONITOR_DUMMY_EXAMPLE_QUERY = buildYieldDummyExampleQuery(
-  YIELD_MONITOR_TRIGGER_DUMMY_ROWS[0]!
-);
+function getYieldMonitorTriggerDummyRowsInternal(): readonly YieldMonitorTriggerDummyRow[] {
+  if (_yieldDummyRowsCache !== undefined) return _yieldDummyRowsCache;
+  if (listApisForceOracleNoDummy()) {
+    _yieldDummyRowsCache = Object.freeze([]);
+    return _yieldDummyRowsCache;
+  }
+  _yieldDummyRowsCache = Object.freeze(
+    loadYieldMonitorTriggerRowsFromDeltaDiffXlsx().slice(
+      0,
+      YIELD_MONITOR_TRIGGER_TOP
+    )
+  );
+  return _yieldDummyRowsCache;
+}
+
+export function getYieldMonitorTriggerDummyRows(): readonly YieldMonitorTriggerDummyRow[] {
+  return getYieldMonitorTriggerDummyRowsInternal();
+}
+
+export function getYieldMonitorDummyExampleQuery(): string {
+  if (listApisForceOracleNoDummy()) return MANIFEST_YIELD_EXAMPLE_FALLBACK;
+  const rows = getYieldMonitorTriggerDummyRowsInternal();
+  if (!rows.length) return MANIFEST_YIELD_EXAMPLE_FALLBACK;
+  return buildYieldDummyExampleQuery(rows[0]!);
+}
 
 function yieldMonitorTriggersDummyEnvTrue(raw: string | undefined): boolean {
   const v = raw?.trim().toLowerCase();
   return v === "1" || v === "true" || v === "yes";
 }
 
-/** 测试或本地无库时使用内存样本，不连 Oracle probeweb */
+/**
+ * 测试或本地无库时使用内存样本，不连 Oracle probeweb。
+ * **`npm run build` 后的 `dist` 进程** 或 **`NODE_ENV=production`** 时恒为 **false**（走库，忽略 `YIELD_MONITOR_TRIGGERS_DUMMY`）。
+ */
 export function yieldMonitorTriggersUseDummy(): boolean {
+  if (listApisForceOracleNoDummy()) return false;
   if (process.env.NODE_ENV === "test") return true;
   return yieldMonitorTriggersDummyEnvTrue(
     process.env.YIELD_MONITOR_TRIGGERS_DUMMY
@@ -60,7 +86,7 @@ export function yieldMonitorTriggersUseDummy(): boolean {
 export function filterYieldMonitorDummyRowsMatching(
   applied: Record<string, unknown>
 ): YieldMonitorTriggerDummyRow[] {
-  let rows = [...YIELD_MONITOR_TRIGGER_DUMMY_ROWS];
+  let rows = [...getYieldMonitorTriggerDummyRowsInternal()];
 
   const eqStr = (param: keyof YieldMonitorTriggerDummyRow, key: string) => {
     const v = applied[key];

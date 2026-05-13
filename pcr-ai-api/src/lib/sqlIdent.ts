@@ -34,3 +34,27 @@ export function clampLimit(
   if (!Number.isFinite(n) || n < 1) return fallback;
   return Math.min(max, n);
 }
+
+/**
+ * Read a GET query value by canonical `key` with **case-insensitive** parameter
+ * names (e.g. `Limit`, `LIMIT`, `limit` all match `"limit"`).
+ */
+export function queryValueCaseInsensitive(
+  q: Record<string, unknown>,
+  key: string
+): unknown {
+  const lower = key.toLowerCase();
+  for (const k of Object.keys(q)) {
+    if (k.toLowerCase() === lower) return q[k];
+  }
+  return undefined;
+}
+
+/** `clampLimit` on `limit` read with {@link queryValueCaseInsensitive}. */
+export function clampLimitFromQuery(
+  q: Record<string, unknown>,
+  fallback: number,
+  max: number
+): number {
+  return clampLimit(queryValueCaseInsensitive(q, "limit"), fallback, max);
+}

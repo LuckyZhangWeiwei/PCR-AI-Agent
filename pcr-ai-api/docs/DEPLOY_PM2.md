@@ -100,7 +100,7 @@ pm2 startup
 - **`NODE_ENV`**：由 `ecosystem.config.cjs` 设为 `production`；不要用测试用的 dummy 开关冒充正式数据（见 `.env.example` 中 `YIELD_MONITOR_TRIGGERS_DUMMY` / `INFCONTROL_LAYER_BINS_DUMMY`）。
 - **监听端口**：由环境变量 `PORT` 控制；防火墙 / 反向代理需与之一致。
 
-更完整的 AI 调用说明见 [`AI_AGENT_API.md`](./AI_AGENT_API.md)。
+更完整的 AI / Claude Code 调用说明见 [`AI_AGENT_API.md`](./AI_AGENT_API.md)；**v3** 完整 SQL 见 [`API_V3.md`](./API_V3.md)（改 SQL 后在本目录执行 `npm run docs:api-v3` 可再生成）。
 
 ## 6. 想用 dummy 联调却仍报 Oracle（如 NJS-116）
 

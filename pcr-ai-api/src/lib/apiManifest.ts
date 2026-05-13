@@ -1,5 +1,7 @@
-import { INFCONTROL_DUMMY_EXAMPLE_QUERY } from "./infcontrolLayerBinDummy.js";
-import { YIELD_MONITOR_DUMMY_EXAMPLE_QUERY } from "./yieldMonitorTriggerDummy.js";
+import {
+  getInfcontrolDummyExampleQuery,
+} from "./infcontrolLayerBinDummy.js";
+import { getYieldMonitorDummyExampleQuery } from "./yieldMonitorTriggerDummy.js";
 
 /**
  * 供 AI agent / OpenAPI 生成器使用的机器可读 API 说明（只读 GET）。
@@ -8,7 +10,7 @@ export const apiManifest = {
   apiVersion: "1",
   title: "pcr-ai-api",
   description:
-    "Read-only Oracle-backed HTTP API for PCR workflows. All query keys are case-insensitive. deprecatedEndpoints lists routes removed from the router (yield-monitor-triggers/aggregate only).",
+    "Read-only Oracle-backed HTTP API for PCR workflows. All query keys are case-insensitive. v3 list routes (infcontrol-layer-bins/v3, yield-monitor-triggers/v3) use fixed SQL and always hit Oracle (dummy env flags are ignored). deprecatedEndpoints lists routes removed from the router (yield-monitor-triggers/aggregate only).",
   mediaType: "application/json",
   endpoints: [
     {
@@ -82,7 +84,7 @@ export const apiManifest = {
         rows:
           "array of row objects (Oracle columns uppercased except BINs packaged below); each row adds passBinPair [N,M]|null (from PASSBIN like 1-55) and bins { [binIndex: string]: { value: number, isGood: boolean } } (only BIN cells with non-null non-zero value); isGood true for bin index 1 (hard good) or PASSBIN N-M endpoints",
       },
-      example: `/api/v1/infcontrol-layer-bins?${INFCONTROL_DUMMY_EXAMPLE_QUERY}`,
+      example: `/api/v1/infcontrol-layer-bins?${getInfcontrolDummyExampleQuery()}`,
     },
     {
       path: "/api/v1/infcontrol-layer-bins/v2",
@@ -142,7 +144,7 @@ export const apiManifest = {
         rows:
           "array: Oracle columns for listed fields plus PASSBIN; bins array of { value: number, n: number (BIN index), isGoodBin: boolean } for each non-null non-zero BIN column",
       },
-      example: `/api/v1/infcontrol-layer-bins/v2?${INFCONTROL_DUMMY_EXAMPLE_QUERY}&limit=200`,
+      example: `/api/v1/infcontrol-layer-bins/v2?${getInfcontrolDummyExampleQuery()}&limit=200`,
     },
     {
       path: "/api/v1/infcontrol-layer-bins/v2/top-bad-bins",
@@ -207,7 +209,7 @@ export const apiManifest = {
         filters: "object",
         bins: "array of { n: number, badTotal: number }",
       },
-      example: `/api/v1/infcontrol-layer-bins/v2/top-bad-bins?${INFCONTROL_DUMMY_EXAMPLE_QUERY}&rankTop=10`,
+      example: `/api/v1/infcontrol-layer-bins/v2/top-bad-bins?${getInfcontrolDummyExampleQuery()}&rankTop=10`,
     },
     {
       path: "/api/v1/infcontrol-layer-bins/aggregate",
@@ -291,7 +293,7 @@ export const apiManifest = {
         groups:
           "array of { key: string, count: number (SUM of BIN cells), parts: Record<string,string> }",
       },
-      example: `/api/v1/infcontrol-layer-bins/aggregate?${INFCONTROL_DUMMY_EXAMPLE_QUERY}&groupTop=10`,
+      example: `/api/v1/infcontrol-layer-bins/aggregate?${getInfcontrolDummyExampleQuery()}&groupTop=10`,
     },
     {
       path: "/api/v1/yield-monitor-triggers",
@@ -341,7 +343,144 @@ export const apiManifest = {
           "optional array of { hostname: string, count: number }; same WHERE as rows; ORDER BY COUNT(*) DESC NULLS LAST",
         hostnameSummaryOrderBy: "optional string when hostnameSummary present",
       },
-      example: `/api/v1/yield-monitor-triggers?${YIELD_MONITOR_DUMMY_EXAMPLE_QUERY}`,
+      example: `/api/v1/yield-monitor-triggers?${getYieldMonitorDummyExampleQuery()}`,
+    },
+    {
+      path: "/api/v1/infcontrol-layer-bins/v3",
+      method: "GET",
+      purpose:
+        "INFCONTROL t1 INNER JOIN INFLAYERBINLIST t2 ON KEYNUMBER, WHERE PASSTYPE='TEST' plus optional AND filters (case-insensitive TRIM equality on device, lot, meslot, testerId, tstype, cardId via UPPER(TRIM(col))=UPPER(:bind); exact match on slot, passId; TESTSTART/TESTEND windows), then ORDER BY TESTEND DESC NULLS LAST, SLOT, PASSID, PASSNUM, FETCH FIRST :lim ROWS ONLY. Always main Oracle pool (INFCONTROL_LAYER_BINS_DUMMY ignored). Row shape matches infcontrol-layer-bins/v2. Query keys are case-insensitive (including limit).",
+      queryParameters: [
+        {
+          name: "limit",
+          type: "number",
+          optional: true,
+          note: "Top-N rows; default 200; max 500",
+        },
+        { name: "device", type: "string", optional: true },
+        { name: "lot", type: "string", optional: true },
+        { name: "slot", type: "number", optional: true },
+        { name: "meslot", type: "string", optional: true },
+        { name: "testerId", type: "string", optional: true },
+        { name: "tstype", type: "string", optional: true },
+        { name: "cardId", type: "string", optional: true },
+        { name: "passId", type: "number", optional: true },
+        {
+          name: "testStartBegin",
+          type: "datetime",
+          optional: true,
+          note: "ISO 8601; t2.TESTSTART >= value (alias: testStartFrom)",
+        },
+        {
+          name: "testStartEnd",
+          type: "datetime",
+          optional: true,
+          note: "ISO 8601; t2.TESTSTART <= value (alias: testStartTo)",
+        },
+        {
+          name: "testStartFrom",
+          type: "datetime",
+          optional: true,
+          note: "Alias for testStartBegin when begin not set",
+        },
+        {
+          name: "testStartTo",
+          type: "datetime",
+          optional: true,
+          note: "Alias for testStartEnd when end not set",
+        },
+        {
+          name: "testEndBegin",
+          type: "datetime",
+          optional: true,
+          note: "ISO 8601; t2.TESTEND >= value (alias: testEndFrom)",
+        },
+        {
+          name: "testEndEnd",
+          type: "datetime",
+          optional: true,
+          note: "ISO 8601; t2.TESTEND <= value (alias: testEndTo)",
+        },
+        {
+          name: "testEndFrom",
+          type: "datetime",
+          optional: true,
+          note: "Alias for testEndBegin when begin not set",
+        },
+        {
+          name: "testEndTo",
+          type: "datetime",
+          optional: true,
+          note: "Alias for testEndEnd when end not set",
+        },
+      ],
+      responseShape: {
+        meta: "{ apiVersion: '3', requestId }",
+        limit: "number",
+        limitMax: "number (500)",
+        orderBy: "string",
+        filters: "object (echo of applied filters plus limit)",
+        count: "number",
+        rows: "same enrichment as infcontrol-layer-bins/v2",
+      },
+      example:
+        "/api/v1/infcontrol-layer-bins/v3?device=WB10N57U&lot=NF12615.1X&testEndBegin=2026-05-13T00:00:00.000Z&testEndEnd=2026-05-13T23:59:59.999Z&limit=200",
+    },
+    {
+      path: "/api/v1/yield-monitor-triggers/v3",
+      method: "GET",
+      purpose:
+        "SELECT * FROM YMWEB_YIELDMONITORTRIGGER with optional AND filters (case-insensitive TRIM on string columns: HOSTNAME, DEVICE, LOTID, WAFER, TYPE, PROBECARD; exact PASS; TIME_STAMP window), then ORDER BY TIME_STAMP DESC NULLS LAST FETCH FIRST :lim ROWS ONLY. Always probeweb pool (YIELD_MONITOR_TRIGGERS_DUMMY ignored). Query keys are case-insensitive (including limit).",
+      queryParameters: [
+        {
+          name: "limit",
+          type: "number",
+          optional: true,
+          note: "Top-N rows; default 200; max 500",
+        },
+        { name: "hostname", type: "string", optional: true },
+        { name: "device", type: "string", optional: true },
+        { name: "lotId", type: "string", optional: true },
+        { name: "pass", type: "number", optional: true },
+        { name: "wafer", type: "string", optional: true },
+        { name: "type", type: "string", optional: true },
+        { name: "probeCard", type: "string", optional: true },
+        {
+          name: "timeStampBegin",
+          type: "datetime",
+          optional: true,
+          note: "ISO 8601; TIME_STAMP >= value (alias: timeStampFrom)",
+        },
+        {
+          name: "timeStampEnd",
+          type: "datetime",
+          optional: true,
+          note: "ISO 8601; TIME_STAMP <= value (alias: timeStampTo)",
+        },
+        {
+          name: "timeStampFrom",
+          type: "datetime",
+          optional: true,
+          note: "Alias for timeStampBegin when begin not set",
+        },
+        {
+          name: "timeStampTo",
+          type: "datetime",
+          optional: true,
+          note: "Alias for timeStampEnd when end not set",
+        },
+      ],
+      responseShape: {
+        meta: "{ apiVersion: '3', requestId }",
+        limit: "number",
+        limitMax: "number (500)",
+        orderBy: "string",
+        filters: "object (echo of applied filters plus limit)",
+        count: "number",
+        rows: "array of row objects (all columns from the table)",
+      },
+      example:
+        "/api/v1/yield-monitor-triggers/v3?device=WA03P02G&timeStampBegin=2026-05-13T00:00:00.000Z&timeStampEnd=2026-05-13T23:59:59.999Z&limit=200",
     },
     {
       path: "/api/v1/db/ping",

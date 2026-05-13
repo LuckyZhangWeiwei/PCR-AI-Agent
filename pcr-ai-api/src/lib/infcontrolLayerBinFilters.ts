@@ -203,3 +203,142 @@ export function parseInfcontrolLayerBinQuery(
     return { ok: false, error: message };
   }
 }
+
+export type ParseInfcontrolLayerBinsV3Fail = { ok: false; error: string };
+export type ParseInfcontrolLayerBinsV3Ok = {
+  ok: true;
+  whereAndSql: string;
+  binds: BindParameters;
+  applied: Record<string, unknown>;
+};
+
+/**
+ * **v3** `GET /infcontrol-layer-bins/v3`：在 `PASSTYPE='TEST'` 之上追加 AND 条件（绑定变量）。
+ * 字符串列使用 `UPPER(TRIM(列)) = UPPER(:bind)`，与库内实际大小写（如样例表 `docs/JBStart.xlsx`）无关地匹配。
+ */
+export function parseInfcontrolLayerBinsV3Query(
+  q: Record<string, unknown>
+): ParseInfcontrolLayerBinsV3Fail | ParseInfcontrolLayerBinsV3Ok {
+  const clauses: string[] = [];
+  const binds: BindParameters = {};
+  const applied: Record<string, unknown> = {};
+
+  try {
+    const strEqTrimCi = (param: string, columnSql: string, bindName: string) => {
+      const v = firstString(firstQueryValue(q, param));
+      if (v === undefined) return;
+      const t = v.trim();
+      if (t === "") return;
+      clauses.push(`UPPER(TRIM(${columnSql})) = UPPER(:${bindName})`);
+      (binds as Record<string, string | number | Date>)[bindName] = t;
+      applied[param] = t;
+    };
+
+    strEqTrimCi("device", "t1.DEVICE", "ic3_device");
+    strEqTrimCi("lot", "t1.LOT", "ic3_lot");
+    strEqTrimCi("meslot", "t1.MESLOT", "ic3_meslot");
+    strEqTrimCi("testerId", "t2.TESTERID", "ic3_testerid");
+    strEqTrimCi("tstype", "t2.TSTYPE", "ic3_tstype");
+    strEqTrimCi("cardId", "t2.CARDID", "ic3_cardid");
+
+    const slotN = parseOptionalNumber(firstQueryValue(q, "slot"), "slot");
+    if (slotN !== undefined) {
+      parseRequiredFiniteNumber(slotN, "slot");
+      clauses.push("t1.SLOT = :ic3_slot");
+      binds.ic3_slot = slotN;
+      applied.slot = slotN;
+    }
+
+    const passIdN = parseOptionalNumber(firstQueryValue(q, "passId"), "passId");
+    if (passIdN !== undefined) {
+      parseRequiredFiniteNumber(passIdN, "passId");
+      clauses.push("t2.PASSID = :ic3_passid");
+      binds.ic3_passid = passIdN;
+      applied.passId = passIdN;
+    }
+
+    const testStartLo =
+      parseOptionalDate(
+        firstQueryValue(q, "testStartBegin"),
+        "testStartBegin"
+      ) ??
+      parseOptionalDate(
+        firstQueryValue(q, "testStartFrom"),
+        "testStartFrom"
+      );
+    const testStartHi =
+      parseOptionalDate(firstQueryValue(q, "testStartEnd"), "testStartEnd") ??
+      parseOptionalDate(firstQueryValue(q, "testStartTo"), "testStartTo");
+    if (
+      testStartLo !== undefined &&
+      testStartHi !== undefined &&
+      testStartLo > testStartHi
+    ) {
+      return {
+        ok: false,
+        error:
+          "TESTSTART window: lower bound must be <= upper bound (testStartBegin/testStartEnd or testStartFrom/testStartTo)",
+      };
+    }
+    if (testStartLo !== undefined) {
+      clauses.push("t2.TESTSTART >= :ic3_teststart_lo");
+      binds.ic3_teststart_lo = testStartLo;
+      if (firstQueryValue(q, "testStartBegin") != null) {
+        applied.testStartBegin = testStartLo.toISOString();
+      } else {
+        applied.testStartFrom = testStartLo.toISOString();
+      }
+    }
+    if (testStartHi !== undefined) {
+      clauses.push("t2.TESTSTART <= :ic3_teststart_hi");
+      binds.ic3_teststart_hi = testStartHi;
+      if (firstQueryValue(q, "testStartEnd") != null) {
+        applied.testStartEnd = testStartHi.toISOString();
+      } else {
+        applied.testStartTo = testStartHi.toISOString();
+      }
+    }
+
+    const testEndLo =
+      parseOptionalDate(firstQueryValue(q, "testEndBegin"), "testEndBegin") ??
+      parseOptionalDate(firstQueryValue(q, "testEndFrom"), "testEndFrom");
+    const testEndHi =
+      parseOptionalDate(firstQueryValue(q, "testEndEnd"), "testEndEnd") ??
+      parseOptionalDate(firstQueryValue(q, "testEndTo"), "testEndTo");
+    if (
+      testEndLo !== undefined &&
+      testEndHi !== undefined &&
+      testEndLo > testEndHi
+    ) {
+      return {
+        ok: false,
+        error:
+          "TESTEND window: lower bound must be <= upper bound (testEndBegin/testEndEnd or testEndFrom/testEndTo)",
+      };
+    }
+    if (testEndLo !== undefined) {
+      clauses.push("t2.TESTEND >= :ic3_testend_lo");
+      binds.ic3_testend_lo = testEndLo;
+      if (firstQueryValue(q, "testEndBegin") != null) {
+        applied.testEndBegin = testEndLo.toISOString();
+      } else {
+        applied.testEndFrom = testEndLo.toISOString();
+      }
+    }
+    if (testEndHi !== undefined) {
+      clauses.push("t2.TESTEND <= :ic3_testend_hi");
+      binds.ic3_testend_hi = testEndHi;
+      if (firstQueryValue(q, "testEndEnd") != null) {
+        applied.testEndEnd = testEndHi.toISOString();
+      } else {
+        applied.testEndTo = testEndHi.toISOString();
+      }
+    }
+
+    const whereAndSql = clauses.join(" AND ");
+    return { ok: true, whereAndSql, binds, applied };
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: message };
+  }
+}

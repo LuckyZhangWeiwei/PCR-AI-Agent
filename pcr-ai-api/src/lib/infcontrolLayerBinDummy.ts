@@ -8,6 +8,7 @@ import {
   parsePassBinHyphenGoodBins,
 } from "./passBinSemantics.js";
 import { loadInfcontrolLayerBinRowsFromJbStartXlsx } from "./dummyRowsFromExcel.js";
+import { listApisForceOracleNoDummy } from "./listDummyRuntime.js";
 
 /**
  * 与 INFCONTROL ⋈ INFLAYERBINLIST 查询列一致（Oracle 列名大写，含 BIN0…BIN255）。
@@ -70,23 +71,48 @@ function buildInfcontrolDummyExampleQuery(
   }).toString();
 }
 
-const _jbStartRows = loadInfcontrolLayerBinRowsFromJbStartXlsx();
+/** manifest 等在「强制 Oracle」时使用的占位查询串（不读 `docs/JBStart.xlsx`） */
+const MANIFEST_INFCONTROL_EXAMPLE_FALLBACK =
+  "device=WA00P69K&lot=DR39000.1N&slot=1&tstype=CP&cardId=9400-01&testEndFrom=2026-01-01T00:00:00.000Z&testEndTo=2026-01-31T23:59:59.999Z";
 
-/** 来自 `docs/JBStart.xlsx`（至多 **INFCONTROL_LAYER_BIN_TOP** 条）；筛选逻辑与 SQL WHERE 等价 */
-export const INFCONTROL_LAYER_BIN_DUMMY_ROWS: readonly InfcontrolLayerBinDummyRow[] =
-  _jbStartRows.slice(0, INFCONTROL_LAYER_BIN_TOP);
+let _jbDummyRowsCache: readonly InfcontrolLayerBinDummyRow[] | undefined;
 
-export const INFCONTROL_DUMMY_EXAMPLE_QUERY = buildInfcontrolDummyExampleQuery(
-  INFCONTROL_LAYER_BIN_DUMMY_ROWS[0]!
-);
+function getInfcontrolLayerBinDummyRowsInternal(): readonly InfcontrolLayerBinDummyRow[] {
+  if (_jbDummyRowsCache !== undefined) return _jbDummyRowsCache;
+  if (listApisForceOracleNoDummy()) {
+    _jbDummyRowsCache = Object.freeze([]);
+    return _jbDummyRowsCache;
+  }
+  _jbDummyRowsCache = Object.freeze(
+    loadInfcontrolLayerBinRowsFromJbStartXlsx().slice(0, INFCONTROL_LAYER_BIN_TOP)
+  );
+  return _jbDummyRowsCache;
+}
+
+/** 来自 `docs/JBStart.xlsx`（至多 **INFCONTROL_LAYER_BIN_TOP** 条）；仅 Dummy 模式会加载 */
+export function getInfcontrolLayerBinDummyRows(): readonly InfcontrolLayerBinDummyRow[] {
+  return getInfcontrolLayerBinDummyRowsInternal();
+}
+
+/** manifest `example` 等：Dummy 时由 Excel 首行推导；`dist`/production 下为占位串 */
+export function getInfcontrolDummyExampleQuery(): string {
+  if (listApisForceOracleNoDummy()) return MANIFEST_INFCONTROL_EXAMPLE_FALLBACK;
+  const rows = getInfcontrolLayerBinDummyRowsInternal();
+  if (!rows.length) return MANIFEST_INFCONTROL_EXAMPLE_FALLBACK;
+  return buildInfcontrolDummyExampleQuery(rows[0]!);
+}
 
 function infcontrolLayerBinsDummyEnvTrue(raw: string | undefined): boolean {
   const v = raw?.trim().toLowerCase();
   return v === "1" || v === "true" || v === "yes";
 }
 
-/** 测试或本地无库时使用内存样本，不连 Oracle */
+/**
+ * 测试或本地无库时使用内存样本，不连 Oracle。
+ * **`npm run build` 后的 `dist` 进程** 或 **`NODE_ENV=production`** 时恒为 **false**（走库，忽略 `INFCONTROL_LAYER_BINS_DUMMY`）。
+ */
 export function infcontrolLayerBinsUseDummy(): boolean {
+  if (listApisForceOracleNoDummy()) return false;
   if (process.env.NODE_ENV === "test") return true;
   return infcontrolLayerBinsDummyEnvTrue(
     process.env.INFCONTROL_LAYER_BINS_DUMMY
@@ -97,7 +123,7 @@ export function infcontrolLayerBinsUseDummy(): boolean {
 export function filterInfcontrolLayerDummyRowsMatching(
   applied: Record<string, unknown>
 ): InfcontrolLayerBinDummyRow[] {
-  let rows = [...INFCONTROL_LAYER_BIN_DUMMY_ROWS];
+  let rows = [...getInfcontrolLayerBinDummyRowsInternal()];
 
   const eqStr = (column: string, param: string) => {
     const v = applied[param];
@@ -187,7 +213,7 @@ export function filterInfcontrolLayerBinV2DummyRows(
   applied: Record<string, unknown>,
   limit: number
 ): InfcontrolLayerBinDummyRow[] {
-  let rows = [...INFCONTROL_LAYER_BIN_DUMMY_ROWS].filter(
+  let rows = [...getInfcontrolLayerBinDummyRowsInternal()].filter(
     (r) => String(r.PASSTYPE).trim() === "TEST"
   );
 
