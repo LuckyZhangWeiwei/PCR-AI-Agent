@@ -11,7 +11,7 @@ This is a two-package monorepo (no shared workspace tooling — each package has
 | [`pcr-ai-api/`](pcr-ai-api/) | Node.js + Express + TypeScript + **oracledb 5.5**（锁定；见 `pcr-ai-api/CLAUDE.md` §8） | Read-only REST API backed by Oracle |
 | [`pcr-ai-report/`](pcr-ai-report/) | React 19 + TypeScript + Vite + ECharts | Browser dashboard that queries the API |
 
-> **Deep API context:** `pcr-ai-api/CLAUDE.md` contains the full handoff guide for the backend — Dummy/Oracle discipline, v3 constraints, SQL entry points, and the checklist. **Recent v3/v4 aggregate split and `MEMORY_AGG_ORACLE_MAX_ROWS`:** see **`pcr-ai-api/CLAUDE.md` §3 and §11 (2026-05-14)**. Read it before touching `pcr-ai-api/`.
+> **Deep API context:** `pcr-ai-api/CLAUDE.md` contains the full handoff guide for the backend — Dummy/Oracle discipline, v3 constraints, SQL entry points, and the checklist. **Recent v3/v4 aggregate split and `MEMORY_AGG_ORACLE_MAX_ROWS`:** see **`pcr-ai-api/CLAUDE.md` §3 and §11 (2026-05-14)**. **SiliconFlow proxy, CORS, deployment:** **`pcr-ai-api/CLAUDE.md` §12**. Read it before touching `pcr-ai-api/`.
 
 ---
 
@@ -46,6 +46,8 @@ npm run preview         # serve the built dist/ locally
 
 The default API base is `http://10.192.130.89:30008` (set in `.env.development` and the in-app input). Override with `VITE_API_BASE_URL` in a local `.env` file (do not commit credentials).
 
+**Local dev (`npm run dev`) and Private Network Access:** when the Vite dev server runs on `localhost` but the API lives on a private `10.x` host, the browser may block direct cross-origin calls. With **`VITE_DEV_API_VIA_PROXY=true`** (see `.env.development`), `api/client.ts` uses **same-origin** requests (`window.location.origin`) and **`vite.config.ts`** proxies **`/api`** and **`/health`** to **`VITE_DEV_PROXY_TARGET`** (default `http://10.192.130.89:30008`). In that mode, keep the in-app 「服务器地址」 **empty or same-origin**; do **not** point it at `http://10.x:30008` in the browser while relying on the proxy.
+
 ---
 
 ## Architecture overview
@@ -69,10 +71,10 @@ Set `YIELD_MONITOR_TRIGGERS_DUMMY=true` or `INFCONTROL_LAYER_BINS_DUMMY=true` in
 
 ### Frontend (`pcr-ai-report/src/`)
 
-- **`App.tsx`** — shell with a configurable API base URL input (persisted to `localStorage` via `usePersistedApiBase`), connection health probe, and four tab panels.
+- **`App.tsx`** — shell with a configurable API base URL input (persisted to `localStorage` via `usePersistedApiBase`), connection health probe, and five tab panels.
 - **`api/client.ts`** — `apiGetJson<T>()` wraps `fetch`, normalizes the base URL, serializes query params, and throws on non-2xx with a structured error message.
 - **`api/paths.ts`** — single constant `API_PREFIX = "/api/v4"` shared by all report components.
-- **`reports/`** — one component per tab: `OverviewReport` (manifest/API directory), `YieldMonitorReport`, `InfcontrolReport`, `TableRowsReport`. Each manages its own form state, query execution, and ECharts options inline.
+- **`reports/`** — one component per tab: `OverviewReport` (manifest/API directory), `YieldMonitorReport`, `InfcontrolReport`, `AiAgentReport` (SiliconFlow chat via `GET …/siliconflow/chat`), `TableRowsReport`. Each manages its own form state, query execution, and ECharts options inline (AI tab is button-driven, not chart-heavy).
 - **`components/`** — `DarkChart` (ECharts wrapper with resize listener), `DataTable` (generic row/column renderer), `QueryInspector`.
 - **`theme/chartTheme.ts`** — dark-palette constants shared across all chart options.
 

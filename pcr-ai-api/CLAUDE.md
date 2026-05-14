@@ -100,7 +100,9 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 
 | 领域 | 入口 / 说明 |
 | --- | --- |
-| HTTP 路由 | `src/routes/api.ts`（`apiRouter`；v3/v4 层控与产量列表+聚合、`manifest` 等） |
+| HTTP 路由 | `src/routes/api.ts`（`apiRouter`；v3/v4 层控与产量列表+聚合、`manifest`、**`GET …/siliconflow/chat`** 等） |
+| 硅基流动（出站 Chat Completions） | **`src/lib/siliconflowChat.ts`**（`callSiliconflowChat`）；路由见 **`api.ts`** **`GET /siliconflow/chat`**；**不依赖 npm 包 `undici`**（严格 TLS 用全局 **`fetch`**，宽松 TLS 用 **`node:https`**） |
+| 浏览器 CORS | **`src/lib/corsConfig.ts`** → **`wideOpenCorsMiddleware`**；**`app.ts`** 中于 **`requestIdMiddleware`** 之后挂载；已移除 **`cors` npm 包** |
 | v4 聚合行上限（Dummy + Oracle） | **`src/lib/memoryAggregateOracleLimits.ts`**；路由 **`api.ts`** **`…/v4/aggregate`** |
 | Oracle 列名大写化（v4 聚合进 FromRows） | **`src/lib/dbRowKeyUpper.ts`** → **`normalizeDbRowKeysUpper`** |
 | v4 聚合说明 JSON | `src/lib/apiV4Docs.ts` |
@@ -167,6 +169,7 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 - [ ] **`npm run typecheck`** 通过。  
 - [ ] 若改 **`PROBECARDTYPE`** 语义：**`probeCardTypeLeadingSegment`**、**`api.ts`** 两处 enrich、Dummy 的 **`filterInfcontrolLayerBinV3DummyRowsMatching`** / **`filterYieldMonitorDummyRowsMatchingV3`**（及聚合维度 **`probeCardType`** 取值）须与 Oracle 同步。  
 - [ ] 未误改 **`dist` / production** 下 Dummy 关闭语义（`listDummyRuntime.ts`）。  
+- [ ] 若动 **硅基流动 / CORS**：见 **§12**；密钥仅 **`.env`**，勿硬编码。  
 - [ ] 若升级 **`oracledb`**：须评估 **§8.1**（6.x 与 **Instant Client 18.1+**）；勿在未升级客户端时升到 6.x。
 
 ---
@@ -190,3 +193,28 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 6. **`test/rest-api-v3-dummy.test.ts`**：v4 与 v3 Dummy 聚合对齐等断言。  
 7. **前端**：若使用 **v4** 聚合，遇 **422** 应收窄筛选或调服务端 **`MEMORY_AGG_ORACLE_MAX_ROWS`**（勿提交含密钥的 **`.env`**）。  
 8. **勿提交**：**`pcr-ai-api/dist.tar`**、**`node_modules`**。
+
+---
+
+## 12. 硅基流动、CORS 与部署备忘（2026-05 起）
+
+### 12.1 硅基流动代理
+
+- **路由**：**`GET /api/v1|/api/v3|/api/v4/siliconflow/chat?message=…`**（UTF-8 查询参数）；出站 **`POST`** 由 **`src/lib/siliconflowChat.ts`** 发往 **`SILICONFLOW_API_BASE`**（默认 **`https://api.siliconflow.cn/v1`**）。
+- **密钥**：**`SILICONFLOW_API_KEY`** 见 **`.env`**；生产应仅通过 env 配置，勿提交密钥。
+- **TLS**：见 **`SILICONFLOW_TLS_INSECURE`**、**`SILICONFLOW_TLS_STRICT`**、**`NODE_EXTRA_CA_CERTS`**（**`.env.example`**）。**不引入 npm 包 `undici`**：严格校验用 Node 内置 **`fetch`**；跳过证书链用 **`node:https`** + **`rejectUnauthorized: false`**（仅硅基流动出站）。
+- **进程依赖**：**`package.json` 已不再依赖 `undici`**。发布时在 **`pcr-ai-api`** 目录执行 **`npm ci`**（或 **`npm install`**）再 **`npm run build`**，勿只复制 **`dist/`** 而无完整 **`node_modules`**。
+- **Node 版本**：声明 **`>=18.12.1`**；**全局 `fetch` / `AbortSignal.timeout`** 依赖 Node 18。生产例：**v18.12.1** 可用。
+- **PM2**：**`ecosystem.config.cjs`** 将 **`SILICONFLOW_*`**、**`NODE_EXTRA_CA_CERTS`** 及 Oracle 相关键透传，见文件内列表。
+
+### 12.2 CORS
+
+- 已移除 **`cors` npm 包**。逻辑在 **`src/lib/corsConfig.ts`**：**`wideOpenCorsMiddleware`** —— 有 **`Origin`** 则回写该源；**OPTIONS** 预检回显 **`Access-Control-Request-Headers`**；Chrome **Private Network Access** 时处理 **`Access-Control-Request-Private-Network`**。
+- 不再通过 **`CORS_ORIGIN`** 环境变量收紧（见 **`.env.example`** 顶部说明）。
+
+### 12.3 与报表（`pcr-ai-report`）联调
+
+- **`npm run dev`** 时若从 **`localhost`** 访问内网 **`10.x` API**，易受浏览器 **PNA** 与网络策略影响；**`pcr-ai-report`** 通过 **`.env.development`** 的 **`VITE_DEV_API_VIA_PROXY`**、**`VITE_DEV_PROXY_TARGET`** 与 **`vite.config.ts`** 将 **`/api`、`/health`** 代理到网关。详见根目录 **`CLAUDE.md`** 与 **`pcr-ai-report/.env.example`**。
+- 报表与 API **同机部署**时：若 **30008** 不对客户端开放，需在防火墙放行或对 **80** 做反代（运维/网络问题，非 CORS 单独可解）。
+
+---

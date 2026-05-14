@@ -612,3 +612,129 @@ button.chip:hover {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* AI 助手 tab：硅基流动试调 */
+.ai-agent-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: stretch;
+}
+
+@media (max-width: 800px) {
+  .ai-agent-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ai-agent-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.ai-agent-col > h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.ai-agent-textarea {
+  width: 100%;
+  flex: 1;
+  min-height: 160px;
+  resize: vertical;
+  padding: 12px 14px;
+  font-size: 14px;
+  line-height: 1.5;
+  font-family: var(--sans);
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.ai-agent-textarea:focus {
+  outline: none;
+  border-color: rgba(88, 166, 255, 0.45);
+  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.12);
+}
+
+.ai-agent-meta {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.ai-agent-placeholder {
+  margin: 0;
+  flex: 1;
+  min-height: 120px;
+  padding: 16px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+  color: var(--muted);
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.ai-agent-reply {
+  margin: 0;
+  flex: 1;
+  min-height: 120px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: auto;
+  max-height: min(480px, 65vh);
+}
+
+.ai-agent-reasoning {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.ai-agent-reasoning summary {
+  cursor: pointer;
+  user-select: none;
+  color: var(--accent);
+}
+
+.ai-agent-reasoning-pre {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  max-height: 200px;
+  overflow: auto;
+  border-radius: 8px;
+  background: rgba(163, 113, 247, 0.08);
+  border: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ai-agent-base-line {
+  margin: 10px 0 0;
+  max-width: 72ch;
+}
+
+.ai-agent-base-url {
+  display: inline;
+  word-break: break-all;
+}

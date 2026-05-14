@@ -86,6 +86,10 @@ import { INFCONTROL_V4_AGGREGATE_DOCUMENTATION, YIELD_MONITOR_V4_AGGREGATE_DOCUM
 import { normalizeDbRowKeysUpper } from "../lib/dbRowKeyUpper.js";
 import { readMemoryAggregateOracleMaxRows } from "../lib/memoryAggregateOracleLimits.js";
 import { probeCardTypeLeadingSegment } from "../lib/probeCardTypeLeadingSegment.js";
+import {
+  callSiliconflowChat,
+  getSiliconflowConfig,
+} from "../lib/siliconflowChat.js";
 import { addDutNumberToYieldMonitorV3Row } from "../lib/yieldTriggerLabelDut.js";
 import {
   clampLimit,
@@ -123,6 +127,85 @@ function enrichYieldMonitorTriggerV3ListRow(
 /** AI agent 工具发现：参数说明、示例与错误格式约定（**`/api/v1/manifest`** 全量；**`/api/v3/manifest`**、**`/api/v4/manifest`** 为各自前缀的精简目录）。 */
 apiRouter.get("/manifest", (req, res) => {
   res.json(buildManifestResponseJson(req.baseUrl || "/api/v1"));
+});
+
+/** 硅基流动 OpenAI 兼容 Chat Completions：仅查询参数 `message`（UTF-8）；密钥见 `SILICONFLOW_API_KEY`。 */
+apiRouter.get("/siliconflow/chat", async (req, res) => {
+  const raw = req.query.message;
+  const message =
+    typeof raw === "string"
+      ? raw.trim()
+      : Array.isArray(raw) && typeof raw[0] === "string"
+        ? raw[0].trim()
+        : "";
+  if (!message) {
+    return sendAgentError(
+      res,
+      400,
+      "VALIDATION_ERROR",
+      "Missing or empty query parameter: message"
+    );
+  }
+  const maxLen = 100_000;
+  if (message.length > maxLen) {
+    return sendAgentError(
+      res,
+      400,
+      "VALIDATION_ERROR",
+      `message exceeds ${maxLen} characters`
+    );
+  }
+
+  const cfg = getSiliconflowConfig();
+  if (!cfg) {
+    return sendAgentError(
+      res,
+      503,
+      "NOT_CONFIGURED",
+      "SiliconFlow is not configured",
+      "Set SILICONFLOW_API_KEY in pcr-ai-api/.env on the API host and restart. With PM2, ensure SILICONFLOW_* is forwarded (see ecosystem.config.cjs)."
+    );
+  }
+
+  try {
+    const out = await callSiliconflowChat(cfg, message);
+    if (!out.ok) {
+      const detail =
+        typeof out.body === "string"
+          ? out.body
+          : JSON.stringify(out.body).slice(0, 4000);
+      const status =
+        out.status >= 400 && out.status < 600 ? out.status : 502;
+      const isNetwork = out.kind === "network";
+      return sendAgentError(
+        res,
+        status,
+        isNetwork ? "SILICONFLOW_FETCH_FAILED" : "SILICONFLOW_ERROR",
+        isNetwork
+          ? "Failed to reach SiliconFlow"
+          : "SiliconFlow API returned an error",
+        detail
+      );
+    }
+    const body: Record<string, unknown> = {
+      message,
+      reply: out.reply,
+      model: out.model,
+    };
+    if (out.reasoningContent != null && out.reasoningContent !== "") {
+      body.reasoningContent = out.reasoningContent;
+    }
+    res.json(body);
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    return sendAgentError(
+      res,
+      502,
+      "SILICONFLOW_FETCH_FAILED",
+      "Failed to reach SiliconFlow",
+      detail
+    );
+  }
 });
 
 /**

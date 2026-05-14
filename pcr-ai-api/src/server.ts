@@ -1,6 +1,7 @@
 import "./loadEnv.js";
 
 import { createApp } from "./app.js";
+import { describeCorsModeForLog } from "./lib/corsConfig.js";
 import { infcontrolLayerBinsUseDummy } from "./lib/infcontrolLayerBinDummy.js";
 import { listApisForceOracleNoDummy } from "./lib/listDummyRuntime.js";
 import { yieldMonitorTriggersUseDummy } from "./lib/yieldMonitorTriggerDummy.js";
@@ -11,6 +12,7 @@ const app = createApp();
 
 app.listen(port, () => {
   console.log(`pcr-ai-api listening on http://localhost:${port}`);
+  console.log(describeCorsModeForLog());
   console.log(`  v3 联调页: http://localhost:${port}/v3-api-tester.html`);
   console.log(
     `  v4 manifest: http://localhost:${port}/api/v4/manifest（聚合走内存，与 v3 SQL 聚合路径不同）`

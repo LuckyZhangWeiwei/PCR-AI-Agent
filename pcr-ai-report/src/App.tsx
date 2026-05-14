@@ -82,11 +82,27 @@ export default function App() {
               onChange={(e) => setApiBase(e.target.value)}
               spellCheck={false}
               autoComplete="off"
-              placeholder="http://10.192.130.89:30008"
+              placeholder={
+                import.meta.env.DEV &&
+                String(import.meta.env.VITE_DEV_API_VIA_PROXY ?? "")
+                  .toLowerCase() === "true"
+                  ? "留空：经本站 Vite 转发（推荐）"
+                  : "http://10.192.130.89:30008"
+              }
             />
           </label>
           <span className="field-hint">
-            一般无需修改；若打不开数据，请向同事确认地址。
+            {import.meta.env.DEV &&
+            String(import.meta.env.VITE_DEV_API_VIA_PROXY ?? "")
+              .toLowerCase() === "true" ? (
+              <>
+                开发模式默认<strong>走 Vite 代理</strong>到{" "}
+                {import.meta.env.VITE_DEV_PROXY_TARGET ?? "网关"}（地址栏留空或点「恢复默认」）。
+                若在此填写内网 <code>http://10.x...</code>， Chrome 可能拦截跨站访问私网。
+              </>
+            ) : (
+              <>一般无需修改；若打不开数据，请向同事确认地址。</>
+            )}
           </span>
           <div className="api-panel-actions">
             <button type="button" className="btn ghost" onClick={resetApiBase}>

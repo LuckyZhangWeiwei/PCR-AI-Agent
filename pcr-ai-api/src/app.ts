@@ -1,8 +1,8 @@
-import cors from "cors";
 import express, { type ErrorRequestHandler } from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { sendAgentError } from "./lib/agentResponse.js";
+import { wideOpenCorsMiddleware } from "./lib/corsConfig.js";
 import { requestIdMiddleware } from "./middleware/requestId.js";
 import { apiRouter } from "./routes/api.js";
 import { healthRouter } from "./routes/health.js";
@@ -29,7 +29,7 @@ export function createApp() {
 
   app.disable("x-powered-by");
   app.use(requestIdMiddleware);
-  app.use(cors());
+  app.use(wideOpenCorsMiddleware);
   app.use(express.json());
 
   app.use(healthRouter);
