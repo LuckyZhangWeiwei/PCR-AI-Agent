@@ -10,7 +10,7 @@ export const apiManifest = {
   apiVersion: "1",
   title: "pcr-ai-api",
   description:
-    "Read-only Oracle-backed HTTP API for PCR workflows. All query keys are case-insensitive. The same Express router is mounted at /api/v1 (full catalog in GET /api/v1/manifest) and /api/v3 (GET /api/v3/manifest returns v3-only endpoints with /api/v3-prefixed paths). v3 routes use fixed SQL; when dummy env flags are set and the process is not dist/production (see listDummyRuntime.ts), v3 list and v3 aggregate use in-memory Excel samples like v1/v2; otherwise v3 hits Oracle. v3 aggregate GROUP BY is documented in manifest purpose + JSON documentation field. deprecatedEndpoints lists routes removed from the router (yield-monitor-triggers/aggregate only).",
+    "Read-only Oracle-backed HTTP API for PCR workflows. All query keys are case-insensitive. The same Express router is mounted at /api/v1 (full catalog in GET /api/v1/manifest), /api/v3 (GET /api/v3/manifest returns v3-only paths), and /api/v4 (GET /api/v4/manifest returns v4-only paths). v4 duplicates v3 list surfaces for layer bins and yield triggers; v4 aggregates load the full matching row set (same WHERE as the v4 list without FETCH FIRST) and compute groups in Node—no separate v3-style aggregate SQL. v3 routes use fixed SQL; when dummy env flags are set and the process is not dist/production (see listDummyRuntime.ts), v3/v4 list and aggregates use in-memory Excel samples like v1/v2; otherwise they hit Oracle. deprecatedEndpoints lists routes removed from the router (yield-monitor-triggers/aggregate only).",
   mediaType: "application/json",
   endpoints: [
     {
@@ -430,7 +430,7 @@ export const apiManifest = {
       path: "/api/v1/infcontrol-layer-bins/v3/aggregate",
       method: "GET",
       purpose:
-        "v3 infcontrol BIN aggregate: same filter semantics as GET /infcontrol-layer-bins/v3 (PASSTYPE=TEST on INFLAYERBINLIST plus v3 AND filters; UPPER(TRIM) string equality; default one-calendar-year TESTEND window when no testStart*/testEnd* keys). Over ALL matching joined rows (not capped by list limit), UNPIVOT BIN0…BIN255 and SUM per groupBy dimensions; SUM counts bad-bin die only—PASSBIN hyphen-separated whole tokens (0–255) are good bins (same token rule as /infcontrol-layer-bins/v2/top-bad-bins and v3 list bins[].isGoodBin), excluded from SUM (not v1 aggregate BIN1 + N-M pair rules). Returns top groupTop groups by SUM (default 10, max 50). When INFCONTROL_LAYER_BINS_DUMMY is true and not dist/production, uses JBStart.xlsx in-memory rows; else main Oracle. Response includes documentation (Chinese). Requires groupBy with exactly one bin (same rules as v1 aggregate).",
+        "v3 infcontrol BIN aggregate: same filter semantics as GET /infcontrol-layer-bins/v3 (PASSTYPE=TEST on INFLAYERBINLIST plus v3 AND filters; UPPER(TRIM) string equality; default one-calendar-year TESTEND window when no testStart*/testEnd* keys). Over ALL matching joined rows (not capped by list limit), UNPIVOT BIN0…BIN255 and SUM per groupBy dimensions; SUM counts bad-bin die only—PASSBIN hyphen-separated whole tokens (0–255) are good bins (same token rule as /infcontrol-layer-bins/v2/top-bad-bins and v3 list bins[].isGoodBin), excluded from SUM (not v1 aggregate BIN1 + N-M pair rules). Returns top groupTop groups by SUM (default 10, max 50). When INFCONTROL_LAYER_BINS_DUMMY is true and not dist/production, uses JBStart.xlsx in-memory rows with Node aggregation; else main Oracle UNPIVOT aggregate SQL. Response includes documentation (Chinese). Requires groupBy with exactly one bin (same rules as v1 aggregate).",
       queryParameters: [
         {
           name: "groupBy",
@@ -576,7 +576,7 @@ export const apiManifest = {
       path: "/api/v1/yield-monitor-triggers/v3/aggregate",
       method: "GET",
       purpose:
-        "v3 yield aggregate: same WHERE as GET /yield-monitor-triggers/v3 (fixed TYPE=delta_diff via UPPER(TRIM(TYPE)); UPPER(TRIM) on other string columns; TIME_STAMP window including default one-calendar-year bounds when no timeStamp* keys; etc.). Over ALL matching rows (not limited to FETCH FIRST list cap), COUNT(*) GROUP BY requested dimensions, order by count DESC, return top groupTop groups (default 25, max 100). Required query parameter dimensions: comma-separated from device, hostname, lotId, wafer, probeCard, probeCardType, pass, triggerLabel, timeDay, timeHour (max 5 dims; timeDay and timeHour mutually exclusive; probeCardType is leading segment of PROBECARD before first hyphen, same as v3 list PROBECARDTYPE). Query parameter type is not supported on v3 yield endpoints. When YIELD_MONITOR_TRIGGERS_DUMMY is true and not dist/production, uses delta-diff.xlsx in-memory rows; else probeweb Oracle. JSON documentation field explains difference vs v3 list.",
+        "v3 yield aggregate: same WHERE as GET /yield-monitor-triggers/v3 (fixed TYPE=delta_diff via UPPER(TRIM(TYPE)); UPPER(TRIM) on other string columns; TIME_STAMP window including default one-calendar-year bounds when no timeStamp* keys; etc.). Over ALL matching rows (not limited to FETCH FIRST list cap), COUNT(*) GROUP BY requested dimensions in Oracle, order by count DESC, return top groupTop groups (default 25, max 100). Required query parameter dimensions: comma-separated from device, hostname, lotId, wafer, probeCard, probeCardType, pass, triggerLabel, timeDay, timeHour (max 5 dims; timeDay and timeHour mutually exclusive; probeCardType is leading segment of PROBECARD before first hyphen, same as v3 list PROBECARDTYPE). Query parameter type is not supported on v3 yield endpoints. When YIELD_MONITOR_TRIGGERS_DUMMY is true and not dist/production, uses delta-diff.xlsx in-memory rows with Node aggregation; else probeweb Oracle GROUP BY SQL. JSON documentation field explains difference vs v3 list.",
       queryParameters: [
         {
           name: "dimensions",
@@ -635,6 +635,114 @@ export const apiManifest = {
       },
       example:
         "/api/v1/yield-monitor-triggers/v3/aggregate?dimensions=device,hostname&timeStampBegin=2026-05-13T00:00:00.000Z&timeStampEnd=2026-05-13T23:59:59.999Z&groupTop=20",
+    },
+    {
+      path: "/api/v1/infcontrol-layer-bins/v4",
+      method: "GET",
+      purpose:
+        "Same filter semantics, ORDER BY, FETCH FIRST limit, row shape, and dummy/Oracle data sources as GET /api/v1/infcontrol-layer-bins/v3; meta.apiVersion is 4. Use GET /api/v4/manifest for v4-prefixed catalog URLs.",
+      queryParameters: [
+        {
+          name: "limit",
+          type: "number",
+          optional: true,
+          note: "Top-N rows; default 200; max 500 (same as v3 list)",
+        },
+        {
+          name: "device, lot, slot, meslot, testerId, tstype, cardId, passId, testStart*, testEnd*",
+          type: "mixed",
+          optional: true,
+          note: "Identical to infcontrol-layer-bins/v3 (see that entry)",
+        },
+      ],
+      responseShape: {
+        meta: "{ apiVersion: '4', requestId }",
+        limit: "number",
+        limitMax: "number (500)",
+        orderBy: "string",
+        filters: "object",
+        count: "number",
+        rows: "same as infcontrol-layer-bins/v3 list",
+      },
+      example:
+        "/api/v1/infcontrol-layer-bins/v4?device=WB10N57U&lot=NF12615.1X&testEndBegin=2026-05-13T00:00:00.000Z&testEndEnd=2026-05-13T23:59:59.999Z&limit=200",
+    },
+    {
+      path: "/api/v1/infcontrol-layer-bins/v4/aggregate",
+      method: "GET",
+      purpose:
+        "v4 infcontrol BIN aggregate: same groupBy/groupTop validation and list filters as GET /infcontrol-layer-bins/v3/aggregate. Oracle/Dummy: loads all matching rows (no FETCH FIRST) and sums bad-bin die in Node (same hyphen-token PASSBIN rule as v3 dummy); v3 Oracle instead runs UNPIVOT aggregate SQL. Oracle path: COUNT first; if count exceeds MEMORY_AGG_ORACLE_MAX_ROWS, returns 422 QUERY_TOO_LARGE; else in-memory SUM. Dummy uses JBStart in-memory rows.",
+      queryParameters: [
+        {
+          name: "groupBy, groupTop, device, lot, slot, …",
+          type: "mixed",
+          optional: true,
+          note: "Same as infcontrol-layer-bins/v3/aggregate",
+        },
+      ],
+      responseShape: {
+        meta: "{ apiVersion: '4', requestId, aggregatePath }",
+        documentation: "string (v4 Chinese note: in-memory aggregation from full list row set)",
+        groupBy: "string[]",
+        groupTop: "number",
+        orderBy: "string",
+        filters: "object",
+        totalRowsMatching: "number",
+        groups: "array of { key, count, parts }",
+      },
+      example:
+        "/api/v1/infcontrol-layer-bins/v4/aggregate?device=WB10N57U&testEndBegin=2026-05-13T00:00:00.000Z&testEndEnd=2026-05-13T23:59:59.999Z&groupBy=bin&groupTop=10",
+    },
+    {
+      path: "/api/v1/yield-monitor-triggers/v4",
+      method: "GET",
+      purpose:
+        "Same as GET /api/v1/yield-monitor-triggers/v3 except meta.apiVersion is 4 and path is v4.",
+      queryParameters: [
+        {
+          name: "limit, hostname, device, lotId, pass, wafer, probeCard, timeStamp*",
+          type: "mixed",
+          optional: true,
+          note: "Identical to yield-monitor-triggers/v3",
+        },
+      ],
+      responseShape: {
+        meta: "{ apiVersion: '4', requestId }",
+        limit: "number",
+        limitMax: "number (500)",
+        orderBy: "string",
+        filters: "object",
+        count: "number",
+        rows: "same as yield-monitor-triggers/v3 list",
+      },
+      example:
+        "/api/v1/yield-monitor-triggers/v4?device=WA03P02G&timeStampBegin=2026-05-13T00:00:00.000Z&timeStampEnd=2026-05-13T23:59:59.999Z&limit=200",
+    },
+    {
+      path: "/api/v1/yield-monitor-triggers/v4/aggregate",
+      method: "GET",
+      purpose:
+        "v4 yield aggregate: same dimensions/groupTop and WHERE as GET /yield-monitor-triggers/v3/aggregate. Oracle/Dummy: loads all matching rows, attaches PROBECARDTYPE, COUNT per group in Node (same as v3 dummy); v3 Oracle uses GROUP BY SQL. Oracle path: COUNT first, 422 if over MEMORY_AGG_ORACLE_MAX_ROWS; else in-memory COUNT.",
+      queryParameters: [
+        {
+          name: "dimensions, groupTop, hostname, device, …",
+          type: "mixed",
+          optional: true,
+          note: "Same as yield-monitor-triggers/v3/aggregate",
+        },
+      ],
+      responseShape: {
+        meta: "{ apiVersion: '4', requestId, aggregatePath }",
+        documentation: "string (v4 Chinese note)",
+        dimensions: "string[]",
+        groupTop: "number",
+        orderBy: "string",
+        filters: "object",
+        totalRowsMatching: "number",
+        groups: "array of { key, count, parts }",
+      },
+      example:
+        "/api/v1/yield-monitor-triggers/v4/aggregate?dimensions=device,hostname&timeStampBegin=2026-05-13T00:00:00.000Z&timeStampEnd=2026-05-13T23:59:59.999Z&groupTop=20",
     },
     {
       path: "/api/v1/db/ping",

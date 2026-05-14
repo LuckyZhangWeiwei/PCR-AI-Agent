@@ -3,10 +3,10 @@ import { parseYieldMonitorTriggerV3Query } from "./yieldMonitorTriggerFilters.js
 
 /** 随 JSON 返回的固定说明（给人与 Agent；与 manifest `purpose` 一致） */
 export const YIELD_MONITOR_V3_AGGREGATE_DOCUMENTATION =
-  "v3 产量聚合：在「与 GET /yield-monitor-triggers/v3 相同的 WHERE」（含固定 **TYPE = delta_diff**；未传 timeStamp* 时间键时默认最近一年 TIME_STAMP）所匹配的**全部行**上执行 COUNT(*) 与 GROUP BY，" +
-  "再按计数降序取 Top groupTop 组。与 v3 **列表**不同：列表按 TIME_STAMP 排序后 FETCH FIRST :lim，仅最多 500 条**明细**；" +
-  "聚合统计的是时间窗/设备筛选下的**全量匹配行**。必填 dimensions（逗号分隔）；其中 **probeCardType** 与列表 **PROBECARDTYPE** 一致（PROBECARD 首个「-」前段）。" +
-  "当 **`YIELD_MONITOR_TRIGGERS_DUMMY=true`** 且进程非 `dist`/production 时，数据来自 **`docs/delta-diff.xlsx`** 内存样本；否则走 probeweb Oracle。";
+  "v3 产量聚合：在「与 GET /yield-monitor-triggers/v3 相同的 WHERE」（含固定 **TYPE = delta_diff**；未传 timeStamp* 时间键时默认最近一年 TIME_STAMP）所匹配的**全部行**上，" +
+  "**Oracle** 在库内 **`COUNT(*)` + `GROUP BY`** 指定维度，再按计数降序取 Top groupTop 组；与 v3 **列表**不同：列表按 TIME_STAMP 排序后 FETCH FIRST :lim，仅最多 500 条明细，聚合统计时间窗/设备筛选下的全量匹配行。" +
+  "**Dummy**（`YIELD_MONITOR_TRIGGERS_DUMMY=true` 且非 dist/production）在 Node 内对 delta-diff 样本行做与 **`aggregateYieldMonitorV3FromRows`** 等价的 COUNT。" +
+  "必填 **dimensions**（逗号分隔）；其中 **probeCardType** 与列表 **PROBECARDTYPE** 一致（PROBECARD 首个「-」前段；Oracle 聚合 SQL 内用 **REGEXP_SUBSTR**）。";
 
 /** 默认返回的分组条数上限（与 v3 列表「最多 500 行」解耦：此处限制的是 **组数**） */
 export const YIELD_MONITOR_V3_AGG_DEFAULT_TOP = 25;
@@ -143,7 +143,8 @@ const GRP_SEP = "|";
 
 /**
  * **v3 产量聚合**：与 **`/yield-monitor-triggers/v3`** 相同的 **WHERE**（含 `UPPER(TRIM)` 字符串筛选），
- * 在**全量匹配行**上做 `COUNT(*)`、`GROUP BY` 指定维度，再按计数降序取 Top **`groupTop`** 组。
+ * **Oracle**：在库内 **`COUNT(*)`**、**`GROUP BY`** 指定维度，再按计数降序取 Top **`groupTop`** 组。
+ * **Dummy**：Excel 样本在 Node 内按维度 **COUNT**（**`aggregateYieldMonitorV3DummyRows`**）。
  *
  * **必填**：**`dimensions`**（逗号分隔，至少 1 项，至多 5 项），取值：
  * `device`, `hostname`, `lotId`, `wafer`, `probeCard`, `probeCardType`, `pass`, `triggerLabel`, `timeDay`, `timeHour`。

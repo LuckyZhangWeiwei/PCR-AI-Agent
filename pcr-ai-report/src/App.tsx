@@ -69,7 +69,7 @@ export default function App() {
           <p className="app-intro">
             <strong>怎么用：</strong>
             下面选一个主题 → 按需填写筛选项（留空表示不按该项筛选）→ 点「查询」。
-            数据请求统一走 <strong>v3</strong> 前缀（见「API 目录」页）；JB START / yield 的条数与聚合选项以各页说明为准。
+            数据请求统一走 <strong>v4</strong> 前缀（见「API 目录」页）；JB START / yield 的条数与聚合选项以各页说明为准。
           </p>
         </div>
 

@@ -361,13 +361,12 @@ export function filterYieldMonitorDummyRowsV3(
   return rows.slice(0, maxCap);
 }
 
-/** v3 产量聚合 Dummy：与 **`/yield-monitor-triggers/v3/aggregate`** Oracle 语义一致（`COUNT(*)` + 维度 bucket）。 */
-export function aggregateYieldMonitorV3DummyRows(
-  applied: Record<string, unknown>,
+/** 在已筛选行上执行与 **`/yield-monitor-triggers/v3/aggregate`** Dummy / Oracle 一致的 **`COUNT(*)`** 分桶。 */
+export function aggregateYieldMonitorV3FromRows(
+  rows: Array<YieldMonitorTriggerDummyRow & { PROBECARDTYPE?: string | null }>,
   dimensions: YieldMonitorV3AggDim[],
   groupTop: number
 ): { totalRowsMatching: number; groups: YieldMonitorDummyAggregateGroup[] } {
-  const rows = filterYieldMonitorDummyRowsMatchingV3(applied);
   const counts = new Map<string, number>();
   const firstParts = new Map<string, Record<string, string>>();
 
@@ -395,4 +394,17 @@ export function aggregateYieldMonitorV3DummyRows(
     }));
 
   return { totalRowsMatching: rows.length, groups };
+}
+
+/** v3 产量聚合 Dummy：与 **`/yield-monitor-triggers/v3/aggregate`** Oracle 语义一致（`COUNT(*)` + 维度 bucket）。 */
+export function aggregateYieldMonitorV3DummyRows(
+  applied: Record<string, unknown>,
+  dimensions: YieldMonitorV3AggDim[],
+  groupTop: number
+): { totalRowsMatching: number; groups: YieldMonitorDummyAggregateGroup[] } {
+  return aggregateYieldMonitorV3FromRows(
+    filterYieldMonitorDummyRowsMatchingV3(applied),
+    dimensions,
+    groupTop
+  );
 }

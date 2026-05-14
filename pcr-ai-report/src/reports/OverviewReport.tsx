@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { apiGetJson } from "../api/client";
 import { API_PREFIX } from "../api/paths";
-import type { ManifestV3Response } from "../api/types";
+import type { ManifestCatalogResponse } from "../api/types";
 
 type Props = {
   apiBase: string;
@@ -14,7 +14,7 @@ function truncate(s: string, max: number): string {
 }
 
 export function OverviewReport({ apiBase }: Props) {
-  const [manifest, setManifest] = useState<ManifestV3Response | null>(null);
+  const [manifest, setManifest] = useState<ManifestCatalogResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,7 +22,7 @@ export function OverviewReport({ apiBase }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiGetJson<ManifestV3Response>(
+      const res = await apiGetJson<ManifestCatalogResponse>(
         apiBase,
         `${API_PREFIX}/manifest`,
         undefined,
@@ -43,11 +43,11 @@ export function OverviewReport({ apiBase }: Props) {
     <section className="report-panel">
       <header className="report-panel-header">
         <div>
-          <h2>API 概览（v3）</h2>
+          <h2>API 概览（v4）</h2>
           <p className="report-desc">
             拉取 <code>{API_PREFIX}/manifest</code>，展示当前服务在{" "}
-            <strong>v3 目录</strong> 下暴露的端点（<code>catalogScope</code> 一般为{" "}
-            <code>v3-surfaces-only</code>）。便于核对报表所用路径是否与后端一致。
+            <strong>v4 目录</strong> 下暴露的端点（<code>catalogScope</code> 一般为{" "}
+            <code>v4-surfaces-only</code>）。便于核对报表所用路径是否与后端一致。
           </p>
         </div>
         <div className="report-actions">
@@ -102,7 +102,7 @@ export function OverviewReport({ apiBase }: Props) {
 
       {!manifest && !loading && !error ? (
         <div className="card chart-placeholder subtle">
-          <p>点击「刷新 manifest」加载 v3 端点目录。</p>
+          <p>点击「刷新 manifest」加载 v4 端点目录。</p>
         </div>
       ) : null}
     </section>

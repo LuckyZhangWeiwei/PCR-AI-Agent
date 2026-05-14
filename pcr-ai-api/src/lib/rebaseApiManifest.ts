@@ -13,6 +13,17 @@ const V3_CATALOG_CANONICAL_PATHS = new Set([
   "/health",
 ]);
 
+/** Paths kept when serving manifest from **`/api/v4`**（v4 列表 + 内存聚合 + 探活）。 */
+const V4_CATALOG_CANONICAL_PATHS = new Set([
+  "/api/v1/manifest",
+  "/api/v1/infcontrol-layer-bins/v4",
+  "/api/v1/infcontrol-layer-bins/v4/aggregate",
+  "/api/v1/yield-monitor-triggers/v4",
+  "/api/v1/yield-monitor-triggers/v4/aggregate",
+  "/api/v1/db/ping",
+  "/health",
+]);
+
 export function rebaseApiPath(path: string, mountPrefix: string): string {
   const base = mountPrefix.replace(/\/$/, "") || API_V1_PREFIX;
   if (path.startsWith(API_V1_PREFIX)) return base + path.slice(API_V1_PREFIX.length);
@@ -42,25 +53,30 @@ function mapEndpoint(
 export function buildManifestResponseJson(mountPrefix: string): Record<string, unknown> {
   const mount = mountPrefix && mountPrefix !== "" ? mountPrefix : API_V1_PREFIX;
   const v3Only = mount === "/api/v3";
+  const v4Only = mount === "/api/v4";
 
-  const endpoints = v3Only
-    ? apiManifest.endpoints.filter((e) => V3_CATALOG_CANONICAL_PATHS.has(e.path))
-    : apiManifest.endpoints;
+  const endpoints = v4Only
+    ? apiManifest.endpoints.filter((e) => V4_CATALOG_CANONICAL_PATHS.has(e.path))
+    : v3Only
+      ? apiManifest.endpoints.filter((e) => V3_CATALOG_CANONICAL_PATHS.has(e.path))
+      : apiManifest.endpoints;
 
-  const deprecated = v3Only
+  const deprecated = v4Only || v3Only
     ? apiManifest.deprecatedEndpoints.filter((d) =>
         d.path.startsWith(API_V1_PREFIX)
       )
     : apiManifest.deprecatedEndpoints;
 
-  const description = v3Only
-    ? `${apiManifest.description} This response is from ${mount}: catalog lists v3 list/aggregate endpoints for layer bins and yield triggers, GET ${mount}/db/ping, and GET /health only; every path and example field uses the ${mount} prefix (no /api/v1 in URLs). The same routes are also mounted under /api/v1 for backward compatibility.`
-    : `${apiManifest.description} The same router is mounted at /api/v3; GET /api/v3/manifest returns a v3-focused catalog with /api/v3-prefixed paths.`;
+  const description = v4Only
+    ? `${apiManifest.description} This response is from ${mount}: catalog lists v4 list + v4 in-memory aggregate endpoints for layer bins and yield triggers, GET ${mount}/db/ping, and GET /health only; every path and example field uses the ${mount} prefix (no /api/v1 in URLs). The same routes are also mounted under /api/v1 for backward compatibility.`
+    : v3Only
+      ? `${apiManifest.description} This response is from ${mount}: catalog lists v3 list/aggregate endpoints for layer bins and yield triggers, GET ${mount}/db/ping, and GET /health only; every path and example field uses the ${mount} prefix (no /api/v1 in URLs). The same routes are also mounted under /api/v1 for backward compatibility.`
+      : `${apiManifest.description} The same router is mounted at /api/v3; GET /api/v3/manifest returns a v3-focused catalog with /api/v3-prefixed paths. The same router is mounted at /api/v4; GET /api/v4/manifest returns a v4-focused catalog with /api/v4-prefixed paths.`;
 
   return {
     ...apiManifest,
     description,
-    catalogScope: v3Only ? "v3-surfaces-only" : "full",
+    catalogScope: v4Only ? "v4-surfaces-only" : v3Only ? "v3-surfaces-only" : "full",
     endpoints: endpoints.map((e) => mapEndpoint(e, mount)),
     deprecatedEndpoints: deprecated.map((d) => ({
       ...d,

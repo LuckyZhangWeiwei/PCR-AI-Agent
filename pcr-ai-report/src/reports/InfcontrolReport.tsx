@@ -204,7 +204,7 @@ export function InfcontrolReport({ apiBase }: Props) {
         };
         const res = await apiGetJson<InfcontrolAggregateResponse>(
           apiBase,
-          `${API_PREFIX}/infcontrol-layer-bins/v3/aggregate`,
+          `${API_PREFIX}/infcontrol-layer-bins/v4/aggregate`,
           params
         );
         setDrill((d) =>
@@ -233,7 +233,7 @@ export function InfcontrolReport({ apiBase }: Props) {
         const gby = dim === "bin" ? "bin" : `${dim},bin`;
         const res = await apiGetJson<InfcontrolAggregateResponse>(
           apiBase,
-          `${API_PREFIX}/infcontrol-layer-bins/v3/aggregate`,
+          `${API_PREFIX}/infcontrol-layer-bins/v4/aggregate`,
           { ...buildCoreParams(currentForm), groupBy: gby, groupTop: 30 }
         );
         setAggFree(res);
@@ -257,31 +257,31 @@ export function InfcontrolReport({ apiBase }: Props) {
         () =>
           apiGetJson<InfcontrolLayerBinsV3Response>(
             apiBase,
-            `${API_PREFIX}/infcontrol-layer-bins/v3`,
+            `${API_PREFIX}/infcontrol-layer-bins/v4`,
             buildListParams(form)
           ),
         () =>
           apiGetJson<InfcontrolAggregateResponse>(
             apiBase,
-            `${API_PREFIX}/infcontrol-layer-bins/v3/aggregate`,
+            `${API_PREFIX}/infcontrol-layer-bins/v4/aggregate`,
             { ...core, groupBy: "bin", groupTop: 30 }
           ),
         () =>
           apiGetJson<InfcontrolAggregateResponse>(
             apiBase,
-            `${API_PREFIX}/infcontrol-layer-bins/v3/aggregate`,
+            `${API_PREFIX}/infcontrol-layer-bins/v4/aggregate`,
             { ...core, groupBy: "cardId,bin", groupTop: 25 }
           ),
         () =>
           apiGetJson<InfcontrolAggregateResponse>(
             apiBase,
-            `${API_PREFIX}/infcontrol-layer-bins/v3/aggregate`,
+            `${API_PREFIX}/infcontrol-layer-bins/v4/aggregate`,
             { ...core, groupBy: "slot,bin", groupTop: 50 }
           ),
         () =>
           apiGetJson<InfcontrolAggregateResponse>(
             apiBase,
-            `${API_PREFIX}/infcontrol-layer-bins/v3/aggregate`,
+            `${API_PREFIX}/infcontrol-layer-bins/v4/aggregate`,
             { ...core, groupBy: "device,lot,cardId,bin", groupTop: 50 }
           ),
       ],

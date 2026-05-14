@@ -11,7 +11,7 @@ This is a two-package monorepo (no shared workspace tooling — each package has
 | [`pcr-ai-api/`](pcr-ai-api/) | Node.js + Express + TypeScript + **oracledb 5.5**（锁定；见 `pcr-ai-api/CLAUDE.md` §8） | Read-only REST API backed by Oracle |
 | [`pcr-ai-report/`](pcr-ai-report/) | React 19 + TypeScript + Vite + ECharts | Browser dashboard that queries the API |
 
-> **Deep API context:** `pcr-ai-api/CLAUDE.md` contains the full handoff guide for the backend — Dummy/Oracle discipline, v3 constraints, SQL entry points, and the checklist. Read it before touching `pcr-ai-api/`.
+> **Deep API context:** `pcr-ai-api/CLAUDE.md` contains the full handoff guide for the backend — Dummy/Oracle discipline, v3 constraints, SQL entry points, and the checklist. **Recent v3/v4 aggregate split and `MEMORY_AGG_ORACLE_MAX_ROWS`:** see **`pcr-ai-api/CLAUDE.md` §3 and §11 (2026-05-14)**. Read it before touching `pcr-ai-api/`.
 
 ---
 
@@ -54,7 +54,7 @@ The default API base is `http://10.192.130.89:30008` (set in `.env.development` 
 
 - **`server.ts`** — bootstraps Express, starts the Oracle pool, logs Dummy state on startup.
 - **`app.ts`** — creates the Express app, mounts middleware and routers.
-- **`routes/api.ts`** — all `/api/v1` and `/api/v3` endpoints (yield monitor, infcontrol layer bins, manifest, db ping, table-rows).
+- **`routes/api.ts`** — all `/api/v1`, `/api/v3`, and **`/api/v4`** endpoints (same router; v4 mirrors v3 list surfaces but aggregates in Node from the full matching row set—see `pcr-ai-api/CLAUDE.md`).
 - **`oracle.ts`** — two named pools: default (`withConnection`) for the main Oracle schema and `probeweb` (`withProbeWebConnection`) for yield-monitor routes. **Driver:** `oracledb@5.5.0` pinned for compatibility with older Oracle 11g clients on hosts that cannot upgrade Instant Client (see `pcr-ai-api/CLAUDE.md` §8 before bumping to v6).
 - **`lib/`** — domain logic grouped by feature:
   - `yieldMonitorTrigger*` — v1/v3 list, v3 aggregate, Dummy, SQL, filter parsing, DUT label extraction.
@@ -71,7 +71,7 @@ Set `YIELD_MONITOR_TRIGGERS_DUMMY=true` or `INFCONTROL_LAYER_BINS_DUMMY=true` in
 
 - **`App.tsx`** — shell with a configurable API base URL input (persisted to `localStorage` via `usePersistedApiBase`), connection health probe, and four tab panels.
 - **`api/client.ts`** — `apiGetJson<T>()` wraps `fetch`, normalizes the base URL, serializes query params, and throws on non-2xx with a structured error message.
-- **`api/paths.ts`** — single constant `API_PREFIX = "/api/v3"` shared by all report components.
+- **`api/paths.ts`** — single constant `API_PREFIX = "/api/v4"` shared by all report components.
 - **`reports/`** — one component per tab: `OverviewReport` (manifest/API directory), `YieldMonitorReport`, `InfcontrolReport`, `TableRowsReport`. Each manages its own form state, query execution, and ECharts options inline.
 - **`components/`** — `DarkChart` (ECharts wrapper with resize listener), `DataTable` (generic row/column renderer), `QueryInspector`.
 - **`theme/chartTheme.ts`** — dark-palette constants shared across all chart options.
@@ -80,7 +80,7 @@ Set `YIELD_MONITOR_TRIGGERS_DUMMY=true` or `INFCONTROL_LAYER_BINS_DUMMY=true` in
 
 ```
 Browser (pcr-ai-report)
-  └─ apiGetJson → GET /api/v3/...
+  └─ apiGetJson → GET /api/v4/...
        └─ pcr-ai-api (Express)
             ├─ Oracle pool (main / probeweb)
             └─ or Dummy (in-memory Excel, dev only)

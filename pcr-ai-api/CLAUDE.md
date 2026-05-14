@@ -32,12 +32,20 @@
 
 | 变量 | 影响的典型路径 |
 | --- | --- |
-| `INFCONTROL_LAYER_BINS_DUMMY=true` | `/api/v3/infcontrol-layer-bins/v3`、`…/v3/aggregate`（样本 `docs/JBStart.xlsx`） |
-| `YIELD_MONITOR_TRIGGERS_DUMMY=true` | `/api/v3/yield-monitor-triggers/v3`、`…/v3/aggregate`（样本 `docs/delta-diff.xlsx`） |
+| `INFCONTROL_LAYER_BINS_DUMMY=true` | `/api/v3/infcontrol-layer-bins/v3`、`…/v3/aggregate`；**`/api/v4/…/v4`、`…/v4/aggregate`**（样本 `docs/JBStart.xlsx`） |
+| `YIELD_MONITOR_TRIGGERS_DUMMY=true` | `/api/v3/yield-monitor-triggers/v3`、`…/v3/aggregate`；**`/api/v4/…/v4`、`…/v4/aggregate`**（样本 `docs/delta-diff.xlsx`） |
 
-**`NODE_ENV=test`** 下单测里产量 Dummy 行为见 `test/rest-api-v3-dummy.test.ts` 的 `before` 钩子。
+**v4（与 v3 并行）**：**`app.ts`** 将同一 **`apiRouter`** 挂在 **`/api/v4`**。**`GET /api/v4/manifest`** 为 v4 精简目录（**`rebaseApiManifest.ts`** → **`V4_CATALOG_CANONICAL_PATHS`**）。
 
-**硬规则**：凡改 v3 的 **WHERE 语义、筛选解析、排序、limit、聚合维度、响应字段**，必须同时改 **Oracle 路径**与 **`src/lib/*Dummy*.ts`** 中等价逻辑；详见 **dummy-parity** 规则文件。
+- **v4 列表**：与 **v3 列表**同源（**`parseInfcontrolLayerBinsV3Query`** / **`parseYieldMonitorTriggerV3Query`**、Dummy **`filterInfcontrolLayerBinV3DummyRows`** / **`filterYieldMonitorDummyRowsV3`**、SQL **`buildInfcontrolLayerBinsV3Sql`** / **`buildYieldMonitorTriggersV3Sql`**）；仅 **`meta.apiVersion`** 为 **`"4"`**。
+
+- **v3 `/…/v3/aggregate`**：**Oracle** 库内聚合（层控 **`buildInfcontrolLayerBinAggregateSql(..., "v3-hyphen-tokens")`**；产量 **`buildYieldMonitorTriggerV3AggregateSql`**）；**Dummy** 在 Node（**`aggregateInfcontrolLayerBinV3DummyRows`** / **`aggregateYieldMonitorV3DummyRows`**）。**不使用** **`MEMORY_AGG_ORACLE_MAX_ROWS`**。
+
+- **v4 `/…/v4/aggregate`**：**Oracle 与 Dummy 均在 Node** 对全量匹配行 **`aggregateInfcontrolLayerBinV3FromRows`** / **`aggregateYieldMonitorV3FromRows`**。Oracle 先 **COUNT**（**`buildInfcontrolLayerBinMatchingCountSql`** / **`buildYieldMonitorTriggerMatchingCountSql`**）再 **`buildInfcontrolLayerBinsV3SqlFullMatching`** / **`buildYieldMonitorTriggersV3SqlFullMatching`**；**Dummy 与 Oracle** 若匹配行数 **>** **`MEMORY_AGG_ORACLE_MAX_ROWS`**（**`memoryAggregateOracleLimits.ts`**，见 **`.env.example`**）均 **422**。Oracle 明细行进 **`aggregate*FromRows`** 前经 **`normalizeDbRowKeysUpper`**（**`dbRowKeyUpper.ts`**）统一列名大写。层控解析仍用 **`parseInfcontrolLayerBinsV3AggregateQuery`**（**`listWhereAndSql`**）。
+
+**硬规则**：凡改 v3 的 **WHERE 语义、筛选解析、排序、limit、聚合维度、响应字段**，必须同时改 **Oracle** 与 **`src/lib/*Dummy*.ts`**；涉及 **v4** 时还须检查 **全量 SQL**、**`api.ts` v4 路由**、**`normalizeDbRowKeysUpper`**。**dummy-parity** 仍适用。
+
+**`NODE_ENV=test`** 下单测里 Dummy 行为见 `test/rest-api-v3-dummy.test.ts` 的 `before` 钩子（含 v3 与 v4 断言）。
 
 ---
 
@@ -92,7 +100,10 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 
 | 领域 | 入口 / 说明 |
 | --- | --- |
-| HTTP 路由 | `src/routes/api.ts`（`apiRouter`；v3 产量列表/聚合、`manifest` 等） |
+| HTTP 路由 | `src/routes/api.ts`（`apiRouter`；v3/v4 层控与产量列表+聚合、`manifest` 等） |
+| v4 聚合行上限（Dummy + Oracle） | **`src/lib/memoryAggregateOracleLimits.ts`**；路由 **`api.ts`** **`…/v4/aggregate`** |
+| Oracle 列名大写化（v4 聚合进 FromRows） | **`src/lib/dbRowKeyUpper.ts`** → **`normalizeDbRowKeysUpper`** |
+| v4 聚合说明 JSON | `src/lib/apiV4Docs.ts` |
 | v3 产量筛选 + 固定 TYPE | `src/lib/yieldMonitorTriggerFilters.ts` → `parseYieldMonitorTriggerV3Query`；常量 `YIELD_MONITOR_V3_TYPE_SCOPE` |
 | v3 产量聚合解析 / SQL | `src/lib/yieldMonitorTriggerV3Aggregate.ts`（**`dimensions`** 含 **`probeCardType`** 等） |
 | v3 层控 BIN 聚合 **`groupBy`**（含 **`probeCardType`**）/ UNPIVOT SQL | `src/lib/infcontrolLayerBinAggregate.ts`（v3 路由传 **`v3-hyphen-tokens`**） |
@@ -149,6 +160,7 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 
 ## 9. 交接检查清单（给下一位）
 
+- [ ] 若动 **v4 聚合**：Dummy 与 Oracle **均**遵守 **`MEMORY_AGG_ORACLE_MAX_ROWS`**；Oracle 明细需经 **`normalizeDbRowKeysUpper`** 再 **`aggregate*FromRows`**。  
 - [ ] 已读 **AI_AGENT_API.md** 至少 **§0、§4、§7、§8** 中与当前任务相关的节。  
 - [ ] 若动 v3 产量 / 层控：**Dummy 与 Oracle 两侧**都已改并通过 **`npm test`**。  
 - [ ] 若动列表 SQL：**`npm run docs:api-v3`** 已跑且 **`docs/API_V3.md`** 无意外回退。  
@@ -165,3 +177,16 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 - **`docs/AI_AGENT_API.md`**：对外集成与 **可复制 URL** 的完整说明；**§5** 为更短的「系统提示」列表。
 
 二者冲突时以 **源码与 `manifest` 实际行为**为准，并应**更新文档**消除冲突。
+
+---
+
+## 11. 近期变更纪要（2026-05-14，交接备忘）
+
+1. **v3 聚合**：Oracle **库内**（层控 UNPIVOT + **`v3-hyphen-tokens`**；产量 **`GROUP BY`**）；Dummy **Node**；**无** **`MEMORY_AGG_ORACLE_MAX_ROWS`**。  
+2. **v4 聚合**：Oracle 与 Dummy **均在 Node**；**COUNT + 全量 SELECT** 仅 Oracle；**`MEMORY_AGG_ORACLE_MAX_ROWS`** 对 **Dummy + Oracle** 均可能 **422**。  
+3. **`normalizeDbRowKeysUpper`**（**`src/lib/dbRowKeyUpper.ts`**）：v4 Oracle 聚合前进 **`aggregate*FromRows`**，与 Dummy 行键一致。  
+4. **`src/lib/memoryAggregateOracleLimits.ts`** + **`.env.example`**：仅描述 **v4** 聚合行上限。  
+5. **`src/lib/apiV4Docs.ts`**、**`apiManifest.ts`**：与上述行为一致的说明。  
+6. **`test/rest-api-v3-dummy.test.ts`**：v4 与 v3 Dummy 聚合对齐等断言。  
+7. **前端**：若使用 **v4** 聚合，遇 **422** 应收窄筛选或调服务端 **`MEMORY_AGG_ORACLE_MAX_ROWS`**（勿提交含密钥的 **`.env`**）。  
+8. **勿提交**：**`pcr-ai-api/dist.tar`**、**`node_modules`**。

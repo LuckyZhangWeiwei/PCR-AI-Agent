@@ -2,7 +2,8 @@
  * 在 **NODE_ENV=test** 下 **`listApisForceOracleNoDummy()`** 为 false，可配合
  * **`INFCONTROL_LAYER_BINS_DUMMY`** / **`YIELD_MONITOR_TRIGGERS_DUMMY`** 走 **Excel** 内存数据。
  *
- * 覆盖 **`/api/v3`** 挂载的**全部** GET 业务路由；**`/health`** 单独挂在 app 根。
+ * 覆盖 **`/api/v3`** 挂载的**全部** GET 业务路由；**`/api/v4`** 的 v4 列表与聚合（dummy 下与 v3 聚合结果对齐）；
+ * **`/health`** 单独挂在 app 根。
  * **`/api/v3/db/ping`** 与 **`/api/v3/table-rows`** 需真实 Oracle：仅当环境变量
  * **`PCR_AI_RUN_ORACLE_TESTS=1`** 时执行（否则 **skip**）。
  */
@@ -91,6 +92,18 @@ describe(
       const { status, body } = await getJson("/health");
       assertOkJson(status, body);
       assert.equal((body as { status?: string }).status, "ok");
+    });
+
+    test("GET /api/v4/manifest（v4 目录）", async () => {
+      const { status, body } = await getJson("/api/v4/manifest");
+      assertOkJson(status, body);
+      assert.equal((body as { catalogScope?: string }).catalogScope, "v4-surfaces-only");
+      const eps = (body as { endpoints?: { path?: string }[] }).endpoints;
+      assert.ok(Array.isArray(eps) && eps.length > 0);
+      const paths = eps!.map((e) => e.path).filter(Boolean) as string[];
+      assert.ok(paths.some((p) => p.includes("/api/v4/infcontrol-layer-bins/v4")));
+      assert.ok(paths.some((p) => p.includes("/api/v4/yield-monitor-triggers/v4")));
+      assert.ok(paths.every((p) => !p.startsWith("/api/v1")));
     });
 
     test("GET /api/v3/manifest（v3 目录）", async () => {
@@ -412,6 +425,54 @@ describe(
       );
       assertOkJson(status, body);
       assert.ok(Array.isArray((body as { rows?: unknown }).rows));
+    });
+
+    test("GET /api/v4/infcontrol-layer-bins/v4（dummy）与 v4 聚合对齐 v3 dummy 聚合", async () => {
+      const { status, body } = await getJson(
+        `/api/v4/infcontrol-layer-bins/v4?${icExampleQs}&limit=30`
+      );
+      assertOkJson(status, body);
+      assert.equal((body as { meta?: { apiVersion?: string } }).meta?.apiVersion, "4");
+
+      const qs = new URLSearchParams(icExampleQs);
+      qs.set("groupBy", "device,bin");
+      qs.set("groupTop", "8");
+      const [v3r, v4r] = await Promise.all([
+        getJson(`${API}/infcontrol-layer-bins/v3/aggregate?${qs.toString()}`),
+        getJson(`/api/v4/infcontrol-layer-bins/v4/aggregate?${qs.toString()}`),
+      ]);
+      assertOkJson(v3r.status, v3r.body);
+      assertOkJson(v4r.status, v4r.body);
+      assert.equal(
+        (v4r.body as { meta?: { apiVersion?: string } }).meta?.apiVersion,
+        "4"
+      );
+      const v3b = v3r.body as {
+        totalRowsMatching?: number;
+        groups?: unknown[];
+      };
+      const v4b = v4r.body as {
+        totalRowsMatching?: number;
+        groups?: unknown[];
+      };
+      assert.equal(v3b.totalRowsMatching, v4b.totalRowsMatching);
+      assert.deepEqual(v3b.groups, v4b.groups);
+    });
+
+    test("GET /api/v4/yield-monitor-triggers/v4/aggregate（dummy）与 v3 聚合一致", async () => {
+      const qs = new URLSearchParams(yExampleQs);
+      qs.set("dimensions", "device,hostname");
+      qs.set("groupTop", "15");
+      const [v3r, v4r] = await Promise.all([
+        getJson(`${API}/yield-monitor-triggers/v3/aggregate?${qs.toString()}`),
+        getJson(`/api/v4/yield-monitor-triggers/v4/aggregate?${qs.toString()}`),
+      ]);
+      assertOkJson(v3r.status, v3r.body);
+      assertOkJson(v4r.status, v4r.body);
+      const v3b = v3r.body as { totalRowsMatching?: number; groups?: unknown[] };
+      const v4b = v4r.body as { totalRowsMatching?: number; groups?: unknown[] };
+      assert.equal(v3b.totalRowsMatching, v4b.totalRowsMatching);
+      assert.deepEqual(v3b.groups, v4b.groups);
     });
 
     test("未知路径 → 404 NOT_FOUND", async () => {

@@ -48,6 +48,42 @@ FETCH FIRST :lim ROWS ONLY
 `.trim();
 }
 
+/** 与 **`buildInfcontrolLayerBinsV3Sql`** 相同 **WHERE** 与 **ORDER BY**，**无** **`FETCH FIRST`**（供 v4 全量匹配行 / 内存聚合）。 */
+export function buildInfcontrolLayerBinsV3SqlFullMatching(whereAndSql: string): string {
+  const extra = whereAndSql.trim();
+  const whereBlock = extra
+    ? `WHERE t2.PASSTYPE = 'TEST' AND ${extra}`
+    : `WHERE t2.PASSTYPE = 'TEST'`;
+  return `
+SELECT
+    t1.DEVICE,
+    t1.LOT,
+    t1.SLOT,
+    t1.MESLOT,
+    t2.TESTERID,
+    t2.TSTYPE,
+    t2.CARDID,
+    t2.PIBID,
+    t2.PROBE,
+    t2.GROSSDIE,
+    t2.PASSID,
+    t2.PASSNUM,
+    t2.TESTSTART,
+    t2.TESTEND,
+    t2.LAYERNAME,
+    t2.PASSRESUME,
+    t2.PASSTYPE,
+    t2.PASSBIN,
+${BIN1_THROUGH_255},
+    t2.PASSRESULT
+FROM INFCONTROL t1
+INNER JOIN INFLAYERBINLIST t2
+    ON t1.KEYNUMBER = t2.KEYNUMBER
+${whereBlock}
+ORDER BY t2.TESTEND DESC NULLS LAST, t1.SLOT, t2.PASSID, t2.PASSNUM
+`.trim();
+}
+
 /**
  * probeweb：`YMWEB_YIELDMONITORTRIGGER` 全列；**`whereClause`** 由 **`parseYieldMonitorTriggerV3Query`** 生成（**恒含** **`TYPE = delta_diff`**），为 **`WHERE …`** 或空串；
  * `ORDER BY` + `FETCH FIRST :lim ROWS ONLY`。
@@ -60,5 +96,16 @@ SELECT *
 FROM YMWEB_YIELDMONITORTRIGGER t
 ${mid}ORDER BY t.TIME_STAMP DESC NULLS LAST
 FETCH FIRST :lim ROWS ONLY
+`.trim();
+}
+
+/** 与 **`buildYieldMonitorTriggersV3Sql`** 相同 **WHERE** 与 **ORDER BY**，**无** **`FETCH FIRST`**（供 v4 全量匹配行 / 内存聚合）。 */
+export function buildYieldMonitorTriggersV3SqlFullMatching(whereClause: string): string {
+  const wc = whereClause.trim();
+  const mid = wc ? `${wc}\n` : "";
+  return `
+SELECT *
+FROM YMWEB_YIELDMONITORTRIGGER t
+${mid}ORDER BY t.TIME_STAMP DESC NULLS LAST
 `.trim();
 }

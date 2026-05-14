@@ -189,7 +189,7 @@ export function YieldMonitorReport({ apiBase }: Props) {
         };
         const res = await apiGetJson<YieldMonitorV3AggregateResponse>(
           apiBase,
-          `${API_PREFIX}/yield-monitor-triggers/v3/aggregate`,
+          `${API_PREFIX}/yield-monitor-triggers/v4/aggregate`,
           params
         );
         setDrill((d) =>
@@ -217,7 +217,7 @@ export function YieldMonitorReport({ apiBase }: Props) {
       try {
         const res = await apiGetJson<YieldMonitorV3AggregateResponse>(
           apiBase,
-          `${API_PREFIX}/yield-monitor-triggers/v3/aggregate`,
+          `${API_PREFIX}/yield-monitor-triggers/v4/aggregate`,
           { ...buildCoreParams(currentForm), dimensions: dim, groupTop: 30 }
         );
         setAggFree(res);
@@ -241,31 +241,31 @@ export function YieldMonitorReport({ apiBase }: Props) {
         () =>
           apiGetJson<YieldMonitorV3Response>(
             apiBase,
-            `${API_PREFIX}/yield-monitor-triggers/v3`,
+            `${API_PREFIX}/yield-monitor-triggers/v4`,
             buildListParams(form)
           ),
         () =>
           apiGetJson<YieldMonitorV3AggregateResponse>(
             apiBase,
-            `${API_PREFIX}/yield-monitor-triggers/v3/aggregate`,
+            `${API_PREFIX}/yield-monitor-triggers/v4/aggregate`,
             { ...core, dimensions: "timeDay", groupTop: 60 }
           ),
         () =>
           apiGetJson<YieldMonitorV3AggregateResponse>(
             apiBase,
-            `${API_PREFIX}/yield-monitor-triggers/v3/aggregate`,
+            `${API_PREFIX}/yield-monitor-triggers/v4/aggregate`,
             { ...core, dimensions: "probeCard", groupTop: 25 }
           ),
         () =>
           apiGetJson<YieldMonitorV3AggregateResponse>(
             apiBase,
-            `${API_PREFIX}/yield-monitor-triggers/v3/aggregate`,
+            `${API_PREFIX}/yield-monitor-triggers/v4/aggregate`,
             { ...core, dimensions: "lotId", groupTop: 25 }
           ),
         () =>
           apiGetJson<YieldMonitorV3AggregateResponse>(
             apiBase,
-            `${API_PREFIX}/yield-monitor-triggers/v3/aggregate`,
+            `${API_PREFIX}/yield-monitor-triggers/v4/aggregate`,
             { ...core, dimensions: "device,lotId,probeCard", groupTop: 50 }
           ),
       ],

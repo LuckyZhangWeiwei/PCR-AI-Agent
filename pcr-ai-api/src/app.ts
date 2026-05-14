@@ -36,6 +36,8 @@ export function createApp() {
   app.use("/api/v1", apiRouter);
   /** Same router as **`/api/v1`**; **`/api/v3/manifest`** returns v3-focused paths (no `/api/v1` in catalog URLs). */
   app.use("/api/v3", apiRouter);
+  /** v4：列表与 v3 相同；聚合在 Node 内对全量列表行集计算（见 **`GET /api/v4/manifest`**）。 */
+  app.use("/api/v4", apiRouter);
 
   const publicDir = path.join(
     path.dirname(fileURLToPath(import.meta.url)),

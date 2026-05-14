@@ -22,14 +22,18 @@ import { buildInfcontrolLayerBinV2TopSql } from "../lib/infcontrolLayerBinV2Sql.
 import {
   API_V3_LIST_LIMIT_MAX,
   buildInfcontrolLayerBinsV3Sql,
+  buildInfcontrolLayerBinsV3SqlFullMatching,
   buildYieldMonitorTriggersV3Sql,
+  buildYieldMonitorTriggersV3SqlFullMatching,
 } from "../lib/apiV3ListSql.js";
 import {
   aggregateInfcontrolLayerBinDummyRows,
   aggregateInfcontrolLayerBinV2BadBinsDummy,
   aggregateInfcontrolLayerBinV3DummyRows,
+  aggregateInfcontrolLayerBinV3FromRows,
   filterInfcontrolLayerBinV2DummyRows,
   filterInfcontrolLayerBinV3DummyRows,
+  filterInfcontrolLayerBinV3DummyRowsMatching,
   filterInfcontrolLayerDummyRows,
   infcontrolLayerBinsUseDummy,
 } from "../lib/infcontrolLayerBinDummy.js";
@@ -60,6 +64,7 @@ import {
   buildYieldMonitorV3AggregateGroupParts,
   parseYieldMonitorTriggerV3AggregateQuery,
 } from "../lib/yieldMonitorTriggerV3Aggregate.js";
+import { buildYieldMonitorTriggerMatchingCountSql } from "../lib/yieldMonitorTriggerAggregate.js";
 import {
   buildYieldMonitorHostnameSummarySql,
   buildYieldMonitorProbeCardSummarySql,
@@ -67,12 +72,19 @@ import {
 } from "../lib/yieldMonitorTriggerSql.js";
 import {
   aggregateYieldMonitorV3DummyRows,
+  aggregateYieldMonitorV3FromRows,
   buildYieldMonitorHostnameSummaryDummy,
   buildYieldMonitorProbeCardSummaryDummy,
   filterYieldMonitorDummyRows,
+  filterYieldMonitorDummyRowsMatchingV3,
   filterYieldMonitorDummyRowsV3,
   yieldMonitorTriggersUseDummy,
 } from "../lib/yieldMonitorTriggerDummy.js";
+import type { InfcontrolLayerBinDummyRow } from "../lib/infcontrolLayerBinDummy.js";
+import type { YieldMonitorTriggerDummyRow } from "../lib/yieldMonitorTriggerDummy.js";
+import { INFCONTROL_V4_AGGREGATE_DOCUMENTATION, YIELD_MONITOR_V4_AGGREGATE_DOCUMENTATION } from "../lib/apiV4Docs.js";
+import { normalizeDbRowKeysUpper } from "../lib/dbRowKeyUpper.js";
+import { readMemoryAggregateOracleMaxRows } from "../lib/memoryAggregateOracleLimits.js";
 import { probeCardTypeLeadingSegment } from "../lib/probeCardTypeLeadingSegment.js";
 import { addDutNumberToYieldMonitorV3Row } from "../lib/yieldTriggerLabelDut.js";
 import {
@@ -108,7 +120,7 @@ function enrichYieldMonitorTriggerV3ListRow(
   };
 }
 
-/** AI agent 工具发现：参数说明、示例与错误格式约定（**`/api/v1/manifest`** 全量；**`/api/v3/manifest`** 仅 v3 相关且 path 为 `/api/v3/...`） */
+/** AI agent 工具发现：参数说明、示例与错误格式约定（**`/api/v1/manifest`** 全量；**`/api/v3/manifest`**、**`/api/v4/manifest`** 为各自前缀的精简目录）。 */
 apiRouter.get("/manifest", (req, res) => {
   res.json(buildManifestResponseJson(req.baseUrl || "/api/v1"));
 });
@@ -367,7 +379,7 @@ apiRouter.get("/infcontrol-layer-bins/v3", async (req, res) => {
 });
 
 /**
- * **v3 层控 BIN 聚合**：与 **`/infcontrol-layer-bins/v3`** 相同筛选语义。**SUM** 仅累计 **坏 bin** die：与 v3 列表 **`bins[].isGoodBin`** 一致，**`PASSBIN`** 按 **`-`** 拆出的整段下标（**0…255**）视为 **good**，该列不计入（与 **`/infcontrol-layer-bins/v2/top-bad-bins`** 的 token 规则一致）。**Dummy** 开启时在 **JBStart** 内存行上聚合；否则 Oracle。
+ * **v3 层控 BIN 聚合**：与 **`/infcontrol-layer-bins/v3`** 相同筛选语义。**SUM** 仅累计 **坏 bin** die：与 v3 列表 **`bins[].isGoodBin`** 一致。**Dummy** 在 Node 内聚合；**Oracle** 在库内 **UNPIVOT + SUM**（**`v3-hyphen-tokens`** good-bin 规则）。无 **`MEMORY_AGG_ORACLE_MAX_ROWS`** 上限（与 v4 内存聚合不同）。
  * 响应体含 **`documentation`**。详见 manifest 与 **`docs/AI_AGENT_API.md`**。
  */
 apiRouter.get("/infcontrol-layer-bins/v3/aggregate", async (req, res) => {
@@ -897,7 +909,7 @@ apiRouter.get("/yield-monitor-triggers/v3", async (req, res) => {
 });
 
 /**
- * **v3 产量聚合**：与 **`/yield-monitor-triggers/v3`** 相同 **WHERE**（含固定 **`TYPE = delta_diff`**）。**Dummy 开启**时在 **delta-diff** 内存行上 `COUNT`+`GROUP BY`；否则 Oracle。
+ * **v3 产量聚合**：与 **`/yield-monitor-triggers/v3`** 相同 **WHERE**（含固定 **`TYPE = delta_diff`**）。**Dummy** 在 Node 内 **COUNT**；**Oracle** 在库内 **`GROUP BY`**。无 **`MEMORY_AGG_ORACLE_MAX_ROWS`**（与 v4 内存聚合不同）。
  */
 apiRouter.get("/yield-monitor-triggers/v3/aggregate", async (req, res) => {
   const parsed = parseYieldMonitorTriggerV3AggregateQuery(
@@ -950,10 +962,10 @@ apiRouter.get("/yield-monitor-triggers/v3/aggregate", async (req, res) => {
       const aggResult = await conn.execute(aggSql, bindAgg, {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
       });
-      const countResult = await conn.execute(totalSql, parsed.binds, {
+      const totalResult = await conn.execute(totalSql, parsed.binds, {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
       });
-      return [aggResult.rows || [], countResult.rows || []] as const;
+      return [aggResult.rows || [], totalResult.rows || []] as const;
     });
 
     const totalObj =
@@ -990,6 +1002,410 @@ apiRouter.get("/yield-monitor-triggers/v3/aggregate", async (req, res) => {
         aggregatePath: "yield-monitor-triggers/v3/aggregate",
       },
       documentation: YIELD_MONITOR_V3_AGGREGATE_DOCUMENTATION,
+      dimensions: parsed.dimensions,
+      groupTop: parsed.groupTop,
+      orderBy: "COUNT(*) DESC NULLS LAST",
+      filters: parsed.applied,
+      totalRowsMatching,
+      groups,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return sendAgentError(
+      res,
+      500,
+      "ORACLE_QUERY_FAILED",
+      "Oracle query failed",
+      enrichOracleDriverDetail(message)
+    );
+  }
+});
+
+/**
+ * **v4** 层控列表：筛选 / 排序 / **`limit`** 与 **v3** 相同；**`meta.apiVersion`** 为 **`"4"`**。
+ */
+apiRouter.get("/infcontrol-layer-bins/v4", async (req, res) => {
+  const parsed = parseInfcontrolLayerBinsV3Query(
+    req.query as Record<string, unknown>
+  );
+  if (!parsed.ok) {
+    return sendAgentError(
+      res,
+      400,
+      "VALIDATION_ERROR",
+      parsed.error,
+      "See GET /api/v1/manifest infcontrol-layer-bins/v4."
+    );
+  }
+
+  const limit = clampLimitFromQuery(
+    req.query as Record<string, unknown>,
+    200,
+    API_V3_LIST_LIMIT_MAX
+  );
+
+  if (infcontrolLayerBinsUseDummy()) {
+    const rows = filterInfcontrolLayerBinV3DummyRows(parsed.applied, limit);
+    const enriched = rows.map((row) =>
+      enrichInfcontrolLayerBinV3ListRow(row as Record<string, unknown>)
+    );
+    return res.json({
+      meta: {
+        apiVersion: "4",
+        requestId: reqId(req),
+      },
+      limit,
+      limitMax: API_V3_LIST_LIMIT_MAX,
+      orderBy: "TESTEND DESC NULLS LAST, SLOT, PASSID, PASSNUM",
+      filters: { ...parsed.applied, limit },
+      count: enriched.length,
+      rows: enriched,
+    });
+  }
+
+  const sql = buildInfcontrolLayerBinsV3Sql(parsed.whereAndSql);
+  const binds: BindParameters = { ...parsed.binds, lim: limit };
+
+  try {
+    const rows = await withConnection(async (conn) => {
+      const result = await conn.execute(sql, binds, {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+      });
+      return result.rows || [];
+    });
+    const enriched = rows.map((row) =>
+      enrichInfcontrolLayerBinV3ListRow(row as Record<string, unknown>)
+    );
+    return res.json({
+      meta: {
+        apiVersion: "4",
+        requestId: reqId(req),
+      },
+      limit,
+      limitMax: API_V3_LIST_LIMIT_MAX,
+      orderBy: "TESTEND DESC NULLS LAST, SLOT, PASSID, PASSNUM",
+      filters: { ...parsed.applied, limit },
+      count: enriched.length,
+      rows: enriched,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return sendAgentError(
+      res,
+      500,
+      "ORACLE_QUERY_FAILED",
+      "Oracle query failed",
+      enrichOracleDriverDetail(message)
+    );
+  }
+});
+
+/**
+ * **v4 层控 BIN 聚合**：**`groupBy` / `groupTop`** 与 v3 相同；在**与 v4 列表同一套筛选**下先 **COUNT** 匹配行（超过 **`MEMORY_AGG_ORACLE_MAX_ROWS`** 则 **422**），再拉全量行（无 **`FETCH FIRST`**）在 Node 内 **SUM**。
+ */
+apiRouter.get("/infcontrol-layer-bins/v4/aggregate", async (req, res) => {
+  const parsed = parseInfcontrolLayerBinsV3AggregateQuery(
+    req.query as Record<string, unknown>
+  );
+  if (!parsed.ok) {
+    return sendAgentError(
+      res,
+      400,
+      "VALIDATION_ERROR",
+      parsed.error,
+      "See GET /api/v1/manifest infcontrol-layer-bins/v4/aggregate."
+    );
+  }
+
+  const maxRowsIcV4Agg = readMemoryAggregateOracleMaxRows();
+
+  if (infcontrolLayerBinsUseDummy()) {
+    const rawRows = filterInfcontrolLayerBinV3DummyRowsMatching(parsed.applied);
+    if (rawRows.length > maxRowsIcV4Agg) {
+      return sendAgentError(
+        res,
+        422,
+        "QUERY_TOO_LARGE",
+        `Matching rows (${rawRows.length}) exceed MEMORY_AGG_ORACLE_MAX_ROWS (${maxRowsIcV4Agg}). Narrow filters (device, lot, testEnd*, etc.).`,
+        "See .env.example MEMORY_AGG_ORACLE_MAX_ROWS."
+      );
+    }
+    const { totalRowsMatching, groups } = aggregateInfcontrolLayerBinV3FromRows(
+      rawRows,
+      parsed.groupBy,
+      parsed.groupTop
+    );
+    return res.json({
+      meta: {
+        apiVersion: "4",
+        requestId: reqId(req),
+        aggregatePath: "infcontrol-layer-bins/v4/aggregate",
+      },
+      documentation: INFCONTROL_V4_AGGREGATE_DOCUMENTATION,
+      groupBy: parsed.groupBy,
+      groupTop: parsed.groupTop,
+      orderBy: "SUM(unpivoted bin column) DESC NULLS LAST",
+      filters: parsed.applied,
+      totalRowsMatching,
+      groups,
+    });
+  }
+
+  const countSql = buildInfcontrolLayerBinMatchingCountSql(parsed.whereSql);
+  const listSql = buildInfcontrolLayerBinsV3SqlFullMatching(parsed.listWhereAndSql);
+
+  try {
+    const { totalRowsMatching, rows } = await withConnection(async (conn) => {
+      const countResult = await conn.execute(countSql, parsed.binds, {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+      });
+      const totalObj =
+        (countResult.rows?.[0] as Record<string, unknown> | undefined) ?? {};
+      const totalRaw =
+        totalObj.TOTAL_MATCHING ?? totalObj.total_matching ?? totalObj.TOTAL;
+      const total =
+        totalRaw != null && totalRaw !== "" ? Number(totalRaw) : 0;
+      if (total > maxRowsIcV4Agg) {
+        return { totalRowsMatching: total, rows: null as unknown[] | null };
+      }
+      const data = await conn.execute(listSql, parsed.binds, {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+      });
+      return { totalRowsMatching: total, rows: data.rows || [] };
+    });
+
+    if (rows === null) {
+      return sendAgentError(
+        res,
+        422,
+        "QUERY_TOO_LARGE",
+        `Matching rows (${totalRowsMatching}) exceed MEMORY_AGG_ORACLE_MAX_ROWS (${maxRowsIcV4Agg}). Narrow filters (device, lot, testEnd*, etc.).`,
+        "See .env.example MEMORY_AGG_ORACLE_MAX_ROWS."
+      );
+    }
+
+    const normalizedRows = (rows as Record<string, unknown>[]).map(
+      (r) => normalizeDbRowKeysUpper(r) as InfcontrolLayerBinDummyRow
+    );
+    const { groups } = aggregateInfcontrolLayerBinV3FromRows(
+      normalizedRows,
+      parsed.groupBy,
+      parsed.groupTop
+    );
+
+    return res.json({
+      meta: {
+        apiVersion: "4",
+        requestId: reqId(req),
+        aggregatePath: "infcontrol-layer-bins/v4/aggregate",
+      },
+      documentation: INFCONTROL_V4_AGGREGATE_DOCUMENTATION,
+      groupBy: parsed.groupBy,
+      groupTop: parsed.groupTop,
+      orderBy: "SUM(unpivoted bin column) DESC NULLS LAST",
+      filters: parsed.applied,
+      totalRowsMatching,
+      groups,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return sendAgentError(
+      res,
+      500,
+      "ORACLE_QUERY_FAILED",
+      "Oracle query failed",
+      enrichOracleDriverDetail(message)
+    );
+  }
+});
+
+/**
+ * **v4** 产量列表：与 **v3** 相同；**`meta.apiVersion`** 为 **`"4"`**。
+ */
+apiRouter.get("/yield-monitor-triggers/v4", async (req, res) => {
+  const parsed = parseYieldMonitorTriggerV3Query(
+    req.query as Record<string, unknown>
+  );
+  if (!parsed.ok) {
+    return sendAgentError(
+      res,
+      400,
+      "VALIDATION_ERROR",
+      parsed.error,
+      "See GET /api/v1/manifest yield-monitor-triggers/v4."
+    );
+  }
+
+  const limit = clampLimitFromQuery(
+    req.query as Record<string, unknown>,
+    200,
+    API_V3_LIST_LIMIT_MAX
+  );
+
+  if (yieldMonitorTriggersUseDummy()) {
+    const rows = filterYieldMonitorDummyRowsV3(parsed.applied, limit).map((r) =>
+      enrichYieldMonitorTriggerV3ListRow(r as Record<string, unknown>)
+    );
+    return res.json({
+      meta: {
+        apiVersion: "4",
+        requestId: reqId(req),
+      },
+      limit,
+      limitMax: API_V3_LIST_LIMIT_MAX,
+      orderBy: "TIME_STAMP DESC NULLS LAST",
+      filters: { ...parsed.applied, limit },
+      count: rows.length,
+      rows,
+    });
+  }
+
+  const sql = buildYieldMonitorTriggersV3Sql(parsed.whereSql);
+  const binds: BindParameters = { ...parsed.binds, lim: limit };
+
+  try {
+    const rows = await withProbeWebConnection(async (conn) => {
+      const result = await conn.execute(sql, binds, {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+      });
+      return result.rows || [];
+    });
+    const withDut = (rows as Record<string, unknown>[]).map((row) =>
+      enrichYieldMonitorTriggerV3ListRow(row)
+    );
+    return res.json({
+      meta: {
+        apiVersion: "4",
+        requestId: reqId(req),
+      },
+      limit,
+      limitMax: API_V3_LIST_LIMIT_MAX,
+      orderBy: "TIME_STAMP DESC NULLS LAST",
+      filters: { ...parsed.applied, limit },
+      count: withDut.length,
+      rows: withDut,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return sendAgentError(
+      res,
+      500,
+      "ORACLE_QUERY_FAILED",
+      "Oracle query failed",
+      enrichOracleDriverDetail(message)
+    );
+  }
+});
+
+/**
+ * **v4 产量聚合**：先 **COUNT** 匹配行（超过 **`MEMORY_AGG_ORACLE_MAX_ROWS`** 则 **422**），再拉全量行在 Node 内 **COUNT** 分桶。
+ */
+apiRouter.get("/yield-monitor-triggers/v4/aggregate", async (req, res) => {
+  const parsed = parseYieldMonitorTriggerV3AggregateQuery(
+    req.query as Record<string, unknown>
+  );
+  if (!parsed.ok) {
+    return sendAgentError(
+      res,
+      400,
+      "VALIDATION_ERROR",
+      parsed.error,
+      "See GET /api/v1/manifest yield-monitor-triggers/v4/aggregate."
+    );
+  }
+
+  const maxRowsYmV4Agg = readMemoryAggregateOracleMaxRows();
+
+  if (yieldMonitorTriggersUseDummy()) {
+    const rawRows = filterYieldMonitorDummyRowsMatchingV3(parsed.applied);
+    if (rawRows.length > maxRowsYmV4Agg) {
+      return sendAgentError(
+        res,
+        422,
+        "QUERY_TOO_LARGE",
+        `Matching rows (${rawRows.length}) exceed MEMORY_AGG_ORACLE_MAX_ROWS (${maxRowsYmV4Agg}). Narrow filters (device, timeStamp*, etc.).`,
+        "See .env.example MEMORY_AGG_ORACLE_MAX_ROWS."
+      );
+    }
+    const { totalRowsMatching, groups } = aggregateYieldMonitorV3FromRows(
+      rawRows,
+      parsed.dimensions,
+      parsed.groupTop
+    );
+    return res.json({
+      meta: {
+        apiVersion: "4",
+        requestId: reqId(req),
+        aggregatePath: "yield-monitor-triggers/v4/aggregate",
+      },
+      documentation: YIELD_MONITOR_V4_AGGREGATE_DOCUMENTATION,
+      dimensions: parsed.dimensions,
+      groupTop: parsed.groupTop,
+      orderBy: "COUNT(*) DESC NULLS LAST",
+      filters: parsed.applied,
+      totalRowsMatching,
+      groups,
+    });
+  }
+
+  const countSql = buildYieldMonitorTriggerMatchingCountSql(parsed.whereSql);
+  const listSql = buildYieldMonitorTriggersV3SqlFullMatching(parsed.whereSql);
+
+  try {
+    const { totalRowsMatching, rows } = await withProbeWebConnection(
+      async (conn) => {
+        const countResult = await conn.execute(countSql, parsed.binds, {
+          outFormat: oracledb.OUT_FORMAT_OBJECT,
+        });
+        const totalObj =
+          (countResult.rows?.[0] as Record<string, unknown> | undefined) ??
+          {};
+        const totalRaw =
+          totalObj.TOTAL_MATCHING ?? totalObj.total_matching ?? totalObj.TOTAL;
+        const total =
+          totalRaw != null && totalRaw !== "" ? Number(totalRaw) : 0;
+        if (total > maxRowsYmV4Agg) {
+          return { totalRowsMatching: total, rows: null as unknown[] | null };
+        }
+        const data = await conn.execute(listSql, parsed.binds, {
+          outFormat: oracledb.OUT_FORMAT_OBJECT,
+        });
+        return { totalRowsMatching: total, rows: data.rows || [] };
+      }
+    );
+
+    if (rows === null) {
+      return sendAgentError(
+        res,
+        422,
+        "QUERY_TOO_LARGE",
+        `Matching rows (${totalRowsMatching}) exceed MEMORY_AGG_ORACLE_MAX_ROWS (${maxRowsYmV4Agg}). Narrow filters (device, timeStamp*, etc.).`,
+        "See .env.example MEMORY_AGG_ORACLE_MAX_ROWS."
+      );
+    }
+
+    const withPc = (rows as Record<string, unknown>[]).map((row) => {
+      const base = {
+        ...normalizeDbRowKeysUpper(row),
+      } as YieldMonitorTriggerDummyRow & { PROBECARDTYPE?: string | null };
+      base.PROBECARDTYPE = probeCardTypeLeadingSegment(
+        base.PROBECARD ?? row.probecard
+      );
+      return base;
+    });
+    const { groups } = aggregateYieldMonitorV3FromRows(
+      withPc,
+      parsed.dimensions,
+      parsed.groupTop
+    );
+
+    return res.json({
+      meta: {
+        apiVersion: "4",
+        requestId: reqId(req),
+        aggregatePath: "yield-monitor-triggers/v4/aggregate",
+      },
+      documentation: YIELD_MONITOR_V4_AGGREGATE_DOCUMENTATION,
       dimensions: parsed.dimensions,
       groupTop: parsed.groupTop,
       orderBy: "COUNT(*) DESC NULLS LAST",

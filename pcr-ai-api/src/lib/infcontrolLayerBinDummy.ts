@@ -523,16 +523,18 @@ export function filterInfcontrolLayerBinV3DummyRows(
   return rows.slice(0, cap);
 }
 
-/** v3 聚合 Dummy：与 Oracle **`v3-hyphen-tokens`** 及 **`forEachBadBinDieContribution`**（同 v2 top-bad-bins dummy）一致。 */
-export function aggregateInfcontrolLayerBinV3DummyRows(
-  applied: Record<string, unknown>,
+/**
+ * 在**已筛选**的行集上执行与 **`/infcontrol-layer-bins/v3/aggregate`** Dummy / Oracle **`v3-hyphen-tokens`** 等价的坏-bin **SUM**（**`forEachBadBinDieContribution`**）。
+ * 行须仍含顶层 **`BINn`** 与 **`PASSBIN`**（未经过 **`enrichInfcontrolLayerBinRowV2`** 剥离 BIN 列）。
+ */
+export function aggregateInfcontrolLayerBinV3FromRows(
+  rows: InfcontrolLayerBinDummyRow[],
   groupBy: InfcontrolLayerBinGroupBy[],
   groupTop: number
 ): {
   totalRowsMatching: number;
   groups: InfcontrolLayerBinDummyAggregateGroup[];
 } {
-  const rows = filterInfcontrolLayerBinV3DummyRowsMatching(applied);
   const sums = new Map<string, number>();
   const firstParts = new Map<string, Record<string, string>>();
 
@@ -566,4 +568,20 @@ export function aggregateInfcontrolLayerBinV3DummyRows(
     }));
 
   return { totalRowsMatching: rows.length, groups };
+}
+
+/** v3 聚合 Dummy：与 Oracle **`v3-hyphen-tokens`** 及 **`forEachBadBinDieContribution`**（同 v2 top-bad-bins dummy）一致。 */
+export function aggregateInfcontrolLayerBinV3DummyRows(
+  applied: Record<string, unknown>,
+  groupBy: InfcontrolLayerBinGroupBy[],
+  groupTop: number
+): {
+  totalRowsMatching: number;
+  groups: InfcontrolLayerBinDummyAggregateGroup[];
+} {
+  return aggregateInfcontrolLayerBinV3FromRows(
+    filterInfcontrolLayerBinV3DummyRowsMatching(applied),
+    groupBy,
+    groupTop
+  );
 }
