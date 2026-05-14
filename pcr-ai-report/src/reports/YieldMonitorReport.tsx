@@ -21,6 +21,10 @@ import {
   chartSplitLine,
   chartTextColor,
 } from "../theme/chartTheme";
+import {
+  allSettledWithConcurrency,
+  REPORT_ORACLE_FANOUT_CONCURRENCY,
+} from "../utils/asyncConcurrency";
 import { datetimeLocalToIso } from "../utils/datetimeLocal";
 import {
   buildTree,
@@ -232,34 +236,48 @@ export function YieldMonitorReport({ apiBase }: Props) {
     setDrill(null);
     const core = buildCoreParams(form);
 
-    const [listRes, timeRes, cardRes, lotRes, treeRes] =
-      await Promise.allSettled([
-        apiGetJson<YieldMonitorV3Response>(
-          apiBase,
-          `${API_PREFIX}/yield-monitor-triggers/v3`,
-          buildListParams(form)
-        ),
-        apiGetJson<YieldMonitorV3AggregateResponse>(
-          apiBase,
-          `${API_PREFIX}/yield-monitor-triggers/v3/aggregate`,
-          { ...core, dimensions: "timeDay", groupTop: 60 }
-        ),
-        apiGetJson<YieldMonitorV3AggregateResponse>(
-          apiBase,
-          `${API_PREFIX}/yield-monitor-triggers/v3/aggregate`,
-          { ...core, dimensions: "probeCard", groupTop: 25 }
-        ),
-        apiGetJson<YieldMonitorV3AggregateResponse>(
-          apiBase,
-          `${API_PREFIX}/yield-monitor-triggers/v3/aggregate`,
-          { ...core, dimensions: "lotId", groupTop: 25 }
-        ),
-        apiGetJson<YieldMonitorV3AggregateResponse>(
-          apiBase,
-          `${API_PREFIX}/yield-monitor-triggers/v3/aggregate`,
-          { ...core, dimensions: "device,lotId,probeCard", groupTop: 50 }
-        ),
-      ]);
+    const settled = await allSettledWithConcurrency(
+      [
+        () =>
+          apiGetJson<YieldMonitorV3Response>(
+            apiBase,
+            `${API_PREFIX}/yield-monitor-triggers/v3`,
+            buildListParams(form)
+          ),
+        () =>
+          apiGetJson<YieldMonitorV3AggregateResponse>(
+            apiBase,
+            `${API_PREFIX}/yield-monitor-triggers/v3/aggregate`,
+            { ...core, dimensions: "timeDay", groupTop: 60 }
+          ),
+        () =>
+          apiGetJson<YieldMonitorV3AggregateResponse>(
+            apiBase,
+            `${API_PREFIX}/yield-monitor-triggers/v3/aggregate`,
+            { ...core, dimensions: "probeCard", groupTop: 25 }
+          ),
+        () =>
+          apiGetJson<YieldMonitorV3AggregateResponse>(
+            apiBase,
+            `${API_PREFIX}/yield-monitor-triggers/v3/aggregate`,
+            { ...core, dimensions: "lotId", groupTop: 25 }
+          ),
+        () =>
+          apiGetJson<YieldMonitorV3AggregateResponse>(
+            apiBase,
+            `${API_PREFIX}/yield-monitor-triggers/v3/aggregate`,
+            { ...core, dimensions: "device,lotId,probeCard", groupTop: 50 }
+          ),
+      ],
+      REPORT_ORACLE_FANOUT_CONCURRENCY
+    );
+    const [listRes, timeRes, cardRes, lotRes, treeRes] = settled as [
+      PromiseSettledResult<YieldMonitorV3Response>,
+      PromiseSettledResult<YieldMonitorV3AggregateResponse>,
+      PromiseSettledResult<YieldMonitorV3AggregateResponse>,
+      PromiseSettledResult<YieldMonitorV3AggregateResponse>,
+      PromiseSettledResult<YieldMonitorV3AggregateResponse>,
+    ];
 
     setLoadingList(false);
     setLoadingAgg(false);

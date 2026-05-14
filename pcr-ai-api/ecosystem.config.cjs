@@ -20,6 +20,36 @@ function dummyEnv(raw) {
   return "false";
 }
 
+/** 从 .env 透传到 PM2 子进程（避免部分环境下子进程未继承连接池相关变量） */
+const ORACLE_FORWARD_KEYS = [
+  "PORT",
+  "ORACLE_POOL_MIN",
+  "ORACLE_POOL_MAX",
+  "ORACLE_POOL_INCREMENT",
+  "ORACLE_PROBEWEB_POOL_MIN",
+  "ORACLE_PROBEWEB_POOL_MAX",
+  "ORACLE_PROBEWEB_POOL_INCREMENT",
+  "ORACLE_QUEUE_TIMEOUT",
+  "ORACLE_CALL_TIMEOUT_MS",
+  "ORACLE_SLOW_QUERY_LOG_MS",
+  "ORACLE_CONNECT_STRING",
+  "ORACLE_PROBEWEB_CONNECT_STRING",
+  "ORACLE_INSTANT_CLIENT_LIB_DIR",
+  "ORACLE_SKIP_LEGACY_CLIENT_11",
+  "ORACLE_CLIENT_CONFIG_DIR",
+  "ORACLE_HOME",
+  "TNS_ADMIN",
+];
+
+function forwardEnvFromProcess(keys) {
+  const o = {};
+  for (const k of keys) {
+    const v = process.env[k];
+    if (v !== undefined && v !== "") o[k] = v;
+  }
+  return o;
+}
+
 module.exports = {
   apps: [
     {
@@ -31,7 +61,7 @@ module.exports = {
       exec_mode: "fork",
       env: {
         NODE_ENV: "production",
-        ...(process.env.PORT ? { PORT: process.env.PORT } : {}),
+        ...forwardEnvFromProcess(ORACLE_FORWARD_KEYS),
         YIELD_MONITOR_TRIGGERS_DUMMY: dummyEnv(
           process.env.YIELD_MONITOR_TRIGGERS_DUMMY
         ),

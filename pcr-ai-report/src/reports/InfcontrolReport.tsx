@@ -19,6 +19,10 @@ import {
   chartSplitLine,
   chartTextColor,
 } from "../theme/chartTheme";
+import {
+  allSettledWithConcurrency,
+  REPORT_ORACLE_FANOUT_CONCURRENCY,
+} from "../utils/asyncConcurrency";
 import { datetimeLocalToIso } from "../utils/datetimeLocal";
 import {
   buildTree,
@@ -248,34 +252,48 @@ export function InfcontrolReport({ apiBase }: Props) {
     setDrill(null);
     const core = buildCoreParams(form);
 
-    const [listRes, binRes, cardRes, slotRes, treeRes] =
-      await Promise.allSettled([
-        apiGetJson<InfcontrolLayerBinsV3Response>(
-          apiBase,
-          `${API_PREFIX}/infcontrol-layer-bins/v3`,
-          buildListParams(form)
-        ),
-        apiGetJson<InfcontrolAggregateResponse>(
-          apiBase,
-          `${API_PREFIX}/infcontrol-layer-bins/v3/aggregate`,
-          { ...core, groupBy: "bin", groupTop: 30 }
-        ),
-        apiGetJson<InfcontrolAggregateResponse>(
-          apiBase,
-          `${API_PREFIX}/infcontrol-layer-bins/v3/aggregate`,
-          { ...core, groupBy: "cardId,bin", groupTop: 25 }
-        ),
-        apiGetJson<InfcontrolAggregateResponse>(
-          apiBase,
-          `${API_PREFIX}/infcontrol-layer-bins/v3/aggregate`,
-          { ...core, groupBy: "slot,bin", groupTop: 50 }
-        ),
-        apiGetJson<InfcontrolAggregateResponse>(
-          apiBase,
-          `${API_PREFIX}/infcontrol-layer-bins/v3/aggregate`,
-          { ...core, groupBy: "device,lot,cardId,bin", groupTop: 50 }
-        ),
-      ]);
+    const settled = await allSettledWithConcurrency(
+      [
+        () =>
+          apiGetJson<InfcontrolLayerBinsV3Response>(
+            apiBase,
+            `${API_PREFIX}/infcontrol-layer-bins/v3`,
+            buildListParams(form)
+          ),
+        () =>
+          apiGetJson<InfcontrolAggregateResponse>(
+            apiBase,
+            `${API_PREFIX}/infcontrol-layer-bins/v3/aggregate`,
+            { ...core, groupBy: "bin", groupTop: 30 }
+          ),
+        () =>
+          apiGetJson<InfcontrolAggregateResponse>(
+            apiBase,
+            `${API_PREFIX}/infcontrol-layer-bins/v3/aggregate`,
+            { ...core, groupBy: "cardId,bin", groupTop: 25 }
+          ),
+        () =>
+          apiGetJson<InfcontrolAggregateResponse>(
+            apiBase,
+            `${API_PREFIX}/infcontrol-layer-bins/v3/aggregate`,
+            { ...core, groupBy: "slot,bin", groupTop: 50 }
+          ),
+        () =>
+          apiGetJson<InfcontrolAggregateResponse>(
+            apiBase,
+            `${API_PREFIX}/infcontrol-layer-bins/v3/aggregate`,
+            { ...core, groupBy: "device,lot,cardId,bin", groupTop: 50 }
+          ),
+      ],
+      REPORT_ORACLE_FANOUT_CONCURRENCY
+    );
+    const [listRes, binRes, cardRes, slotRes, treeRes] = settled as [
+      PromiseSettledResult<InfcontrolLayerBinsV3Response>,
+      PromiseSettledResult<InfcontrolAggregateResponse>,
+      PromiseSettledResult<InfcontrolAggregateResponse>,
+      PromiseSettledResult<InfcontrolAggregateResponse>,
+      PromiseSettledResult<InfcontrolAggregateResponse>,
+    ];
 
     setLoadingList(false);
     setLoadingAgg(false);

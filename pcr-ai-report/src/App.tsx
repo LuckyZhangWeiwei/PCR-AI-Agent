@@ -42,6 +42,7 @@ export default function App() {
     } catch {
       setHealthOk(false);
     }
+    await new Promise((r) => setTimeout(r, 200));
     try {
       const d = await apiGetJson<{ ok?: boolean }>(
         apiBase,

@@ -4,7 +4,7 @@ import { createApp } from "./app.js";
 import { infcontrolLayerBinsUseDummy } from "./lib/infcontrolLayerBinDummy.js";
 import { listApisForceOracleNoDummy } from "./lib/listDummyRuntime.js";
 import { yieldMonitorTriggersUseDummy } from "./lib/yieldMonitorTriggerDummy.js";
-import { closeOraclePool, closeProbeWebPool } from "./oracle.js";
+import { closeOraclePool, closeProbeWebPool, isOracleThickRuntime } from "./oracle.js";
 
 const port = Number(process.env.PORT) || 30008;
 const app = createApp();
@@ -19,6 +19,11 @@ app.listen(port, () => {
   console.log(
     `[dummy] infcontrol-layer-bins=${infcontrolLayerBinsUseDummy()} (env INFCONTROL_LAYER_BINS_DUMMY=${JSON.stringify(process.env.INFCONTROL_LAYER_BINS_DUMMY)}; forcedOracle=${forcedOracle})`
   );
+  if (forcedOracle && !isOracleThickRuntime()) {
+    console.warn(
+      "[oracledb] Thick mode is NOT active — Oracle routes (e.g. db/ping) may fail with NJS-116. Install Oracle Instant Client 19+, set ORACLE_INSTANT_CLIENT_LIB_DIR to the directory containing libclntsh.so (Linux) or oci.dll (Windows), unset ORACLE_HOME if it points only to 11g, restart PM2."
+    );
+  }
 });
 
 const shutdown = async () => {
