@@ -349,7 +349,7 @@ export const apiManifest = {
       path: "/api/v1/infcontrol-layer-bins/v3",
       method: "GET",
       purpose:
-        "INFCONTROL t1 INNER JOIN INFLAYERBINLIST t2 ON KEYNUMBER, WHERE PASSTYPE='TEST' plus optional AND filters (case-insensitive TRIM equality on device, lot, meslot, testerId, tstype, cardId via UPPER(TRIM(col))=UPPER(:bind); exact match on slot, passId; TESTSTART/TESTEND windows), then ORDER BY TESTEND DESC NULLS LAST, SLOT, PASSID, PASSNUM, FETCH FIRST :lim ROWS ONLY. When INFCONTROL_LAYER_BINS_DUMMY is true and the process is not dist/production, serves rows from docs/JBStart.xlsx in memory (listDummyRuntime); otherwise main Oracle pool. Row shape matches infcontrol-layer-bins/v2 plus PROBECARDTYPE (leading segment of CARDID before first hyphen). Query keys are case-insensitive (including limit).",
+        "INFCONTROL t1 INNER JOIN INFLAYERBINLIST t2 ON KEYNUMBER, WHERE PASSTYPE='TEST' plus optional AND filters (case-insensitive TRIM equality on device, lot, meslot, testerId, tstype, cardId via UPPER(TRIM(col))=UPPER(:bind); exact match on slot, passId; TESTSTART/TESTEND windows). If the client sends none of the eight testStart*/testEnd* query keys, the server AND-filters t2.TESTEND to [UTC now minus one calendar year, UTC now] (same default as v3 aggregate). Then ORDER BY TESTEND DESC NULLS LAST, SLOT, PASSID, PASSNUM, FETCH FIRST :lim ROWS ONLY. When INFCONTROL_LAYER_BINS_DUMMY is true and the process is not dist/production, serves rows from docs/JBStart.xlsx in memory (listDummyRuntime); otherwise main Oracle pool. Row shape matches infcontrol-layer-bins/v2 plus PROBECARDTYPE (leading segment of CARDID before first hyphen). Query keys are case-insensitive (including limit).",
       queryParameters: [
         {
           name: "limit",
@@ -430,14 +430,14 @@ export const apiManifest = {
       path: "/api/v1/infcontrol-layer-bins/v3/aggregate",
       method: "GET",
       purpose:
-        "v3 infcontrol BIN aggregate: same filter semantics as GET /infcontrol-layer-bins/v3 (PASSTYPE=TEST on INFLAYERBINLIST plus v3 AND filters; UPPER(TRIM) string equality). Over ALL matching joined rows (not capped by list limit), UNPIVOT BIN0…BIN255 and SUM per groupBy dimensions; SUM counts bad-bin die only—PASSBIN hyphen-separated whole tokens (0–255) are good bins (same token rule as /infcontrol-layer-bins/v2/top-bad-bins and v3 list bins[].isGoodBin), excluded from SUM (not v1 aggregate BIN1 + N-M pair rules). Returns top groupTop groups by SUM (default 10, max 50). When INFCONTROL_LAYER_BINS_DUMMY is true and not dist/production, uses JBStart.xlsx in-memory rows; else main Oracle. Response includes documentation (Chinese). Requires groupBy with exactly one bin (same rules as v1 aggregate).",
+        "v3 infcontrol BIN aggregate: same filter semantics as GET /infcontrol-layer-bins/v3 (PASSTYPE=TEST on INFLAYERBINLIST plus v3 AND filters; UPPER(TRIM) string equality; default one-calendar-year TESTEND window when no testStart*/testEnd* keys). Over ALL matching joined rows (not capped by list limit), UNPIVOT BIN0…BIN255 and SUM per groupBy dimensions; SUM counts bad-bin die only—PASSBIN hyphen-separated whole tokens (0–255) are good bins (same token rule as /infcontrol-layer-bins/v2/top-bad-bins and v3 list bins[].isGoodBin), excluded from SUM (not v1 aggregate BIN1 + N-M pair rules). Returns top groupTop groups by SUM (default 10, max 50). When INFCONTROL_LAYER_BINS_DUMMY is true and not dist/production, uses JBStart.xlsx in-memory rows; else main Oracle. Response includes documentation (Chinese). Requires groupBy with exactly one bin (same rules as v1 aggregate).",
       queryParameters: [
         {
           name: "groupBy",
           type: "string",
           optional: true,
           note:
-            'Default bin if omitted. Comma-separated; must include "bin" once (max 8 dims). Tokens include probeCard (INFLAYERBINLIST.PROBE, alias for yield-style naming; mutually exclusive with probe in the same request). Same rules as /infcontrol-layer-bins/aggregate.',
+            'Default bin if omitted. Comma-separated; must include "bin" once (max 8 dims). Tokens include probeCard (INFLAYERBINLIST.PROBE, alias for yield-style naming; mutually exclusive with probe in the same request), probeCardType (leading segment of CARDID before first hyphen, same as v3 list PROBECARDTYPE). Same rules as /infcontrol-layer-bins/aggregate.',
         },
         {
           name: "groupTop",
@@ -519,7 +519,7 @@ export const apiManifest = {
       path: "/api/v1/yield-monitor-triggers/v3",
       method: "GET",
       purpose:
-        "SELECT * FROM YMWEB_YIELDMONITORTRIGGER with fixed WHERE UPPER(TRIM(TYPE)) = 'DELTA_DIFF' (bind :v3_type_scope; echoed as filters.typeScope) AND optional AND filters (case-insensitive TRIM on string columns: HOSTNAME, DEVICE, LOTID, WAFER, PROBECARD; exact PASS; TIME_STAMP window), then ORDER BY TIME_STAMP DESC NULLS LAST FETCH FIRST :lim ROWS ONLY. Query parameter type is not supported on v3 (cannot override TYPE scope; rows still include TYPE in each object). Each row also includes dutNumber (from TRIGGER_LABEL) and PROBECARDTYPE (leading segment of PROBECARD before first hyphen). When YIELD_MONITOR_TRIGGERS_DUMMY is true and not dist/production, serves matching rows from docs/delta-diff.xlsx in memory; else probeweb Oracle. Query keys are case-insensitive (including limit).",
+        "SELECT * FROM YMWEB_YIELDMONITORTRIGGER with fixed WHERE UPPER(TRIM(TYPE)) = 'DELTA_DIFF' (bind :v3_type_scope; echoed as filters.typeScope) AND optional AND filters (case-insensitive TRIM on string columns: HOSTNAME, DEVICE, LOTID, WAFER, PROBECARD; exact PASS; TIME_STAMP window). If the client sends none of timeStampBegin/timeStampEnd/timeStampFrom/timeStampTo, the server AND-filters TIME_STAMP to [UTC now minus one calendar year, UTC now] (same default as v3 aggregate). Then ORDER BY TIME_STAMP DESC NULLS LAST FETCH FIRST :lim ROWS ONLY. Query parameter type is not supported on v3 (cannot override TYPE scope; rows still include TYPE in each object). Each row also includes dutNumber (from TRIGGER_LABEL) and PROBECARDTYPE (leading segment of PROBECARD before first hyphen). When YIELD_MONITOR_TRIGGERS_DUMMY is true and not dist/production, serves matching rows from docs/delta-diff.xlsx in memory; else probeweb Oracle. Query keys are case-insensitive (including limit).",
       queryParameters: [
         {
           name: "limit",
@@ -576,14 +576,14 @@ export const apiManifest = {
       path: "/api/v1/yield-monitor-triggers/v3/aggregate",
       method: "GET",
       purpose:
-        "v3 yield aggregate: same WHERE as GET /yield-monitor-triggers/v3 (fixed TYPE=delta_diff via UPPER(TRIM(TYPE)); UPPER(TRIM) on other string columns; TIME_STAMP window; etc.). Over ALL matching rows (not limited to FETCH FIRST list cap), COUNT(*) GROUP BY requested dimensions, order by count DESC, return top groupTop groups (default 25, max 100). Required query parameter dimensions: comma-separated from device, hostname, lotId, wafer, probeCard, pass, triggerLabel, timeDay, timeHour (max 5 dims; timeDay and timeHour mutually exclusive). Query parameter type is not supported on v3 yield endpoints. When YIELD_MONITOR_TRIGGERS_DUMMY is true and not dist/production, uses delta-diff.xlsx in-memory rows; else probeweb Oracle. JSON documentation field explains difference vs v3 list.",
+        "v3 yield aggregate: same WHERE as GET /yield-monitor-triggers/v3 (fixed TYPE=delta_diff via UPPER(TRIM(TYPE)); UPPER(TRIM) on other string columns; TIME_STAMP window including default one-calendar-year bounds when no timeStamp* keys; etc.). Over ALL matching rows (not limited to FETCH FIRST list cap), COUNT(*) GROUP BY requested dimensions, order by count DESC, return top groupTop groups (default 25, max 100). Required query parameter dimensions: comma-separated from device, hostname, lotId, wafer, probeCard, probeCardType, pass, triggerLabel, timeDay, timeHour (max 5 dims; timeDay and timeHour mutually exclusive; probeCardType is leading segment of PROBECARD before first hyphen, same as v3 list PROBECARDTYPE). Query parameter type is not supported on v3 yield endpoints. When YIELD_MONITOR_TRIGGERS_DUMMY is true and not dist/production, uses delta-diff.xlsx in-memory rows; else probeweb Oracle. JSON documentation field explains difference vs v3 list.",
       queryParameters: [
         {
           name: "dimensions",
           type: "string",
           optional: false,
           note:
-            "Required. Comma-separated: device, hostname, lotId, wafer, probeCard, pass, triggerLabel, timeDay, timeHour (max 5). Cannot combine timeDay+timeHour. Parameter type is not supported on v3.",
+            "Required. Comma-separated: device, hostname, lotId, wafer, probeCard, probeCardType, pass, triggerLabel, timeDay, timeHour (max 5). probeCardType = leading segment of PROBECARD before first hyphen (same as v3 list PROBECARDTYPE). Cannot combine timeDay+timeHour. Parameter type is not supported on v3.",
         },
         {
           name: "groupTop",

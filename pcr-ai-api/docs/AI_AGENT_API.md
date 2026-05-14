@@ -307,7 +307,7 @@ GET http://10.192.130.89:30008/api/v3/infcontrol-layer-bins/v3/aggregate?device=
 
 | 参数 | 必填 | 说明 |
 | --- | --- | --- |
-| **`dimensions`** | **是** | 逗号分隔 **1–5** 项。允许取值：`device`、`hostname`、`lotId`、`wafer`、`probeCard`、`pass`、`triggerLabel`、**`timeDay`**（按日历日）、**`timeHour`**（按整点）。**`timeDay` 与 `timeHour` 不得同时出现**。 |
+| **`dimensions`** | **是** | 逗号分隔 **1–5** 项。允许取值：`device`、`hostname`、`lotId`、`wafer`、`probeCard`、`probeCardType`（**`PROBECARD`** 首个 **`-`** 前段，与列表 **`PROBECARDTYPE`** 一致）、`pass`、`triggerLabel`、**`timeDay`**（按日历日）、**`timeHour`**（按整点）。**`timeDay` 与 `timeHour` 不得同时出现**。 |
 | **`groupTop`** | 否 | 返回多少组，默认 **25**，最大 **100**。 |
 
 **与 v3 列表相同的筛选（节选）**：**固定 `TYPE = delta_diff`**（**`filters.typeScope`**）；**`hostname`**、**`device`**、**`lotId`**、**`wafer`**、**`probeCard`**、**`pass`**；**`timeStampBegin` / `timeStampEnd`**（或 **`timeStampFrom` / `timeStampTo`**）。全部 **AND**。**不支持** **`type`** 查询参数（传入 **`type=…`** 会得到 **400** **`VALIDATION_ERROR`**）。
@@ -440,7 +440,7 @@ curl -sS "http://10.192.130.89:30008/api/v1/manifest"
 
 ### 8.4 `GET /api/v3/infcontrol-layer-bins/v3`（v3 · 列表）
 
-**说明**：与 **§7** 层控 v3 说明一致；**数据源与 Dummy** 见 **§4**。查询键名与字符串筛选值均**不区分大小写**（`UPPER(TRIM)`）。完整 **SQL 模板与 BIN 展开**见 [**API_V3.md**](./API_V3.md) 与 **`src/lib/apiV3ListSql.ts`**。响应 **`rows[]`** 在 **`bins`** enrich 之外另含 **`PROBECARDTYPE`**（**`CARDID`** 首个 **`-`** 前段；**`null`** 表示空或无前段），Oracle 与 Dummy 同源实现见 **`probeCardTypeLeadingSegment`**（**`src/lib/probeCardTypeLeadingSegment.ts`**）与 **`src/routes/api.ts`**。
+**说明**：与 **§7** 层控 v3 说明一致；**数据源与 Dummy** 见 **§4**。查询键名与字符串筛选值均**不区分大小写**（`UPPER(TRIM)`）。完整 **SQL 模板与 BIN 展开**见 [**API_V3.md**](./API_V3.md) 与 **`src/lib/apiV3ListSql.ts`**。响应 **`rows[]`** 在 **`bins`** enrich 之外另含 **`PROBECARDTYPE`**（**`CARDID`** 首个 **`-`** 前段；**`null`** 表示空或无前段），Oracle 与 Dummy 同源实现见 **`probeCardTypeLeadingSegment`**（**`src/lib/probeCardTypeLeadingSegment.ts`**）与 **`src/routes/api.ts`**；Dummy 在 **`filterInfcontrolLayerBinV3DummyRowsMatching`** 写入该字段，**`filterInfcontrolLayerBinV3DummyRows`** 仅排序截断。**若请求未带任一 `testStart*` / `testEnd*` 键**，服务端追加 **`t2.TESTEND`** 默认在 **UTC 当前起向前一个日历年**内（**`filters`** 回显 **`testEndBegin` / `testEndEnd`**），与 **§8.5** 聚合一致。
 
 | 参数 | 含义 |
 | --- | --- |
@@ -477,7 +477,7 @@ curl -sS "http://10.192.130.89:30008/api/v3/infcontrol-layer-bins/v3/aggregate?d
 
 ### 8.6 `GET /api/v3/yield-monitor-triggers/v3`（v3 · 列表）
 
-**说明**：与 **§7** 产量 v3 说明一致；**数据源与 Dummy** 见 **§4**。服务端**恒** **`WHERE TYPE = delta_diff`**（与 **`filters.typeScope`** 一致）。查询键名与字符串筛选值均**不区分大小写**。SQL 模板见 [**API_V3.md**](./API_V3.md) 与 **`buildYieldMonitorTriggersV3Sql`**。响应 **`rows[]`** 另含 **`dutNumber`**（**`TRIGGER_LABEL`**）与 **`PROBECARDTYPE`**（**`PROBECARD`** 首个 **`-`** 前段；**`null`** 表示空或无前段），见 **`src/lib/yieldTriggerLabelDut.ts`**、**`src/lib/probeCardTypeLeadingSegment.ts`**、**`src/routes/api.ts`**。
+**说明**：与 **§7** 产量 v3 说明一致；**数据源与 Dummy** 见 **§4**。服务端**恒** **`WHERE TYPE = delta_diff`**（与 **`filters.typeScope`** 一致）。查询键名与字符串筛选值均**不区分大小写**。SQL 模板见 [**API_V3.md**](./API_V3.md) 与 **`buildYieldMonitorTriggersV3Sql`**。响应 **`rows[]`** 另含 **`dutNumber`**（**`TRIGGER_LABEL`**）与 **`PROBECARDTYPE`**（**`PROBECARD`** 首个 **`-`** 前段；**`null`** 表示空或无前段），见 **`src/lib/yieldTriggerLabelDut.ts`**、**`src/lib/probeCardTypeLeadingSegment.ts`**、**`src/routes/api.ts`**；Dummy 在 **`filterYieldMonitorDummyRowsMatchingV3`** 写入 **`PROBECARDTYPE`**，**`filterYieldMonitorDummyRowsV3`** 仅排序截断。**若请求未带任一 `timeStamp*` 键**，服务端追加 **`TIME_STAMP`** 默认在 **UTC 当前起向前一个日历年**内（**`filters`** 回显 **`timeStampBegin` / `timeStampEnd`**），与 **§8.7** 聚合一致。
 
 | 参数 | 含义 |
 | --- | --- |
@@ -564,7 +564,8 @@ curl -sS "http://10.192.130.89:30008/api/v3/table-rows?limit=20"
 | Manifest 静态定义 | `src/lib/apiManifest.ts`（**`GET …/manifest`** 响应由 **`buildManifestResponseJson`** 按挂载前缀改写 **`path`** / **`example`**） |
 | **`/api/v3` manifest 改写** | `src/lib/rebaseApiManifest.ts` |
 | 各 GET 实现 | `src/routes/api.ts` |
-| **v3 列表 `PROBECARDTYPE`（非 SQL 列）** | `src/lib/probeCardTypeLeadingSegment.ts`；`api.ts` 中 **`enrichInfcontrolLayerBinV3ListRow`** / **`enrichYieldMonitorTriggerV3ListRow`**；Dummy：**`filterInfcontrolLayerBinV3DummyRows`**、**`filterYieldMonitorDummyRowsV3`** |
+| **v3 默认一年 `TESTEND` / `TIME_STAMP`（无时间查询键时）** | `src/lib/v3DefaultOneYearWindow.ts`；`parseInfcontrolLayerBinsV3Query`、`parseYieldMonitorTriggerV3Query` |
+| **v3 列表 `PROBECARDTYPE`（非 SQL 列）** | `src/lib/probeCardTypeLeadingSegment.ts`；`api.ts` 中 **`enrichInfcontrolLayerBinV3ListRow`** / **`enrichYieldMonitorTriggerV3ListRow`**；Dummy 写入：**`filterInfcontrolLayerBinV3DummyRowsMatching`**、**`filterYieldMonitorDummyRowsMatchingV3`**；列表截断：**`filterInfcontrolLayerBinV3DummyRows`**、**`filterYieldMonitorDummyRowsV3`** |
 | **v3 产量 SQL 模板** | `src/lib/apiV3ListSql.ts`（`buildYieldMonitorTriggersV3Sql`） |
 | **v3 产量筛选解析** | `src/lib/yieldMonitorTriggerFilters.ts`（`parseYieldMonitorTriggerV3Query`） |
 | **v3 产量 `COUNT` 聚合** | `src/lib/yieldMonitorTriggerV3Aggregate.ts` |

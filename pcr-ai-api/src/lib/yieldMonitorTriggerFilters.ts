@@ -1,4 +1,5 @@
 import type { BindParameters } from "oracledb";
+import { v3DefaultThroughNowMinusOneUtcYear } from "./v3DefaultOneYearWindow.js";
 
 export const YIELD_MONITOR_TRIGGER_TOP = 200;
 
@@ -155,6 +156,7 @@ export const YIELD_MONITOR_V3_TYPE_SCOPE = "delta_diff";
  * **固定**：始终 **`UPPER(TRIM(t."TYPE")) = UPPER(:v3_type_scope)`**，`:v3_type_scope` 为 **`delta_diff`**（响应 **`filters.typeScope`** 回显）；与 delta-diff 样本及 probeweb 中该类触发一致。
  * **`type`（库列 `TYPE`）**：v3 **不提供**按异常类型**再**筛选；传入 **`type`** 查询参数将返回校验错误。
  * 时间：`timeStampBegin` & `timeStampEnd`（ISO 8601），或与 v1 相同的 `timeStampFrom` / `timeStampTo` 别名。
+ * **默认时间窗**：若请求未携带任一 **TIME_STAMP** 相关查询键（`timeStampBegin` / `From` / `End` / `To`），则追加 **`t.TIME_STAMP`** 在 **UTC 当前时刻起向前一个日历年**内（与 **`v3DefaultThroughNowMinusOneUtcYear`** 一致）。
  */
 export function parseYieldMonitorTriggerV3Query(
   q: Record<string, unknown>
@@ -237,6 +239,25 @@ export function parseYieldMonitorTriggerV3Query(
       } else {
         applied.timeStampTo = tsHi.toISOString();
       }
+    }
+
+    const yieldV3TimeQueryKeys = [
+      "timeStampBegin",
+      "timeStampFrom",
+      "timeStampEnd",
+      "timeStampTo",
+    ] as const;
+    const userTouchedYieldTime = yieldV3TimeQueryKeys.some(
+      (k) => firstQueryValue(q, k) !== undefined
+    );
+    if (!userTouchedYieldTime && tsLo === undefined && tsHi === undefined) {
+      const { lo, hi } = v3DefaultThroughNowMinusOneUtcYear();
+      clauses.push("t.TIME_STAMP >= :v3_ts_lo");
+      clauses.push("t.TIME_STAMP <= :v3_ts_hi");
+      (binds as Record<string, string | number | Date>).v3_ts_lo = lo;
+      (binds as Record<string, string | number | Date>).v3_ts_hi = hi;
+      applied.timeStampBegin = lo.toISOString();
+      applied.timeStampEnd = hi.toISOString();
     }
 
     const whereSql =

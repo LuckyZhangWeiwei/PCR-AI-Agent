@@ -63,7 +63,12 @@
 5. **`PROBECARDTYPE`（两条 v3 列表）**  
    - **`GET …/infcontrol-layer-bins/v3`**：由 **`CARDID`** 取**首个 `-` 之前**一段（trim；空 / 无前段则为 **`null`**）。  
    - **`GET …/yield-monitor-triggers/v3`**：由 **`PROBECARD`** 同上。  
-   - 实现：**`src/lib/probeCardTypeLeadingSegment.ts`**；路由 **`enrichInfcontrolLayerBinV3ListRow` / `enrichYieldMonitorTriggerV3ListRow`**（**`src/routes/api.ts`**）。Dummy 须在 **`filterInfcontrolLayerBinV3DummyRows`**、**`filterYieldMonitorDummyRowsV3`**（各自 **`src/lib/*Dummy.ts`**）与 Oracle 路径一致（当前在截断后 **`map`** 写入 **`PROBECARDTYPE`**）。
+   - 实现：**`src/lib/probeCardTypeLeadingSegment.ts`**；路由 **`enrichInfcontrolLayerBinV3ListRow` / `enrichYieldMonitorTriggerV3ListRow`**（**`src/routes/api.ts`**）。Dummy 与 Oracle 同源：**`filterInfcontrolLayerBinV3DummyRowsMatching`**、**`filterYieldMonitorDummyRowsMatchingV3`**（各自 **`src/lib/*Dummy.ts`**）在**筛选全集**上 **`map`** 写入 **`PROBECARDTYPE`**；v3 列表 **`filterInfcontrolLayerBinV3DummyRows`** / **`filterYieldMonitorDummyRowsV3`** 仅排序 + **`limit`** 截断；v3 聚合 Dummy 复用 matching 行，维度 **`probeCardType`** 读行上 **`PROBECARDTYPE`**（空则 **`''`**，对齐 Oracle **`NVL`**）。
+
+6. **v3 默认一年时间窗（列表 + 聚合）**  
+   - **层控**：请求**未出现**任一 **testStart\*** / **testEnd\***（共 8 个查询键）时，**`parseInfcontrolLayerBinsV3Query`** 追加 **`t2.TESTEND`** ∈ **[UTC 现在 − 1 日历年, UTC 现在]**（**`src/lib/v3DefaultOneYearWindow.ts`**）。  
+   - **产量**：请求**未出现**任一 **timeStamp\***（4 个键）时，**`parseYieldMonitorTriggerV3Query`** 追加 **`t.TIME_STAMP`** 同上。  
+   - **v3 aggregate** 复用上述解析器，与列表一致。Dummy 侧读 **`filters`** 中回显的 ISO 时间串，与 Oracle 语义对齐。
 
 ---
 
@@ -89,11 +94,13 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 | --- | --- |
 | HTTP 路由 | `src/routes/api.ts`（`apiRouter`；v3 产量列表/聚合、`manifest` 等） |
 | v3 产量筛选 + 固定 TYPE | `src/lib/yieldMonitorTriggerFilters.ts` → `parseYieldMonitorTriggerV3Query`；常量 `YIELD_MONITOR_V3_TYPE_SCOPE` |
-| v3 产量聚合解析 / SQL | `src/lib/yieldMonitorTriggerV3Aggregate.ts` |
+| v3 产量聚合解析 / SQL | `src/lib/yieldMonitorTriggerV3Aggregate.ts`（**`dimensions`** 含 **`probeCardType`** 等） |
+| v3 层控 BIN 聚合 **`groupBy`**（含 **`probeCardType`**）/ UNPIVOT SQL | `src/lib/infcontrolLayerBinAggregate.ts`（v3 路由传 **`v3-hyphen-tokens`**） |
 | v3 列表 SQL 模板 | `src/lib/apiV3ListSql.ts` → `buildYieldMonitorTriggersV3Sql` |
 | 产量 Dummy 加载与筛选 | `src/lib/yieldMonitorTriggerDummy.ts`、`src/lib/dummyRowsFromExcel.ts` |
 | 层控 v3 | `src/lib/infcontrolLayerBinFilters.ts`、`infcontrolLayerBinDummy.ts`、`infcontrolLayerBinV3Aggregate.ts` |
-| v3 列表 **PROBECARDTYPE** | **`src/lib/probeCardTypeLeadingSegment.ts`**；**`src/routes/api.ts`**（**`enrichInfcontrolLayerBinV3ListRow`**、**`enrichYieldMonitorTriggerV3ListRow`**）；Dummy：**`filterInfcontrolLayerBinV3DummyRows`**、**`filterYieldMonitorDummyRowsV3`** |
+| v3 默认一年 **`TESTEND` / `TIME_STAMP`** | **`src/lib/v3DefaultOneYearWindow.ts`**；**`parseInfcontrolLayerBinsV3Query`**、**`parseYieldMonitorTriggerV3Query`**（**`infcontrolLayerBinFilters.ts`**、**`yieldMonitorTriggerFilters.ts`**） |
+| v3 列表 **PROBECARDTYPE** | **`src/lib/probeCardTypeLeadingSegment.ts`**；**`src/routes/api.ts`**（**`enrichInfcontrolLayerBinV3ListRow`**、**`enrichYieldMonitorTriggerV3ListRow`**）；Dummy 写入：**`filterInfcontrolLayerBinV3DummyRowsMatching`**、**`filterYieldMonitorDummyRowsMatchingV3`**；列表截断：**`filterInfcontrolLayerBinV3DummyRows`**、**`filterYieldMonitorDummyRowsV3`** |
 | manifest 静态定义 | `src/lib/apiManifest.ts`；`/api/v3/manifest` 前缀改写 `src/lib/rebaseApiManifest.ts` |
 | Oracle 连接 | `src/oracle.ts`（`withConnection` / `withProbeWebConnection`） |
 
@@ -146,7 +153,7 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 - [ ] 若动 v3 产量 / 层控：**Dummy 与 Oracle 两侧**都已改并通过 **`npm test`**。  
 - [ ] 若动列表 SQL：**`npm run docs:api-v3`** 已跑且 **`docs/API_V3.md`** 无意外回退。  
 - [ ] **`npm run typecheck`** 通过。  
-- [ ] 若改 **`PROBECARDTYPE`** 语义：**`probeCardTypeLeadingSegment`**、**`api.ts`** 两处 enrich、**`infcontrolLayerBinDummy`** / **`yieldMonitorTriggerDummy`** 的 v3 列表 **`filter*V3DummyRows`** 须同步。  
+- [ ] 若改 **`PROBECARDTYPE`** 语义：**`probeCardTypeLeadingSegment`**、**`api.ts`** 两处 enrich、Dummy 的 **`filterInfcontrolLayerBinV3DummyRowsMatching`** / **`filterYieldMonitorDummyRowsMatchingV3`**（及聚合维度 **`probeCardType`** 取值）须与 Oracle 同步。  
 - [ ] 未误改 **`dist` / production** 下 Dummy 关闭语义（`listDummyRuntime.ts`）。  
 - [ ] 若升级 **`oracledb`**：须评估 **§8.1**（6.x 与 **Instant Client 18.1+**）；勿在未升级客户端时升到 6.x。
 

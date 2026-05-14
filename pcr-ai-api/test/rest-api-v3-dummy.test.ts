@@ -144,6 +144,33 @@ describe(
       }
     });
 
+    test("GET /api/v3/infcontrol-layer-bins/v3 无 testStart/testEnd* 时 filters 含默认一年 TESTEND", async () => {
+      const qs = new URLSearchParams(icExampleQs);
+      for (const k of [
+        "testStartBegin",
+        "testStartFrom",
+        "testStartEnd",
+        "testStartTo",
+        "testEndBegin",
+        "testEndFrom",
+        "testEndEnd",
+        "testEndTo",
+      ]) {
+        qs.delete(k);
+      }
+      const { status, body } = await getJson(
+        `${API}/infcontrol-layer-bins/v3?${qs.toString()}&limit=50`
+      );
+      assertOkJson(status, body);
+      const f = (body as { filters?: Record<string, unknown> }).filters;
+      assert.equal(typeof f?.testEndBegin, "string");
+      assert.equal(typeof f?.testEndEnd, "string");
+      assert.ok(
+        new Date(String(f!.testEndBegin)).getTime() <=
+          new Date(String(f!.testEndEnd)).getTime()
+      );
+    });
+
     test("GET /api/v3/infcontrol-layer-bins/v3/aggregate（v3 聚合 · dummy）", async () => {
       const qs = new URLSearchParams(icExampleQs);
       qs.set("groupBy", "device,bin");
@@ -172,6 +199,21 @@ describe(
       assertOkJson(status, body);
       const b = body as { groups?: unknown[] };
       assert.ok(Array.isArray(b.groups));
+    });
+
+    test("GET /api/v3/infcontrol-layer-bins/v3/aggregate groupBy=probeCardType,bin（dummy）", async () => {
+      const qs = new URLSearchParams(icExampleQs);
+      qs.set("groupBy", "probeCardType,bin");
+      qs.set("groupTop", "12");
+      const { status, body } = await getJson(
+        `${API}/infcontrol-layer-bins/v3/aggregate?${qs.toString()}`
+      );
+      assertOkJson(status, body);
+      const b = body as { groups?: { parts?: Record<string, string> }[] };
+      assert.ok(Array.isArray(b.groups));
+      if (b.groups!.length > 0) {
+        assert.ok("probeCardType" in (b.groups![0].parts ?? {}));
+      }
     });
 
     test("GET /api/v3/infcontrol-layer-bins/v3/aggregate groupBy 同时含 probe 与 probeCard → 400", async () => {
@@ -253,6 +295,29 @@ describe(
       assert.ok(withDut > 0, "样本中应至少有一行含 on dut# 且 dutNumber 非 null");
     });
 
+    test("GET /api/v3/yield-monitor-triggers/v3 无 timeStamp* 时 filters 含默认一年 TIME_STAMP", async () => {
+      const qs = new URLSearchParams(yExampleQs);
+      for (const k of [
+        "timeStampBegin",
+        "timeStampFrom",
+        "timeStampEnd",
+        "timeStampTo",
+      ]) {
+        qs.delete(k);
+      }
+      const { status, body } = await getJson(
+        `${API}/yield-monitor-triggers/v3?${qs.toString()}&limit=50`
+      );
+      assertOkJson(status, body);
+      const f = (body as { filters?: Record<string, unknown> }).filters;
+      assert.equal(typeof f?.timeStampBegin, "string");
+      assert.equal(typeof f?.timeStampEnd, "string");
+      assert.ok(
+        new Date(String(f!.timeStampBegin)).getTime() <=
+          new Date(String(f!.timeStampEnd)).getTime()
+      );
+    });
+
     test("probeCardTypeLeadingSegment（首个 - 前段）", () => {
       assert.equal(probeCardTypeLeadingSegment("9400-01"), "9400");
       assert.equal(probeCardTypeLeadingSegment("  X-Y  "), "X");
@@ -305,6 +370,21 @@ describe(
       assert.equal(b.filters?.typeScope, "delta_diff");
       assert.ok(typeof b.totalRowsMatching === "number");
       assert.ok(Array.isArray(b.groups));
+    });
+
+    test("GET /api/v3/yield-monitor-triggers/v3/aggregate dimensions 含 probeCardType（dummy）", async () => {
+      const qs = new URLSearchParams(yExampleQs);
+      qs.set("dimensions", "device,probeCardType");
+      qs.set("groupTop", "20");
+      const { status, body } = await getJson(
+        `${API}/yield-monitor-triggers/v3/aggregate?${qs.toString()}`
+      );
+      assertOkJson(status, body);
+      const b = body as { groups?: { parts?: Record<string, string> }[] };
+      assert.ok(Array.isArray(b.groups));
+      if (b.groups!.length > 0) {
+        assert.ok("probeCardType" in (b.groups![0].parts ?? {}));
+      }
     });
 
     test("GET /api/v3/db/ping（Oracle，可选）", async () => {

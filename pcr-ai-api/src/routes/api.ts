@@ -287,6 +287,7 @@ apiRouter.get("/infcontrol-layer-bins/v2", async (req, res) => {
 /**
  * **v3** 层控 + 层 BIN：INFCONTROL ⋈ INFLAYERBINLIST（`PASSTYPE='TEST'`）。**`INFCONTROL_LAYER_BINS_DUMMY=true`**（且非 `dist`/production 强制走库）时走 **`docs/JBStart.xlsx`** 内存样本；否则 **主库 Oracle**。
  * 支持 **`limit`**（默认 200，最大 **`limitMax`**；键名不区分大小写）及 **device, lot, slot, meslot, testerId, tstype, cardId, passId** 与 **TESTSTART / TESTEND** 时间窗。
+ * 若请求**未带**任一 **testStart\*** / **testEnd\*** 查询键，服务端追加 **`t2.TESTEND`** 在 **UTC 当前起向前一个日历年**内（与 **`parseInfcontrolLayerBinsV3Query`** 默认一致）。
  * 字符串筛选 Dummy 侧等价 **`UPPER(TRIM)`**（trim + 大小写不敏感）。行形状与 **v2** 一致，并多 **`PROBECARDTYPE`**（**`CARDID`** 按首个 **`-`** 拆出的前段）。
  */
 apiRouter.get("/infcontrol-layer-bins/v3", async (req, res) => {
@@ -818,7 +819,7 @@ apiRouter.get("/yield-monitor-triggers", async (req, res) => {
 
 /**
  * **v3** 产量监控：`YMWEB_YIELDMONITORTRIGGER` 全列；**固定** **`TYPE = delta_diff`**（Oracle **`UPPER(TRIM(t."TYPE"))`**；Dummy 同步）。每行 JSON 另含 **`dutNumber`**（从 **`TRIGGER_LABEL`** 中 **`on dut# …`** 解析，无则 **`null`**）与 **`PROBECARDTYPE`**（**`PROBECARD`** 按首个 **`-`** 拆出的前段）。**`YIELD_MONITOR_TRIGGERS_DUMMY=true`**（且非 `dist`/production）时走 **`docs/delta-diff.xlsx`** 内存样本；否则 **probeweb Oracle**。
- * 查询参数：`UPPER(TRIM)` 字符串筛选、时间窗等（**不支持** **`type`** 查询参数；**`TYPE`** 仍出现在每行对象中，**不能**用查询参数覆盖固定范围）。
+ * 查询参数：`UPPER(TRIM)` 字符串筛选、时间窗等（**不支持** **`type`** 查询参数；**`TYPE`** 仍出现在每行对象中，**不能**用查询参数覆盖固定范围）。若未带任一 **timeStamp\*** 时间键，服务端追加 **`TIME_STAMP`** 默认 **UTC 向前一个日历年**（与 **`parseYieldMonitorTriggerV3Query`** 一致）。
  */
 apiRouter.get("/yield-monitor-triggers/v3", async (req, res) => {
   const parsed = parseYieldMonitorTriggerV3Query(

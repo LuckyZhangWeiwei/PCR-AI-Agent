@@ -23,6 +23,8 @@ export type YieldMonitorTriggerDummyRow = {
   TIME_STAMP: string;
   ID: number;
   PROBECARD: string;
+  /** v3：由 **`filterYieldMonitorDummyRowsMatchingV3`** 写入，与列表 **`PROBECARDTYPE`** 同源（**`probeCardTypeLeadingSegment(PROBECARD)`**） */
+  PROBECARDTYPE?: string | null;
 };
 
 /**
@@ -267,6 +269,11 @@ function valueForYieldV3Dimension(
       return row.WAFER;
     case "probeCard":
       return row.PROBECARD;
+    case "probeCardType": {
+      const v = row.PROBECARDTYPE;
+      if (v !== undefined && v !== null && v !== "") return String(v);
+      return probeCardTypeLeadingSegment(row.PROBECARD) ?? "";
+    }
     case "pass":
       return String(row.PASS);
     case "triggerLabel":
@@ -292,10 +299,10 @@ function valueForYieldV3Dimension(
   }
 }
 
-/** 与 v3 Oracle **`UPPER(TRIM)`**、**`TYPE = delta_diff`** 及 **`timeStampBegin`/`End`** 别名一致（Dummy 用 trim + toUpperCase）。 */
+/** 与 v3 Oracle **`UPPER(TRIM)`**、**`TYPE = delta_diff`** 及 **`timeStampBegin`/`End`** 别名一致（Dummy 用 trim + toUpperCase）。每行附 **`PROBECARDTYPE`**（与列表 / 聚合维度同源）。 */
 export function filterYieldMonitorDummyRowsMatchingV3(
   applied: Record<string, unknown>
-): YieldMonitorTriggerDummyRow[] {
+): Array<YieldMonitorTriggerDummyRow & { PROBECARDTYPE: string | null }> {
   let rows = [...getYieldMonitorTriggerDummyRowsInternal()].filter(
     (r) =>
       String(r.TYPE).trim().toLowerCase() === YIELD_MONITOR_V3_TYPE_SCOPE
@@ -332,10 +339,13 @@ export function filterYieldMonitorDummyRowsMatchingV3(
     rows = rows.filter((r) => new Date(r.TIME_STAMP).getTime() <= to);
   }
 
-  return rows;
+  return rows.map((r) => ({
+    ...r,
+    PROBECARDTYPE: probeCardTypeLeadingSegment(r.PROBECARD),
+  }));
 }
 
-/** v3 列表 Dummy：按 **`TIME_STAMP`** 降序后截断 **`limit`**（上限 500，与路由 clamp 一致）。 */
+/** v3 列表 Dummy：在 **`filterYieldMonitorDummyRowsMatchingV3`** 结果上按 **`TIME_STAMP`** 降序截断 **`limit`**（上限 500，与路由 clamp 一致；**`PROBECARDTYPE`** 已在 matching 写入）。 */
 export function filterYieldMonitorDummyRowsV3(
   applied: Record<string, unknown>,
   limit: number
@@ -348,10 +358,7 @@ export function filterYieldMonitorDummyRowsV3(
   const cap =
     Number.isFinite(limit) && limit >= 1 ? Math.floor(limit) : 200;
   const maxCap = Math.min(cap, 500);
-  return rows.slice(0, maxCap).map((row) => ({
-    ...row,
-    PROBECARDTYPE: probeCardTypeLeadingSegment(row.PROBECARD),
-  }));
+  return rows.slice(0, maxCap);
 }
 
 /** v3 产量聚合 Dummy：与 **`/yield-monitor-triggers/v3/aggregate`** Oracle 语义一致（`COUNT(*)` + 维度 bucket）。 */

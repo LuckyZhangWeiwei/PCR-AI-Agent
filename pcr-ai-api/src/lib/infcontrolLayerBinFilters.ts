@@ -1,4 +1,5 @@
 import type { BindParameters } from "oracledb";
+import { v3DefaultThroughNowMinusOneUtcYear } from "./v3DefaultOneYearWindow.js";
 
 /** 固定取前 200 条 */
 export const INFCONTROL_LAYER_BIN_TOP = 200;
@@ -215,6 +216,7 @@ export type ParseInfcontrolLayerBinsV3Ok = {
 /**
  * **v3** `GET /infcontrol-layer-bins/v3`：在 `PASSTYPE='TEST'` 之上追加 AND 条件（绑定变量）。
  * 字符串列使用 `UPPER(TRIM(列)) = UPPER(:bind)`，与库内实际大小写（如样例表 `docs/JBStart.xlsx`）无关地匹配。
+ * **默认时间窗**：若请求未携带任一 **TESTSTART / TESTEND** 相关查询键（`testStart*`、`testEnd*` 共 8 个），则追加 **`t2.TESTEND`** 在 **UTC 当前时刻起向前一个日历年**内（与 **`v3DefaultThroughNowMinusOneUtcYear`** 一致）。
  */
 export function parseInfcontrolLayerBinsV3Query(
   q: Record<string, unknown>
@@ -333,6 +335,35 @@ export function parseInfcontrolLayerBinsV3Query(
       } else {
         applied.testEndTo = testEndHi.toISOString();
       }
+    }
+
+    const infcontrolV3TimeQueryKeys = [
+      "testStartBegin",
+      "testStartFrom",
+      "testStartEnd",
+      "testStartTo",
+      "testEndBegin",
+      "testEndFrom",
+      "testEndEnd",
+      "testEndTo",
+    ] as const;
+    const userTouchedTimeParams = infcontrolV3TimeQueryKeys.some(
+      (k) => firstQueryValue(q, k) !== undefined
+    );
+    if (
+      !userTouchedTimeParams &&
+      testStartLo === undefined &&
+      testStartHi === undefined &&
+      testEndLo === undefined &&
+      testEndHi === undefined
+    ) {
+      const { lo, hi } = v3DefaultThroughNowMinusOneUtcYear();
+      clauses.push("t2.TESTEND >= :ic3_testend_lo");
+      clauses.push("t2.TESTEND <= :ic3_testend_hi");
+      (binds as Record<string, string | number | Date>).ic3_testend_lo = lo;
+      (binds as Record<string, string | number | Date>).ic3_testend_hi = hi;
+      applied.testEndBegin = lo.toISOString();
+      applied.testEndEnd = hi.toISOString();
     }
 
     const whereAndSql = clauses.join(" AND ");

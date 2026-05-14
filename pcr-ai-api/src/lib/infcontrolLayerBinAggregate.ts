@@ -18,6 +18,8 @@ export type InfcontrolLayerBinGroupBy =
   | "testerId"
   | "tstype"
   | "cardId"
+  /** 与 v3 列表 **`PROBECARDTYPE`** 一致：**`CARDID`** 首个 **`-`** 前段（空为 **''**） */
+  | "probeCardType"
   | "pibId"
   | "probe"
   | "probeCard"
@@ -81,6 +83,7 @@ function parseGroupByToken(
     testerid: "testerId",
     tstype: "tstype",
     cardid: "cardId",
+    probecardtype: "probeCardType",
     pibid: "pibId",
     probe: "probe",
     probecard: "probeCard",
@@ -124,6 +127,8 @@ export function infcontrolLayerBinNonBinSelectSql(
       return "lb.TSTYPE AS TSTYPE";
     case "cardId":
       return "lb.CARDID AS CARDID";
+    case "probeCardType":
+      return "NVL(REGEXP_SUBSTR(TRIM(lb.CARDID), '^[^-]+', 1, 1), '') AS PROBECARDTYPE";
     case "pibId":
       return "lb.PIBID AS PIBID";
     case "probe":
@@ -191,6 +196,8 @@ function oracleGroupColumnName(d: Exclude<InfcontrolLayerBinGroupBy, "bin">): st
       return "TSTYPE";
     case "cardId":
       return "CARDID";
+    case "probeCardType":
+      return "PROBECARDTYPE";
     case "pibId":
       return "PIBID";
     case "probe":
@@ -298,7 +305,7 @@ export function parseInfcontrolLayerBinAggregateGroupSpec(
     if (g === undefined) {
       return {
         ok: false,
-        error: `Invalid groupBy segment: ${t} (must include bin once, plus optional device, lot, testerId, cardId, …; see manifest)`,
+        error: `Invalid groupBy segment: ${t} (must include bin once, plus optional device, lot, testerId, cardId, probeCardType, …; see manifest)`,
       };
     }
     if (groupBy.includes(g)) {

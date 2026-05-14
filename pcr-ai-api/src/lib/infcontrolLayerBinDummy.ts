@@ -16,7 +16,7 @@ import { probeCardTypeLeadingSegment } from "./probeCardTypeLeadingSegment.js";
  * 索引签名便于填充 256 个 BIN 列。
  */
 export interface InfcontrolLayerBinDummyRow {
-  [key: string]: string | number | null;
+  [key: string]: string | number | null | undefined;
   KEYNUMBER: number;
   DEVICE: string;
   LOT: string;
@@ -44,6 +44,8 @@ export interface InfcontrolLayerBinDummyRow {
   PASSRESULT: string;
   PASSTYPE: string;
   PASSBIN: string;
+  /** v3：由 **`filterInfcontrolLayerBinV3DummyRowsMatching`** 写入，与列表 **`PROBECARDTYPE`** 同源 */
+  PROBECARDTYPE?: string | null;
 }
 
 /**
@@ -345,6 +347,11 @@ function valueForInfcontrolDimension(
       return String(row.TSTYPE);
     case "cardId":
       return String(row.CARDID);
+    case "probeCardType": {
+      const v = row.PROBECARDTYPE;
+      if (v !== undefined && v !== null && v !== "") return String(v);
+      return probeCardTypeLeadingSegment(row.CARDID) ?? "";
+    }
     case "pibId":
       return String(row.PIBID);
     case "probe":
@@ -435,10 +442,10 @@ export function aggregateInfcontrolLayerBinDummyRows(
   return { totalRowsMatching: rows.length, groups };
 }
 
-/** v3：与 `parseInfcontrolLayerBinsV3Query` 的 applied 键一致；**PASSTYPE=TEST**；字符串等价 Oracle **`UPPER(TRIM)`**（Dummy 内用 trim + toUpperCase）。 */
+/** v3：与 `parseInfcontrolLayerBinsV3Query` 的 applied 键一致；**PASSTYPE=TEST**；字符串等价 Oracle **`UPPER(TRIM)`**（Dummy 内用 trim + toUpperCase）。每行附 **`PROBECARDTYPE`**（与列表 / 聚合维度同源）。 */
 export function filterInfcontrolLayerBinV3DummyRowsMatching(
   applied: Record<string, unknown>
-): InfcontrolLayerBinDummyRow[] {
+): Array<InfcontrolLayerBinDummyRow & { PROBECARDTYPE: string | null }> {
   let rows = [...getInfcontrolLayerBinDummyRowsInternal()].filter(
     (r) => String(r.PASSTYPE).trim().toUpperCase() === "TEST"
   );
@@ -490,10 +497,13 @@ export function filterInfcontrolLayerBinV3DummyRowsMatching(
     rows = rows.filter((r) => new Date(String(r.TESTEND)).getTime() <= to);
   }
 
-  return rows;
+  return rows.map((r) => ({
+    ...r,
+    PROBECARDTYPE: probeCardTypeLeadingSegment(r.CARDID),
+  }));
 }
 
-/** v3 列表 Dummy：排序与 Oracle v3 列表一致，再 **`limit`** 截断；每行附 **`PROBECARDTYPE`**（与 Oracle v3 列表同源逻辑）。 */
+/** v3 列表 Dummy：在 **`filterInfcontrolLayerBinV3DummyRowsMatching`** 结果上排序，再 **`limit`** 截断（**`PROBECARDTYPE`** 已在 matching 阶段写入）。 */
 export function filterInfcontrolLayerBinV3DummyRows(
   applied: Record<string, unknown>,
   limit: number
@@ -510,10 +520,7 @@ export function filterInfcontrolLayerBinV3DummyRows(
   });
   const cap =
     Number.isFinite(limit) && limit >= 1 ? Math.floor(limit) : INFCONTROL_LAYER_BIN_TOP;
-  return rows.slice(0, cap).map((row) => ({
-    ...row,
-    PROBECARDTYPE: probeCardTypeLeadingSegment(row.CARDID),
-  }));
+  return rows.slice(0, cap);
 }
 
 /** v3 聚合 Dummy：与 Oracle **`v3-hyphen-tokens`** 及 **`forEachBadBinDieContribution`**（同 v2 top-bad-bins dummy）一致。 */
