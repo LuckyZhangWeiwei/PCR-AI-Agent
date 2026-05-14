@@ -9,6 +9,7 @@ import {
 import type { YieldMonitorV3AggDim } from "./yieldMonitorTriggerV3Aggregate.js";
 import { loadYieldMonitorTriggerRowsFromDeltaDiffXlsx } from "./dummyRowsFromExcel.js";
 import { listApisForceOracleNoDummy } from "./listDummyRuntime.js";
+import { probeCardTypeLeadingSegment } from "./probeCardTypeLeadingSegment.js";
 
 /** 与 Oracle 返回列一致（YMWEB_YIELDMONITORTRIGGER） */
 export type YieldMonitorTriggerDummyRow = {
@@ -338,7 +339,7 @@ export function filterYieldMonitorDummyRowsMatchingV3(
 export function filterYieldMonitorDummyRowsV3(
   applied: Record<string, unknown>,
   limit: number
-): YieldMonitorTriggerDummyRow[] {
+): Array<YieldMonitorTriggerDummyRow & { PROBECARDTYPE: string | null }> {
   const rows = filterYieldMonitorDummyRowsMatchingV3(applied);
   rows.sort(
     (a, b) =>
@@ -347,7 +348,10 @@ export function filterYieldMonitorDummyRowsV3(
   const cap =
     Number.isFinite(limit) && limit >= 1 ? Math.floor(limit) : 200;
   const maxCap = Math.min(cap, 500);
-  return rows.slice(0, maxCap);
+  return rows.slice(0, maxCap).map((row) => ({
+    ...row,
+    PROBECARDTYPE: probeCardTypeLeadingSegment(row.PROBECARD),
+  }));
 }
 
 /** v3 产量聚合 Dummy：与 **`/yield-monitor-triggers/v3/aggregate`** Oracle 语义一致（`COUNT(*)` + 维度 bucket）。 */

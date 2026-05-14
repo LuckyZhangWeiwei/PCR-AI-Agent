@@ -9,13 +9,14 @@ import {
 } from "./passBinSemantics.js";
 import { loadInfcontrolLayerBinRowsFromJbStartXlsx } from "./dummyRowsFromExcel.js";
 import { listApisForceOracleNoDummy } from "./listDummyRuntime.js";
+import { probeCardTypeLeadingSegment } from "./probeCardTypeLeadingSegment.js";
 
 /**
  * 与 INFCONTROL ⋈ INFLAYERBINLIST 查询列一致（Oracle 列名大写，含 BIN0…BIN255）。
  * 索引签名便于填充 256 个 BIN 列。
  */
 export interface InfcontrolLayerBinDummyRow {
-  [key: string]: string | number;
+  [key: string]: string | number | null;
   KEYNUMBER: number;
   DEVICE: string;
   LOT: string;
@@ -492,11 +493,11 @@ export function filterInfcontrolLayerBinV3DummyRowsMatching(
   return rows;
 }
 
-/** v3 列表 Dummy：排序与 Oracle v3 列表一致，再 **`limit`** 截断。 */
+/** v3 列表 Dummy：排序与 Oracle v3 列表一致，再 **`limit`** 截断；每行附 **`PROBECARDTYPE`**（与 Oracle v3 列表同源逻辑）。 */
 export function filterInfcontrolLayerBinV3DummyRows(
   applied: Record<string, unknown>,
   limit: number
-): InfcontrolLayerBinDummyRow[] {
+): Array<InfcontrolLayerBinDummyRow & { PROBECARDTYPE: string | null }> {
   let rows = filterInfcontrolLayerBinV3DummyRowsMatching(applied);
   rows.sort((a, b) => {
     const tb = new Date(String(b.TESTEND)).getTime();
@@ -509,7 +510,10 @@ export function filterInfcontrolLayerBinV3DummyRows(
   });
   const cap =
     Number.isFinite(limit) && limit >= 1 ? Math.floor(limit) : INFCONTROL_LAYER_BIN_TOP;
-  return rows.slice(0, cap);
+  return rows.slice(0, cap).map((row) => ({
+    ...row,
+    PROBECARDTYPE: probeCardTypeLeadingSegment(row.CARDID),
+  }));
 }
 
 /** v3 聚合 Dummy：与 Oracle **`v3-hyphen-tokens`** 及 **`forEachBadBinDieContribution`**（同 v2 top-bad-bins dummy）一致。 */

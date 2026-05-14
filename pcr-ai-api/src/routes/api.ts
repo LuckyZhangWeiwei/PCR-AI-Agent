@@ -73,6 +73,7 @@ import {
   filterYieldMonitorDummyRowsV3,
   yieldMonitorTriggersUseDummy,
 } from "../lib/yieldMonitorTriggerDummy.js";
+import { probeCardTypeLeadingSegment } from "../lib/probeCardTypeLeadingSegment.js";
 import { addDutNumberToYieldMonitorV3Row } from "../lib/yieldTriggerLabelDut.js";
 import {
   clampLimit,
@@ -85,6 +86,26 @@ export const apiRouter = Router();
 
 function reqId(req: Request): string | undefined {
   return (req as Request & { requestId?: string }).requestId;
+}
+
+function enrichInfcontrolLayerBinV3ListRow(
+  row: Record<string, unknown>
+): Record<string, unknown> {
+  const e = enrichInfcontrolLayerBinRowV2(row);
+  return {
+    ...e,
+    PROBECARDTYPE: probeCardTypeLeadingSegment(e.CARDID ?? e.cardid),
+  };
+}
+
+function enrichYieldMonitorTriggerV3ListRow(
+  row: Record<string, unknown>
+): Record<string, unknown> {
+  const base = addDutNumberToYieldMonitorV3Row(row);
+  return {
+    ...base,
+    PROBECARDTYPE: probeCardTypeLeadingSegment(base.PROBECARD ?? base.probecard),
+  };
 }
 
 /** AI agent 工具发现：参数说明、示例与错误格式约定（**`/api/v1/manifest`** 全量；**`/api/v3/manifest`** 仅 v3 相关且 path 为 `/api/v3/...`） */
@@ -266,7 +287,7 @@ apiRouter.get("/infcontrol-layer-bins/v2", async (req, res) => {
 /**
  * **v3** 层控 + 层 BIN：INFCONTROL ⋈ INFLAYERBINLIST（`PASSTYPE='TEST'`）。**`INFCONTROL_LAYER_BINS_DUMMY=true`**（且非 `dist`/production 强制走库）时走 **`docs/JBStart.xlsx`** 内存样本；否则 **主库 Oracle**。
  * 支持 **`limit`**（默认 200，最大 **`limitMax`**；键名不区分大小写）及 **device, lot, slot, meslot, testerId, tstype, cardId, passId** 与 **TESTSTART / TESTEND** 时间窗。
- * 字符串筛选 Dummy 侧等价 **`UPPER(TRIM)`**（trim + 大小写不敏感）。行形状与 **v2** 一致。
+ * 字符串筛选 Dummy 侧等价 **`UPPER(TRIM)`**（trim + 大小写不敏感）。行形状与 **v2** 一致，并多 **`PROBECARDTYPE`**（**`CARDID`** 按首个 **`-`** 拆出的前段）。
  */
 apiRouter.get("/infcontrol-layer-bins/v3", async (req, res) => {
   const parsed = parseInfcontrolLayerBinsV3Query(
@@ -291,7 +312,7 @@ apiRouter.get("/infcontrol-layer-bins/v3", async (req, res) => {
   if (infcontrolLayerBinsUseDummy()) {
     const rows = filterInfcontrolLayerBinV3DummyRows(parsed.applied, limit);
     const enriched = rows.map((row) =>
-      enrichInfcontrolLayerBinRowV2(row as Record<string, unknown>)
+      enrichInfcontrolLayerBinV3ListRow(row as Record<string, unknown>)
     );
     return res.json({
       meta: {
@@ -318,7 +339,7 @@ apiRouter.get("/infcontrol-layer-bins/v3", async (req, res) => {
       return result.rows || [];
     });
     const enriched = rows.map((row) =>
-      enrichInfcontrolLayerBinRowV2(row as Record<string, unknown>)
+      enrichInfcontrolLayerBinV3ListRow(row as Record<string, unknown>)
     );
     return res.json({
       meta: {
@@ -796,7 +817,7 @@ apiRouter.get("/yield-monitor-triggers", async (req, res) => {
 });
 
 /**
- * **v3** 产量监控：`YMWEB_YIELDMONITORTRIGGER` 全列；**固定** **`TYPE = delta_diff`**（Oracle **`UPPER(TRIM(t."TYPE"))`**；Dummy 同步）。每行 JSON 另含 **`dutNumber`**（从 **`TRIGGER_LABEL`** 中 **`on dut# …`** 解析，无则 **`null`**）。**`YIELD_MONITOR_TRIGGERS_DUMMY=true`**（且非 `dist`/production）时走 **`docs/delta-diff.xlsx`** 内存样本；否则 **probeweb Oracle**。
+ * **v3** 产量监控：`YMWEB_YIELDMONITORTRIGGER` 全列；**固定** **`TYPE = delta_diff`**（Oracle **`UPPER(TRIM(t."TYPE"))`**；Dummy 同步）。每行 JSON 另含 **`dutNumber`**（从 **`TRIGGER_LABEL`** 中 **`on dut# …`** 解析，无则 **`null`**）与 **`PROBECARDTYPE`**（**`PROBECARD`** 按首个 **`-`** 拆出的前段）。**`YIELD_MONITOR_TRIGGERS_DUMMY=true`**（且非 `dist`/production）时走 **`docs/delta-diff.xlsx`** 内存样本；否则 **probeweb Oracle**。
  * 查询参数：`UPPER(TRIM)` 字符串筛选、时间窗等（**不支持** **`type`** 查询参数；**`TYPE`** 仍出现在每行对象中，**不能**用查询参数覆盖固定范围）。
  */
 apiRouter.get("/yield-monitor-triggers/v3", async (req, res) => {
@@ -821,7 +842,7 @@ apiRouter.get("/yield-monitor-triggers/v3", async (req, res) => {
 
   if (yieldMonitorTriggersUseDummy()) {
     const rows = filterYieldMonitorDummyRowsV3(parsed.applied, limit).map((r) =>
-      addDutNumberToYieldMonitorV3Row(r as Record<string, unknown>)
+      enrichYieldMonitorTriggerV3ListRow(r as Record<string, unknown>)
     );
     return res.json({
       meta: {
@@ -848,7 +869,7 @@ apiRouter.get("/yield-monitor-triggers/v3", async (req, res) => {
       return result.rows || [];
     });
     const withDut = (rows as Record<string, unknown>[]).map((row) =>
-      addDutNumberToYieldMonitorV3Row(row)
+      enrichYieldMonitorTriggerV3ListRow(row)
     );
     return res.json({
       meta: {

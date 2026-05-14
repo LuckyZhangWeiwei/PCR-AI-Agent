@@ -349,7 +349,7 @@ export const apiManifest = {
       path: "/api/v1/infcontrol-layer-bins/v3",
       method: "GET",
       purpose:
-        "INFCONTROL t1 INNER JOIN INFLAYERBINLIST t2 ON KEYNUMBER, WHERE PASSTYPE='TEST' plus optional AND filters (case-insensitive TRIM equality on device, lot, meslot, testerId, tstype, cardId via UPPER(TRIM(col))=UPPER(:bind); exact match on slot, passId; TESTSTART/TESTEND windows), then ORDER BY TESTEND DESC NULLS LAST, SLOT, PASSID, PASSNUM, FETCH FIRST :lim ROWS ONLY. When INFCONTROL_LAYER_BINS_DUMMY is true and the process is not dist/production, serves rows from docs/JBStart.xlsx in memory (listDummyRuntime); otherwise main Oracle pool. Row shape matches infcontrol-layer-bins/v2. Query keys are case-insensitive (including limit).",
+        "INFCONTROL t1 INNER JOIN INFLAYERBINLIST t2 ON KEYNUMBER, WHERE PASSTYPE='TEST' plus optional AND filters (case-insensitive TRIM equality on device, lot, meslot, testerId, tstype, cardId via UPPER(TRIM(col))=UPPER(:bind); exact match on slot, passId; TESTSTART/TESTEND windows), then ORDER BY TESTEND DESC NULLS LAST, SLOT, PASSID, PASSNUM, FETCH FIRST :lim ROWS ONLY. When INFCONTROL_LAYER_BINS_DUMMY is true and the process is not dist/production, serves rows from docs/JBStart.xlsx in memory (listDummyRuntime); otherwise main Oracle pool. Row shape matches infcontrol-layer-bins/v2 plus PROBECARDTYPE (leading segment of CARDID before first hyphen). Query keys are case-insensitive (including limit).",
       queryParameters: [
         {
           name: "limit",
@@ -421,7 +421,7 @@ export const apiManifest = {
         orderBy: "string",
         filters: "object (echo of applied filters plus limit)",
         count: "number",
-        rows: "same enrichment as infcontrol-layer-bins/v2",
+        rows: "same enrichment as infcontrol-layer-bins/v2 plus PROBECARDTYPE (string | null from CARDID)",
       },
       example:
         "/api/v1/infcontrol-layer-bins/v3?device=WB10N57U&lot=NF12615.1X&testEndBegin=2026-05-13T00:00:00.000Z&testEndEnd=2026-05-13T23:59:59.999Z&limit=200",
@@ -519,7 +519,7 @@ export const apiManifest = {
       path: "/api/v1/yield-monitor-triggers/v3",
       method: "GET",
       purpose:
-        "SELECT * FROM YMWEB_YIELDMONITORTRIGGER with fixed WHERE UPPER(TRIM(TYPE)) = 'DELTA_DIFF' (bind :v3_type_scope; echoed as filters.typeScope) AND optional AND filters (case-insensitive TRIM on string columns: HOSTNAME, DEVICE, LOTID, WAFER, PROBECARD; exact PASS; TIME_STAMP window), then ORDER BY TIME_STAMP DESC NULLS LAST FETCH FIRST :lim ROWS ONLY. Query parameter type is not supported on v3 (cannot override TYPE scope; rows still include TYPE in each object). When YIELD_MONITOR_TRIGGERS_DUMMY is true and not dist/production, serves matching rows from docs/delta-diff.xlsx in memory; else probeweb Oracle. Query keys are case-insensitive (including limit).",
+        "SELECT * FROM YMWEB_YIELDMONITORTRIGGER with fixed WHERE UPPER(TRIM(TYPE)) = 'DELTA_DIFF' (bind :v3_type_scope; echoed as filters.typeScope) AND optional AND filters (case-insensitive TRIM on string columns: HOSTNAME, DEVICE, LOTID, WAFER, PROBECARD; exact PASS; TIME_STAMP window), then ORDER BY TIME_STAMP DESC NULLS LAST FETCH FIRST :lim ROWS ONLY. Query parameter type is not supported on v3 (cannot override TYPE scope; rows still include TYPE in each object). Each row also includes dutNumber (from TRIGGER_LABEL) and PROBECARDTYPE (leading segment of PROBECARD before first hyphen). When YIELD_MONITOR_TRIGGERS_DUMMY is true and not dist/production, serves matching rows from docs/delta-diff.xlsx in memory; else probeweb Oracle. Query keys are case-insensitive (including limit).",
       queryParameters: [
         {
           name: "limit",
@@ -567,7 +567,7 @@ export const apiManifest = {
           "object (echo of applied filters plus limit; always includes typeScope: 'delta_diff' — server-fixed TYPE filter)",
         count: "number",
         rows:
-          "array of row objects (all DB columns plus dutNumber: number | null — DUT id parsed from TRIGGER_LABEL when it contains “on dut# …”, else null)",
+          "array of row objects (all DB columns plus dutNumber: number | null — DUT id parsed from TRIGGER_LABEL when it contains “on dut# …”, else null; plus PROBECARDTYPE: string | null — leading segment of PROBECARD before first hyphen)",
       },
       example:
         "/api/v1/yield-monitor-triggers/v3?device=WA03P02G&timeStampBegin=2026-05-13T00:00:00.000Z&timeStampEnd=2026-05-13T23:59:59.999Z&limit=200",

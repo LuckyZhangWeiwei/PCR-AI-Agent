@@ -2,6 +2,8 @@
 
 本文档记录 **v3** 路由的**原始 SQL 模板**（与当前编译产物 `dist/lib/apiV3ListSql.js` 一致）。**HTTP 前缀**推荐 **/api/v3**（与 **/api/v1** 同路由器；manifest 行为见 [**AI_AGENT_API.md**](./AI_AGENT_API.md) 文首表、**§6.2**、**§8.3**）。业务说明、通俗理解见主文档 **§7**；**可复制 URL 与 curl** 见 **§8**；筛选参数表亦见 **§8.4**、**§8.6**。
 
+**响应 enrich（非 SQL 列）**：两条 v3 **列表**在返回 JSON 前会为每行附加 **`PROBECARDTYPE`**（层控来自 **`CARDID`**，产量来自 **`PROBECARD`**）：**首个 `-` 之前**一段，逻辑见 **`src/lib/probeCardTypeLeadingSegment.ts`** 与 **`src/routes/api.ts`**；Dummy 在 **`filterInfcontrolLayerBinV3DummyRows`**、**`filterYieldMonitorDummyRowsV3`** 中同步写入。
+
 **v3 聚合**（`/infcontrol-layer-bins/v3/aggregate`、`/yield-monitor-triggers/v3/aggregate`）的 SQL 不在此文件展开，见源码 **`src/lib/yieldMonitorTriggerV3Aggregate.ts`**、**`src/lib/infcontrolLayerBinV3Aggregate.ts`**（层控 UNPIVOT 与 **`infcontrolLayerBinAggregate.ts`** 共用 SQL 片段）。
 
 **层控 `…/v3/aggregate`（仅坏 bin die）**：Oracle 路径 **`buildInfcontrolLayerBinAggregateSql(..., "v3-hyphen-tokens")`**；**PASSBIN** 按 **-** 拆出的整段下标为 **good bin**，**SUM** 不累计其 die（与 v3 列表 **`bins[].isGoodBin`**、**/v2/top-bad-bins** 的 token 规则一致）。**INFCONTROL_LAYER_BINS_DUMMY=true** 时 **`infcontrolLayerBinDummy.ts`** 内 **`forEachBadBinDieContribution`** 与 v2 top-bad-bins dummy 共用循环。见 [**AI_AGENT_API.md**](./AI_AGENT_API.md) **§4**、**§7.6**。
@@ -13,6 +15,7 @@
 | 项 | 路径 |
 | --- | --- |
 | SQL 拼接 | `src/lib/apiV3ListSql.ts` |
+| v3 列表 **PROBECARDTYPE**（非 SQL，路由 + Dummy） | `src/lib/probeCardTypeLeadingSegment.ts`；`src/routes/api.ts`；`infcontrolLayerBinDummy.ts` → `filterInfcontrolLayerBinV3DummyRows`；`yieldMonitorTriggerDummy.ts` → `filterYieldMonitorDummyRowsV3` |
 | 层控 v3 筛选解析 | `src/lib/infcontrolLayerBinFilters.ts` → `parseInfcontrolLayerBinsV3Query` |
 | 产量 v3 筛选解析 | `src/lib/yieldMonitorTriggerFilters.ts` → `parseYieldMonitorTriggerV3Query` |
 | HTTP 路由 | `src/routes/api.ts` |

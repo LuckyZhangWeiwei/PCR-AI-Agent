@@ -11,6 +11,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { after, before, describe, test } from "node:test";
 
+import { probeCardTypeLeadingSegment } from "../src/lib/probeCardTypeLeadingSegment.js";
 import { parseDutNumberFromTriggerLabel } from "../src/lib/yieldTriggerLabelDut.js";
 
 const API = "/api/v3";
@@ -134,6 +135,13 @@ describe(
       assert.ok(Array.isArray(b.rows));
       assert.equal(b.count, b.rows!.length);
       assert.ok(b.rows!.length > 0, "JBStart dummy 应至少返回一行");
+      for (const row of b.rows!) {
+        assert.ok("PROBECARDTYPE" in row);
+        assert.equal(
+          row.PROBECARDTYPE,
+          probeCardTypeLeadingSegment(row.CARDID ?? row.cardid)
+        );
+      }
     });
 
     test("GET /api/v3/infcontrol-layer-bins/v3/aggregate（v3 聚合 · dummy）", async () => {
@@ -236,8 +244,23 @@ describe(
           "dutNumber 须与 TRIGGER_LABEL 中 on dut# 解析一致"
         );
         if (row.dutNumber != null) withDut++;
+        assert.ok("PROBECARDTYPE" in row);
+        assert.equal(
+          row.PROBECARDTYPE,
+          probeCardTypeLeadingSegment(row.PROBECARD ?? row.probecard)
+        );
       }
       assert.ok(withDut > 0, "样本中应至少有一行含 on dut# 且 dutNumber 非 null");
+    });
+
+    test("probeCardTypeLeadingSegment（首个 - 前段）", () => {
+      assert.equal(probeCardTypeLeadingSegment("9400-01"), "9400");
+      assert.equal(probeCardTypeLeadingSegment("  X-Y  "), "X");
+      assert.equal(probeCardTypeLeadingSegment("nohyphen"), "nohyphen");
+      assert.equal(probeCardTypeLeadingSegment(null), null);
+      assert.equal(probeCardTypeLeadingSegment(""), null);
+      assert.equal(probeCardTypeLeadingSegment("  "), null);
+      assert.equal(probeCardTypeLeadingSegment("-only"), null);
     });
 
     test("parseDutNumberFromTriggerLabel（TRIGGER_LABEL 片段）", () => {

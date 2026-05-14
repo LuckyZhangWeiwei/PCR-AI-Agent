@@ -60,6 +60,11 @@
 4. **联调示例 URL**  
    - 产量 Dummy 的示例 query 由 **`getYieldMonitorDummyExampleQuery()`** 生成，优先选 **`TYPE=delta_diff`** 行，避免示例时间窗内零命中。
 
+5. **`PROBECARDTYPE`（两条 v3 列表）**  
+   - **`GET …/infcontrol-layer-bins/v3`**：由 **`CARDID`** 取**首个 `-` 之前**一段（trim；空 / 无前段则为 **`null`**）。  
+   - **`GET …/yield-monitor-triggers/v3`**：由 **`PROBECARD`** 同上。  
+   - 实现：**`src/lib/probeCardTypeLeadingSegment.ts`**；路由 **`enrichInfcontrolLayerBinV3ListRow` / `enrichYieldMonitorTriggerV3ListRow`**（**`src/routes/api.ts`**）。Dummy 须在 **`filterInfcontrolLayerBinV3DummyRows`**、**`filterYieldMonitorDummyRowsV3`**（各自 **`src/lib/*Dummy.ts`**）与 Oracle 路径一致（当前在截断后 **`map`** 写入 **`PROBECARDTYPE`**）。
+
 ---
 
 ## 5. 常用命令
@@ -88,6 +93,7 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 | v3 列表 SQL 模板 | `src/lib/apiV3ListSql.ts` → `buildYieldMonitorTriggersV3Sql` |
 | 产量 Dummy 加载与筛选 | `src/lib/yieldMonitorTriggerDummy.ts`、`src/lib/dummyRowsFromExcel.ts` |
 | 层控 v3 | `src/lib/infcontrolLayerBinFilters.ts`、`infcontrolLayerBinDummy.ts`、`infcontrolLayerBinV3Aggregate.ts` |
+| v3 列表 **PROBECARDTYPE** | **`src/lib/probeCardTypeLeadingSegment.ts`**；**`src/routes/api.ts`**（**`enrichInfcontrolLayerBinV3ListRow`**、**`enrichYieldMonitorTriggerV3ListRow`**）；Dummy：**`filterInfcontrolLayerBinV3DummyRows`**、**`filterYieldMonitorDummyRowsV3`** |
 | manifest 静态定义 | `src/lib/apiManifest.ts`；`/api/v3/manifest` 前缀改写 `src/lib/rebaseApiManifest.ts` |
 | Oracle 连接 | `src/oracle.ts`（`withConnection` / `withProbeWebConnection`） |
 
@@ -140,6 +146,7 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 - [ ] 若动 v3 产量 / 层控：**Dummy 与 Oracle 两侧**都已改并通过 **`npm test`**。  
 - [ ] 若动列表 SQL：**`npm run docs:api-v3`** 已跑且 **`docs/API_V3.md`** 无意外回退。  
 - [ ] **`npm run typecheck`** 通过。  
+- [ ] 若改 **`PROBECARDTYPE`** 语义：**`probeCardTypeLeadingSegment`**、**`api.ts`** 两处 enrich、**`infcontrolLayerBinDummy`** / **`yieldMonitorTriggerDummy`** 的 v3 列表 **`filter*V3DummyRows`** 须同步。  
 - [ ] 未误改 **`dist` / production** 下 Dummy 关闭语义（`listDummyRuntime.ts`）。  
 - [ ] 若升级 **`oracledb`**：须评估 **§8.1**（6.x 与 **Instant Client 18.1+**）；勿在未升级客户端时升到 6.x。
 
