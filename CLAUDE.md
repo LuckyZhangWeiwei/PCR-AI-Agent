@@ -61,9 +61,11 @@ The default API base is `http://10.192.130.89:30008` (set in `.env.development` 
 - **`lib/`** — domain logic grouped by feature:
   - `yieldMonitorTrigger*` — v1/v3 list, v3 aggregate, Dummy, SQL, filter parsing, DUT label extraction.
   - `infcontrolLayerBin*` — same structure for JB START / layer-bins domain.
-  - `apiV3ListSql.ts` — shared SQL template builder used by the v3 list endpoints.
+  - `apiV3ListSql.ts` — shared SQL template builder used by the v3/v4 list endpoints.
   - `apiManifest.ts` + `rebaseApiManifest.ts` — static manifest descriptor and path rewriting.
   - `listDummyRuntime.ts` — forces Oracle (disables Dummy) when running from `dist/` or `NODE_ENV=production`.
+  - `agentResponse.ts` — `sendAgentError` emits the standard error envelope `{ error, code, detail? }` used by all routes; `enrichOracleDriverDetail` appends Thick/Instant Client fix hints to NJS-116 / DPI-1050 messages.
+  - `v3DefaultOneYearWindow.ts` — injected by `parseInfcontrolLayerBinsV3Query` / `parseYieldMonitorTriggerV3Query` when no time params are present; adds a UTC `[now − 1 year, now]` window to both `TESTEND` and `TIME_STAMP`.
 
 ### Dummy data mode (dev/test only)
 
@@ -75,7 +77,8 @@ Set `YIELD_MONITOR_TRIGGERS_DUMMY=true` or `INFCONTROL_LAYER_BINS_DUMMY=true` in
 - **`api/client.ts`** — `apiGetJson<T>()` wraps `fetch`, normalizes the base URL, serializes query params, and throws on non-2xx with a structured error message.
 - **`api/paths.ts`** — single constant `API_PREFIX = "/api/v4"` shared by all report components.
 - **`reports/`** — one component per tab: `OverviewReport` (manifest/API directory), `YieldMonitorReport`, `InfcontrolReport`, `AiAgentReport` (SiliconFlow chat via `GET …/siliconflow/chat`), `TableRowsReport`. Each manages its own form state, query execution, and ECharts options inline (AI tab is button-driven, not chart-heavy).
-- **`components/`** — `DarkChart` (ECharts wrapper with resize listener), `DataTable` (generic row/column renderer), `QueryInspector`.
+- **`components/`** — `DarkChart` (ECharts wrapper with resize listener), `DataTable` (generic row/column renderer), `QueryInspector`, `KpiCard` (stat tile), `TreeTable` (collapsible hierarchy), `DrillDownPanel` (slot/trend drill-in).
+- **`utils/`** — `asyncConcurrency.ts` exports `allSettledWithConcurrency` and `REPORT_ORACLE_FANOUT_CONCURRENCY = 1` (serial fanout cap to prevent NJS-040 pool exhaustion); `yieldCalc.ts`, `rollup.ts`, `datetimeLocal.ts`, `binFilterLines.ts` are domain helpers used inside report components.
 - **`theme/chartTheme.ts`** — dark-palette constants shared across all chart options.
 
 ### Communication flow

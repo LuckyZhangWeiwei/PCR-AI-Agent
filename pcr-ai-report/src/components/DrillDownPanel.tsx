@@ -21,7 +21,37 @@ type Props = {
   subDimOptions: SubDimOption[];
   onSubDimChange: (dim: string) => void;
   onClose: () => void;
+  /** Called when user clicks a bar — key is the group's key string */
+  onBarClick?: (key: string) => void;
+  /** Highlight this key as selected (deepened color) */
+  selectedKey?: string | null;
 };
+
+const COL_PANEL = chartAccent;
+const COL_PANEL_B = "#2080ff";
+const COL_PANEL_D = "rgba(88,166,255,0.3)";
+
+/** Convert a parts map into a human-readable label, e.g. "Type 7744 · Bin 2" */
+export function formatGroupLabel(parts: Record<string, string>): string {
+  const entries = Object.entries(parts);
+  if (entries.length === 0) return "";
+  return entries
+    .map(([dim, val]) => {
+      switch (dim) {
+        case "bin":           return `Bin ${val}`;
+        case "probeCardType": return `Type ${val}`;
+        case "slot":          return `Slot ${val}`;
+        case "lot":
+        case "lotId":         return `LOT ${val}`;
+        case "passId":
+        case "pass":          return `Pass ${val}`;
+        case "testerId":      return `Tester ${val}`;
+        case "meslot":        return `MES ${val}`;
+        default:              return val;
+      }
+    })
+    .join(" · ");
+}
 
 export function DrillDownPanel({
   title,
@@ -32,10 +62,15 @@ export function DrillDownPanel({
   subDimOptions,
   onSubDimChange,
   onClose,
+  onBarClick,
+  selectedKey,
 }: Props) {
-  const sorted = [...groups].sort((a, b) => a.count - b.count).slice(-25);
-  const labels = sorted.map((g) => g.key);
-  const values = sorted.map((g) => g.count);
+  const sorted = [...groups].sort((a, b) => a.count - b.count).slice(-10);
+
+  const labels = sorted.map((g) => {
+    const formatted = formatGroupLabel(g.parts);
+    return formatted || g.key;
+  });
 
   const option: EChartsOption = {
     ...baseChartOption(),
@@ -52,11 +87,18 @@ export function DrillDownPanel({
     series: [
       {
         type: "bar",
-        data: values,
-        itemStyle: {
-          color: chartAccent,
-          borderRadius: [0, 4, 4, 0],
-        },
+        data: sorted.map((g) => ({
+          value: g.count,
+          itemStyle: {
+            color:
+              g.key === selectedKey
+                ? COL_PANEL_B
+                : selectedKey != null
+                ? COL_PANEL_D
+                : COL_PANEL,
+            borderRadius: [0, 4, 4, 0],
+          },
+        })),
         label: {
           show: true,
           position: "right",
@@ -137,7 +179,15 @@ export function DrillDownPanel({
         </div>
       )}
       {!loading && groups.length > 0 && (
-        <DarkChart option={option} height={Math.max(160, sorted.length * 22 + 60)} />
+        <DarkChart
+          option={option}
+          height={Math.max(160, sorted.length * 22 + 60)}
+          onEvents={
+            onBarClick
+              ? { click: (p: unknown) => onBarClick((p as { name: string }).name) }
+              : undefined
+          }
+        />
       )}
     </div>
   );

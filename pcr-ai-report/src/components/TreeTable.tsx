@@ -27,7 +27,7 @@ function NodeRow({
   totalHeader?: string;
   renderExtra?: (node: TreeNode, depth: number) => React.ReactNode;
 }) {
-  const [expanded, setExpanded] = useState(depth < 1);
+  const [expanded, setExpanded] = useState(false);
   const hasChildren = node.children.length > 0;
   const color = depthColor(depth);
 

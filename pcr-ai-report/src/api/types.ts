@@ -148,6 +148,8 @@ export type InfcontrolLayerBinV3Row = {
   TESTERID?: string;
   TSTYPE?: string;
   CARDID?: string;
+  /** CARDID 首个 `-` 前段，由 API enrichInfcontrolLayerBinV3ListRow 注入 */
+  PROBECARDTYPE?: string | null;
   PIBID?: string;
   PROBE?: string;
   GROSSDIE?: number;
@@ -174,6 +176,8 @@ export type YieldMonitorV3Row = {
   TRIGGER_LABEL?: string;
   TIME_STAMP?: string;
   PROBECARD?: string;
+  /** PROBECARD 首个 `-` 前段，由 API enrichYieldMonitorTriggerV3ListRow 注入 */
+  PROBECARDTYPE?: string | null;
   dutNumber?: number | null;
 };
 

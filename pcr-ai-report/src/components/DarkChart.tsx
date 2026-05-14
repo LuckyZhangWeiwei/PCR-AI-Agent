@@ -5,9 +5,10 @@ type Props = {
   option: EChartsOption;
   height?: number | string;
   className?: string;
+  onEvents?: Record<string, (params: unknown) => void>;
 };
 
-export function DarkChart({ option, height = 360, className }: Props) {
+export function DarkChart({ option, height = 360, className, onEvents }: Props) {
   return (
     <ReactECharts
       className={className}
@@ -16,6 +17,7 @@ export function DarkChart({ option, height = 360, className }: Props) {
       opts={{ renderer: "canvas" }}
       notMerge
       lazyUpdate
+      onEvents={onEvents}
     />
   );
 }
