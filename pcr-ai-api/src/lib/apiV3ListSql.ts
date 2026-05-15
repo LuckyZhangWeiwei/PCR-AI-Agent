@@ -3,109 +3,132 @@ import { INFCONTROL_LAYER_BIN_V2_MAX_TOP } from "./infcontrolLayerBinV2Filters.j
 /** v3 列表 `limit` 上限（与 v2 列表一致） */
 export const API_V3_LIST_LIMIT_MAX = INFCONTROL_LAYER_BIN_V2_MAX_TOP;
 
-const BIN1_THROUGH_255 = Array.from(
-  { length: 255 },
-  (_, i) => `    t2.BIN${i + 1}`
-).join(",\n");
+/** 列表投影列（与历史 **`t1`/`t2`** 别名对外键名一致）。 */
+function infcontrolLayerBinsV3SelectList(tInf: string, tLb: string): string {
+  const bins = Array.from(
+    { length: 255 },
+    (_, i) => `    ${tLb}.BIN${i + 1}`
+  ).join(",\n");
+  return `
+    ${tInf}.DEVICE,
+    ${tInf}.LOT,
+    ${tInf}.SLOT,
+    ${tInf}.MESLOT,
+    ${tLb}.TESTERID,
+    ${tLb}.TSTYPE,
+    ${tLb}.CARDID,
+    ${tLb}.PIBID,
+    ${tLb}.PROBE,
+    ${tLb}.GROSSDIE,
+    ${tLb}.PASSID,
+    ${tLb}.PASSNUM,
+    ${tLb}.TESTSTART,
+    ${tLb}.TESTEND,
+    ${tLb}.LAYERNAME,
+    ${tLb}.PASSRESUME,
+    ${tLb}.PASSTYPE,
+    ${tLb}.PASSBIN,
+${bins},
+    ${tLb}.PASSRESULT`.trim();
+}
+
+const ORDER_BY_LAYER_BINS_V3_INNER =
+  "ORDER BY t2.TESTEND DESC NULLS LAST, t1.SLOT, t2.PASSID, t2.PASSNUM";
+
+const ORDER_BY_LAYER_BINS_V3_OUTER =
+  "ORDER BY lb.TESTEND DESC NULLS LAST, ic.SLOT, lb.PASSID, lb.PASSNUM";
 
 /**
  * INFCONTROL ⋈ INFLAYERBINLIST（`PASSTYPE = 'TEST'`），列集与业务约定一致；
  * 可选 **`whereAndSql`**：`AND` 连接的额外条件（不含 `WHERE`）；`FETCH FIRST :lim ROWS ONLY`。
+ *
+ * 内层 **`FETCH FIRST`** 仅选 **`INFLAYERBINLIST`** 的 **`ROWID`**（窄排序/管道），再 **`JOIN`** 回 **`lb`/`ic`**
+ * 拉 **BIN1…BIN255**，通常比单段宽选列排序更易让优化器做 **Top-N**。
  */
 export function buildInfcontrolLayerBinsV3Sql(whereAndSql: string): string {
   const extra = whereAndSql.trim();
   const whereBlock = extra
     ? `WHERE t2.PASSTYPE = 'TEST' AND ${extra}`
     : `WHERE t2.PASSTYPE = 'TEST'`;
+  const selectList = infcontrolLayerBinsV3SelectList("ic", "lb");
   return `
 SELECT
-    t1.DEVICE,
-    t1.LOT,
-    t1.SLOT,
-    t1.MESLOT,
-    t2.TESTERID,
-    t2.TSTYPE,
-    t2.CARDID,
-    t2.PIBID,
-    t2.PROBE,
-    t2.GROSSDIE,
-    t2.PASSID,
-    t2.PASSNUM,
-    t2.TESTSTART,
-    t2.TESTEND,
-    t2.LAYERNAME,
-    t2.PASSRESUME,
-    t2.PASSTYPE,
-    t2.PASSBIN,
-${BIN1_THROUGH_255},
-    t2.PASSRESULT
-FROM INFCONTROL t1
-INNER JOIN INFLAYERBINLIST t2
-    ON t1.KEYNUMBER = t2.KEYNUMBER
+${selectList}
+FROM (
+    SELECT t2.ROWID AS lb_rid
+    FROM INFCONTROL t1
+    INNER JOIN INFLAYERBINLIST t2 ON t1.KEYNUMBER = t2.KEYNUMBER
 ${whereBlock}
-ORDER BY t2.TESTEND DESC NULLS LAST, t1.SLOT, t2.PASSID, t2.PASSNUM
-FETCH FIRST :lim ROWS ONLY
+    ${ORDER_BY_LAYER_BINS_V3_INNER}
+    FETCH FIRST :lim ROWS ONLY
+) topn
+INNER JOIN INFLAYERBINLIST lb ON lb.ROWID = topn.lb_rid
+INNER JOIN INFCONTROL ic ON ic.KEYNUMBER = lb.KEYNUMBER
+${ORDER_BY_LAYER_BINS_V3_OUTER}
 `.trim();
 }
 
-/** 与 **`buildInfcontrolLayerBinsV3Sql`** 相同 **WHERE** 与 **ORDER BY**，**无** **`FETCH FIRST`**（供 v4 全量匹配行 / 内存聚合）。 */
+/**
+ * 与 **`buildInfcontrolLayerBinsV3Sql`** 相同 **WHERE** 与 **ORDER BY**，**无** **`FETCH FIRST`**
+ *（**`/api/v4/…/aggregate`** Oracle 全量匹配行、Node 聚合）。**ROWID** 两段式与列表一致，避免对宽选列整集排序。
+ */
 export function buildInfcontrolLayerBinsV3SqlFullMatching(whereAndSql: string): string {
   const extra = whereAndSql.trim();
   const whereBlock = extra
     ? `WHERE t2.PASSTYPE = 'TEST' AND ${extra}`
     : `WHERE t2.PASSTYPE = 'TEST'`;
+  const selectList = infcontrolLayerBinsV3SelectList("ic", "lb");
   return `
 SELECT
-    t1.DEVICE,
-    t1.LOT,
-    t1.SLOT,
-    t1.MESLOT,
-    t2.TESTERID,
-    t2.TSTYPE,
-    t2.CARDID,
-    t2.PIBID,
-    t2.PROBE,
-    t2.GROSSDIE,
-    t2.PASSID,
-    t2.PASSNUM,
-    t2.TESTSTART,
-    t2.TESTEND,
-    t2.LAYERNAME,
-    t2.PASSRESUME,
-    t2.PASSTYPE,
-    t2.PASSBIN,
-${BIN1_THROUGH_255},
-    t2.PASSRESULT
-FROM INFCONTROL t1
-INNER JOIN INFLAYERBINLIST t2
-    ON t1.KEYNUMBER = t2.KEYNUMBER
+${selectList}
+FROM (
+    SELECT t2.ROWID AS lb_rid
+    FROM INFCONTROL t1
+    INNER JOIN INFLAYERBINLIST t2 ON t1.KEYNUMBER = t2.KEYNUMBER
 ${whereBlock}
-ORDER BY t2.TESTEND DESC NULLS LAST, t1.SLOT, t2.PASSID, t2.PASSNUM
+    ${ORDER_BY_LAYER_BINS_V3_INNER}
+) topn
+INNER JOIN INFLAYERBINLIST lb ON lb.ROWID = topn.lb_rid
+INNER JOIN INFCONTROL ic ON ic.KEYNUMBER = lb.KEYNUMBER
+${ORDER_BY_LAYER_BINS_V3_OUTER}
 `.trim();
 }
 
 /**
  * probeweb：`YMWEB_YIELDMONITORTRIGGER` 全列；**`whereClause`** 由 **`parseYieldMonitorTriggerV3Query`** 生成（**恒含** **`TYPE = delta_diff`**），为 **`WHERE …`** 或空串；
- * `ORDER BY` + `FETCH FIRST :lim ROWS ONLY`。
+ * `ORDER BY` + `FETCH FIRST :lim ROWS ONLY`。内层 **`ROWID` + Top-N**，再 **`JOIN`** 回表取全列（与 v4 列表同源优化）。
  */
 export function buildYieldMonitorTriggersV3Sql(whereClause: string): string {
   const wc = whereClause.trim();
   const mid = wc ? `${wc}\n` : "";
   return `
-SELECT *
-FROM YMWEB_YIELDMONITORTRIGGER t
+SELECT t.*
+FROM (
+    SELECT t.ROWID AS rid
+    FROM YMWEB_YIELDMONITORTRIGGER t
 ${mid}ORDER BY t.TIME_STAMP DESC NULLS LAST
-FETCH FIRST :lim ROWS ONLY
+    FETCH FIRST :lim ROWS ONLY
+) topn
+INNER JOIN YMWEB_YIELDMONITORTRIGGER t ON t.ROWID = topn.rid
+ORDER BY t.TIME_STAMP DESC NULLS LAST
 `.trim();
 }
 
-/** 与 **`buildYieldMonitorTriggersV3Sql`** 相同 **WHERE** 与 **ORDER BY**，**无** **`FETCH FIRST`**（供 v4 全量匹配行 / 内存聚合）。 */
+/**
+ * 与 **`buildYieldMonitorTriggersV3Sql`** 相同 **WHERE** 与 **ORDER BY**，**无** **`FETCH FIRST`**
+ *（**`/api/v4/…/aggregate`** Oracle 全量行）。**ROWID** 两段式与列表相同。
+ */
 export function buildYieldMonitorTriggersV3SqlFullMatching(whereClause: string): string {
   const wc = whereClause.trim();
   const mid = wc ? `${wc}\n` : "";
   return `
-SELECT *
-FROM YMWEB_YIELDMONITORTRIGGER t
+SELECT t.*
+FROM (
+    SELECT t.ROWID AS rid
+    FROM YMWEB_YIELDMONITORTRIGGER t
 ${mid}ORDER BY t.TIME_STAMP DESC NULLS LAST
+) topn
+INNER JOIN YMWEB_YIELDMONITORTRIGGER t ON t.ROWID = topn.rid
+ORDER BY t.TIME_STAMP DESC NULLS LAST
 `.trim();
 }
