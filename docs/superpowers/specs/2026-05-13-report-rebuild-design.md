@@ -12,7 +12,7 @@
 |---|--------|------|------|
 | 1 | API 目录 | `OverviewReport` | 不变 |
 | 2 | ⚡ yield monitor | `YieldMonitorReport` | **重建** |
-| 3 | 🔬 JB START | `InfcontrolReport` | **重建** |
+| 3 | 🔬 JB STAR | `InfcontrolReport` | **重建** |
 | 4 | 🤖 AI 助手 | `AiAgentReport` | **新增（占位）** |
 | 5 | 表浏览 | `TableRowsReport` | 不变 |
 
@@ -104,7 +104,7 @@ API 调用模式：
 
 ---
 
-## 5. 🔬 JB START tab（重建）
+## 5. 🔬 JB STAR tab（重建）
 
 ### 5.1 筛选区
 

@@ -61,7 +61,7 @@ The default API base is `http://10.192.130.89:30008` (set in `.env.development` 
 - **`oracle.ts`** — two named pools: default (`withConnection`) for the main Oracle schema and `probeweb` (`withProbeWebConnection`) for yield-monitor routes. **Driver:** `oracledb@5.5.0` pinned for compatibility with older Oracle 11g clients on hosts that cannot upgrade Instant Client (see `pcr-ai-api/CLAUDE.md` §8 before bumping to v6).
 - **`lib/`** — domain logic grouped by feature:
   - `yieldMonitorTrigger*` — v1/v3 list, v3 aggregate, Dummy, SQL, filter parsing, DUT label extraction.
-  - `infcontrolLayerBin*` — same structure for JB START / layer-bins domain.
+  - `infcontrolLayerBin*` — same structure for JB STAR / layer-bins domain.
   - `apiV3ListSql.ts` — shared SQL template builder used by the v3/v4 list endpoints.
   - `apiManifest.ts` + `rebaseApiManifest.ts` — static manifest descriptor and path rewriting.
   - `listDummyRuntime.ts` — forces Oracle (disables Dummy) when running from `dist/` or `NODE_ENV=production`.

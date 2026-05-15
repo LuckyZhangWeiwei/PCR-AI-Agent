@@ -30,7 +30,18 @@
       "PowerShell(fnm list 2>$null)",
       "PowerShell(& \"C:\\\\Program Files\\\\nodejs\\\\node.exe\" --version)",
       "PowerShell($env:PATH = \"C:\\\\Program Files\\\\nodejs;\" + $env:PATH; Set-Location \"d:\\\\AI\\\\PCR-AI-Agent\\\\pcr-ai-report\"; node --version)",
-      "PowerShell($env:PATH = \"C:\\\\Program Files\\\\nodejs;\" + $env:PATH; Set-Location \"d:\\\\AI\\\\PCR-AI-Agent\\\\pcr-ai-report\"; npm run lint 2>&1)"
+      "PowerShell($env:PATH = \"C:\\\\Program Files\\\\nodejs;\" + $env:PATH; Set-Location \"d:\\\\AI\\\\PCR-AI-Agent\\\\pcr-ai-report\"; npm run lint 2>&1)",
+      "PowerShell(node --version; \\(Get-Command node\\).Source)",
+      "PowerShell(fnm list 2>&1; nvm list 2>&1; Get-ChildItem \"C:\\\\Program Files\\\\nodejs\\\\\" -ErrorAction SilentlyContinue | Select-Object Name; Get-ChildItem \"$env:APPDATA\\\\nvm\\\\\" -ErrorAction SilentlyContinue | Select-Object Name)",
+      "PowerShell(Get-Command node -ErrorAction SilentlyContinue)",
+      "PowerShell(& \"C:\\\\Users\\\\zhang\\\\AppData\\\\Roaming\\\\npm\\\\node_modules\\\\node\\\\bin\\\\node.exe\" --version)",
+      "PowerShell(npm install -g node@22 2>&1)",
+      "PowerShell(Stop-Process -Id 7924, 26664 -Force -ErrorAction SilentlyContinue)",
+      "Bash(git push *)",
+      "Bash(cd /d/AI/PCR-AI-Agent/pcr-ai-report && cat package.json | grep dnd-kit)",
+      "Read(//d/d/AI/PCR-AI-Agent/pcr-ai-report/**)",
+      "Skill(commit-with-docs)",
+      "Skill(commit-with-docs:*)"
     ]
   }
 }

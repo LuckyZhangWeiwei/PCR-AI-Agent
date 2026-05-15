@@ -23,7 +23,7 @@
 | Create | `pcr-ai-report/src/reports/AiAgentReport.tsx` | AI chat placeholder |
 | Modify | `pcr-ai-report/src/App.tsx` | Add AI tab (5th tab) |
 | Rebuild | `pcr-ai-report/src/reports/YieldMonitorReport.tsx` | Yield monitor: compound filters, KPIs, charts, tree, table |
-| Rebuild | `pcr-ai-report/src/reports/InfcontrolReport.tsx` | JB START: compound filters, KPIs, charts, tree, table |
+| Rebuild | `pcr-ai-report/src/reports/InfcontrolReport.tsx` | JB STAR: compound filters, KPIs, charts, tree, table |
 
 ---
 
@@ -308,7 +308,7 @@ export type InfcontrolBinCell = {
   isGoodBin: boolean;
 };
 
-/** Typed v3 list row for JB START (infcontrol-layer-bins/v3) */
+/** Typed v3 list row for JB STAR (infcontrol-layer-bins/v3) */
 export type InfcontrolLayerBinV3Row = {
   KEYNUMBER?: number;
   DEVICE?: string;
@@ -868,7 +868,7 @@ export function AiAgentReport(_props: Props) {
           <h2>🤖 AI 助手</h2>
           <p className="report-desc">
             下一阶段接入 Node.js Agent + 硅基流动 Function Call，通过自然语言查询
-            yield monitor 和 JB START 数据。
+            yield monitor 和 JB STAR 数据。
           </p>
         </div>
       </div>
@@ -962,7 +962,7 @@ type Tab = "overview" | "yield" | "infcontrol" | "ai" | "table";
 import { AiAgentReport } from "./reports/AiAgentReport";
 ```
 
-**3. Add tab button** between JB START and 表浏览 (after the infcontrol button):
+**3. Add tab button** between JB STAR and 表浏览 (after the infcontrol button):
 ```tsx
 <button
   type="button"
@@ -986,7 +986,7 @@ import { AiAgentReport } from "./reports/AiAgentReport";
 cd pcr-ai-report && npm run dev
 ```
 
-Open browser, confirm 5 tabs: API 目录 | yield monitor | JB START | 🤖 AI 助手 | 表浏览. Click AI 助手 tab and confirm placeholder layout renders.
+Open browser, confirm 5 tabs: API 目录 | yield monitor | JB STAR | 🤖 AI 助手 | 表浏览. Click AI 助手 tab and confirm placeholder layout renders.
 
 - [ ] **Step 5.4: Commit**
 
@@ -2077,7 +2077,7 @@ export function InfcontrolReport({ apiBase }: Props) {
       {/* ── Header ── */}
       <div className="report-panel-header">
         <div>
-          <h2>🔬 JB START</h2>
+          <h2>🔬 JB STAR</h2>
           <p className="report-desc">
             层控 BIN 数据（PASSTYPE = TEST）。复合筛选，一键触发：明细 + BIN 排名 +
             探针卡对比 + Slot 趋势。Yield% 由前端从 bins[].isGoodBin + GROSSDIE 计算。
@@ -2345,13 +2345,13 @@ Expected: no errors. If `InfcontrolLayerBinV3Row` has a type mismatch with `list
 ```
 This is already done in the code above.
 
-- [ ] **Step 7.3: Run dev server and test JB START tab**
+- [ ] **Step 7.3: Run dev server and test JB STAR tab**
 
 ```bash
 cd pcr-ai-report && npm run dev
 ```
 
-Open JB START tab. Test:
+Open JB STAR tab. Test:
 1. Fill Device + testEnd time range → click 查询
 2. Verify 4 KPI cards: Wafer 数 / Yield% (colored) / 最差探针卡 / Top Bin
 3. LOT Yield% bar chart: green/yellow/red coloring
@@ -2408,7 +2408,7 @@ Expected: successful build with no errors. Warnings about bundle size are accept
 Start dev server `npm run dev`. For each tab:
 - **API 目录**: manifest loads
 - **yield monitor**: query returns KPIs, charts, tree table, detail table; drill-down works on ProbeCard/LOT charts
-- **JB START**: query returns KPIs incl. Yield%, LOT bar, BIN/Card/Slot charts, drill-down works, tree table, detail table
+- **JB STAR**: query returns KPIs incl. Yield%, LOT bar, BIN/Card/Slot charts, drill-down works, tree table, detail table
 - **AI 助手**: placeholder panels render, no errors in console
 - **表浏览**: existing functionality still works
 
@@ -2416,7 +2416,7 @@ Start dev server `npm run dev`. For each tab:
 
 ```bash
 git add -A
-git commit -m "feat: complete report rebuild — yield monitor, JB START, AI placeholder, shared components"
+git commit -m "feat: complete report rebuild — yield monitor, JB STAR, AI placeholder, shared components"
 ```
 
 ---
@@ -2436,16 +2436,16 @@ git commit -m "feat: complete report rebuild — yield monitor, JB START, AI pla
 - [x] DUT# distribution (yield monitor) — `tallyDutNumbers` from list rows
 - [x] LOT ranking + drill-down — `aggLot` + `DrillDownPanel`
 - [x] Free-dimension aggregate with dim switcher — both reports
-- [x] LOT Yield% bar with color coding — `lotYields()` in JB START
+- [x] LOT Yield% bar with color coding — `lotYields()` in JB STAR
 - [x] BIN full ranking + drill-down — `aggBin`
-- [x] ProbeCard bad die comparison + drill-down — `aggCard` in JB START
+- [x] ProbeCard bad die comparison + drill-down — `aggCard` in JB STAR
 - [x] Slot trend chart — `aggSlot` with `groupBy=slot,bin`
 - [x] Yield% client-side computation — `computeYieldPct()` in `yieldCalc.ts`
 - [x] DEVICE → LOT → Card → Bin tree hierarchy — `buildTree()` with 4 dims
 - [x] Tree table with expand/collapse — `TreeTable` component
 - [x] Yield% in tree table for device/lot levels — `renderExtra` prop
 - [x] Detail table with dutNumber (yield monitor) — `detailRows`
-- [x] Detail table with Yield% column (JB START) — computed per row
+- [x] Detail table with Yield% column (JB STAR) — computed per row
 - [x] `dimensions=` param for yield monitor aggregate — confirmed in Task 6
 - [x] `groupBy=` param for infcontrol aggregate — confirmed in Task 7
 - [x] `lotId` dimension name for yield monitor — confirmed vs `lot` for infcontrol
