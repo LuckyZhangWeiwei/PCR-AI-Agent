@@ -56,9 +56,9 @@ export function AiAgentReport({ apiBase }: Props) {
             base URL（经规范化后如下），再拼接{" "}
             <code>{API_PREFIX}/siliconflow/chat</code>（查询参数{" "}
             <code>message</code>
-            ）；由服务端携带硅基流动密钥转发。请先在 <strong>pcr-ai-api</strong>{" "}
-            的 <code>.env</code> 中配置 <code>SILICONFLOW_API_KEY</code> 并重启
-            API。
+            ）；由服务端携带硅基流动密钥转发（密钥硬编码在{" "}
+            <strong>pcr-ai-api</strong> 的 <code>siliconflowChat.ts</code>
+            ，部署后需 <code>npm run build</code> 并重启 API）。
           </p>
           <p className="muted small ai-agent-base-line">
             本页请求路径（不含 <code>message</code> 查询串）：{" "}

@@ -201,9 +201,9 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 ### 12.1 硅基流动代理
 
 - **路由**：**`GET /api/v1|/api/v3|/api/v4/siliconflow/chat?message=…`**（UTF-8 查询参数）；出站 **`POST`** 由 **`src/lib/siliconflowChat.ts`** 发往 **`SILICONFLOW_API_BASE`**（默认 **`https://api.siliconflow.cn/v1`**）。
-- **密钥**：**`SILICONFLOW_API_KEY`** 见 **`.env`**；生产应仅通过 env 配置，勿提交密钥。
-- **TLS**：见 **`SILICONFLOW_TLS_INSECURE`**、**`SILICONFLOW_TLS_STRICT`**、**`NODE_EXTRA_CA_CERTS`**（**`.env.example`**）。**不引入 npm 包 `undici`**：严格校验用 Node 内置 **`fetch`**；跳过证书链用 **`node:https`** + **`rejectUnauthorized: false`**（仅硅基流动出站）。
-- **进程依赖**：**`package.json` 已不再依赖 `undici`**。发布时在 **`pcr-ai-api`** 目录执行 **`npm ci`**（或 **`npm install`**）再 **`npm run build`**，勿只复制 **`dist/`** 而无完整 **`node_modules`**。
+- **密钥**：常量 **`SILICONFLOW_API_KEY`** 写在 **`src/lib/siliconflowChat.ts`**（源码硬编码，无需 `.env` / PM2 配置密钥即可用 AI 路由）。轮换密钥时改该常量并 **`npm run build`**。
+- **TLS**：见 **`SILICONFLOW_TLS_INSECURE`**、**`SILICONFLOW_TLS_STRICT`**、**`NODE_EXTRA_CA_CERTS`**（**`.env.example`**）。**禁止 npm 包 `undici`**（见 **`.cursor/rules/no-undici.mdc`**）：严格校验用 Node 内置 **`fetch`**；跳过证书链用 **`node:https`** + **`rejectUnauthorized: false`**（仅硅基流动出站）。
+- **构建守卫**：**`npm run build`** = **`tsc`** + **`scripts/verify-dist-no-undici.mjs`**（`dist/lib/siliconflowChat.js` 不得 `import 'undici'`）。发布时在 **`pcr-ai-api`** 目录 **`npm ci`** 再 **`npm run build`**，勿只复制旧 **`dist/`**。
 - **Node 版本**：声明 **`>=18.12.1`**；**全局 `fetch` / `AbortSignal.timeout`** 依赖 Node 18。生产例：**v18.12.1** 可用。
 - **PM2**：**`ecosystem.config.cjs`** 将 **`SILICONFLOW_*`**、**`NODE_EXTRA_CA_CERTS`** 及 Oracle 相关键透传，见文件内列表。
 

@@ -4,19 +4,20 @@ import { URL } from "node:url";
 const DEFAULT_BASE = "https://api.siliconflow.cn/v1";
 const DEFAULT_MODEL = "Pro/MiniMaxAI/MiniMax-M2.5";
 
+const SILICONFLOW_API_KEY =
+  "sk-omidncsxeyqgdqlexvpksyptpsguggdxlfmiukohejekmxte";
+
 export type SiliconflowConfig = {
   apiKey: string;
   model: string;
   baseUrl: string;
 };
 
-export function getSiliconflowConfig(): SiliconflowConfig | null {
-  const apiKey = process.env.SILICONFLOW_API_KEY?.trim();
-  if (!apiKey) return null;
+export function getSiliconflowConfig(): SiliconflowConfig {
   const model = process.env.SILICONFLOW_MODEL?.trim() || DEFAULT_MODEL;
   const rawBase = process.env.SILICONFLOW_API_BASE?.trim() || DEFAULT_BASE;
   const baseUrl = rawBase.replace(/\/+$/, "");
-  return { apiKey, model, baseUrl };
+  return { apiKey: SILICONFLOW_API_KEY, model, baseUrl };
 }
 
 export type SiliconflowChatOk = {

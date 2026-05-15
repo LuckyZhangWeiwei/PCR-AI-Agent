@@ -1,0 +1,20 @@
+---
+description: Never add npm package undici to pcr-ai-api (SiliconFlow uses Node builtins only).
+alwaysApply: true
+---
+
+# 禁止引入 `undici`（pcr-ai-api）
+
+**不要**在 `pcr-ai-api` 中：
+
+- 把 `undici` 加入 `package.json` 依赖或 devDependencies
+- 在源码里 `import 'undici'` / `import from 'undici'` / `require('undici')`
+
+硅基流动出站（`src/lib/siliconflowChat.ts`）只允许：
+
+- **严格 TLS**：Node 内置全局 **`fetch`**
+- **跳过证书校验**：**`node:https`** + `rejectUnauthorized: false`
+
+`npm run build` 会运行 `scripts/verify-dist-no-undici.mjs`；若 `dist/lib/siliconflowChat.js` 仍引用 `undici`，构建必须失败。
+
+线上若报 `Cannot find package 'undici'`，说明 **`dist/` 是旧构建**，在 API 目录执行 `npm ci && npm run build && pm2 reload`，勿通过重新安装 `undici` 解决。

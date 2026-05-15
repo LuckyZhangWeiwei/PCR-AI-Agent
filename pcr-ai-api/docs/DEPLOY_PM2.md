@@ -103,6 +103,32 @@ pm2 startup
 - **`GET /api/v1/manifest`**：**全量**端点目录，**`catalogScope`** 为 **`full`**。
 - 若 **`/api/v3/.../aggregate`** 返回 **404**，多为线上仍是**旧 `dist`**（未含当前路由）。在本机 **`npm run build`** 后 **`pm2 reload`**，并对照 **`GET …/api/v3/manifest`** 是否已列出该 **`path`**。
 
+### 5.2 硅基流动：`Cannot find package 'undici'`
+
+当前源码 **`src/lib/siliconflowChat.ts`** **不**依赖 npm 包 **`undici`**（严格 TLS 用 Node **`fetch`**，宽松 TLS 用 **`node:https`**）。若启动报错 **`imported from …/dist/lib/siliconflowChat.js`**，说明线上 **`dist/` 是旧构建**（仍 `import 'undici'`），而 **`package.json` 已无该依赖**。
+
+在 **`pcr-ai-api`** 目录执行完整发布（勿只复制部分 `dist` 文件）：
+
+```bash
+cd /path/to/pcr-ai-api
+git pull
+npm ci
+npm run build
+pm2 reload ecosystem.config.cjs
+```
+
+`npm run build` 会在编译后运行 **`scripts/verify-dist-no-undici.mjs`**，若 `dist` 仍引用 `undici` 会直接失败。可用下面命令自检：
+
+```bash
+grep -E "from ['\"]undici['\"]" dist/lib/siliconflowChat.js && echo BAD || echo OK
+```
+
+**禁止**在 `package.json` 中重新加入 **`undici`** 依赖；出站实现仅允许 Node 内置 **`fetch`** / **`https`**（见 **`.cursor/rules/no-undici.mdc`**）。
+
+### 5.3 硅基流动 API Key
+
+密钥写在 **`src/lib/siliconflowChat.ts`** 的 **`SILICONFLOW_API_KEY`** 常量中，编译进 **`dist/`** 即可；**不必**在服务器 `.env` 或 PM2 里配置 **`SILICONFLOW_API_KEY`**。模型与 base URL 仍可通过 **`SILICONFLOW_MODEL`** / **`SILICONFLOW_API_BASE`** 覆盖（可选）。
+
 - **生产不要用 `npm install` 代替 `npm ci`**：除非你有意放宽锁文件；CI/正式环境通常用 `npm ci` 保证与 `package-lock.json` 一致。
 - **`NODE_ENV`**：由 `ecosystem.config.cjs` 设为 `production`；不要用测试用的 dummy 开关冒充正式数据（见 `.env.example` 中 `YIELD_MONITOR_TRIGGERS_DUMMY` / `INFCONTROL_LAYER_BINS_DUMMY`）。
 - **监听端口**：由环境变量 `PORT` 控制；防火墙 / 反向代理需与之一致。

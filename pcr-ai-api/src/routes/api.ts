@@ -129,7 +129,7 @@ apiRouter.get("/manifest", (req, res) => {
   res.json(buildManifestResponseJson(req.baseUrl || "/api/v1"));
 });
 
-/** 硅基流动 OpenAI 兼容 Chat Completions：仅查询参数 `message`（UTF-8）；密钥见 `SILICONFLOW_API_KEY`。 */
+/** 硅基流动 OpenAI 兼容 Chat Completions：仅查询参数 `message`（UTF-8）；密钥见 `siliconflowChat.ts`。 */
 apiRouter.get("/siliconflow/chat", async (req, res) => {
   const raw = req.query.message;
   const message =
@@ -157,15 +157,6 @@ apiRouter.get("/siliconflow/chat", async (req, res) => {
   }
 
   const cfg = getSiliconflowConfig();
-  if (!cfg) {
-    return sendAgentError(
-      res,
-      503,
-      "NOT_CONFIGURED",
-      "SiliconFlow is not configured",
-      "Set SILICONFLOW_API_KEY in pcr-ai-api/.env on the API host and restart. With PM2, ensure SILICONFLOW_* is forwarded (see ecosystem.config.cjs)."
-    );
-  }
 
   try {
     const out = await callSiliconflowChat(cfg, message);

@@ -24,7 +24,7 @@ This is a two-package monorepo (no shared workspace tooling — each package has
 cd pcr-ai-api
 npm ci                  # install deps
 npm run dev             # tsx watch (hot-reload)
-npm run build           # tsc → dist/
+npm run build           # tsc → dist/ + verify-dist-no-undici (no npm undici in SiliconFlow)
 npm start               # node dist/server.js (production)
 npm run typecheck       # tsc --noEmit
 npm test                # run test/rest-api-v3-dummy.test.ts
