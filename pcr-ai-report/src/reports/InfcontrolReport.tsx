@@ -99,6 +99,16 @@ function buildListParams(
   };
 }
 
+/** infcontrol v3 aggregate 要求 groupBy 恰含一个 `bin`（见 API manifest） */
+function jbAggregateGroupBy(...dims: string[]): string {
+  const out: string[] = [];
+  for (const d of dims) {
+    if (!out.includes(d)) out.push(d);
+  }
+  if (!out.includes("bin")) out.push("bin");
+  return out.join(",");
+}
+
 const HIDE_CHIPS = new Set(["testEndFrom", "testEndTo"]);
 function activeChips(
   f: FormState,
@@ -320,7 +330,9 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         error: null,
       });
       try {
-        const gby = subDim.includes("bin") ? subDim : `${subDim},bin`;
+        const gby = jbAggregateGroupBy(
+          ...subDim.split(",").map((s) => s.trim()).filter(Boolean),
+        );
         const params = {
           ...buildCoreParams(currentForm),
           [parentDimKey]: parentDimVal,
@@ -379,7 +391,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
   const fetchFreeAgg = useCallback(
     async (dim: string, currentForm: FormState) => {
       try {
-        const gby = dim === "bin" ? "bin" : `${dim},bin`;
+        const gby = jbAggregateGroupBy(dim);
         const res = await apiGetJson<InfcontrolAggregateResponse>(
           apiBase,
           INFCONTROL_AGGREGATE_PATH,
@@ -434,19 +446,19 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
             apiGetJson<InfcontrolAggregateResponse>(
               apiBase,
               INFCONTROL_AGGREGATE_PATH,
-              { ...core, groupBy: "bin", groupTop: 30 },
+              { ...core, groupBy: jbAggregateGroupBy("bin"), groupTop: 30 },
             ),
           () =>
             apiGetJson<InfcontrolAggregateResponse>(
               apiBase,
               INFCONTROL_AGGREGATE_PATH,
-              { ...core, groupBy: "probeCardType,bin", groupTop: 25 },
+              { ...core, groupBy: jbAggregateGroupBy("probeCardType"), groupTop: 25 },
             ),
           () =>
             apiGetJson<InfcontrolAggregateResponse>(
               apiBase,
               INFCONTROL_AGGREGATE_PATH,
-              { ...core, groupBy: "slot,bin", groupTop: 50 },
+              { ...core, groupBy: jbAggregateGroupBy("slot"), groupTop: 50 },
             ),
           () =>
             apiGetJson<InfcontrolAggregateResponse>(
@@ -454,7 +466,12 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
               INFCONTROL_AGGREGATE_PATH,
               {
                 ...core,
-                groupBy: "device,lot,probeCardType,cardId",
+                groupBy: jbAggregateGroupBy(
+                  "device",
+                  "lot",
+                  "probeCardType",
+                  "cardId",
+                ),
                 groupTop: 100,
               },
             ),
@@ -473,13 +490,24 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     if (cardTypeRes.status === "fulfilled") setAggCardType(cardTypeRes.value);
     if (slotRes.status === "fulfilled") setAggSlot(slotRes.value);
     if (treeRes.status === "fulfilled") setAggTree(treeRes.value);
-    if (binRes.status === "rejected") {
+    const aggFail = (
+      label: string,
+      res: PromiseSettledResult<InfcontrolAggregateResponse>,
+    ) => {
+      if (res.status !== "rejected") return "";
       const detail =
-        binRes.reason instanceof Error
-          ? binRes.reason.message
-          : String(binRes.reason);
+        res.reason instanceof Error ? res.reason.message : String(res.reason);
+      return `${label}：${detail}`;
+    };
+    const aggErrors = [
+      aggFail("BIN 聚合", binRes),
+      aggFail("探针卡类型聚合", cardTypeRes),
+      aggFail("Slot 聚合", slotRes),
+      aggFail("树表聚合", treeRes),
+    ].filter(Boolean);
+    if (aggErrors.length > 0) {
       setErrorAgg(
-        `BIN 聚合请求失败，部分图表不可用（limit 仅限制明细；聚合统计全部匹配行。请收窄 testEnd 时间等筛选）：${detail}`,
+        `部分图表不可用（limit 仅限制明细；聚合统计全部匹配行。请收窄 testEnd 等筛选）：${aggErrors.join("；")}`,
       );
     }
 
@@ -1016,7 +1044,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
               <div style={{ fontSize: 11, color: "#6e7681", marginBottom: 8 }}>
                 点击 Slot 钻取
               </div>
-              {aggSlot && (
+              {aggSlot && (aggSlot.groups?.length ?? 0) > 0 ? (
                 <ReactECharts
                   option={slotOption}
                   style={{ height: 240, width: "100%" }}
@@ -1031,7 +1059,9 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                     },
                   }}
                 />
-              )}
+              ) : aggSlot ? (
+                <p className="muted small">当前筛选下无 Slot 聚合数据</p>
+              ) : null}
               {drill?.parentDimKey === "slot" && (
                 <DrillDownPanel
                   title={`Slot ${drill.parentDimVal} · 下钻：按 ${drill.subDim}`}
