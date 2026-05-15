@@ -194,6 +194,17 @@ export function parseYieldMonitorTriggerV3Query(
     strEqTrimCi("wafer", "t.WAFER", "v3_wafer");
     strEqTrimCi("probeCard", "t.PROBECARD", "v3_probecard");
 
+    // probeCardType is derived (prefix of PROBECARD before first '-'); filter as equality OR prefix match
+    const pctVal = firstString(firstQueryValue(q, "probeCardType"));
+    if (pctVal !== undefined && pctVal !== "") {
+      const t = pctVal.trim();
+      clauses.push(
+        `(UPPER(TRIM(t.PROBECARD)) = UPPER(:v3_pct) OR UPPER(TRIM(t.PROBECARD)) LIKE UPPER(:v3_pct) || '-%')`
+      );
+      (binds as Record<string, string | number | Date>).v3_pct = t;
+      applied.probeCardType = t;
+    }
+
     const passN = parseOptionalNumber(firstQueryValue(q, "pass"), "pass");
     if (passN !== undefined) {
       parseRequiredFiniteNumber(passN, "pass");

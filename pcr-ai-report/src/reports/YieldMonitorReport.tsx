@@ -52,6 +52,7 @@ type FormState = {
   lotId: string;
   wafer: string;
   hostname: string;
+  probeCardType: string;
   probeCard: string;
   pass: string;
   timestampFrom: string;
@@ -63,6 +64,7 @@ const initialForm: FormState = {
   lotId: "",
   wafer: "",
   hostname: "",
+  probeCardType: "",
   probeCard: "",
   pass: "",
   timestampFrom: "",
@@ -75,6 +77,7 @@ function buildCoreParams(f: FormState): Record<string, string | number | undefin
     lotId: f.lotId || undefined,
     wafer: f.wafer || undefined,
     hostname: f.hostname || undefined,
+    probeCardType: f.probeCardType || undefined,
     probeCard: f.probeCard || undefined,
     pass: f.pass ? Number(f.pass) : undefined,
     timeStampFrom: datetimeLocalToIso(f.timestampFrom),
@@ -145,9 +148,16 @@ const YIELD_KPI_BLOCK_ORDER = [
   "kpiSelPc",
 ] as const;
 
-const YIELD_CHART_BLOCK_ORDER = ["chPcType", "chDut", "chLot", "chFreeDim"] as const;
+const YIELD_CHART_BLOCK_ORDER = ["chDevice", "chPcType", "chDut", "chLot", "chFreeDim"] as const;
 
 // Sub-dimension options for drill-down panels
+const DRILL_FROM_DEVICE: { label: string; value: string }[] = [
+  { label: "LOT",    value: "lotId"   },
+  { label: "Pass",   value: "pass"    },
+  { label: "Wafer",  value: "wafer"   },
+  { label: "按日",   value: "timeDay" },
+];
+
 const DRILL_FROM_CARDTYPE: { label: string; value: string }[] = [
   { label: "ProbeCard", value: "probeCard" },
   { label: "按日", value: "timeDay" },
@@ -180,6 +190,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
   // probeCardType-level aggregate (chart); probeCard detail accessed via drill
   const [aggCardType, setAggCardType] = useState<YieldMonitorV3AggregateResponse | null>(null);
   const [aggLot, setAggLot] = useState<YieldMonitorV3AggregateResponse | null>(null);
+  const [aggDevice, setAggDevice] = useState<YieldMonitorV3AggregateResponse | null>(null);
   const [aggTree, setAggTree] = useState<YieldMonitorV3AggregateResponse | null>(null);
   const [aggFree, setAggFree] = useState<YieldMonitorV3AggregateResponse | null>(null);
   const [freeDim, setFreeDim] = useState("timeDay");
@@ -189,13 +200,14 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
   const [errorList, setErrorList] = useState<string | null>(null);
   const [errorAgg, setErrorAgg] = useState<string | null>(null);
 
-  const [drill, setDrill] = useState<DrillState | null>(null);
+  const [drills, setDrills] = useState<Record<string, DrillState>>({});
   const [showTree,   setShowTree]   = useState(false);
   const [showDetail, setShowDetail] = useState(false);
   // The probeCard the user selected by clicking a bar inside the drill panel
   const [selectedProbeCard, setSelectedProbeCard] = useState<string | null>(null);
   const [selectedCardTypeName, setSelectedCardTypeName] = useState<string | null>(null);
   const [selectedLotId,       setSelectedLotId]       = useState<string | null>(null);
+  const [selectedDevice,      setSelectedDevice]      = useState<string | null>(null);
   const [layoutEpoch, setLayoutEpoch] = useState(0);
 
   const resetReportLayout = useCallback(() => {
@@ -231,14 +243,10 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       subDim: string,
       currentForm: FormState
     ) => {
-      setDrill({
-        parentDimKey,
-        parentDimVal,
-        subDim,
-        groups: [],
-        loading: true,
-        error: null,
-      });
+      setDrills((prev) => ({
+        ...prev,
+        [parentDimKey]: { parentDimKey, parentDimVal, subDim, groups: [], loading: true, error: null },
+      }));
       try {
         // probeCardType is not a real DB column — the API ignores it as a filter.
         // Send probeCard prefix instead (no-op for other parentDimKeys).
@@ -269,21 +277,17 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
             return prefix === typeLower;
           });
         }
-        setDrill((d) =>
-          d && d.parentDimKey === parentDimKey && d.parentDimVal === parentDimVal
-            ? { ...d, groups, loading: false }
-            : d
-        );
+        setDrills((prev) => {
+          const d = prev[parentDimKey];
+          if (!d || d.parentDimVal !== parentDimVal) return prev;
+          return { ...prev, [parentDimKey]: { ...d, groups, loading: false } };
+        });
       } catch (e) {
-        setDrill((d) =>
-          d && d.parentDimKey === parentDimKey && d.parentDimVal === parentDimVal
-            ? {
-                ...d,
-                loading: false,
-                error: e instanceof Error ? e.message : String(e),
-              }
-            : d
-        );
+        setDrills((prev) => {
+          const d = prev[parentDimKey];
+          if (!d || d.parentDimVal !== parentDimVal) return prev;
+          return { ...prev, [parentDimKey]: { ...d, loading: false, error: e instanceof Error ? e.message : String(e) } };
+        });
       }
     },
     [apiBase]
@@ -310,10 +314,12 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     setLoadingAgg(true);
     setErrorList(null);
     setErrorAgg(null);
-    setDrill(null);
+    setDrills({});
     setSelectedProbeCard(null);
     setSelectedCardTypeName(null);
     setSelectedLotId(null);
+    setSelectedDevice(null);
+    setAggDevice(null);
     const core = buildCoreParams(form);
 
     const settled = await allSettledWithConcurrency(
@@ -348,11 +354,18 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
             YIELD_AGGREGATE_PATH,
             { ...core, dimensions: "device,lotId,probeCardType,probeCard", groupTop: 100 }
           ),
+        () =>
+          apiGetJson<YieldMonitorV3AggregateResponse>(
+            apiBase,
+            YIELD_AGGREGATE_PATH,
+            { ...core, dimensions: "device", groupTop: 30 }
+          ),
       ],
       REPORT_ORACLE_FANOUT_CONCURRENCY
     );
-    const [listRes, timeRes, cardTypeRes, lotRes, treeRes] = settled as [
+    const [listRes, timeRes, cardTypeRes, lotRes, treeRes, deviceRes] = settled as [
       PromiseSettledResult<YieldMonitorV3Response>,
+      PromiseSettledResult<YieldMonitorV3AggregateResponse>,
       PromiseSettledResult<YieldMonitorV3AggregateResponse>,
       PromiseSettledResult<YieldMonitorV3AggregateResponse>,
       PromiseSettledResult<YieldMonitorV3AggregateResponse>,
@@ -374,6 +387,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     if (cardTypeRes.status === "fulfilled") setAggCardType(cardTypeRes.value);
     if (lotRes.status === "fulfilled") setAggLot(lotRes.value);
     if (treeRes.status === "fulfilled") setAggTree(treeRes.value);
+    if (deviceRes.status === "fulfilled") setAggDevice(deviceRes.value);
     if (timeRes.status === "rejected" || cardTypeRes.status === "rejected") {
       setErrorAgg("部分聚合请求失败，图表可能不完整");
     }
@@ -523,6 +537,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       series: [
         {
           type: "bar",
+          cursor: "default",
           data: sorted.map((e) => e.count),
           itemStyle: { color: chartAccent3, borderRadius: [0, 4, 4, 0] as unknown as number },
           label: {
@@ -580,6 +595,44 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     };
   }, [aggLot, selectedLotId]);
 
+  const deviceOption = useMemo((): EChartsOption => {
+    const sorted = [...(aggDevice?.groups ?? [])]
+      .sort((a, b) => a.count - b.count)
+      .slice(-20);
+    const COL = "#79c0ff", COL_B = "#58a6ff", COL_D = "rgba(88,166,255,0.2)";
+    return {
+      ...baseChartOption(),
+      xAxis: {
+        type: "value",
+        axisLabel: { color: chartAxisColor },
+        splitLine: { lineStyle: { color: chartSplitLine } },
+      },
+      yAxis: {
+        type: "category",
+        data: sorted.map((g) => g.parts.device ?? g.key),
+        axisLabel: { color: chartTextColor, fontSize: 11 },
+      },
+      series: [
+        {
+          type: "bar",
+          data: sorted.map((g) => {
+            const name = g.parts.device ?? g.key;
+            const isSel = selectedDevice !== null && name === selectedDevice;
+            return {
+              value: g.count,
+              itemStyle: {
+                color: isSel ? COL_B : selectedDevice !== null ? COL_D : COL,
+                borderRadius: [0, 4, 4, 0] as unknown as number,
+              },
+            };
+          }),
+          label: { show: true, position: "right", color: chartAxisColor, fontSize: 10 },
+          animationDuration: 600,
+        },
+      ],
+    };
+  }, [aggDevice, selectedDevice]);
+
   const freeOption = useMemo((): EChartsOption => {
     const sorted = [...(aggFree?.groups ?? [])]
       .sort((a, b) => a.count - b.count)
@@ -601,6 +654,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       series: [
         {
           type: "bar",
+          cursor: "default",
           data: sorted.map((g) => g.count),
           itemStyle: { color: chartAccent, borderRadius: [0, 4, 4, 0] as unknown as number },
           animationDuration: 600,
@@ -653,10 +707,10 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         }}
         sections={{
           kpiTrig: (
-            <KpiCard label="触发总数" value={totalTriggers} color="blue" showLabel={false} />
+            <KpiCard label="触发总数" value={totalTriggers} color="blue" subtext="触发总数" showLabel={false} />
           ),
           kpiLots: (
-            <KpiCard label="涉及 Lot 数" value={uniqueLots} color="white" showLabel={false} />
+            <KpiCard label="涉及 Lot 数" value={uniqueLots} color="white" subtext="涉及 LOT 数" showLabel={false} />
           ),
           kpiWorstPct: (
             <KpiCard
@@ -702,12 +756,62 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         axis="grid"
         groupClassName="report-reorder-group--chartgrid"
         labels={{
+          chDevice: "Device 触发排名",
           chPcType: "ProbeCard Type 触发排名",
           chDut: "DUT# 触发分布",
           chLot: "LOT 触发排名",
           chFreeDim: "自由维度聚合",
         }}
         sections={{
+          chDevice: (
+            <div
+              style={{
+                background: "#0d1117",
+                border: "1px solid rgba(240,246,252,0.1)",
+                borderRadius: 8,
+                padding: 16,
+              }}
+            >
+              <div style={{ fontSize: 11, color: "#6e7681", marginBottom: 8 }}>
+                点击 Device → 钻取 LOT / Pass / Wafer 分布
+              </div>
+              {aggDevice && (
+                <ReactECharts
+                  option={deviceOption}
+                  style={{
+                    height: Math.max(180, (aggDevice.groups?.length ?? 0) * 22 + 60),
+                    width: "100%",
+                  }}
+                  opts={{ renderer: "canvas" }}
+                  notMerge
+                  lazyUpdate
+                  onEvents={{
+                    click: (params: { name: string }) => {
+                      setSelectedDevice(params.name);
+                      fetchDrill("device", params.name, "lotId", form);
+                    },
+                  }}
+                />
+              )}
+              {drills["device"] != null && (
+                <DrillDownPanel
+                  title={`Device: ${drills["device"]!.parentDimVal} · 下钻：按 ${drills["device"]!.subDim}`}
+                  groups={drills["device"]!.groups}
+                  loading={drills["device"]!.loading}
+                  error={drills["device"]!.error}
+                  activeSubDim={drills["device"]!.subDim}
+                  subDimOptions={DRILL_FROM_DEVICE}
+                  onSubDimChange={(d) =>
+                    fetchDrill("device", drills["device"]!.parentDimVal, d, form)
+                  }
+                  onClose={() => {
+                    setSelectedDevice(null);
+                    setDrills((prev) => { const n = { ...prev }; delete n["device"]; return n; });
+                  }}
+                />
+              )}
+            </div>
+          ),
           chPcType: (
             <div
               style={{
@@ -739,29 +843,29 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
                   }}
                 />
               )}
-              {drill?.parentDimKey === "probeCardType" && (
+              {drills["probeCardType"] != null && (
                 <DrillDownPanel
-                  title={`${drill.parentDimVal} · 下钻：按 ${drill.subDim}`}
-                  groups={drill.groups}
-                  loading={drill.loading}
-                  error={drill.error}
-                  activeSubDim={drill.subDim}
+                  title={`${drills["probeCardType"]!.parentDimVal} · 下钻：按 ${drills["probeCardType"]!.subDim}`}
+                  groups={drills["probeCardType"]!.groups}
+                  loading={drills["probeCardType"]!.loading}
+                  error={drills["probeCardType"]!.error}
+                  activeSubDim={drills["probeCardType"]!.subDim}
                   subDimOptions={DRILL_FROM_CARDTYPE}
                   onSubDimChange={(d) => {
                     if (d !== "probeCard") setSelectedProbeCard(null);
-                    fetchDrill("probeCardType", drill.parentDimVal, d, form);
+                    fetchDrill("probeCardType", drills["probeCardType"]!.parentDimVal, d, form);
                   }}
                   onClose={() => {
                     setSelectedCardTypeName(null);
                     setSelectedProbeCard(null);
-                    setDrill(null);
+                    setDrills((prev) => { const n = { ...prev }; delete n["probeCardType"]; return n; });
                   }}
                   onBarClick={
-                    drill.subDim === "probeCard"
+                    drills["probeCardType"]!.subDim === "probeCard"
                       ? (key) => setSelectedProbeCard(key)
                       : undefined
                   }
-                  selectedKey={drill.subDim === "probeCard" ? selectedProbeCard : null}
+                  selectedKey={drills["probeCardType"]!.subDim === "probeCard" ? selectedProbeCard : null}
                 />
               )}
             </div>
@@ -842,20 +946,20 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
                   }}
                 />
               )}
-              {drill?.parentDimKey === "lotId" && (
+              {drills["lotId"] != null && (
                 <DrillDownPanel
-                  title={`${drill.parentDimVal} · 下钻：按 ${drill.subDim}`}
-                  groups={drill.groups}
-                  loading={drill.loading}
-                  error={drill.error}
-                  activeSubDim={drill.subDim}
+                  title={`${drills["lotId"]!.parentDimVal} · 下钻：按 ${drills["lotId"]!.subDim}`}
+                  groups={drills["lotId"]!.groups}
+                  loading={drills["lotId"]!.loading}
+                  error={drills["lotId"]!.error}
+                  activeSubDim={drills["lotId"]!.subDim}
                   subDimOptions={DRILL_FROM_LOT}
                   onSubDimChange={(d) =>
-                    fetchDrill("lotId", drill.parentDimVal, d, form)
+                    fetchDrill("lotId", drills["lotId"]!.parentDimVal, d, form)
                   }
                   onClose={() => {
                     setSelectedLotId(null);
-                    setDrill(null);
+                    setDrills((prev) => { const n = { ...prev }; delete n["lotId"]; return n; });
                   }}
                 />
               )}
@@ -983,7 +1087,10 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     timeTrendOption,
     aggCardType,
     cardTypeOption,
-    drill,
+    drills,
+    aggDevice,
+    deviceOption,
+    selectedDevice,
     form,
     fetchDrill,
     dutRows,
@@ -1025,6 +1132,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
               ["LotID", "lotId"],
               ["Wafer", "wafer"],
               ["Hostname", "hostname"],
+              ["ProbeCard Type", "probeCardType"],
               ["ProbeCard", "probeCard"],
               ["Pass", "pass"],
             ] as [string, keyof FormState][]

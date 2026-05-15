@@ -52,6 +52,7 @@ type FormState = {
   device: string;
   lot: string;
   slot: string;
+  probeCardType: string;
   cardId: string;
   tstype: string;
   testerId: string;
@@ -65,6 +66,7 @@ const initialForm: FormState = {
   device: "",
   lot: "",
   slot: "",
+  probeCardType: "",
   cardId: "",
   tstype: "",
   testerId: "",
@@ -76,16 +78,17 @@ const initialForm: FormState = {
 
 function buildCoreParams(f: FormState): Record<string, string | number | undefined> {
   return {
-    device:      f.device   || undefined,
-    lot:         f.lot      || undefined,
-    slot:        f.slot     ? Number(f.slot)   : undefined,
-    cardId:      f.cardId   || undefined,
-    tstype:      f.tstype   || undefined,
-    testerId:    f.testerId || undefined,
-    passId:      f.passId   ? Number(f.passId) : undefined,
-    meslot:      f.meslot   || undefined,
-    testEndFrom: datetimeLocalToIso(f.testEndFrom),
-    testEndTo:   datetimeLocalToIso(f.testEndTo),
+    device:        f.device        || undefined,
+    lot:           f.lot           || undefined,
+    slot:          f.slot          ? Number(f.slot)   : undefined,
+    probeCardType: f.probeCardType || undefined,
+    cardId:        f.cardId        || undefined,
+    tstype:        f.tstype        || undefined,
+    testerId:      f.testerId      || undefined,
+    passId:        f.passId        ? Number(f.passId) : undefined,
+    meslot:        f.meslot        || undefined,
+    testEndFrom:   datetimeLocalToIso(f.testEndFrom),
+    testEndTo:     datetimeLocalToIso(f.testEndTo),
   };
 }
 
@@ -157,9 +160,16 @@ const JB_REPORT_SECTION_ORDER = [
 
 const JB_KPI_BLOCK_ORDER = ["jbWafer", "jbYieldPct", "jbWorstType", "jbTopBin"] as const;
 
-const JB_CHART_BLOCK_ORDER = ["jbBin", "jbPcType", "jbSlot", "jbFreeDim"] as const;
+const JB_CHART_BLOCK_ORDER = ["jbDevice", "jbBin", "jbPcType", "jbSlot", "jbFreeDim"] as const;
 
 // Sub-dimension options per parent drill
+const DRILL_FROM_DEVICE_JB: { label: string; value: string }[] = [
+  { label: "LOT",    value: "lot"    },
+  { label: "Pass",   value: "passId" },
+  { label: "CardId", value: "cardId" },
+  { label: "Slot",   value: "slot"   },
+];
+
 const DRILL_FROM_CARDTYPE: { label: string; value: string }[] = [
   { label: "CardId", value: "cardId" },
   { label: "Slot",   value: "slot"   },
@@ -274,6 +284,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
   const [aggCardType, setAggCardType] = useState<InfcontrolAggregateResponse | null>(null);
   const [aggSlot,     setAggSlot]     = useState<InfcontrolAggregateResponse | null>(null);
   const [aggTree,     setAggTree]     = useState<InfcontrolAggregateResponse | null>(null);
+  const [aggDevice,   setAggDevice]   = useState<InfcontrolAggregateResponse | null>(null);
   const [aggFree,     setAggFree]     = useState<InfcontrolAggregateResponse | null>(null);
   const [freeDim, setFreeDim] = useState("bin");
 
@@ -281,13 +292,14 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
   const [loadingAgg,  setLoadingAgg]  = useState(false);
   const [errorList,   setErrorList]   = useState<string | null>(null);
   const [errorAgg,    setErrorAgg]    = useState<string | null>(null);
-  const [drill,       setDrill]       = useState<DrillState | null>(null);
+  const [drills,      setDrills]      = useState<Record<string, DrillState>>({});
   const [showTree,   setShowTree]   = useState(false);
   const [showDetail, setShowDetail] = useState(false);
   const [selectedLotLabel, setSelectedLotLabel] = useState<string | null>(null);
   const [selectedBin,      setSelectedBin]      = useState<string | null>(null);
   const [selectedCardType, setSelectedCardType] = useState<string | null>(null);
   const [selectedSlot,     setSelectedSlot]     = useState<string | null>(null);
+  const [selectedDevice,   setSelectedDevice]   = useState<string | null>(null);
   const [layoutEpoch, setLayoutEpoch] = useState(0);
 
   const resetReportLayout = useCallback(() => {
@@ -321,14 +333,10 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       subDim: string,
       currentForm: FormState
     ) => {
-      setDrill({
-        parentDimKey,
-        parentDimVal,
-        subDim,
-        groups: [],
-        loading: true,
-        error: null,
-      });
+      setDrills((prev) => ({
+        ...prev,
+        [parentDimKey]: { parentDimKey, parentDimVal, subDim, groups: [], loading: true, error: null },
+      }));
       try {
         const gby = jbAggregateGroupBy(
           ...subDim.split(",").map((s) => s.trim()).filter(Boolean),
@@ -368,21 +376,17 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
           // bin is an UNPIVOT virtual column — filter groups to the clicked bin value.
           groups = groups.filter((g) => g.parts.bin === parentDimVal);
         }
-        setDrill((d) =>
-          d && d.parentDimKey === parentDimKey && d.parentDimVal === parentDimVal
-            ? { ...d, groups, loading: false }
-            : d
-        );
+        setDrills((prev) => {
+          const d = prev[parentDimKey];
+          if (!d || d.parentDimVal !== parentDimVal) return prev;
+          return { ...prev, [parentDimKey]: { ...d, groups, loading: false } };
+        });
       } catch (e) {
-        setDrill((d) =>
-          d && d.parentDimKey === parentDimKey && d.parentDimVal === parentDimVal
-            ? {
-                ...d,
-                loading: false,
-                error: e instanceof Error ? e.message : String(e),
-              }
-            : d
-        );
+        setDrills((prev) => {
+          const d = prev[parentDimKey];
+          if (!d || d.parentDimVal !== parentDimVal) return prev;
+          return { ...prev, [parentDimKey]: { ...d, loading: false, error: e instanceof Error ? e.message : String(e) } };
+        });
       }
     },
     [apiBase]
@@ -410,7 +414,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     setLoadingAgg(true);
     setErrorList(null);
     setErrorAgg(null);
-    setDrill(null);
+    setDrills({});
     setSelectedLotLabel(null);
     setSelectedBin(null);
     setSelectedCardType(null);
@@ -420,6 +424,8 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     setAggCardType(null);
     setAggSlot(null);
     setAggTree(null);
+    setAggDevice(null);
+    setSelectedDevice(null);
     setAggFree(null);
 
     const core = buildCoreParams(form);
@@ -439,7 +445,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     }
 
     // Phase 2: 图表聚合（v3 库内全量匹配行；与 limit 无关，并行 2 路）
-    const [binRes, cardTypeRes, slotRes, treeRes] =
+    const [binRes, cardTypeRes, slotRes, treeRes, deviceRes] =
       (await allSettledWithConcurrency(
         [
           () =>
@@ -475,9 +481,16 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                 groupTop: 100,
               },
             ),
+          () =>
+            apiGetJson<InfcontrolAggregateResponse>(
+              apiBase,
+              INFCONTROL_AGGREGATE_PATH,
+              { ...core, groupBy: jbAggregateGroupBy("device"), groupTop: 30 },
+            ),
         ],
         REPORT_AGGREGATE_FANOUT_CONCURRENCY,
       )) as [
+        PromiseSettledResult<InfcontrolAggregateResponse>,
         PromiseSettledResult<InfcontrolAggregateResponse>,
         PromiseSettledResult<InfcontrolAggregateResponse>,
         PromiseSettledResult<InfcontrolAggregateResponse>,
@@ -490,6 +503,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     if (cardTypeRes.status === "fulfilled") setAggCardType(cardTypeRes.value);
     if (slotRes.status === "fulfilled") setAggSlot(slotRes.value);
     if (treeRes.status === "fulfilled") setAggTree(treeRes.value);
+    if (deviceRes.status === "fulfilled") setAggDevice(deviceRes.value);
     const aggFail = (
       label: string,
       res: PromiseSettledResult<InfcontrolAggregateResponse>,
@@ -504,6 +518,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       aggFail("探针卡类型聚合", cardTypeRes),
       aggFail("Slot 聚合", slotRes),
       aggFail("树表聚合", treeRes),
+      aggFail("Device 聚合", deviceRes),
     ].filter(Boolean);
     if (aggErrors.length > 0) {
       setErrorAgg(
@@ -732,6 +747,51 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     };
   }, [aggSlot, selectedSlot]);
 
+  const deviceOption = useMemo((): EChartsOption => {
+    const devBad = new Map<string, number>();
+    for (const g of aggDevice?.groups ?? []) {
+      const d = g.parts.device ?? "—";
+      devBad.set(d, (devBad.get(d) ?? 0) + g.count);
+    }
+    const sorted = [...devBad.entries()].sort((a, b) => a[1] - b[1]).slice(-10);
+    const COL = "#79c0ff", COL_B = "#58a6ff", COL_D = "rgba(121,192,255,0.2)";
+    return {
+      ...baseChartOption(),
+      xAxis: {
+        type: "value",
+        axisLabel: { color: chartAxisColor },
+        splitLine: { lineStyle: { color: chartSplitLine } },
+      },
+      yAxis: {
+        type: "category",
+        data: sorted.map(([d]) => d),
+        axisLabel: { color: chartTextColor, fontSize: 11 },
+      },
+      series: [
+        {
+          type: "bar",
+          data: sorted.map(([d, v]) => {
+            const isSel = selectedDevice !== null && d === selectedDevice;
+            return {
+              value: v,
+              itemStyle: {
+                color: isSel ? COL_B : selectedDevice !== null ? COL_D : COL,
+                borderRadius: [0, 4, 4, 0] as unknown as number,
+              },
+            };
+          }),
+          label: {
+            show: true,
+            position: "right",
+            color: chartAxisColor,
+            fontSize: 10,
+          },
+          animationDuration: 600,
+        },
+      ],
+    };
+  }, [aggDevice, selectedDevice]);
+
   const freeOption = useMemo((): EChartsOption => {
     const sorted = [...(aggFree?.groups ?? [])]
       .sort((a, b) => a.count - b.count)
@@ -751,6 +811,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       series: [
         {
           type: "bar",
+          cursor: "default",
           data: sorted.map((g) => g.count),
           itemStyle: { color: "#58a6ff", borderRadius: [0, 4, 4, 0] as unknown as number },
           animationDuration: 600,
@@ -807,7 +868,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         }}
         sections={{
           jbWafer: (
-            <KpiCard label="匹配 Wafer 数" value={totalWafers} color="blue" showLabel={false} />
+            <KpiCard label="匹配 Wafer 数" value={totalWafers} color="blue" subtext="匹配 Wafer 数" showLabel={false} />
           ),
           jbYieldPct: (
             <KpiCard
@@ -878,20 +939,20 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
               },
             }}
           />
-          {drill?.parentDimKey === "lot" && (
+          {drills["lot"] != null && (
             <DrillDownPanel
-              title={`LOT: ${drill.parentDimVal} · 下钻：按 ${drill.subDim}`}
-              groups={drill.groups}
-              loading={drill.loading}
-              error={drill.error}
-              activeSubDim={drill.subDim}
+              title={`LOT: ${drills["lot"]!.parentDimVal} · 下钻：按 ${drills["lot"]!.subDim}`}
+              groups={drills["lot"]!.groups}
+              loading={drills["lot"]!.loading}
+              error={drills["lot"]!.error}
+              activeSubDim={drills["lot"]!.subDim}
               subDimOptions={DRILL_FROM_LOT}
               onSubDimChange={(d) =>
-                fetchDrill("lot", drill.parentDimVal, d, form)
+                fetchDrill("lot", drills["lot"]!.parentDimVal, d, form)
               }
               onClose={() => {
                 setSelectedLotLabel(null);
-                setDrill(null);
+                setDrills((prev) => { const n = { ...prev }; delete n["lot"]; return n; });
               }}
             />
           )}
@@ -906,12 +967,62 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         axis="grid"
         groupClassName="report-reorder-group--chartgrid"
         labels={{
+          jbDevice: "Device 不良分析",
           jbBin: "不良 BIN 全量排名",
           jbPcType: "ProbeCard Type 不良对比",
           jbSlot: "Slot 趋势（Wafer 间）",
           jbFreeDim: "自由维度聚合",
         }}
         sections={{
+          jbDevice: (
+            <div
+              style={{
+                background: "#0d1117",
+                border: "1px solid rgba(240,246,252,0.1)",
+                borderRadius: 8,
+                padding: 16,
+              }}
+            >
+              <div style={{ fontSize: 11, color: "#6e7681", marginBottom: 8 }}>
+                点击 Device 钻取
+              </div>
+              {aggDevice && (
+                <ReactECharts
+                  option={deviceOption}
+                  style={{
+                    height: Math.max(180, (aggDevice.groups?.length ?? 0) * 22 + 60),
+                    width: "100%",
+                  }}
+                  opts={{ renderer: "canvas" }}
+                  notMerge
+                  lazyUpdate
+                  onEvents={{
+                    click: (params: { name: string }) => {
+                      setSelectedDevice(params.name);
+                      fetchDrill("device", params.name, "lot", form);
+                    },
+                  }}
+                />
+              )}
+              {drills["device"] != null && (
+                <DrillDownPanel
+                  title={`Device: ${drills["device"]!.parentDimVal} · 下钻：按 ${drills["device"]!.subDim}`}
+                  groups={drills["device"]!.groups}
+                  loading={drills["device"]!.loading}
+                  error={drills["device"]!.error}
+                  activeSubDim={drills["device"]!.subDim}
+                  subDimOptions={DRILL_FROM_DEVICE_JB}
+                  onSubDimChange={(d) =>
+                    fetchDrill("device", drills["device"]!.parentDimVal, d, form)
+                  }
+                  onClose={() => {
+                    setSelectedDevice(null);
+                    setDrills((prev) => { const n = { ...prev }; delete n["device"]; return n; });
+                  }}
+                />
+              )}
+            </div>
+          ),
           jbBin: (
             <div
               style={{
@@ -943,20 +1054,20 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                   }}
                 />
               )}
-              {drill?.parentDimKey === "bin" && (
+              {drills["bin"] != null && (
                 <DrillDownPanel
-                  title={`Bin ${drill.parentDimVal} · 下钻：按 ${drill.subDim}`}
-                  groups={drill.groups}
-                  loading={drill.loading}
-                  error={drill.error}
-                  activeSubDim={drill.subDim}
+                  title={`Bin ${drills["bin"]!.parentDimVal} · 下钻：按 ${drills["bin"]!.subDim}`}
+                  groups={drills["bin"]!.groups}
+                  loading={drills["bin"]!.loading}
+                  error={drills["bin"]!.error}
+                  activeSubDim={drills["bin"]!.subDim}
                   subDimOptions={DRILL_FROM_BIN}
                   onSubDimChange={(d) =>
-                    fetchDrill("bin", drill.parentDimVal, d, form)
+                    fetchDrill("bin", drills["bin"]!.parentDimVal, d, form)
                   }
                   onClose={() => {
                     setSelectedBin(null);
-                    setDrill(null);
+                    setDrills((prev) => { const n = { ...prev }; delete n["bin"]; return n; });
                   }}
                 />
               )}
@@ -999,35 +1110,35 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                   }}
                 />
               )}
-              {drill?.parentDimKey === "probeCardType" && (
+              {drills["probeCardType"] != null && (
                 <DrillDownPanel
-                  title={`Type: ${drill.parentDimVal} · 下钻：按 ${drill.subDim}`}
-                  groups={drill.groups}
-                  loading={drill.loading}
-                  error={drill.error}
-                  activeSubDim={drill.subDim}
+                  title={`Type: ${drills["probeCardType"]!.parentDimVal} · 下钻：按 ${drills["probeCardType"]!.subDim}`}
+                  groups={drills["probeCardType"]!.groups}
+                  loading={drills["probeCardType"]!.loading}
+                  error={drills["probeCardType"]!.error}
+                  activeSubDim={drills["probeCardType"]!.subDim}
                   subDimOptions={DRILL_FROM_CARDTYPE}
                   onSubDimChange={(d) =>
-                    fetchDrill("probeCardType", drill.parentDimVal, d, form)
+                    fetchDrill("probeCardType", drills["probeCardType"]!.parentDimVal, d, form)
                   }
                   onClose={() => {
                     setSelectedCardType(null);
-                    setDrill(null);
+                    setDrills((prev) => { const n = { ...prev }; delete n["probeCardType"]; return n; });
                   }}
                 />
               )}
-              {drill?.parentDimKey === "cardId" && (
+              {drills["cardId"] != null && (
                 <DrillDownPanel
-                  title={`CardId: ${drill.parentDimVal} · 下钻：按 ${drill.subDim}`}
-                  groups={drill.groups}
-                  loading={drill.loading}
-                  error={drill.error}
-                  activeSubDim={drill.subDim}
+                  title={`CardId: ${drills["cardId"]!.parentDimVal} · 下钻：按 ${drills["cardId"]!.subDim}`}
+                  groups={drills["cardId"]!.groups}
+                  loading={drills["cardId"]!.loading}
+                  error={drills["cardId"]!.error}
+                  activeSubDim={drills["cardId"]!.subDim}
                   subDimOptions={DRILL_FROM_CARD}
                   onSubDimChange={(d) =>
-                    fetchDrill("cardId", drill.parentDimVal, d, form)
+                    fetchDrill("cardId", drills["cardId"]!.parentDimVal, d, form)
                   }
-                  onClose={() => setDrill(null)}
+                  onClose={() => setDrills((prev) => { const n = { ...prev }; delete n["cardId"]; return n; })}
                 />
               )}
             </div>
@@ -1062,20 +1173,20 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
               ) : aggSlot ? (
                 <p className="muted small">当前筛选下无 Slot 聚合数据</p>
               ) : null}
-              {drill?.parentDimKey === "slot" && (
+              {drills["slot"] != null && (
                 <DrillDownPanel
-                  title={`Slot ${drill.parentDimVal} · 下钻：按 ${drill.subDim}`}
-                  groups={drill.groups}
-                  loading={drill.loading}
-                  error={drill.error}
-                  activeSubDim={drill.subDim}
+                  title={`Slot ${drills["slot"]!.parentDimVal} · 下钻：按 ${drills["slot"]!.subDim}`}
+                  groups={drills["slot"]!.groups}
+                  loading={drills["slot"]!.loading}
+                  error={drills["slot"]!.error}
+                  activeSubDim={drills["slot"]!.subDim}
                   subDimOptions={DRILL_FROM_SLOT}
                   onSubDimChange={(d) =>
-                    fetchDrill("slot", drill.parentDimVal, d, form)
+                    fetchDrill("slot", drills["slot"]!.parentDimVal, d, form)
                   }
                   onClose={() => {
                     setSelectedSlot(null);
-                    setDrill(null);
+                    setDrills((prev) => { const n = { ...prev }; delete n["slot"]; return n; });
                   }}
                 />
               )}
@@ -1209,7 +1320,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     topBin,
     lotYieldData,
     lotYieldOption,
-    drill,
+    drills,
     form,
     fetchDrill,
     aggBin,
@@ -1218,6 +1329,9 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     cardTypeOption,
     aggSlot,
     slotOption,
+    aggDevice,
+    deviceOption,
+    selectedDevice,
     aggFree,
     freeOption,
     freeDim,
@@ -1235,7 +1349,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       {/* ── Header ── */}
       <div className="report-panel-header">
         <div>
-          <h2>🔬 JB START</h2>
+          <h2>🔬 JB STAR</h2>
           <p className="report-desc">
             层控 BIN 数据（PASSTYPE = TEST）。复合筛选，一键触发：明细 + BIN 排名 +
             探针卡类型对比 + Slot 趋势。点击图表钻取。Yield% 由前端从 bins[].isGoodBin + GROSSDIE 计算。
@@ -1252,6 +1366,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
               ["Device", "device"],
               ["Lot", "lot"],
               ["Slot", "slot"],
+              ["ProbeCard Type", "probeCardType"],
               ["CardId", "cardId"],
               ["TesterID", "testerId"],
               ["PassID", "passId"],

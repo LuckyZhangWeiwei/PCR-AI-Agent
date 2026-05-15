@@ -1,5 +1,6 @@
 import {
   DndContext,
+  DragOverlay,
   KeyboardSensor,
   PointerSensor,
   pointerWithin,
@@ -8,7 +9,7 @@ import {
   useSensors,
   type CollisionDetection,
   type DragEndEvent,
-  type DragOverEvent,
+  type DragStartEvent,
   type UniqueIdentifier,
 } from "@dnd-kit/core";
 import {
@@ -138,9 +139,9 @@ function normalizeHidden(saved: string[], activeSet: Set<string>): Set<string> {
   return out;
 }
 
-/** Sortable shift animation (default @dnd-kit is 250ms) */
+/** Sortable shift animation for non-dragged items making room */
 const REPORT_REORDER_TRANSITION = {
-  duration: 480,
+  duration: 200,
   easing: "cubic-bezier(0.25, 1, 0.5, 1)",
 };
 
@@ -341,14 +342,15 @@ function SortableBlock({
     transform: CSS.Transform.toString(transform),
     transition,
     position: "relative",
-    zIndex: isDragging ? 10_000 : undefined,
+    // invisible placeholder while DragOverlay carries the block visually
+    opacity: isDragging ? 0 : undefined,
   };
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`report-reorder-item${isDragging ? " report-reorder-item--dragging" : ""}`}
+      className="report-reorder-item"
     >
       <div className="report-reorder-item-head">
         <button
@@ -395,6 +397,8 @@ function DraggableReportBlocksInner({
   const { displayOrder, moveActiveIdOver, sections: sec, closeBlock } =
     usePersistedBlockLayout(storageKey, defaultOrder, sections, layoutEpoch);
 
+  const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null);
+
   const strategy = sortStrategyForAxis(sortAxis);
   const collisionDetection = useMemo(
     () => createPointerMidpointCollision(sortAxis),
@@ -410,17 +414,13 @@ function DraggableReportBlocksInner({
     }),
   );
 
-  const handleDragOver = useCallback(
-    (event: DragOverEvent) => {
-      const { active, over } = event;
-      if (!over || active.id === over.id) return;
-      moveActiveIdOver(String(active.id), String(over.id));
-    },
-    [moveActiveIdOver],
-  );
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setActiveId(event.active.id);
+  }, []);
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
+      setActiveId(null);
       const { active, over } = event;
       if (over && active.id !== over.id) {
         moveActiveIdOver(String(active.id), String(over.id));
@@ -435,12 +435,14 @@ function DraggableReportBlocksInner({
     return null;
   }
 
+  const activeLabel = activeId != null ? (labels[String(activeId)] ?? String(activeId)) : null;
+
   return (
     <div className={groupCls}>
       <DndContext
         sensors={sensors}
         collisionDetection={collisionDetection}
-        onDragOver={handleDragOver}
+        onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
         <SortableContext items={displayOrder} strategy={strategy}>
@@ -456,6 +458,19 @@ function DraggableReportBlocksInner({
             </SortableBlock>
           ))}
         </SortableContext>
+        <DragOverlay dropAnimation={null}>
+          {activeId != null ? (
+            <div className="report-reorder-item report-reorder-item--drag-overlay">
+              <div className="report-reorder-item-head">
+                <div className="report-reorder-drag-head report-reorder-drag-head--grabbing">
+                  <span className="report-reorder-grip" aria-hidden>⋮⋮</span>
+                  <span className="report-reorder-drag-title">{activeLabel}</span>
+                </div>
+              </div>
+              <div className="report-reorder-body">{sec[String(activeId)]}</div>
+            </div>
+          ) : null}
+        </DragOverlay>
       </DndContext>
     </div>
   );

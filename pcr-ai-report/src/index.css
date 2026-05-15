@@ -802,7 +802,7 @@ button.chip:hover {
 /* ── Rollup dim bar ──────────────────────────────────────────────────── */
 .rollup-dim-bar { padding-top: 6px; padding-bottom: 6px; }
 
-/* ── Draggable report modules (Yield / JB START) ───────────────────────── */
+/* ── Draggable report modules (Yield / JB STAR) ───────────────────────── */
 .report-reorder-group {
   display: flex;
   flex-direction: column;
@@ -1008,13 +1008,13 @@ button.chip:hover {
   text-align: center;
 }
 
-.report-reorder-item--dragging {
-  z-index: 10000 !important;
-  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
-  border-color: rgba(88, 166, 255, 0.35);
+.report-reorder-item--drag-overlay {
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  border-color: rgba(88, 166, 255, 0.45);
+  cursor: grabbing;
 }
 
-.report-reorder-item--dragging .report-reorder-drag-head {
+.report-reorder-drag-head--grabbing {
   cursor: grabbing;
 }
 
@@ -1027,4 +1027,16 @@ button.chip:hover {
 
 .report-reorder-group--chartgrid .report-reorder-item {
   min-width: 0;
+}
+
+/* Last chart alone in its row → expand to full width */
+.report-reorder-group--chartgrid .report-reorder-item:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+/* Narrow screens: single column */
+@media (max-width: 768px) {
+  .report-reorder-group.report-reorder-group--chartgrid {
+    grid-template-columns: 1fr;
+  }
 }

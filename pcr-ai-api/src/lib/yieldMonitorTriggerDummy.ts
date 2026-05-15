@@ -323,6 +323,14 @@ export function filterYieldMonitorDummyRowsMatchingV3(
   ci("WAFER", "wafer");
   ci("PROBECARD", "probeCard");
 
+  if (applied.probeCardType !== undefined) {
+    const want = String(applied.probeCardType).trim().toUpperCase();
+    rows = rows.filter((r) => {
+      const pc = String(r.PROBECARD).trim().toUpperCase();
+      return pc === want || pc.startsWith(want + "-");
+    });
+  }
+
   if (applied.pass !== undefined) {
     const n = Number(applied.pass);
     rows = rows.filter((r) => r.PASS === n);

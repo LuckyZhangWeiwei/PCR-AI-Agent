@@ -464,6 +464,14 @@ export function filterInfcontrolLayerBinV3DummyRowsMatching(
   ci("TSTYPE", "tstype");
   ci("CARDID", "cardId");
 
+  if (applied.probeCardType !== undefined) {
+    const want = String(applied.probeCardType).trim().toUpperCase();
+    rows = rows.filter((r) => {
+      const cid = String(r.CARDID).trim().toUpperCase();
+      return cid === want || cid.startsWith(want + "-");
+    });
+  }
+
   if (applied.slot !== undefined) {
     const n = Number(applied.slot);
     rows = rows.filter((r) => Number(r.SLOT) === n);

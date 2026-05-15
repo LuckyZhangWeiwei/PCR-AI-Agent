@@ -243,6 +243,17 @@ export function parseInfcontrolLayerBinsV3Query(
     strEqTrimCi("tstype", "t2.TSTYPE", "ic3_tstype");
     strEqTrimCi("cardId", "t2.CARDID", "ic3_cardid");
 
+    // probeCardType is derived (prefix of CARDID before first '-'); filter as equality OR prefix match
+    const pctVal = firstString(firstQueryValue(q, "probeCardType"));
+    if (pctVal !== undefined && pctVal !== "") {
+      const t = pctVal.trim();
+      clauses.push(
+        `(UPPER(TRIM(t2.CARDID)) = UPPER(:ic3_pct) OR UPPER(TRIM(t2.CARDID)) LIKE UPPER(:ic3_pct) || '-%')`
+      );
+      (binds as Record<string, string | number | Date>).ic3_pct = t;
+      applied.probeCardType = t;
+    }
+
     const slotN = parseOptionalNumber(firstQueryValue(q, "slot"), "slot");
     if (slotN !== undefined) {
       parseRequiredFiniteNumber(slotN, "slot");

@@ -84,7 +84,7 @@ export function DrillDownPanel({
     yAxis: {
       type: "category",
       data: labels,
-      axisLabel: { color: chartTextColor, fontSize: 11 },
+      axisLabel: { color: chartTextColor, fontSize: 11, interval: 0 },
     },
     series: [
       {
@@ -183,7 +183,7 @@ export function DrillDownPanel({
       {!loading && groups.length > 0 && (
         <DarkChart
           option={option}
-          height={Math.max(160, sorted.length * 22 + 60)}
+          height={Math.max(160, sorted.length * 28 + 60)}
           onEvents={
             onBarClick
               ? { click: (p: unknown) => onBarClick((p as { name: string }).name) }
