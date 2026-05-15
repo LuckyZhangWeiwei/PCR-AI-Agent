@@ -9,7 +9,7 @@ import { TableRowsReport } from "./reports/TableRowsReport";
 import { YieldMonitorReport } from "./reports/YieldMonitorReport";
 import "./index.css";
 
-type Tab = "overview" | "yield" | "infcontrol" | "ai" | "table" | "settings";
+type Tab = "yield" | "infcontrol" | "ai" | "table" | "settings";
 
 export default function App() {
   const [apiBase, setApiBase, resetApiBase] = usePersistedApiBase();
@@ -18,7 +18,7 @@ export default function App() {
   // Sync input when apiBase changes externally (resetApiBase)
   useEffect(() => { setApiBaseInput(apiBase); }, [apiBase]);
 
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useState<Tab>("yield");
 
   /** 切换 tab 时子面板从隐藏变为可见，通知图表重新计算尺寸（ECharts） */
   useLayoutEffect(() => {
@@ -67,20 +67,13 @@ export default function App() {
     <div className="app-shell">
       <header className="app-header">
         <div className="app-title-block">
-          <h1><span className="app-brand-pcr">PCR</span> 数据看板</h1>
+          <h1 className="app-title-main">NXP ATTJ WaferTest Dashboard</h1>
           <p>探针卡良率监控 · 层控 BIN 分析 · 触发趋势 · AI 智能查询</p>
           <span className="app-hint">选标签页 → 填筛选条件 → 查询 → 点图表可下钻 · Yield% 由前端从 bins 实时计算</span>
         </div>
       </header>
 
       <nav className="tabs" aria-label="报表切换">
-        <button
-          type="button"
-          className={`tab ${tab === "overview" ? "active" : ""}`}
-          onClick={() => setTab("overview")}
-        >
-          🗂️ API 目录
-        </button>
         <button
           type="button"
           className={`tab ${tab === "yield" ? "active" : ""}`}
@@ -118,9 +111,6 @@ export default function App() {
         </button>
       </nav>
 
-      <div className="tab-panel" hidden={tab !== "overview"}>
-        <OverviewReport apiBase={apiBase} />
-      </div>
       <div className="tab-panel" hidden={tab !== "yield"}>
         <YieldMonitorReport apiBase={apiBase} />
       </div>
@@ -186,6 +176,13 @@ export default function App() {
               {probeMsg ? <span className="muted small">{probeMsg}</span> : null}
             </div>
           </div>
+
+          <section className="settings-section settings-section--catalog" aria-labelledby="settings-api-catalog">
+            <h2 id="settings-api-catalog" className="settings-section-title">
+              🗂️ API 目录
+            </h2>
+            <OverviewReport apiBase={apiBase} embedded />
+          </section>
         </div>
       </div>
     </div>

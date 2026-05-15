@@ -215,6 +215,7 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 ### 12.3 与报表（`pcr-ai-report`）联调
 
 - **`npm run dev`** 时若从 **`localhost`** 访问内网 **`10.x` API**，易受浏览器 **PNA** 与网络策略影响；**`pcr-ai-report`** 通过 **`.env.development`** 的 **`VITE_DEV_API_VIA_PROXY`**、**`VITE_DEV_PROXY_TARGET`** 与 **`vite.config.ts`** 将 **`/api`、`/health`** 代理到网关。详见根目录 **`CLAUDE.md`** 与 **`pcr-ai-report/.env.example`**。
+- **前端交接**（可拖拽布局、localStorage、`/api/v4` 调用约定、标题与 tab）：**[`../pcr-ai-report/CLAUDE.md`](../pcr-ai-report/CLAUDE.md)**。
 - 报表与 API **同机部署**时：若 **30008** 不对客户端开放，需在防火墙放行或对 **80** 做反代（运维/网络问题，非 CORS 单独可解）。
 
 ---

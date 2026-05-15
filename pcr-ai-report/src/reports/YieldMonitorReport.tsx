@@ -10,7 +10,13 @@ import type {
 } from "../api/types";
 import { DarkChart } from "../components/DarkChart";
 import { DataTable } from "../components/DataTable";
-import { DraggableReportBlocks, DraggableReportSections } from "../components/DraggableReportSections";
+import {
+  DraggableReportBlocks,
+  DraggableReportSections,
+  ReportLayoutResetButton,
+  YIELD_MONITOR_LAYOUT_STORAGE_KEYS,
+  resetReportLayoutStorage,
+} from "../components/DraggableReportSections";
 import { DrillDownPanel } from "../components/DrillDownPanel";
 import { KpiCard } from "../components/KpiCard";
 import { TreeTable } from "../components/TreeTable";
@@ -27,7 +33,7 @@ import {
   allSettledWithConcurrency,
   REPORT_ORACLE_FANOUT_CONCURRENCY,
 } from "../utils/asyncConcurrency";
-import { datetimeLocalToIso } from "../utils/datetimeLocal";
+import { datetimeLocalToIso, formatAggregateDimLabel, formatChartDayLabel } from "../utils/datetimeLocal";
 import {
   buildTree,
   dateShortcutLast7Days,
@@ -181,6 +187,12 @@ export function YieldMonitorReport({ apiBase }: Props) {
   const [selectedProbeCard, setSelectedProbeCard] = useState<string | null>(null);
   const [selectedCardTypeName, setSelectedCardTypeName] = useState<string | null>(null);
   const [selectedLotId,       setSelectedLotId]       = useState<string | null>(null);
+  const [layoutEpoch, setLayoutEpoch] = useState(0);
+
+  const resetReportLayout = useCallback(() => {
+    resetReportLayoutStorage(YIELD_MONITOR_LAYOUT_STORAGE_KEYS);
+    setLayoutEpoch((n) => n + 1);
+  }, []);
 
   const setField = useCallback(
     <K extends keyof FormState>(k: K, v: FormState[K]) => {
@@ -391,7 +403,9 @@ export function YieldMonitorReport({ apiBase }: Props) {
       .sort((a, b) =>
         (a.parts.timeDay ?? "").localeCompare(b.parts.timeDay ?? "")
       );
-    const dates = groups.map((g) => g.parts.timeDay ?? g.key);
+    const dates = groups.map((g) =>
+      formatChartDayLabel(String(g.parts.timeDay ?? g.key)),
+    );
     const counts = groups.map((g) => g.count);
     return {
       ...baseChartOption(),
@@ -569,7 +583,9 @@ export function YieldMonitorReport({ apiBase }: Props) {
       },
       yAxis: {
         type: "category",
-        data: sorted.map((g) => g.key),
+        data: sorted.map((g) =>
+          formatAggregateDimLabel(freeDim, g.parts[freeDim] ?? g.key),
+        ),
         axisLabel: { color: chartTextColor, fontSize: 10 },
       },
       series: [
@@ -581,7 +597,7 @@ export function YieldMonitorReport({ apiBase }: Props) {
         },
       ],
     };
-  }, [aggFree]);
+  }, [aggFree, freeDim]);
 
   // ── Tree ─────────────────────────────────────────────────────────────────
 
@@ -616,20 +632,21 @@ export function YieldMonitorReport({ apiBase }: Props) {
       <DraggableReportBlocks
         storageKey="pcr-ai-report:yield-monitor-kpi-blocks"
         defaultOrder={YIELD_KPI_BLOCK_ORDER}
+        layoutEpoch={layoutEpoch}
         axis="x"
         groupClassName="report-reorder-group--kpis"
         labels={{
           kpiTrig: "触发总数",
-          kpiLots: "涉及 Lot",
-          kpiWorstPct: "最多探针类型",
+          kpiLots: "涉及 Lot 数",
+          kpiWorstPct: "触发最多探针卡类型",
           kpiSelPc: "已选探针卡",
         }}
         sections={{
           kpiTrig: (
-            <KpiCard label="触发总数" value={totalTriggers} color="blue" />
+            <KpiCard label="触发总数" value={totalTriggers} color="blue" showLabel={false} />
           ),
           kpiLots: (
-            <KpiCard label="涉及 Lot 数" value={uniqueLots} color="white" />
+            <KpiCard label="涉及 Lot 数" value={uniqueLots} color="white" showLabel={false} />
           ),
           kpiWorstPct: (
             <KpiCard
@@ -637,6 +654,7 @@ export function YieldMonitorReport({ apiBase }: Props) {
               value={worstCardType}
               color="red"
               subtext="触发次数最多"
+              showLabel={false}
             />
           ),
           kpiSelPc: (
@@ -645,6 +663,7 @@ export function YieldMonitorReport({ apiBase }: Props) {
               value={selectedProbeCard ?? "—"}
               color={selectedProbeCard ? "blue" : "white"}
               subtext={selectedProbeCard ? "点击下方图表切换" : "点击钻取面板中的卡选择"}
+              showLabel={false}
             />
           ),
         }}
@@ -661,9 +680,6 @@ export function YieldMonitorReport({ apiBase }: Props) {
             padding: 16,
           }}
         >
-          <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
-            📈 每日触发量趋势
-          </div>
           <DarkChart option={timeTrendOption} height={220} />
         </div>
       ) : null;
@@ -672,13 +688,14 @@ export function YieldMonitorReport({ apiBase }: Props) {
       <DraggableReportBlocks
         storageKey="pcr-ai-report:yield-monitor-chart-blocks"
         defaultOrder={YIELD_CHART_BLOCK_ORDER}
+        layoutEpoch={layoutEpoch}
         axis="grid"
         groupClassName="report-reorder-group--chartgrid"
         labels={{
-          chPcType: "ProbeCard Type",
-          chDut: "DUT# 分布",
-          chLot: "LOT 排名",
-          chFreeDim: "自由维度",
+          chPcType: "ProbeCard Type 触发排名",
+          chDut: "DUT# 触发分布",
+          chLot: "LOT 触发排名",
+          chFreeDim: "自由维度聚合",
         }}
         sections={{
           chPcType: (
@@ -690,11 +707,8 @@ export function YieldMonitorReport({ apiBase }: Props) {
                 padding: 16,
               }}
             >
-              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
-                🔴 ProbeCard Type 触发排名
-                <span style={{ marginLeft: 8, fontSize: 11, color: "#6e7681" }}>
-                  点击类型 → 钻取卡ID → 点选卡查看 DUT
-                </span>
+              <div style={{ fontSize: 11, color: "#6e7681", marginBottom: 8 }}>
+                点击类型 → 钻取卡ID → 点选卡查看 DUT
               </div>
               {aggCardType && (
                 <ReactECharts
@@ -751,21 +765,18 @@ export function YieldMonitorReport({ apiBase }: Props) {
                 padding: 16,
               }}
             >
-              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
-                🎯 DUT# 触发分布
-                {selectedProbeCard && (
-                  <span
-                    style={{
-                      marginLeft: 8,
-                      color: "#58a6ff",
-                      fontWeight: 600,
-                      fontSize: 11,
-                    }}
-                  >
-                    — {selectedProbeCard}
-                  </span>
-                )}
-              </div>
+              {selectedProbeCard && (
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "#58a6ff",
+                    fontWeight: 600,
+                    marginBottom: 8,
+                  }}
+                >
+                  已选探针卡：{selectedProbeCard}
+                </div>
+              )}
               {selectedProbeCard && dutRows !== null ? (
                 dutRows.length === 0 ? (
                   <div style={{ color: "#8b949e", fontSize: 12, padding: "12px 0" }}>
@@ -803,9 +814,6 @@ export function YieldMonitorReport({ apiBase }: Props) {
                 padding: 16,
               }}
             >
-              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
-                📦 LOT 触发排名
-              </div>
               {aggLot && (
                 <ReactECharts
                   option={lotOption}
@@ -852,9 +860,6 @@ export function YieldMonitorReport({ apiBase }: Props) {
                 padding: 16,
               }}
             >
-              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 6 }}>
-                🔢 自由维度聚合
-              </div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
                 {FREE_DIMS.map((d) => (
                   <button
@@ -912,7 +917,7 @@ export function YieldMonitorReport({ apiBase }: Props) {
             onClick={() => setShowTree((s) => !s)}
           >
             <span style={{ fontSize: 10, opacity: 0.6 }}>{showTree ? "▼" : "▶"}</span>
-            📊 分组汇总（Device → LOT → ProbeCard Type → ProbeCard ID）
+            Device → LOT → ProbeCard Type → ProbeCard ID
             <span style={{ fontSize: 11, color: "#6e7681", fontWeight: 400 }}>
               {showTree ? "" : `— ${treeRoots.length} 组，点击展开`}
             </span>
@@ -945,7 +950,7 @@ export function YieldMonitorReport({ apiBase }: Props) {
             onClick={() => setShowDetail((s) => !s)}
           >
             <span style={{ fontSize: 10, opacity: 0.6 }}>{showDetail ? "▼" : "▶"}</span>
-            明细表 — 共 {list?.count ?? 0} 条（含 PROBECARDTYPE / dutNumber）
+            共 {list?.count ?? 0} 条（含 PROBECARDTYPE / dutNumber）
           </div>
           {showDetail && <DataTable rows={detailRows} maxHeight={400} />}
         </div>
@@ -984,6 +989,7 @@ export function YieldMonitorReport({ apiBase }: Props) {
     detailRows,
     list,
     showDetail,
+    layoutEpoch,
   ]);
 
   return (
@@ -999,32 +1005,32 @@ export function YieldMonitorReport({ apiBase }: Props) {
         </div>
       </div>
 
-      {/* ── Filter grid ── */}
-      <div className="filter-grid">
-        {(
-          [
-            ["Device", "device"],
-            ["LotID", "lotId"],
-            ["Wafer", "wafer"],
-            ["Hostname", "hostname"],
-            ["ProbeCard", "probeCard"],
-            ["Pass", "pass"],
-          ] as [string, keyof FormState][]
-        ).map(([label, key]) => (
-          <label key={key}>
-            <span>{label}</span>
-            <input
-              type="text"
-              value={form[key]}
-              onChange={(e) => setField(key, e.target.value)}
-              placeholder="留空不筛"
-            />
-          </label>
-        ))}
+      <div className="query-panel">
+        <div className="filter-grid">
+          {(
+            [
+              ["Device", "device"],
+              ["LotID", "lotId"],
+              ["Wafer", "wafer"],
+              ["Hostname", "hostname"],
+              ["ProbeCard", "probeCard"],
+              ["Pass", "pass"],
+            ] as [string, keyof FormState][]
+          ).map(([label, key]) => (
+            <label key={key}>
+              <span>{label}</span>
+              <input
+                type="text"
+                value={form[key]}
+                onChange={(e) => setField(key, e.target.value)}
+                placeholder="留空不筛"
+              />
+            </label>
+          ))}
 
-        <label className="span-2">
-          <span>时间范围（TIME_STAMP）</span>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <label className="span-2">
+            <span>时间范围（TIME_STAMP）</span>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <input
               type="datetime-local"
               value={form.timestampFrom}
@@ -1058,39 +1064,38 @@ export function YieldMonitorReport({ apiBase }: Props) {
             ))}
           </div>
         </label>
-      </div>
+        </div>
 
-      {/* ── Active chips + Query button ── */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-        {chips.length > 0 && (
-          <span style={{ fontSize: 11, color: "#8b949e" }}>生效筛选：</span>
-        )}
-        {chips.map((c) => (
-          <span
-            key={c.key}
-            style={{
-              background: "rgba(56,139,253,0.12)",
-              color: "#58a6ff",
-              border: "1px solid rgba(56,139,253,0.35)",
-              borderRadius: 999,
-              padding: "2px 10px",
-              fontSize: 12,
-              cursor: "pointer",
-            }}
-            onClick={() => clearFilter(c.key)}
-          >
-            {c.label} ✕
-          </span>
-        ))}
-        <button
-          type="button"
-          className="btn primary"
-          style={{ marginLeft: "auto" }}
-          disabled={loadingList || loadingAgg}
-          onClick={query}
-        >
-          {loadingList || loadingAgg ? "查询中…" : "查询"}
-        </button>
+        <div className="query-panel-actions">
+          {chips.length > 0 && (
+            <div className="query-panel-chips">
+              <span className="query-panel-chips-label">生效筛选：</span>
+              {chips.map((c) => (
+                <button
+                  key={c.key}
+                  type="button"
+                  className="query-chip"
+                  onClick={() => clearFilter(c.key)}
+                >
+                  {c.label} ✕
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="query-panel-actions-buttons">
+            <button
+              type="button"
+              className="btn primary query-panel-submit"
+              disabled={loadingList || loadingAgg}
+              onClick={query}
+            >
+              {loadingList || loadingAgg ? "查询中…" : "查询"}
+            </button>
+            {hasData ? (
+              <ReportLayoutResetButton onReset={resetReportLayout} />
+            ) : null}
+          </div>
+        </div>
       </div>
 
       {(errorList || errorAgg) && (
@@ -1109,10 +1114,11 @@ export function YieldMonitorReport({ apiBase }: Props) {
 
       {hasData && (
         <DraggableReportSections
-          storageKey="pcr-ai-report:yield-monitor-modules"
-          defaultOrder={YIELD_REPORT_SECTION_ORDER}
-          sections={yieldReportSections}
-        />
+            storageKey="pcr-ai-report:yield-monitor-modules"
+            defaultOrder={YIELD_REPORT_SECTION_ORDER}
+            sections={yieldReportSections}
+            layoutEpoch={layoutEpoch}
+          />
       )}
     </div>
   );

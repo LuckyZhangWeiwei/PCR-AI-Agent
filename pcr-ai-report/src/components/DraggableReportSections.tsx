@@ -2,10 +2,14 @@ import {
   DndContext,
   KeyboardSensor,
   PointerSensor,
-  closestCenter,
+  pointerWithin,
+  rectIntersection,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
+  type DragOverEvent,
+  type UniqueIdentifier,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -34,15 +38,50 @@ export type DraggableReportBlocksProps = {
   defaultOrder: readonly string[];
   /** Use `null` / `undefined` to omit until visible */
   sections: Record<string, ReactNode | null | undefined>;
-  /**
-   * Sorting topology: KPI row `"x"`, stacked panels `"y"`,
-   * 2×2 (or irregular) grids use `"grid"` with `rectSortingStrategy`.
-   */
   axis?: DraggableSortAxis;
-  /** Appended after `report-reorder-group` */
   groupClassName?: string;
   labels?: Record<string, string>;
+  /** Bump after report-level reset to reload order / visibility from storage */
+  layoutEpoch?: number;
+  /** Show ✕ on each block (default true) */
+  closable?: boolean;
 };
+
+export const YIELD_MONITOR_LAYOUT_STORAGE_KEYS = [
+  "pcr-ai-report:yield-monitor-modules",
+  "pcr-ai-report:yield-monitor-kpi-blocks",
+  "pcr-ai-report:yield-monitor-chart-blocks",
+] as const;
+
+export const JB_START_LAYOUT_STORAGE_KEYS = [
+  "pcr-ai-report:jb-start-modules",
+  "pcr-ai-report:jb-start-kpi-blocks",
+  "pcr-ai-report:jb-start-chart-blocks",
+] as const;
+
+function hiddenStorageKey(storageKey: string): string {
+  return `${storageKey}:hidden`;
+}
+
+function readJsonStringArray(key: string): string[] {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((x): x is string => typeof x === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export function resetReportLayoutStorage(keys: readonly string[]): void {
+  for (const key of keys) {
+    localStorage.removeItem(key);
+    localStorage.removeItem(hiddenStorageKey(key));
+  }
+}
 
 function normalizeOrder(saved: string[], canonical: readonly string[]): string[] {
   const allowed = new Set(canonical);
@@ -63,7 +102,6 @@ function normalizeOrder(saved: string[], canonical: readonly string[]): string[]
   return out;
 }
 
-/** Append any newly-visible section ids without dropping user order */
 function mergeOrderWithActive(
   saved: string[],
   canonical: readonly string[],
@@ -92,6 +130,81 @@ function applyVisibleReorder(
   });
 }
 
+function normalizeHidden(saved: string[], activeSet: Set<string>): Set<string> {
+  const out = new Set<string>();
+  for (const id of saved) {
+    if (activeSet.has(id)) out.add(id);
+  }
+  return out;
+}
+
+/** Sortable shift animation (default @dnd-kit is 250ms) */
+const REPORT_REORDER_TRANSITION = {
+  duration: 480,
+  easing: "cubic-bezier(0.25, 1, 0.5, 1)",
+};
+
+/**
+ * Swap when the pointer crosses another item's midpoint (not when the dragged
+ * block's huge rect overlaps). Fixes tall chart/KPI panels needing long drags.
+ */
+function createPointerMidpointCollision(axis: DraggableSortAxis): CollisionDetection {
+  return (args) => {
+    const { active, droppableContainers, droppableRects, pointerCoordinates } = args;
+    if (!active || !pointerCoordinates) {
+      return rectIntersection(args);
+    }
+
+    if (axis === "grid") {
+      let closest: { id: UniqueIdentifier; dist: number } | null = null;
+      for (const container of droppableContainers) {
+        if (container.id === active.id) continue;
+        const rect = droppableRects.get(container.id);
+        if (!rect) continue;
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const dist =
+          (pointerCoordinates.x - cx) ** 2 + (pointerCoordinates.y - cy) ** 2;
+        if (closest == null || dist < closest.dist) {
+          closest = { id: container.id, dist };
+        }
+      }
+      if (closest) return [{ id: closest.id }];
+
+      const pointerHits = pointerWithin(args).filter((c) => c.id !== active.id);
+      if (pointerHits.length > 0) return pointerHits;
+      return rectIntersection(args).filter((c) => c.id !== active.id);
+    }
+
+    const isHorizontal = axis === "x";
+    const pointer = isHorizontal ? pointerCoordinates.x : pointerCoordinates.y;
+
+    const sorted = [...droppableContainers]
+      .filter((c) => c.id !== active.id)
+      .sort((a, b) => {
+        const rectA = droppableRects.get(a.id);
+        const rectB = droppableRects.get(b.id);
+        if (!rectA || !rectB) return 0;
+        return isHorizontal ? rectA.left - rectB.left : rectA.top - rectB.top;
+      });
+
+    if (sorted.length === 0) return [];
+
+    for (const container of sorted) {
+      const rect = droppableRects.get(container.id);
+      if (!rect) continue;
+      const midpoint = isHorizontal
+        ? rect.left + rect.width / 2
+        : rect.top + rect.height / 2;
+      if (pointer < midpoint) {
+        return [{ id: container.id }];
+      }
+    }
+
+    return [{ id: sorted[sorted.length - 1]!.id }];
+  };
+}
+
 function sortStrategyForAxis(axis: DraggableSortAxis): SortingStrategy {
   switch (axis) {
     case "x":
@@ -103,10 +216,11 @@ function sortStrategyForAxis(axis: DraggableSortAxis): SortingStrategy {
   }
 }
 
-function usePersistedBlockOrder(
+function usePersistedBlockLayout(
   storageKey: string,
   defaultOrder: readonly string[],
   sections: Record<string, ReactNode | null | undefined>,
+  layoutEpoch: number,
 ) {
   const activeIds = useMemo(
     () => defaultOrder.filter((id) => sections[id] != null),
@@ -115,21 +229,23 @@ function usePersistedBlockOrder(
 
   const activeSet = useMemo(() => new Set(activeIds), [activeIds]);
 
-  const [order, setOrder] = useState<string[]>(() =>
-    normalizeOrder(
-      (() => {
-        try {
-          const raw = localStorage.getItem(storageKey);
-          if (!raw) return [];
-          const parsed = JSON.parse(raw) as unknown;
-          return Array.isArray(parsed) ? (parsed as string[]) : [];
-        } catch {
-          return [];
-        }
-      })(),
-      defaultOrder,
-    ),
+  const loadOrder = useCallback(
+    () => normalizeOrder(readJsonStringArray(storageKey), defaultOrder),
+    [storageKey, defaultOrder],
   );
+
+  const loadHidden = useCallback(
+    () => normalizeHidden(readJsonStringArray(hiddenStorageKey(storageKey)), activeSet),
+    [storageKey, activeSet],
+  );
+
+  const [order, setOrder] = useState<string[]>(loadOrder);
+  const [hidden, setHidden] = useState<Set<string>>(loadHidden);
+
+  useEffect(() => {
+    setOrder(loadOrder());
+    setHidden(loadHidden());
+  }, [layoutEpoch, loadOrder, loadHidden]);
 
   const fullOrder = useMemo(
     () => mergeOrderWithActive(order, defaultOrder, activeIds),
@@ -137,17 +253,18 @@ function usePersistedBlockOrder(
   );
 
   const displayOrder = useMemo(
-    () => fullOrder.filter((id) => activeSet.has(id)),
-    [fullOrder, activeSet],
+    () => fullOrder.filter((id) => activeSet.has(id) && !hidden.has(id)),
+    [fullOrder, activeSet, hidden],
   );
 
-  /** Used by @dnd-kit drop */
   const moveActiveIdOver = useCallback(
     (activeId: string, overId: string) => {
       if (activeId === overId) return;
       setOrder((prev) => {
         const prevFull = mergeOrderWithActive(prev, defaultOrder, activeIds);
-        const visible = prevFull.filter((id) => activeSet.has(id));
+        const visible = prevFull.filter(
+          (id) => activeSet.has(id) && !hidden.has(id),
+        );
         const oldIndex = visible.indexOf(activeId);
         const newIndex = visible.indexOf(overId);
         if (oldIndex < 0 || newIndex < 0) return prev;
@@ -155,7 +272,19 @@ function usePersistedBlockOrder(
         return applyVisibleReorder(prevFull, activeSet, newVisible);
       });
     },
-    [activeSet, activeIds, defaultOrder],
+    [activeSet, activeIds, defaultOrder, hidden],
+  );
+
+  const closeBlock = useCallback(
+    (id: string) => {
+      if (!activeSet.has(id)) return;
+      setHidden((prev) => {
+        const next = new Set(prev);
+        next.add(id);
+        return next;
+      });
+    },
+    [activeSet],
   );
 
   useEffect(() => {
@@ -166,10 +295,23 @@ function usePersistedBlockOrder(
     }
   }, [storageKey, fullOrder]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        hiddenStorageKey(storageKey),
+        JSON.stringify([...hidden]),
+      );
+    } catch {
+      /* ignore quota */
+    }
+  }, [storageKey, hidden]);
+
   return {
     displayOrder,
     moveActiveIdOver,
     sections,
+    closeBlock,
+    hiddenCount: hidden.size,
   };
 }
 
@@ -177,10 +319,14 @@ function SortableBlock({
   id,
   label,
   children,
+  closable,
+  onClose,
 }: {
   id: string;
   label: string;
   children: React.ReactNode;
+  closable: boolean;
+  onClose: () => void;
 }) {
   const {
     attributes,
@@ -189,7 +335,7 @@ function SortableBlock({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id });
+  } = useSortable({ id, transition: REPORT_REORDER_TRANSITION });
 
   const style: CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -204,10 +350,10 @@ function SortableBlock({
       style={style}
       className={`report-reorder-item${isDragging ? " report-reorder-item--dragging" : ""}`}
     >
-      <div className="report-reorder-handlebar">
+      <div className="report-reorder-item-head">
         <button
           type="button"
-          className="report-reorder-handle"
+          className="report-reorder-drag-head"
           title={`拖动排序：${label}`}
           aria-label={`拖动排序：${label}`}
           {...listeners}
@@ -216,8 +362,20 @@ function SortableBlock({
           <span className="report-reorder-grip" aria-hidden>
             ⋮⋮
           </span>
+          <span className="report-reorder-drag-title">{label}</span>
         </button>
-        <span className="report-reorder-label">{label}</span>
+        {closable ? (
+          <button
+            type="button"
+            className="report-reorder-close"
+            title={`关闭：${label}`}
+            aria-label={`关闭：${label}`}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={onClose}
+          >
+            ✕
+          </button>
+        ) : null}
       </div>
       <div className="report-reorder-body">{children}</div>
     </div>
@@ -231,14 +389,17 @@ function DraggableReportBlocksInner({
   sortAxis,
   groupClassName,
   labels = {},
+  layoutEpoch = 0,
+  closable = true,
 }: DraggableReportBlocksProps & { sortAxis: DraggableSortAxis }) {
-  const { displayOrder, moveActiveIdOver, sections: sec } = usePersistedBlockOrder(
-    storageKey,
-    defaultOrder,
-    sections,
-  );
+  const { displayOrder, moveActiveIdOver, sections: sec, closeBlock } =
+    usePersistedBlockLayout(storageKey, defaultOrder, sections, layoutEpoch);
 
   const strategy = sortStrategyForAxis(sortAxis);
+  const collisionDetection = useMemo(
+    () => createPointerMidpointCollision(sortAxis),
+    [sortAxis],
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -249,20 +410,48 @@ function DraggableReportBlocksInner({
     }),
   );
 
-  const onDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    moveActiveIdOver(String(active.id), String(over.id));
-  };
+  const handleDragOver = useCallback(
+    (event: DragOverEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      moveActiveIdOver(String(active.id), String(over.id));
+    },
+    [moveActiveIdOver],
+  );
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (over && active.id !== over.id) {
+        moveActiveIdOver(String(active.id), String(over.id));
+      }
+    },
+    [moveActiveIdOver],
+  );
 
   const groupCls = ["report-reorder-group", groupClassName].filter(Boolean).join(" ");
 
+  if (displayOrder.length === 0) {
+    return null;
+  }
+
   return (
     <div className={groupCls}>
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={collisionDetection}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
+      >
         <SortableContext items={displayOrder} strategy={strategy}>
           {displayOrder.map((id) => (
-            <SortableBlock key={id} id={id} label={labels[id] ?? id}>
+            <SortableBlock
+              key={id}
+              id={id}
+              label={labels[id] ?? id}
+              closable={closable}
+              onClose={() => closeBlock(id)}
+            >
               {sec[id]}
             </SortableBlock>
           ))}
@@ -279,8 +468,8 @@ export function DraggableReportBlocks(props: DraggableReportBlocksProps) {
 
 const TOP_SECTION_LABELS: Record<string, string> = {
   kpi: "关键指标",
-  timeTrend: "趋势图",
-  lotYield: "LOT Yield",
+  timeTrend: "每日触发量趋势",
+  lotYield: "LOT Yield% 最差 Top 10",
   chartsGrid: "图表矩阵",
   tree: "分组汇总",
   detail: "明细表",
@@ -290,10 +479,17 @@ type TopSectionsProps = {
   storageKey: string;
   defaultOrder: readonly string[];
   sections: Record<string, ReactNode | null | undefined>;
+  layoutEpoch?: number;
+  closable?: boolean;
 };
 
-/** Top-level report panels (Yield / JB) */
-export function DraggableReportSections({ storageKey, defaultOrder, sections }: TopSectionsProps) {
+export function DraggableReportSections({
+  storageKey,
+  defaultOrder,
+  sections,
+  layoutEpoch = 0,
+  closable = true,
+}: TopSectionsProps) {
   return (
     <DraggableReportBlocks
       storageKey={storageKey}
@@ -301,6 +497,43 @@ export function DraggableReportSections({ storageKey, defaultOrder, sections }: 
       sections={sections}
       axis="y"
       labels={TOP_SECTION_LABELS}
+      layoutEpoch={layoutEpoch}
+      closable={closable}
     />
+  );
+}
+
+type ReportLayoutResetBarProps = {
+  onReset: () => void;
+  className?: string;
+};
+
+/** Clears order + hidden state for all keys in a report; parent should bump `layoutEpoch` */
+export function ReportLayoutResetButton({
+  onReset,
+  className,
+}: ReportLayoutResetBarProps) {
+  return (
+    <button
+      type="button"
+      className={["btn ghost report-layout-reset-btn", className]
+        .filter(Boolean)
+        .join(" ")}
+      title="恢复已关闭的模块与默认排序"
+      onClick={onReset}
+    >
+      ↺ 还原布局
+    </button>
+  );
+}
+
+export function ReportLayoutResetBar({ onReset, className }: ReportLayoutResetBarProps) {
+  return (
+    <div className={["report-layout-reset-bar", className].filter(Boolean).join(" ")}>
+      <ReportLayoutResetButton onReset={onReset} />
+      <span className="report-layout-reset-hint muted small">
+        恢复已关闭的模块与默认排序
+      </span>
+    </div>
   );
 }

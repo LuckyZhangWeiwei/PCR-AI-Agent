@@ -10,7 +10,13 @@ import type {
 } from "../api/types";
 import { DarkChart } from "../components/DarkChart";
 import { DataTable } from "../components/DataTable";
-import { DraggableReportBlocks, DraggableReportSections } from "../components/DraggableReportSections";
+import {
+  DraggableReportBlocks,
+  DraggableReportSections,
+  JB_START_LAYOUT_STORAGE_KEYS,
+  ReportLayoutResetButton,
+  resetReportLayoutStorage,
+} from "../components/DraggableReportSections";
 import { DrillDownPanel, formatGroupLabel } from "../components/DrillDownPanel";
 import { KpiCard } from "../components/KpiCard";
 import { TreeTable } from "../components/TreeTable";
@@ -263,6 +269,12 @@ export function InfcontrolReport({ apiBase }: Props) {
   const [selectedBin,      setSelectedBin]      = useState<string | null>(null);
   const [selectedCardType, setSelectedCardType] = useState<string | null>(null);
   const [selectedSlot,     setSelectedSlot]     = useState<string | null>(null);
+  const [layoutEpoch, setLayoutEpoch] = useState(0);
+
+  const resetReportLayout = useCallback(() => {
+    resetReportLayoutStorage(JB_START_LAYOUT_STORAGE_KEYS);
+    setLayoutEpoch((n) => n + 1);
+  }, []);
 
   const setField = useCallback(
     <K extends keyof FormState>(k: K, v: FormState[K]) => {
@@ -728,17 +740,18 @@ export function InfcontrolReport({ apiBase }: Props) {
       <DraggableReportBlocks
         storageKey="pcr-ai-report:jb-start-kpi-blocks"
         defaultOrder={JB_KPI_BLOCK_ORDER}
+        layoutEpoch={layoutEpoch}
         axis="x"
         groupClassName="report-reorder-group--kpis"
         labels={{
-          jbWafer: "Wafer",
-          jbYieldPct: "Yield%",
-          jbWorstType: "最差卡类型",
-          jbTopBin: "Top Bin",
+          jbWafer: "匹配 Wafer 数",
+          jbYieldPct: "综合 Yield%",
+          jbWorstType: "最差探针卡类型",
+          jbTopBin: "Top 不良 Bin",
         }}
         sections={{
           jbWafer: (
-            <KpiCard label="匹配 Wafer 数" value={totalWafers} color="blue" />
+            <KpiCard label="匹配 Wafer 数" value={totalWafers} color="blue" showLabel={false} />
           ),
           jbYieldPct: (
             <KpiCard
@@ -750,6 +763,7 @@ export function InfcontrolReport({ apiBase }: Props) {
                   : "white"
               }
               subtext="前端计算"
+              showLabel={false}
             />
           ),
           jbWorstType: (
@@ -758,6 +772,7 @@ export function InfcontrolReport({ apiBase }: Props) {
               value={worstCardType}
               color="red"
               subtext="坏 die 最多"
+              showLabel={false}
             />
           ),
           jbTopBin: (
@@ -766,6 +781,7 @@ export function InfcontrolReport({ apiBase }: Props) {
               value={topBin}
               color="yellow"
               subtext="全量最高"
+              showLabel={false}
             />
           ),
         }}
@@ -783,7 +799,7 @@ export function InfcontrolReport({ apiBase }: Props) {
           }}
         >
           <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
-            🟢 LOT Yield% 最差 Top 10（绿≥95% / 黄80-95% / 红&lt;80%）
+            <span>绿≥95% · 黄80–95% · 红&lt;80%</span>
             <span style={{ marginLeft: 8, fontSize: 11, color: "#6e7681" }}>
               点击条形钻取
             </span>
@@ -830,13 +846,14 @@ export function InfcontrolReport({ apiBase }: Props) {
       <DraggableReportBlocks
         storageKey="pcr-ai-report:jb-start-chart-blocks"
         defaultOrder={JB_CHART_BLOCK_ORDER}
+        layoutEpoch={layoutEpoch}
         axis="grid"
         groupClassName="report-reorder-group--chartgrid"
         labels={{
-          jbBin: "BIN 排名",
-          jbPcType: "卡类型对比",
-          jbSlot: "Slot 趋势",
-          jbFreeDim: "自由维度",
+          jbBin: "不良 BIN 全量排名",
+          jbPcType: "ProbeCard Type 不良对比",
+          jbSlot: "Slot 趋势（Wafer 间）",
+          jbFreeDim: "自由维度聚合",
         }}
         sections={{
           jbBin: (
@@ -848,11 +865,8 @@ export function InfcontrolReport({ apiBase }: Props) {
                 padding: 16,
               }}
             >
-              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
-                🔴 不良 BIN 全量排名
-                <span style={{ marginLeft: 8, fontSize: 11, color: "#6e7681" }}>
-                  点击钻取
-                </span>
+              <div style={{ fontSize: 11, color: "#6e7681", marginBottom: 8 }}>
+                点击钻取
               </div>
               {aggBin && (
                 <ReactECharts
@@ -901,11 +915,8 @@ export function InfcontrolReport({ apiBase }: Props) {
                 padding: 16,
               }}
             >
-              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
-                🃏 ProbeCard Type 不良对比
-                <span style={{ marginLeft: 8, fontSize: 11, color: "#6e7681" }}>
-                  点击类型 → 钻取具体 CardId
-                </span>
+              <div style={{ fontSize: 11, color: "#6e7681", marginBottom: 8 }}>
+                点击类型 → 钻取具体 CardId
               </div>
               {aggCardType && (
                 <ReactECharts
@@ -974,11 +985,8 @@ export function InfcontrolReport({ apiBase }: Props) {
                 padding: 16,
               }}
             >
-              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
-                📊 Slot 趋势（wafer 间比较）
-                <span style={{ marginLeft: 8, fontSize: 11, color: "#6e7681" }}>
-                  点击 Slot 钻取
-                </span>
+              <div style={{ fontSize: 11, color: "#6e7681", marginBottom: 8 }}>
+                点击 Slot 钻取
               </div>
               {aggSlot && (
                 <ReactECharts
@@ -1024,9 +1032,6 @@ export function InfcontrolReport({ apiBase }: Props) {
                 padding: 16,
               }}
             >
-              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 6 }}>
-                🔢 自由维度聚合
-              </div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
                 {FREE_DIMS.map((d) => (
                   <button
@@ -1084,7 +1089,7 @@ export function InfcontrolReport({ apiBase }: Props) {
             onClick={() => setShowTree((s) => !s)}
           >
             <span style={{ fontSize: 10, opacity: 0.6 }}>{showTree ? "▼" : "▶"}</span>
-            📊 分组汇总（Device → LOT → ProbeCard Type → CardId）
+            Device → LOT → ProbeCard Type → CardId
             <span style={{ fontSize: 11, color: "#6e7681", fontWeight: 400 }}>
               {showTree ? "" : `— ${treeRoots.length} 组，点击展开`}
             </span>
@@ -1125,7 +1130,7 @@ export function InfcontrolReport({ apiBase }: Props) {
             onClick={() => setShowDetail((s) => !s)}
           >
             <span style={{ fontSize: 10, opacity: 0.6 }}>{showDetail ? "▼" : "▶"}</span>
-            明细表 — 共 {list?.count ?? 0} 条（含 PROBECARDTYPE / Yield%）
+            共 {list?.count ?? 0} 条（含 PROBECARDTYPE / Yield%）
           </div>
           {showDetail && <DataTable rows={detailRows} maxHeight={400} />}
         </div>
@@ -1164,6 +1169,7 @@ export function InfcontrolReport({ apiBase }: Props) {
     list,
     detailRows,
     showDetail,
+    layoutEpoch,
   ]);
 
   return (
@@ -1179,48 +1185,48 @@ export function InfcontrolReport({ apiBase }: Props) {
         </div>
       </div>
 
-      {/* ── Filter grid ── */}
-      <div className="filter-grid">
-        {(
-          [
-            ["Device",   "device"  ],
-            ["Lot",      "lot"     ],
-            ["Slot",     "slot"    ],
-            ["CardId",   "cardId"  ],
-            ["TesterID", "testerId"],
-            ["PassID",   "passId"  ],
-            ["MES Slot", "meslot"  ],
-          ] as [string, keyof FormState][]
-        ).map(([label, key]) => (
-          <label key={key}>
-            <span>{label}</span>
-            <input
-              type="text"
-              value={form[key]}
-              onChange={(e) => setField(key, e.target.value)}
-              placeholder="留空不筛"
-            />
+      <div className="query-panel">
+        <div className="filter-grid">
+          {(
+            [
+              ["Device", "device"],
+              ["Lot", "lot"],
+              ["Slot", "slot"],
+              ["CardId", "cardId"],
+              ["TesterID", "testerId"],
+              ["PassID", "passId"],
+              ["MES Slot", "meslot"],
+            ] as [string, keyof FormState][]
+          ).map(([label, key]) => (
+            <label key={key}>
+              <span>{label}</span>
+              <input
+                type="text"
+                value={form[key]}
+                onChange={(e) => setField(key, e.target.value)}
+                placeholder="留空不筛"
+              />
+            </label>
+          ))}
+
+          <label>
+            <span>Tester Type</span>
+            <select
+              value={form.tstype}
+              onChange={(e) => setField("tstype", e.target.value)}
+            >
+              <option value="">全部</option>
+              {TSTYPE_OPTIONS.map((o) => (
+                <option key={o} value={o}>
+                  {o}
+                </option>
+              ))}
+            </select>
           </label>
-        ))}
 
-        <label>
-          <span>Tester Type</span>
-          <select
-            value={form.tstype}
-            onChange={(e) => setField("tstype", e.target.value)}
-          >
-            <option value="">全部</option>
-            {TSTYPE_OPTIONS.map((o) => (
-              <option key={o} value={o}>
-                {o}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="span-2">
-          <span>测试结束时间（testEnd）</span>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <label className="span-2">
+            <span>测试结束时间（testEnd）</span>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <input
               type="datetime-local"
               value={form.testEndFrom}
@@ -1254,39 +1260,38 @@ export function InfcontrolReport({ apiBase }: Props) {
             ))}
           </div>
         </label>
-      </div>
+        </div>
 
-      {/* ── Chips + Query button ── */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-        {chips.length > 0 && (
-          <span style={{ fontSize: 11, color: "#8b949e" }}>生效筛选：</span>
-        )}
-        {chips.map((c) => (
-          <span
-            key={c.key}
-            style={{
-              background: "rgba(56,139,253,0.12)",
-              color: "#58a6ff",
-              border: "1px solid rgba(56,139,253,0.35)",
-              borderRadius: 999,
-              padding: "2px 10px",
-              fontSize: 12,
-              cursor: "pointer",
-            }}
-            onClick={() => clearFilter(c.key)}
-          >
-            {c.label} ✕
-          </span>
-        ))}
-        <button
-          type="button"
-          className="btn primary"
-          style={{ marginLeft: "auto" }}
-          disabled={loadingList || loadingAgg}
-          onClick={query}
-        >
-          {loadingList || loadingAgg ? "查询中…" : "查询"}
-        </button>
+        <div className="query-panel-actions">
+          {chips.length > 0 && (
+            <div className="query-panel-chips">
+              <span className="query-panel-chips-label">生效筛选：</span>
+              {chips.map((c) => (
+                <button
+                  key={c.key}
+                  type="button"
+                  className="query-chip"
+                  onClick={() => clearFilter(c.key)}
+                >
+                  {c.label} ✕
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="query-panel-actions-buttons">
+            <button
+              type="button"
+              className="btn primary query-panel-submit"
+              disabled={loadingList || loadingAgg}
+              onClick={query}
+            >
+              {loadingList || loadingAgg ? "查询中…" : "查询"}
+            </button>
+            {hasData ? (
+              <ReportLayoutResetButton onReset={resetReportLayout} />
+            ) : null}
+          </div>
+        </div>
       </div>
 
       {(errorList || errorAgg) && (
@@ -1308,6 +1313,7 @@ export function InfcontrolReport({ apiBase }: Props) {
           storageKey="pcr-ai-report:jb-start-modules"
           defaultOrder={JB_REPORT_SECTION_ORDER}
           sections={jbReportSections}
+          layoutEpoch={layoutEpoch}
         />
       )}
     </div>

@@ -1,5 +1,6 @@
 import type { EChartsOption } from "echarts";
 import { DarkChart } from "./DarkChart";
+import { formatChartDayLabel } from "../utils/datetimeLocal";
 import {
   baseChartOption,
   chartAccent,
@@ -47,6 +48,7 @@ export function formatGroupLabel(parts: Record<string, string>): string {
         case "pass":          return `Pass ${val}`;
         case "testerId":      return `Tester ${val}`;
         case "meslot":        return `MES ${val}`;
+        case "timeDay":       return formatChartDayLabel(val);
         default:              return val;
       }
     })

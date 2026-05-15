@@ -5,6 +5,8 @@ import type { ManifestCatalogResponse } from "../api/types";
 
 type Props = {
   apiBase: string;
+  /** Nested under Settings — omit duplicate page chrome */
+  embedded?: boolean;
 };
 
 function truncate(s: string, max: number): string {
@@ -13,7 +15,7 @@ function truncate(s: string, max: number): string {
   return t.slice(0, max - 1) + "…";
 }
 
-export function OverviewReport({ apiBase }: Props) {
+export function OverviewReport({ apiBase, embedded = false }: Props) {
   const [manifest, setManifest] = useState<ManifestCatalogResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,10 +42,10 @@ export function OverviewReport({ apiBase }: Props) {
   const eps = manifest?.endpoints ?? [];
 
   return (
-    <section className="report-panel">
+    <section className={`report-panel${embedded ? " report-panel--embedded" : ""}`}>
       <header className="report-panel-header">
         <div>
-          <h2>API 概览（v4）</h2>
+          {!embedded ? <h2>API 概览（v4）</h2> : null}
           <p className="report-desc">
             拉取 <code>{API_PREFIX}/manifest</code>，展示当前服务在{" "}
             <strong>v4 目录</strong> 下暴露的端点（<code>catalogScope</code> 一般为{" "}

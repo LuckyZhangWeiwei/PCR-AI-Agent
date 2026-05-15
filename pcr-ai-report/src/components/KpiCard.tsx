@@ -19,6 +19,8 @@ type Props = {
   value: number | string | null;
   subtext?: string;
   color?: KpiColor;
+  /** When false, title is shown only on the parent drag bar (e.g. reorder strips). */
+  showLabel?: boolean;
 };
 
 function AnimatedNumber({ value }: { value: number }) {
@@ -26,10 +28,17 @@ function AnimatedNumber({ value }: { value: number }) {
   return <>{n.toLocaleString()}</>;
 }
 
-export function KpiCard({ label, value, subtext, color = "white" }: Props) {
+export function KpiCard({
+  label,
+  value,
+  subtext,
+  color = "white",
+  showLabel = true,
+}: Props) {
   const c = COLOR_MAP[color];
   return (
     <div
+      className={showLabel ? "kpi-card" : "kpi-card kpi-card--in-strip"}
       style={{
         background: "#0d1117",
         border: `1px solid ${c.border}`,
@@ -39,10 +48,13 @@ export function KpiCard({ label, value, subtext, color = "white" }: Props) {
         boxShadow: `0 0 12px ${c.glow}`,
       }}
     >
-      <div style={{ fontSize: 11, color: "#8b949e", marginBottom: 4 }}>
-        {label}
-      </div>
+      {showLabel && (
+        <div style={{ fontSize: 11, color: "#8b949e", marginBottom: 4 }}>
+          {label}
+        </div>
+      )}
       <div
+        className="kpi-card-value"
         style={{ fontSize: 22, fontWeight: 700, color: c.text, margin: "2px 0" }}
       >
         {value === null || value === undefined
@@ -51,9 +63,9 @@ export function KpiCard({ label, value, subtext, color = "white" }: Props) {
           ? <AnimatedNumber value={value} />
           : value}
       </div>
-      {subtext && (
-        <div style={{ fontSize: 11, color: "#8b949e", marginTop: 2 }}>
-          {subtext}
+      {(subtext || !showLabel) && (
+        <div className="kpi-card-subtext" style={{ fontSize: 11, color: "#8b949e", marginTop: 2 }}>
+          {subtext ?? "\u00a0"}
         </div>
       )}
     </div>

@@ -9,9 +9,10 @@ This is a two-package monorepo (no shared workspace tooling — each package has
 | Package | Tech | Role |
 | --- | --- | --- |
 | [`pcr-ai-api/`](pcr-ai-api/) | Node.js + Express + TypeScript + **oracledb 5.5**（锁定；见 `pcr-ai-api/CLAUDE.md` §8） | Read-only REST API backed by Oracle |
-| [`pcr-ai-report/`](pcr-ai-report/) | React 19 + TypeScript + Vite + ECharts | Browser dashboard that queries the API |
+| [`pcr-ai-report/`](pcr-ai-report/) | React 19 + TypeScript + Vite + ECharts + **@dnd-kit** | Browser dashboard (**NXP ATTJ WaferTest Dashboard**) that queries the API |
 
-> **Deep API context:** `pcr-ai-api/CLAUDE.md` contains the full handoff guide for the backend — Dummy/Oracle discipline, v3 constraints, SQL entry points, and the checklist. **Recent v3/v4 aggregate split and `MEMORY_AGG_ORACLE_MAX_ROWS`:** see **`pcr-ai-api/CLAUDE.md` §3 and §11 (2026-05-14)**. **SiliconFlow proxy, CORS, deployment:** **`pcr-ai-api/CLAUDE.md` §12**. Read it before touching `pcr-ai-api/`.
+> **Deep API context:** [`pcr-ai-api/CLAUDE.md`](pcr-ai-api/CLAUDE.md) — Dummy/Oracle, v3/v4 aggregate, `MEMORY_AGG_ORACLE_MAX_ROWS`, SiliconFlow, CORS (§3、§11–§12).  
+> **Deep report context:** [`pcr-ai-report/CLAUDE.md`](pcr-ai-report/CLAUDE.md) — draggable layout, localStorage keys, query panel, chart labels, tab/settings shell (§6–§11, **2026-05-15**). Read the relevant package doc before editing that package.
 
 ---
 
@@ -73,12 +74,13 @@ Set `YIELD_MONITOR_TRIGGERS_DUMMY=true` or `INFCONTROL_LAYER_BINS_DUMMY=true` in
 
 ### Frontend (`pcr-ai-report/src/`)
 
-- **`App.tsx`** — shell with a configurable API base URL input (persisted to `localStorage` via `usePersistedApiBase`), connection health probe, and five tab panels.
+- **`App.tsx`** — shell: title **NXP ATTJ WaferTest Dashboard**, tabs (Yield / JB / AI / 表浏览 / **⚙ 设置**), API base + health probe in settings; **`OverviewReport embedded`** for API catalog (no longer a top-level tab).
 - **`api/client.ts`** — `apiGetJson<T>()` wraps `fetch`, normalizes the base URL, serializes query params, and throws on non-2xx with a structured error message.
 - **`api/paths.ts`** — single constant `API_PREFIX = "/api/v4"` shared by all report components.
-- **`reports/`** — one component per tab: `OverviewReport` (manifest/API directory), `YieldMonitorReport`, `InfcontrolReport`, `AiAgentReport` (SiliconFlow chat via `GET …/siliconflow/chat`), `TableRowsReport`. Each manages its own form state, query execution, and ECharts options inline (AI tab is button-driven, not chart-heavy).
-- **`components/`** — `DarkChart` (ECharts wrapper with resize listener), `DataTable` (generic row/column renderer), `QueryInspector`, `KpiCard` (stat tile), `TreeTable` (collapsible hierarchy), `DrillDownPanel` (slot/trend drill-in).
-- **`utils/`** — `asyncConcurrency.ts` exports `allSettledWithConcurrency` and `REPORT_ORACLE_FANOUT_CONCURRENCY = 1` (serial fanout cap to prevent NJS-040 pool exhaustion); `yieldCalc.ts`, `rollup.ts`, `datetimeLocal.ts`, `binFilterLines.ts` are domain helpers used inside report components.
+- **`reports/`** — `YieldMonitorReport`, `InfcontrolReport` (both use **`DraggableReportSections`** + nested **`DraggableReportBlocks`** for KPI/chart grids, **`.query-panel`**, layout reset); `AiAgentReport`, `TableRowsReport`, `OverviewReport` (settings only when `embedded`).
+- **`components/DraggableReportSections.tsx`** — `@dnd-kit` reorder/close/hide + **`localStorage`**; **`createPointerMidpointCollision`** for tall blocks; see **`pcr-ai-report/CLAUDE.md` §6**.
+- **`components/`** — also `DarkChart`, `DataTable`, `QueryInspector`, `KpiCard` (`showLabel` for KPI strips), `TreeTable`, `DrillDownPanel`.
+- **`utils/`** — `asyncConcurrency.ts` (`REPORT_ORACLE_FANOUT_CONCURRENCY = 1`); `datetimeLocal.ts` (`formatChartDayLabel`, `formatAggregateDimLabel`); `yieldCalc.ts`, `rollup.ts`, `binFilterLines.ts`.
 - **`theme/chartTheme.ts`** — dark-palette constants shared across all chart options.
 
 ### Communication flow
