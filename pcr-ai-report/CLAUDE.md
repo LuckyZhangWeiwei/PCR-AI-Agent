@@ -52,12 +52,13 @@ npm run preview   # 本地预览 dist/
 - **`usePersistedApiBase`**：API 基址 `localStorage`。
 - **切换 tab**：`useLayoutEffect` 派发 `window.resize`，供 ECharts 重算尺寸。
 - **顶栏样式**：`.app-title-main`（`index.css`）— 整行渐变标题，约 **28px**。
+- **明细行数**：**⚙ 设置 → 明细行数**；`usePersistedReportLimits`（`localStorage` 键 `pcr-ai-report.listLimits.v1`）。默认 **300** 条、上限 **500**（与 API `limit` 一致）。Yield / JB 查询传 `limit=defaultLimit`；表浏览的 `limit` 输入受 `maxLimit` 约束。
 
 ---
 
 ## 5. API 客户端
 
-- **`api/paths.ts`**：`API_PREFIX = "/api/v4"`（全报表共用）。
+- **`api/paths.ts`**：列表 **`API_PREFIX = "/api/v4"`**（受设置里 `limit` 约束）；图表聚合 **`INFCONTROL_AGGREGATE_PATH`** / **`YIELD_AGGREGATE_PATH`** 走 **v3 库内聚合**（**不受 `limit` 影响**）。
 - **`api/client.ts`**：`apiGetJson<T>(base, path, params?, init?)` — 规范化 base、序列化 query、非 2xx 抛结构化错误。
 - **并发**：`utils/asyncConcurrency.ts` 中 **`REPORT_ORACLE_FANOUT_CONCURRENCY = 1`**，避免打爆 Oracle 连接池（NJS-040）。
 - **v4 聚合 422**：筛选过宽、匹配行超过服务端 **`MEMORY_AGG_ORACLE_MAX_ROWS`** 时收窄时间窗或维度；见 API 文档，勿在前端硬编码密钥。
@@ -129,11 +130,11 @@ const resetReportLayout = () => {
 
 ## 7. 查询区（`.query-panel`，`index.css`）
 
-Yield / JB 共用结构：
+Yield / JB 使用 **`CollapsibleQueryPanel`**（`components/CollapsibleQueryPanel.tsx`）：
 
-- **`.filter-grid`**：筛选字段。
-- **`.query-panel-actions`**：左侧 chips（生效筛选），右侧 **查询** + **还原布局**。
-- 类名：**`.query-panel-submit`**、**`.report-layout-reset-btn`**。
+- 点击 **「查询条件」** 展开/折叠筛选表单；折叠后顶栏仍保留 **生效筛选 chips**、**查询**、**还原布局**。
+- 展开状态持久化：`pcr-ai-report:yield-monitor-query-open`、`pcr-ai-report:jb-start-query-open`（`localStorage` `1`/`0`）。
+- **`.filter-grid`**：筛选字段；**`.query-panel-actions`**：底栏 chips + 按钮。
 
 `TableRowsReport` 仍为旧式卡片，若要对齐需单独改。
 
@@ -193,7 +194,8 @@ src/
 3. **拖动**：整项拖动；**指针中线**碰撞（`createPointerMidpointCollision`）；**480ms** 过渡。
 4. **导航**：**API 目录**从顶栏 tab 移至 **⚙ 设置**（`OverviewReport` `embedded`）。
 5. **标签**：图表日轴 / 聚合维 **`formatChartDayLabel`** / **`formatAggregateDimLabel`**。
-6. **未做**：`TableRowsReport` 查询区与拖拽布局未与 Yield/JB 统一。
+6. **设置**：**明细默认/最多条数**（300/500 可改）见 `hooks/usePersistedReportLimits.ts`、`components/ReportListLimitsSettings.tsx`。
+7. **未做**：`TableRowsReport` 查询区与拖拽布局未与 Yield/JB 完全统一（表浏览仍保留页内 `limit` 输入）。
 
 ---
 

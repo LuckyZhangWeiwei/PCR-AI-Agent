@@ -1,13 +1,14 @@
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import ReactECharts from "echarts-for-react";
 import { apiGetJson } from "../api/client";
-import { API_PREFIX } from "../api/paths";
+import { API_PREFIX, INFCONTROL_AGGREGATE_PATH } from "../api/paths";
 import type {
   AggregateGroup,
   InfcontrolAggregateResponse,
   InfcontrolLayerBinsV3Response,
   InfcontrolLayerBinV3Row,
 } from "../api/types";
+import { CollapsibleQueryPanel } from "../components/CollapsibleQueryPanel";
 import { DarkChart } from "../components/DarkChart";
 import { DataTable } from "../components/DataTable";
 import {
@@ -28,7 +29,7 @@ import {
 } from "../theme/chartTheme";
 import {
   allSettledWithConcurrency,
-  REPORT_ORACLE_FANOUT_CONCURRENCY,
+  REPORT_AGGREGATE_FANOUT_CONCURRENCY,
 } from "../utils/asyncConcurrency";
 import { datetimeLocalToIso } from "../utils/datetimeLocal";
 import {
@@ -40,11 +41,12 @@ import {
   yieldColor,
   type TreeNode,
 } from "../utils/yieldCalc";
+import type { ReportListLimits } from "../hooks/usePersistedReportLimits";
 import type { EChartsOption } from "echarts";
 
 const TSTYPE_OPTIONS = ["UFLEX", "J750", "PS16", "MST", "FLEX", "93K", "J971"] as const;
 
-type Props = { apiBase: string };
+type Props = { apiBase: string; listLimits: ReportListLimits };
 
 type FormState = {
   device: string;
@@ -57,7 +59,6 @@ type FormState = {
   meslot: string;
   testEndFrom: string;
   testEndTo: string;
-  limit: string;
 };
 
 const initialForm: FormState = {
@@ -71,7 +72,6 @@ const initialForm: FormState = {
   meslot: "",
   testEndFrom: "",
   testEndTo: "",
-  limit: "500",
 };
 
 function buildCoreParams(f: FormState): Record<string, string | number | undefined> {
@@ -89,16 +89,21 @@ function buildCoreParams(f: FormState): Record<string, string | number | undefin
   };
 }
 
-function buildListParams(f: FormState): Record<string, string | number | undefined> {
-  const lim = Number(f.limit);
+function buildListParams(
+  f: FormState,
+  limits: ReportListLimits,
+): Record<string, string | number | undefined> {
   return {
     ...buildCoreParams(f),
-    limit: Number.isFinite(lim) ? Math.min(500, Math.max(1, Math.floor(lim))) : 500,
+    limit: limits.defaultLimit,
   };
 }
 
 const HIDE_CHIPS = new Set(["testEndFrom", "testEndTo"]);
-function activeChips(f: FormState): { key: string; label: string }[] {
+function activeChips(
+  f: FormState,
+  limits: ReportListLimits,
+): { key: string; label: string }[] {
   const chips: { key: string; label: string }[] = [];
   for (const [k, v] of Object.entries(buildCoreParams(f))) {
     if (v === undefined || HIDE_CHIPS.has(k)) continue;
@@ -113,6 +118,10 @@ function activeChips(f: FormState): { key: string; label: string }[] {
         : `testEnd ≤ ${f.testEndTo}`;
     chips.push({ key: "__time__", label });
   }
+  chips.push({
+    key: "limit",
+    label: `limit = ${limits.defaultLimit}（最多 ${limits.maxLimit}）`,
+  });
   return chips;
 }
 
@@ -247,7 +256,7 @@ function infcontrolTreeYieldExtra(
   );
 }
 
-export function InfcontrolReport({ apiBase }: Props) {
+export function InfcontrolReport({ apiBase, listLimits }: Props) {
   const [form, setForm] = useState<FormState>(initialForm);
   const [list,        setList]        = useState<InfcontrolLayerBinsV3Response | null>(null);
   const [aggBin,      setAggBin]      = useState<InfcontrolAggregateResponse | null>(null);
@@ -284,6 +293,7 @@ export function InfcontrolReport({ apiBase }: Props) {
   );
 
   const clearFilter = useCallback((key: string) => {
+    if (key === "limit") return;
     if (key === "__time__")
       setForm((f) => ({ ...f, testEndFrom: "", testEndTo: "" }));
     else setForm((f) => ({ ...f, [key]: "" } as FormState));
@@ -319,7 +329,7 @@ export function InfcontrolReport({ apiBase }: Props) {
         };
         const res = await apiGetJson<InfcontrolAggregateResponse>(
           apiBase,
-          `${API_PREFIX}/infcontrol-layer-bins/v4/aggregate`,
+          INFCONTROL_AGGREGATE_PATH,
           params
         );
         // probeCardType and bin are not real DB WHERE-clause columns — API ignores them.
@@ -372,7 +382,7 @@ export function InfcontrolReport({ apiBase }: Props) {
         const gby = dim === "bin" ? "bin" : `${dim},bin`;
         const res = await apiGetJson<InfcontrolAggregateResponse>(
           apiBase,
-          `${API_PREFIX}/infcontrol-layer-bins/v4/aggregate`,
+          INFCONTROL_AGGREGATE_PATH,
           { ...buildCoreParams(currentForm), groupBy: gby, groupTop: 30 }
         );
         setAggFree(res);
@@ -393,71 +403,88 @@ export function InfcontrolReport({ apiBase }: Props) {
     setSelectedBin(null);
     setSelectedCardType(null);
     setSelectedSlot(null);
+    setList(null);
+    setAggBin(null);
+    setAggCardType(null);
+    setAggSlot(null);
+    setAggTree(null);
+    setAggFree(null);
+
     const core = buildCoreParams(form);
 
-    const settled = await allSettledWithConcurrency(
-      [
-        () =>
-          apiGetJson<InfcontrolLayerBinsV3Response>(
-            apiBase,
-            `${API_PREFIX}/infcontrol-layer-bins/v4`,
-            buildListParams(form)
-          ),
-        () =>
-          apiGetJson<InfcontrolAggregateResponse>(
-            apiBase,
-            `${API_PREFIX}/infcontrol-layer-bins/v4/aggregate`,
-            { ...core, groupBy: "bin", groupTop: 30 }
-          ),
-        () =>
-          apiGetJson<InfcontrolAggregateResponse>(
-            apiBase,
-            `${API_PREFIX}/infcontrol-layer-bins/v4/aggregate`,
-            { ...core, groupBy: "probeCardType,bin", groupTop: 25 }
-          ),
-        () =>
-          apiGetJson<InfcontrolAggregateResponse>(
-            apiBase,
-            `${API_PREFIX}/infcontrol-layer-bins/v4/aggregate`,
-            { ...core, groupBy: "slot,bin", groupTop: 50 }
-          ),
-        () =>
-          apiGetJson<InfcontrolAggregateResponse>(
-            apiBase,
-            `${API_PREFIX}/infcontrol-layer-bins/v4/aggregate`,
-            { ...core, groupBy: "device,lot,probeCardType,cardId", groupTop: 100 }
-          ),
-      ],
-      REPORT_ORACLE_FANOUT_CONCURRENCY
-    );
-    const [listRes, binRes, cardTypeRes, slotRes, treeRes] = settled as [
-      PromiseSettledResult<InfcontrolLayerBinsV3Response>,
-      PromiseSettledResult<InfcontrolAggregateResponse>,
-      PromiseSettledResult<InfcontrolAggregateResponse>,
-      PromiseSettledResult<InfcontrolAggregateResponse>,
-      PromiseSettledResult<InfcontrolAggregateResponse>,
-    ];
+    // Phase 1: 明细列表（受 limit 约束，通常很快）
+    try {
+      const listRes = await apiGetJson<InfcontrolLayerBinsV3Response>(
+        apiBase,
+        `${API_PREFIX}/infcontrol-layer-bins/v4`,
+        buildListParams(form, listLimits),
+      );
+      setList(listRes);
+    } catch (e) {
+      setErrorList(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoadingList(false);
+    }
 
-    setLoadingList(false);
+    // Phase 2: 图表聚合（v3 库内全量匹配行；与 limit 无关，并行 2 路）
+    const [binRes, cardTypeRes, slotRes, treeRes] =
+      (await allSettledWithConcurrency(
+        [
+          () =>
+            apiGetJson<InfcontrolAggregateResponse>(
+              apiBase,
+              INFCONTROL_AGGREGATE_PATH,
+              { ...core, groupBy: "bin", groupTop: 30 },
+            ),
+          () =>
+            apiGetJson<InfcontrolAggregateResponse>(
+              apiBase,
+              INFCONTROL_AGGREGATE_PATH,
+              { ...core, groupBy: "probeCardType,bin", groupTop: 25 },
+            ),
+          () =>
+            apiGetJson<InfcontrolAggregateResponse>(
+              apiBase,
+              INFCONTROL_AGGREGATE_PATH,
+              { ...core, groupBy: "slot,bin", groupTop: 50 },
+            ),
+          () =>
+            apiGetJson<InfcontrolAggregateResponse>(
+              apiBase,
+              INFCONTROL_AGGREGATE_PATH,
+              {
+                ...core,
+                groupBy: "device,lot,probeCardType,cardId",
+                groupTop: 100,
+              },
+            ),
+        ],
+        REPORT_AGGREGATE_FANOUT_CONCURRENCY,
+      )) as [
+        PromiseSettledResult<InfcontrolAggregateResponse>,
+        PromiseSettledResult<InfcontrolAggregateResponse>,
+        PromiseSettledResult<InfcontrolAggregateResponse>,
+        PromiseSettledResult<InfcontrolAggregateResponse>,
+      ];
+
     setLoadingAgg(false);
 
-    if (listRes.status === "fulfilled") setList(listRes.value);
-    else
-      setErrorList(
-        listRes.reason instanceof Error
-          ? listRes.reason.message
-          : String(listRes.reason)
-      );
-
-    if (binRes.status      === "fulfilled") setAggBin(binRes.value);
+    if (binRes.status === "fulfilled") setAggBin(binRes.value);
     if (cardTypeRes.status === "fulfilled") setAggCardType(cardTypeRes.value);
-    if (slotRes.status     === "fulfilled") setAggSlot(slotRes.value);
-    if (treeRes.status     === "fulfilled") setAggTree(treeRes.value);
-    if (binRes.status === "rejected")
-      setErrorAgg("BIN 聚合请求失败，部分图表不可用");
+    if (slotRes.status === "fulfilled") setAggSlot(slotRes.value);
+    if (treeRes.status === "fulfilled") setAggTree(treeRes.value);
+    if (binRes.status === "rejected") {
+      const detail =
+        binRes.reason instanceof Error
+          ? binRes.reason.message
+          : String(binRes.reason);
+      setErrorAgg(
+        `BIN 聚合请求失败，部分图表不可用（limit 仅限制明细；聚合统计全部匹配行。请收窄 testEnd 时间等筛选）：${detail}`,
+      );
+    }
 
-    fetchFreeAgg(freeDim, form);
-  }, [apiBase, form, freeDim, fetchFreeAgg]);
+    void fetchFreeAgg(freeDim, form);
+  }, [apiBase, form, freeDim, fetchFreeAgg, listLimits]);
 
   const handleFreeDimChange = useCallback(
     (dim: string) => {
@@ -730,8 +757,9 @@ export function InfcontrolReport({ apiBase }: Props) {
     });
   }, [list]);
 
-  const chips = useMemo(() => activeChips(form), [form]);
+  const chips = useMemo(() => activeChips(form, listLimits), [form, listLimits]);
   const hasData = !!(list || aggBin || aggCardType);
+  const noTestEndFilter = !form.testEndFrom && !form.testEndTo;
 
   const jbReportSections = useMemo(() => {
     if (!hasData) return {};
@@ -1185,7 +1213,9 @@ export function InfcontrolReport({ apiBase }: Props) {
         </div>
       </div>
 
-      <div className="query-panel">
+      <CollapsibleQueryPanel
+        storageKey="pcr-ai-report:jb-start-query-open"
+        filters={
         <div className="filter-grid">
           {(
             [
@@ -1261,10 +1291,11 @@ export function InfcontrolReport({ apiBase }: Props) {
           </div>
         </label>
         </div>
-
-        <div className="query-panel-actions">
-          {chips.length > 0 && (
-            <div className="query-panel-chips">
+        }
+        footer={
+          <>
+            {chips.length > 0 && (
+              <div className="query-panel-chips">
               <span className="query-panel-chips-label">生效筛选：</span>
               {chips.map((c) => (
                 <button
@@ -1291,8 +1322,9 @@ export function InfcontrolReport({ apiBase }: Props) {
               <ReportLayoutResetButton onReset={resetReportLayout} />
             ) : null}
           </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {(errorList || errorAgg) && (
         <div
@@ -1307,6 +1339,18 @@ export function InfcontrolReport({ apiBase }: Props) {
           {errorList || errorAgg}
         </div>
       )}
+
+      {noTestEndFilter && !loadingList ? (
+        <p className="field-hint" style={{ margin: "0 0 8px" }}>
+          未设置 testEnd 时间时，API 默认统计近 <strong>1 年</strong>匹配行；图表聚合较慢，与明细 limit 无关。建议先点「近7天」或「本月」再查询。
+        </p>
+      ) : null}
+
+      {loadingAgg && list ? (
+        <p className="field-hint" style={{ margin: "0 0 8px" }}>
+          明细已返回（limit={listLimits.defaultLimit}）；图表聚合仍在加载（Oracle 全量匹配行统计）…
+        </p>
+      ) : null}
 
       {hasData && (
         <DraggableReportSections

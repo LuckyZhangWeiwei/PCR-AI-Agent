@@ -1,13 +1,14 @@
 import { useCallback, useMemo, useState } from "react";
 import ReactECharts from "echarts-for-react";
 import { apiGetJson } from "../api/client";
-import { API_PREFIX } from "../api/paths";
+import { API_PREFIX, YIELD_AGGREGATE_PATH } from "../api/paths";
 import type {
   AggregateGroup,
   YieldMonitorV3AggregateResponse,
   YieldMonitorV3Response,
   YieldMonitorV3Row,
 } from "../api/types";
+import { CollapsibleQueryPanel } from "../components/CollapsibleQueryPanel";
 import { DarkChart } from "../components/DarkChart";
 import { DataTable } from "../components/DataTable";
 import {
@@ -41,9 +42,10 @@ import {
   dateShortcutToday,
   tallyDutNumbers,
 } from "../utils/yieldCalc";
+import type { ReportListLimits } from "../hooks/usePersistedReportLimits";
 import type { EChartsOption } from "echarts";
 
-type Props = { apiBase: string };
+type Props = { apiBase: string; listLimits: ReportListLimits };
 
 type FormState = {
   device: string;
@@ -54,7 +56,6 @@ type FormState = {
   pass: string;
   timestampFrom: string;
   timestampTo: string;
-  limit: string;
 };
 
 const initialForm: FormState = {
@@ -66,7 +67,6 @@ const initialForm: FormState = {
   pass: "",
   timestampFrom: "",
   timestampTo: "",
-  limit: "500",
 };
 
 function buildCoreParams(f: FormState): Record<string, string | number | undefined> {
@@ -82,16 +82,21 @@ function buildCoreParams(f: FormState): Record<string, string | number | undefin
   };
 }
 
-function buildListParams(f: FormState): Record<string, string | number | undefined> {
-  const lim = Number(f.limit);
+function buildListParams(
+  f: FormState,
+  limits: ReportListLimits,
+): Record<string, string | number | undefined> {
   return {
     ...buildCoreParams(f),
-    limit: Number.isFinite(lim) ? Math.min(500, Math.max(1, Math.floor(lim))) : 500,
+    limit: limits.defaultLimit,
   };
 }
 
-const HIDE_KEYS = new Set(["limit", "timeStampFrom", "timeStampTo"]);
-function activeChips(f: FormState): { key: string; label: string }[] {
+const HIDE_KEYS = new Set(["timeStampFrom", "timeStampTo"]);
+function activeChips(
+  f: FormState,
+  limits: ReportListLimits,
+): { key: string; label: string }[] {
   const chips: { key: string; label: string }[] = [];
   const core = buildCoreParams(f);
   for (const [k, v] of Object.entries(core)) {
@@ -107,6 +112,10 @@ function activeChips(f: FormState): { key: string; label: string }[] {
         : `时间 ≤ ${f.timestampTo}`;
     chips.push({ key: "__time__", label });
   }
+  chips.push({
+    key: "limit",
+    label: `limit = ${limits.defaultLimit}（最多 ${limits.maxLimit}）`,
+  });
   return chips;
 }
 
@@ -164,7 +173,7 @@ type DrillState = {
   error: string | null;
 };
 
-export function YieldMonitorReport({ apiBase }: Props) {
+export function YieldMonitorReport({ apiBase, listLimits }: Props) {
   const [form, setForm] = useState<FormState>(initialForm);
   const [list, setList] = useState<YieldMonitorV3Response | null>(null);
   const [aggTime, setAggTime] = useState<YieldMonitorV3AggregateResponse | null>(null);
@@ -202,6 +211,7 @@ export function YieldMonitorReport({ apiBase }: Props) {
   );
 
   const clearFilter = useCallback((key: string) => {
+    if (key === "limit") return;
     if (key === "__time__") {
       setForm((f) => ({ ...f, timestampFrom: "", timestampTo: "" }));
     } else {
@@ -243,7 +253,7 @@ export function YieldMonitorReport({ apiBase }: Props) {
         };
         const res = await apiGetJson<YieldMonitorV3AggregateResponse>(
           apiBase,
-          `${API_PREFIX}/yield-monitor-triggers/v4/aggregate`,
+          YIELD_AGGREGATE_PATH,
           params
         );
         // When drilling from probeCardType → probeCard, the API ignores the
@@ -284,7 +294,7 @@ export function YieldMonitorReport({ apiBase }: Props) {
       try {
         const res = await apiGetJson<YieldMonitorV3AggregateResponse>(
           apiBase,
-          `${API_PREFIX}/yield-monitor-triggers/v4/aggregate`,
+          YIELD_AGGREGATE_PATH,
           { ...buildCoreParams(currentForm), dimensions: dim, groupTop: 30 }
         );
         setAggFree(res);
@@ -312,30 +322,30 @@ export function YieldMonitorReport({ apiBase }: Props) {
           apiGetJson<YieldMonitorV3Response>(
             apiBase,
             `${API_PREFIX}/yield-monitor-triggers/v4`,
-            buildListParams(form)
+            buildListParams(form, listLimits)
           ),
         () =>
           apiGetJson<YieldMonitorV3AggregateResponse>(
             apiBase,
-            `${API_PREFIX}/yield-monitor-triggers/v4/aggregate`,
+            YIELD_AGGREGATE_PATH,
             { ...core, dimensions: "timeDay", groupTop: 60 }
           ),
         () =>
           apiGetJson<YieldMonitorV3AggregateResponse>(
             apiBase,
-            `${API_PREFIX}/yield-monitor-triggers/v4/aggregate`,
+            YIELD_AGGREGATE_PATH,
             { ...core, dimensions: "probeCardType", groupTop: 25 }
           ),
         () =>
           apiGetJson<YieldMonitorV3AggregateResponse>(
             apiBase,
-            `${API_PREFIX}/yield-monitor-triggers/v4/aggregate`,
+            YIELD_AGGREGATE_PATH,
             { ...core, dimensions: "lotId", groupTop: 25 }
           ),
         () =>
           apiGetJson<YieldMonitorV3AggregateResponse>(
             apiBase,
-            `${API_PREFIX}/yield-monitor-triggers/v4/aggregate`,
+            YIELD_AGGREGATE_PATH,
             { ...core, dimensions: "device,lotId,probeCardType,probeCard", groupTop: 100 }
           ),
       ],
@@ -369,7 +379,7 @@ export function YieldMonitorReport({ apiBase }: Props) {
     }
 
     fetchFreeAgg(freeDim, form);
-  }, [apiBase, form, freeDim, fetchFreeAgg]);
+  }, [apiBase, form, freeDim, fetchFreeAgg, listLimits]);
 
   const handleFreeDimChange = useCallback(
     (dim: string) => {
@@ -622,7 +632,7 @@ export function YieldMonitorReport({ apiBase }: Props) {
     }));
   }, [list]);
 
-  const chips = useMemo(() => activeChips(form), [form]);
+  const chips = useMemo(() => activeChips(form, listLimits), [form, listLimits]);
   const hasData = !!(list || aggTime || aggCardType);
 
   const yieldReportSections = useMemo(() => {
@@ -780,7 +790,7 @@ export function YieldMonitorReport({ apiBase }: Props) {
               {selectedProbeCard && dutRows !== null ? (
                 dutRows.length === 0 ? (
                   <div style={{ color: "#8b949e", fontSize: 12, padding: "12px 0" }}>
-                    该探针卡在当前明细范围内无数据（明细最多 500 条）
+                    该探针卡在当前明细范围内无数据（明细最多 {listLimits.defaultLimit} 条）
                   </div>
                 ) : (
                   <DarkChart
@@ -1005,7 +1015,9 @@ export function YieldMonitorReport({ apiBase }: Props) {
         </div>
       </div>
 
-      <div className="query-panel">
+      <CollapsibleQueryPanel
+        storageKey="pcr-ai-report:yield-monitor-query-open"
+        filters={
         <div className="filter-grid">
           {(
             [
@@ -1065,10 +1077,11 @@ export function YieldMonitorReport({ apiBase }: Props) {
           </div>
         </label>
         </div>
-
-        <div className="query-panel-actions">
-          {chips.length > 0 && (
-            <div className="query-panel-chips">
+        }
+        footer={
+          <>
+            {chips.length > 0 && (
+              <div className="query-panel-chips">
               <span className="query-panel-chips-label">生效筛选：</span>
               {chips.map((c) => (
                 <button
@@ -1095,8 +1108,9 @@ export function YieldMonitorReport({ apiBase }: Props) {
               <ReportLayoutResetButton onReset={resetReportLayout} />
             ) : null}
           </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {(errorList || errorAgg) && (
         <div

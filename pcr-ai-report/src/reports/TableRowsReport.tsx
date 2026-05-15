@@ -3,18 +3,24 @@ import { apiGetJson } from "../api/client";
 import { API_PREFIX } from "../api/paths";
 import type { TableRowsResponse } from "../api/types";
 import { DataTable } from "../components/DataTable";
+import {
+  API_LIST_LIMIT_CEILING,
+  type ReportListLimits,
+} from "../hooks/usePersistedReportLimits";
 
 type Props = {
   apiBase: string;
+  listLimits: ReportListLimits;
 };
 
-function numOrUndef(s: string): number | undefined {
+function numOrUndef(s: string, max: number): number | undefined {
   if (!s.trim()) return undefined;
   const n = Number(s);
-  return Number.isFinite(n) ? n : undefined;
+  if (!Number.isFinite(n)) return undefined;
+  return Math.min(max, Math.max(1, Math.floor(n)));
 }
 
-export function TableRowsReport({ apiBase }: Props) {
+export function TableRowsReport({ apiBase, listLimits }: Props) {
   const [table, setTable] = useState("");
   const [limit, setLimit] = useState("50");
   const [data, setData] = useState<TableRowsResponse | null>(null);
@@ -24,9 +30,9 @@ export function TableRowsReport({ apiBase }: Props) {
   const requestParams = useMemo(
     () => ({
       table: table.trim() || undefined,
-      limit: numOrUndef(limit),
+      limit: numOrUndef(limit, listLimits.maxLimit),
     }),
-    [table, limit]
+    [table, limit, listLimits.maxLimit]
   );
 
   const run = useCallback(async () => {
@@ -81,7 +87,7 @@ export function TableRowsReport({ apiBase }: Props) {
           />
         </label>
         <label>
-          <span>最多读多少行（≤500）</span>
+          <span>最多读多少行（≤{listLimits.maxLimit}，API 上限 {API_LIST_LIMIT_CEILING}）</span>
           <input
             value={limit}
             onChange={(e) => setLimit(e.target.value)}

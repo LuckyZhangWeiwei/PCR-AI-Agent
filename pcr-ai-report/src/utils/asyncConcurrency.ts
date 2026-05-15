@@ -35,3 +35,6 @@ export async function allSettledWithConcurrency(
 
 /** 列表 + 多聚合同批请求时，对同一连接池的最大并行数（1=完全串行，最省连接） */
 export const REPORT_ORACLE_FANOUT_CONCURRENCY = 1;
+
+/** JB / Yield 图表聚合并行数（v3 库内聚合；2 可显著缩短总等待，仍较省连接） */
+export const REPORT_AGGREGATE_FANOUT_CONCURRENCY = 2;

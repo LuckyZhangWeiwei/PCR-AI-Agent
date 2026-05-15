@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { apiGetJson } from "./api/client";
 import { API_PREFIX } from "./api/paths";
+import { ReportListLimitsSettings } from "./components/ReportListLimitsSettings";
 import { usePersistedApiBase } from "./hooks/usePersistedApiBase";
+import { usePersistedReportLimits } from "./hooks/usePersistedReportLimits";
 import { AiAgentReport } from "./reports/AiAgentReport";
 import { InfcontrolReport } from "./reports/InfcontrolReport";
 import { OverviewReport } from "./reports/OverviewReport";
@@ -13,6 +15,7 @@ type Tab = "yield" | "infcontrol" | "ai" | "table" | "settings";
 
 export default function App() {
   const [apiBase, setApiBase, resetApiBase] = usePersistedApiBase();
+  const [listLimits, setListLimits, resetListLimits] = usePersistedReportLimits();
   const [apiBaseInput, setApiBaseInput] = useState(apiBase);
 
   // Sync input when apiBase changes externally (resetApiBase)
@@ -112,16 +115,16 @@ export default function App() {
       </nav>
 
       <div className="tab-panel" hidden={tab !== "yield"}>
-        <YieldMonitorReport apiBase={apiBase} />
+        <YieldMonitorReport apiBase={apiBase} listLimits={listLimits} />
       </div>
       <div className="tab-panel" hidden={tab !== "infcontrol"}>
-        <InfcontrolReport apiBase={apiBase} />
+        <InfcontrolReport apiBase={apiBase} listLimits={listLimits} />
       </div>
       <div className="tab-panel" hidden={tab !== "ai"}>
         <AiAgentReport apiBase={apiBase} />
       </div>
       <div className="tab-panel" hidden={tab !== "table"}>
-        <TableRowsReport apiBase={apiBase} />
+        <TableRowsReport apiBase={apiBase} listLimits={listLimits} />
       </div>
       <div className="tab-panel" hidden={tab !== "settings"}>
         <div className="settings-panel">
@@ -176,6 +179,12 @@ export default function App() {
               {probeMsg ? <span className="muted small">{probeMsg}</span> : null}
             </div>
           </div>
+
+          <ReportListLimitsSettings
+            limits={listLimits}
+            onChange={setListLimits}
+            onReset={resetListLimits}
+          />
 
           <section className="settings-section settings-section--catalog" aria-labelledby="settings-api-catalog">
             <h2 id="settings-api-catalog" className="settings-section-title">
