@@ -10,6 +10,7 @@ import type {
 } from "../api/types";
 import { DarkChart } from "../components/DarkChart";
 import { DataTable } from "../components/DataTable";
+import { DraggableReportBlocks, DraggableReportSections } from "../components/DraggableReportSections";
 import { DrillDownPanel } from "../components/DrillDownPanel";
 import { KpiCard } from "../components/KpiCard";
 import { TreeTable } from "../components/TreeTable";
@@ -113,6 +114,23 @@ const FREE_DIMS: { label: string; value: string }[] = [
   { label: "Hostname", value: "hostname" },
   { label: "Pass", value: "pass" },
 ];
+
+const YIELD_REPORT_SECTION_ORDER = [
+  "kpi",
+  "timeTrend",
+  "chartsGrid",
+  "tree",
+  "detail",
+] as const;
+
+const YIELD_KPI_BLOCK_ORDER = [
+  "kpiTrig",
+  "kpiLots",
+  "kpiWorstPct",
+  "kpiSelPc",
+] as const;
+
+const YIELD_CHART_BLOCK_ORDER = ["chPcType", "chDut", "chLot", "chFreeDim"] as const;
 
 // Sub-dimension options for drill-down panels
 const DRILL_FROM_CARDTYPE: { label: string; value: string }[] = [
@@ -591,6 +609,383 @@ export function YieldMonitorReport({ apiBase }: Props) {
   const chips = useMemo(() => activeChips(form), [form]);
   const hasData = !!(list || aggTime || aggCardType);
 
+  const yieldReportSections = useMemo(() => {
+    if (!hasData) return {};
+
+    const kpiSection = (
+      <DraggableReportBlocks
+        storageKey="pcr-ai-report:yield-monitor-kpi-blocks"
+        defaultOrder={YIELD_KPI_BLOCK_ORDER}
+        axis="x"
+        groupClassName="report-reorder-group--kpis"
+        labels={{
+          kpiTrig: "触发总数",
+          kpiLots: "涉及 Lot",
+          kpiWorstPct: "最多探针类型",
+          kpiSelPc: "已选探针卡",
+        }}
+        sections={{
+          kpiTrig: (
+            <KpiCard label="触发总数" value={totalTriggers} color="blue" />
+          ),
+          kpiLots: (
+            <KpiCard label="涉及 Lot 数" value={uniqueLots} color="white" />
+          ),
+          kpiWorstPct: (
+            <KpiCard
+              label="触发最多探针卡类型"
+              value={worstCardType}
+              color="red"
+              subtext="触发次数最多"
+            />
+          ),
+          kpiSelPc: (
+            <KpiCard
+              label="已选探针卡"
+              value={selectedProbeCard ?? "—"}
+              color={selectedProbeCard ? "blue" : "white"}
+              subtext={selectedProbeCard ? "点击下方图表切换" : "点击钻取面板中的卡选择"}
+            />
+          ),
+        }}
+      />
+    );
+
+    const timeTrendSection =
+      aggTime ? (
+        <div
+          style={{
+            background: "#0d1117",
+            border: "1px solid rgba(240,246,252,0.1)",
+            borderRadius: 8,
+            padding: 16,
+          }}
+        >
+          <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
+            📈 每日触发量趋势
+          </div>
+          <DarkChart option={timeTrendOption} height={220} />
+        </div>
+      ) : null;
+
+    const chartsGridSection = (
+      <DraggableReportBlocks
+        storageKey="pcr-ai-report:yield-monitor-chart-blocks"
+        defaultOrder={YIELD_CHART_BLOCK_ORDER}
+        axis="grid"
+        groupClassName="report-reorder-group--chartgrid"
+        labels={{
+          chPcType: "ProbeCard Type",
+          chDut: "DUT# 分布",
+          chLot: "LOT 排名",
+          chFreeDim: "自由维度",
+        }}
+        sections={{
+          chPcType: (
+            <div
+              style={{
+                background: "#0d1117",
+                border: "1px solid rgba(240,246,252,0.1)",
+                borderRadius: 8,
+                padding: 16,
+              }}
+            >
+              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
+                🔴 ProbeCard Type 触发排名
+                <span style={{ marginLeft: 8, fontSize: 11, color: "#6e7681" }}>
+                  点击类型 → 钻取卡ID → 点选卡查看 DUT
+                </span>
+              </div>
+              {aggCardType && (
+                <ReactECharts
+                  option={cardTypeOption}
+                  style={{
+                    height: Math.max(180, (aggCardType.groups?.length ?? 0) * 22 + 60),
+                    width: "100%",
+                  }}
+                  opts={{ renderer: "canvas" }}
+                  notMerge
+                  lazyUpdate
+                  onEvents={{
+                    click: (params: { name: string }) => {
+                      setSelectedCardTypeName(params.name);
+                      setSelectedProbeCard(null);
+                      fetchDrill("probeCardType", params.name, "probeCard", form);
+                    },
+                  }}
+                />
+              )}
+              {drill?.parentDimKey === "probeCardType" && (
+                <DrillDownPanel
+                  title={`${drill.parentDimVal} · 下钻：按 ${drill.subDim}`}
+                  groups={drill.groups}
+                  loading={drill.loading}
+                  error={drill.error}
+                  activeSubDim={drill.subDim}
+                  subDimOptions={DRILL_FROM_CARDTYPE}
+                  onSubDimChange={(d) => {
+                    if (d !== "probeCard") setSelectedProbeCard(null);
+                    fetchDrill("probeCardType", drill.parentDimVal, d, form);
+                  }}
+                  onClose={() => {
+                    setSelectedCardTypeName(null);
+                    setSelectedProbeCard(null);
+                    setDrill(null);
+                  }}
+                  onBarClick={
+                    drill.subDim === "probeCard"
+                      ? (key) => setSelectedProbeCard(key)
+                      : undefined
+                  }
+                  selectedKey={drill.subDim === "probeCard" ? selectedProbeCard : null}
+                />
+              )}
+            </div>
+          ),
+          chDut: (
+            <div
+              style={{
+                background: "#0d1117",
+                border: "1px solid rgba(240,246,252,0.1)",
+                borderRadius: 8,
+                padding: 16,
+              }}
+            >
+              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
+                🎯 DUT# 触发分布
+                {selectedProbeCard && (
+                  <span
+                    style={{
+                      marginLeft: 8,
+                      color: "#58a6ff",
+                      fontWeight: 600,
+                      fontSize: 11,
+                    }}
+                  >
+                    — {selectedProbeCard}
+                  </span>
+                )}
+              </div>
+              {selectedProbeCard && dutRows !== null ? (
+                dutRows.length === 0 ? (
+                  <div style={{ color: "#8b949e", fontSize: 12, padding: "12px 0" }}>
+                    该探针卡在当前明细范围内无数据（明细最多 500 条）
+                  </div>
+                ) : (
+                  <DarkChart
+                    option={dutOption}
+                    height={Math.max(180, tallyDutNumbers(dutRows).length * 22 + 60)}
+                  />
+                )
+              ) : (
+                <div
+                  style={{
+                    color: "#8b949e",
+                    fontSize: 12,
+                    padding: "32px 0",
+                    textAlign: "center",
+                    lineHeight: 1.8,
+                  }}
+                >
+                  ← 点击「ProbeCard Type」图表中的类型
+                  <br />
+                  展开后点击具体探针卡即可查看该卡的 DUT# 分布
+                </div>
+              )}
+            </div>
+          ),
+          chLot: (
+            <div
+              style={{
+                background: "#0d1117",
+                border: "1px solid rgba(240,246,252,0.1)",
+                borderRadius: 8,
+                padding: 16,
+              }}
+            >
+              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
+                📦 LOT 触发排名
+              </div>
+              {aggLot && (
+                <ReactECharts
+                  option={lotOption}
+                  style={{
+                    height: Math.max(180, (aggLot.groups?.length ?? 0) * 22 + 60),
+                    width: "100%",
+                  }}
+                  opts={{ renderer: "canvas" }}
+                  notMerge
+                  lazyUpdate
+                  onEvents={{
+                    click: (params: { name: string }) => {
+                      setSelectedLotId(params.name);
+                      fetchDrill("lotId", params.name, "probeCardType", form);
+                    },
+                  }}
+                />
+              )}
+              {drill?.parentDimKey === "lotId" && (
+                <DrillDownPanel
+                  title={`${drill.parentDimVal} · 下钻：按 ${drill.subDim}`}
+                  groups={drill.groups}
+                  loading={drill.loading}
+                  error={drill.error}
+                  activeSubDim={drill.subDim}
+                  subDimOptions={DRILL_FROM_LOT}
+                  onSubDimChange={(d) =>
+                    fetchDrill("lotId", drill.parentDimVal, d, form)
+                  }
+                  onClose={() => {
+                    setSelectedLotId(null);
+                    setDrill(null);
+                  }}
+                />
+              )}
+            </div>
+          ),
+          chFreeDim: (
+            <div
+              style={{
+                background: "#0d1117",
+                border: "1px solid rgba(240,246,252,0.1)",
+                borderRadius: 8,
+                padding: 16,
+              }}
+            >
+              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 6 }}>
+                🔢 自由维度聚合
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                {FREE_DIMS.map((d) => (
+                  <button
+                    key={d.value}
+                    type="button"
+                    className="chip"
+                    style={
+                      d.value === freeDim
+                        ? {
+                            background: "rgba(56,139,253,0.2)",
+                            borderColor: "#388bfd",
+                            color: "#58a6ff",
+                          }
+                        : undefined
+                    }
+                    onClick={() => handleFreeDimChange(d.value)}
+                  >
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+              {aggFree && (
+                <DarkChart
+                  option={freeOption}
+                  height={Math.max(180, aggFree.groups.length * 22 + 60)}
+                />
+              )}
+            </div>
+          ),
+        }}
+      />
+    );
+
+    const treeSection =
+      treeRoots.length > 0 ? (
+        <div
+          style={{
+            background: "#0d1117",
+            border: "1px solid rgba(240,246,252,0.1)",
+            borderRadius: 8,
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 12,
+              color: "#8b949e",
+              marginBottom: showTree ? 10 : 0,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              userSelect: "none",
+            }}
+            onClick={() => setShowTree((s) => !s)}
+          >
+            <span style={{ fontSize: 10, opacity: 0.6 }}>{showTree ? "▼" : "▶"}</span>
+            📊 分组汇总（Device → LOT → ProbeCard Type → ProbeCard ID）
+            <span style={{ fontSize: 11, color: "#6e7681", fontWeight: 400 }}>
+              {showTree ? "" : `— ${treeRoots.length} 组，点击展开`}
+            </span>
+          </div>
+          {showTree && <TreeTable roots={treeRoots} totalHeader="触发次数" />}
+        </div>
+      ) : null;
+
+    const detailSection =
+      detailRows.length > 0 ? (
+        <div
+          style={{
+            background: "#0d1117",
+            border: "1px solid rgba(240,246,252,0.1)",
+            borderRadius: 8,
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 12,
+              color: "#8b949e",
+              marginBottom: showDetail ? 8 : 0,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              userSelect: "none",
+            }}
+            onClick={() => setShowDetail((s) => !s)}
+          >
+            <span style={{ fontSize: 10, opacity: 0.6 }}>{showDetail ? "▼" : "▶"}</span>
+            明细表 — 共 {list?.count ?? 0} 条（含 PROBECARDTYPE / dutNumber）
+          </div>
+          {showDetail && <DataTable rows={detailRows} maxHeight={400} />}
+        </div>
+      ) : null;
+
+    return {
+      kpi: kpiSection,
+      timeTrend: timeTrendSection,
+      chartsGrid: chartsGridSection,
+      tree: treeSection,
+      detail: detailSection,
+    };
+  }, [
+    hasData,
+    totalTriggers,
+    uniqueLots,
+    worstCardType,
+    selectedProbeCard,
+    aggTime,
+    timeTrendOption,
+    aggCardType,
+    cardTypeOption,
+    drill,
+    form,
+    fetchDrill,
+    dutRows,
+    dutOption,
+    aggLot,
+    lotOption,
+    aggFree,
+    freeDim,
+    handleFreeDimChange,
+    freeOption,
+    treeRoots,
+    showTree,
+    detailRows,
+    list,
+    showDetail,
+  ]);
+
   return (
     <div className="report-panel">
       {/* ── Header ── */}
@@ -713,289 +1108,11 @@ export function YieldMonitorReport({ apiBase }: Props) {
       )}
 
       {hasData && (
-        <>
-          {/* ── KPI Cards ── */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
-            <KpiCard label="触发总数" value={totalTriggers} color="blue" />
-            <KpiCard label="涉及 Lot 数" value={uniqueLots} color="white" />
-            <KpiCard
-              label="触发最多探针卡类型"
-              value={worstCardType}
-              color="red"
-              subtext="触发次数最多"
-            />
-            <KpiCard
-              label="已选探针卡"
-              value={selectedProbeCard ?? "—"}
-              color={selectedProbeCard ? "blue" : "white"}
-              subtext={selectedProbeCard ? "点击下方图表切换" : "点击钻取面板中的卡选择"}
-            />
-          </div>
-
-          {/* ── Time trend (full width) ── */}
-          {aggTime && (
-            <div
-              style={{
-                background: "#0d1117",
-                border: "1px solid rgba(240,246,252,0.1)",
-                borderRadius: 8,
-                padding: 16,
-              }}
-            >
-              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
-                📈 每日触发量趋势
-              </div>
-              <DarkChart option={timeTrendOption} height={220} />
-            </div>
-          )}
-
-          {/* ── Charts 2×2 grid ── */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            {/* ProbeCard Type ranking — click to drill into probeCard IDs */}
-            <div
-              style={{
-                background: "#0d1117",
-                border: "1px solid rgba(240,246,252,0.1)",
-                borderRadius: 8,
-                padding: 16,
-              }}
-            >
-              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
-                🔴 ProbeCard Type 触发排名
-                <span style={{ marginLeft: 8, fontSize: 11, color: "#6e7681" }}>
-                  点击类型 → 钻取卡ID → 点选卡查看 DUT
-                </span>
-              </div>
-              {aggCardType && (
-                <ReactECharts
-                  option={cardTypeOption}
-                  style={{
-                    height: Math.max(180, (aggCardType.groups?.length ?? 0) * 22 + 60),
-                    width: "100%",
-                  }}
-                  opts={{ renderer: "canvas" }}
-                  notMerge
-                  lazyUpdate
-                  onEvents={{
-                    click: (params: { name: string }) => {
-                      setSelectedCardTypeName(params.name);
-                      setSelectedProbeCard(null);
-                      fetchDrill("probeCardType", params.name, "probeCard", form);
-                    },
-                  }}
-                />
-              )}
-              {/* Drill panel: probeCardType → probeCard, bars clickable to select */}
-              {drill?.parentDimKey === "probeCardType" && (
-                <DrillDownPanel
-                  title={`${drill.parentDimVal} · 下钻：按 ${drill.subDim}`}
-                  groups={drill.groups}
-                  loading={drill.loading}
-                  error={drill.error}
-                  activeSubDim={drill.subDim}
-                  subDimOptions={DRILL_FROM_CARDTYPE}
-                  onSubDimChange={(d) => {
-                    if (d !== "probeCard") setSelectedProbeCard(null);
-                    fetchDrill("probeCardType", drill.parentDimVal, d, form);
-                  }}
-                  onClose={() => {
-                    setSelectedCardTypeName(null);
-                    setSelectedProbeCard(null);
-                    setDrill(null);
-                  }}
-                  onBarClick={
-                    drill.subDim === "probeCard"
-                      ? (key) => setSelectedProbeCard(key)
-                      : undefined
-                  }
-                  selectedKey={drill.subDim === "probeCard" ? selectedProbeCard : null}
-                />
-              )}
-            </div>
-
-            {/* DUT distribution — linked to selectedProbeCard */}
-            <div
-              style={{
-                background: "#0d1117",
-                border: "1px solid rgba(240,246,252,0.1)",
-                borderRadius: 8,
-                padding: 16,
-              }}
-            >
-              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
-                🎯 DUT# 触发分布
-                {selectedProbeCard && (
-                  <span
-                    style={{
-                      marginLeft: 8,
-                      color: "#58a6ff",
-                      fontWeight: 600,
-                      fontSize: 11,
-                    }}
-                  >
-                    — {selectedProbeCard}
-                  </span>
-                )}
-              </div>
-              {selectedProbeCard && dutRows !== null ? (
-                dutRows.length === 0 ? (
-                  <div style={{ color: "#8b949e", fontSize: 12, padding: "12px 0" }}>
-                    该探针卡在当前明细范围内无数据（明细最多 500 条）
-                  </div>
-                ) : (
-                  <DarkChart
-                    option={dutOption}
-                    height={Math.max(180, tallyDutNumbers(dutRows).length * 22 + 60)}
-                  />
-                )
-              ) : (
-                <div
-                  style={{
-                    color: "#8b949e",
-                    fontSize: 12,
-                    padding: "32px 0",
-                    textAlign: "center",
-                    lineHeight: 1.8,
-                  }}
-                >
-                  ← 点击左侧「ProbeCard Type」图表中的类型
-                  <br />
-                  展开后点击具体探针卡即可查看该卡的 DUT# 分布
-                </div>
-              )}
-            </div>
-
-            {/* LOT ranking */}
-            <div
-              style={{
-                background: "#0d1117",
-                border: "1px solid rgba(240,246,252,0.1)",
-                borderRadius: 8,
-                padding: 16,
-              }}
-            >
-              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
-                📦 LOT 触发排名
-              </div>
-              {aggLot && (
-                <ReactECharts
-                  option={lotOption}
-                  style={{
-                    height: Math.max(180, (aggLot.groups?.length ?? 0) * 22 + 60),
-                    width: "100%",
-                  }}
-                  opts={{ renderer: "canvas" }}
-                  notMerge
-                  lazyUpdate
-                  onEvents={{
-                    click: (params: { name: string }) => {
-                      setSelectedLotId(params.name);
-                      fetchDrill("lotId", params.name, "probeCardType", form);
-                    },
-                  }}
-                />
-              )}
-              {drill?.parentDimKey === "lotId" && (
-                <DrillDownPanel
-                  title={`${drill.parentDimVal} · 下钻：按 ${drill.subDim}`}
-                  groups={drill.groups}
-                  loading={drill.loading}
-                  error={drill.error}
-                  activeSubDim={drill.subDim}
-                  subDimOptions={DRILL_FROM_LOT}
-                  onSubDimChange={(d) =>
-                    fetchDrill("lotId", drill.parentDimVal, d, form)
-                  }
-                  onClose={() => { setSelectedLotId(null); setDrill(null); }}
-                />
-              )}
-            </div>
-
-            {/* Free-dimension aggregate */}
-            <div
-              style={{
-                background: "#0d1117",
-                border: "1px solid rgba(240,246,252,0.1)",
-                borderRadius: 8,
-                padding: 16,
-              }}
-            >
-              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 6 }}>
-                🔢 自由维度聚合
-              </div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-                {FREE_DIMS.map((d) => (
-                  <button
-                    key={d.value}
-                    type="button"
-                    className="chip"
-                    style={
-                      d.value === freeDim
-                        ? {
-                            background: "rgba(56,139,253,0.2)",
-                            borderColor: "#388bfd",
-                            color: "#58a6ff",
-                          }
-                        : undefined
-                    }
-                    onClick={() => handleFreeDimChange(d.value)}
-                  >
-                    {d.label}
-                  </button>
-                ))}
-              </div>
-              {aggFree && (
-                <DarkChart
-                  option={freeOption}
-                  height={Math.max(180, aggFree.groups.length * 22 + 60)}
-                />
-              )}
-            </div>
-          </div>
-
-          {/* ── Tree table: Device → LOT → ProbeCard Type → ProbeCard ── */}
-          {treeRoots.length > 0 && (
-            <div
-              style={{
-                background: "#0d1117",
-                border: "1px solid rgba(240,246,252,0.1)",
-                borderRadius: 8,
-                padding: 16,
-              }}
-            >
-              <div
-                style={{ fontSize: 12, color: "#8b949e", marginBottom: showTree ? 10 : 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, userSelect: "none" }}
-                onClick={() => setShowTree((s) => !s)}
-              >
-                <span style={{ fontSize: 10, opacity: 0.6 }}>{showTree ? "▼" : "▶"}</span>
-                📊 分组汇总（Device → LOT → ProbeCard Type → ProbeCard ID）
-                <span style={{ fontSize: 11, color: "#6e7681", fontWeight: 400 }}>{showTree ? "" : `— ${treeRoots.length} 组，点击展开`}</span>
-              </div>
-              {showTree && <TreeTable roots={treeRoots} totalHeader="触发次数" />}
-            </div>
-          )}
-
-          {/* ── Detail table ── */}
-          {detailRows.length > 0 && (
-            <div
-              style={{
-                background: "#0d1117",
-                border: "1px solid rgba(240,246,252,0.1)",
-                borderRadius: 8,
-                padding: 16,
-              }}
-            >
-              <div
-                style={{ fontSize: 12, color: "#8b949e", marginBottom: showDetail ? 8 : 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, userSelect: "none" }}
-                onClick={() => setShowDetail((s) => !s)}
-              >
-                <span style={{ fontSize: 10, opacity: 0.6 }}>{showDetail ? "▼" : "▶"}</span>
-                明细表 — 共 {list?.count ?? 0} 条（含 PROBECARDTYPE / dutNumber）
-              </div>
-              {showDetail && <DataTable rows={detailRows} maxHeight={400} />}
-            </div>
-          )}
-        </>
+        <DraggableReportSections
+          storageKey="pcr-ai-report:yield-monitor-modules"
+          defaultOrder={YIELD_REPORT_SECTION_ORDER}
+          sections={yieldReportSections}
+        />
       )}
     </div>
   );

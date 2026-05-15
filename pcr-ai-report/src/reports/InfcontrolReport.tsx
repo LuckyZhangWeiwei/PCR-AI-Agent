@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import ReactECharts from "echarts-for-react";
 import { apiGetJson } from "../api/client";
 import { API_PREFIX } from "../api/paths";
@@ -10,6 +10,7 @@ import type {
 } from "../api/types";
 import { DarkChart } from "../components/DarkChart";
 import { DataTable } from "../components/DataTable";
+import { DraggableReportBlocks, DraggableReportSections } from "../components/DraggableReportSections";
 import { DrillDownPanel, formatGroupLabel } from "../components/DrillDownPanel";
 import { KpiCard } from "../components/KpiCard";
 import { TreeTable } from "../components/TreeTable";
@@ -31,6 +32,7 @@ import {
   dateShortcutThisMonth,
   dateShortcutToday,
   yieldColor,
+  type TreeNode,
 } from "../utils/yieldCalc";
 import type { EChartsOption } from "echarts";
 
@@ -120,6 +122,18 @@ const FREE_DIMS: { label: string; value: string }[] = [
   { label: "TesterId",     value: "testerId"     },
 ];
 
+const JB_REPORT_SECTION_ORDER = [
+  "kpi",
+  "lotYield",
+  "chartsGrid",
+  "tree",
+  "detail",
+] as const;
+
+const JB_KPI_BLOCK_ORDER = ["jbWafer", "jbYieldPct", "jbWorstType", "jbTopBin"] as const;
+
+const JB_CHART_BLOCK_ORDER = ["jbBin", "jbPcType", "jbSlot", "jbFreeDim"] as const;
+
 // Sub-dimension options per parent drill
 const DRILL_FROM_CARDTYPE: { label: string; value: string }[] = [
   { label: "CardId", value: "cardId" },
@@ -189,6 +203,42 @@ function lotYields(
     void key;
   }
   return result.sort((a, b) => a.yieldPct - b.yieldPct);
+}
+
+function infcontrolTreeYieldExtra(
+  rows: InfcontrolLayerBinV3Row[] | undefined,
+  node: TreeNode,
+  depth: number,
+): ReactNode {
+  if (depth > 1) return null;
+  const device = node.dimKey === "device" ? node.dimValue : undefined;
+  const lot = node.dimKey === "lot" ? node.dimValue : undefined;
+  if (!rows?.length) return null;
+  const filtered = rows.filter((r) => {
+    if (device && r.DEVICE !== device) return false;
+    if (lot && r.LOT !== lot) return false;
+    return true;
+  });
+  const byPass = new Map<string, InfcontrolLayerBinV3Row[]>();
+  for (const r of filtered) {
+    const p = r.PASSID !== undefined && r.PASSID !== null ? String(r.PASSID) : "—";
+    if (!byPass.has(p)) byPass.set(p, []);
+    byPass.get(p)!.push(r);
+  }
+  if (byPass.size === 0) return null;
+  return (
+    <span style={{ fontSize: 11, display: "flex", gap: 6, flexWrap: "wrap" }}>
+      {[...byPass.entries()].map(([p, rs]) => {
+        const yp = computeYieldPct(rs);
+        if (yp === null) return null;
+        return (
+          <span key={p} style={{ color: yieldColor(yp) }}>
+            P{p} {yp.toFixed(1)}%
+          </span>
+        );
+      })}
+    </span>
+  );
 }
 
 export function InfcontrolReport({ apiBase }: Props) {
@@ -671,6 +721,451 @@ export function InfcontrolReport({ apiBase }: Props) {
   const chips = useMemo(() => activeChips(form), [form]);
   const hasData = !!(list || aggBin || aggCardType);
 
+  const jbReportSections = useMemo(() => {
+    if (!hasData) return {};
+
+    const kpiSection = (
+      <DraggableReportBlocks
+        storageKey="pcr-ai-report:jb-start-kpi-blocks"
+        defaultOrder={JB_KPI_BLOCK_ORDER}
+        axis="x"
+        groupClassName="report-reorder-group--kpis"
+        labels={{
+          jbWafer: "Wafer",
+          jbYieldPct: "Yield%",
+          jbWorstType: "最差卡类型",
+          jbTopBin: "Top Bin",
+        }}
+        sections={{
+          jbWafer: (
+            <KpiCard label="匹配 Wafer 数" value={totalWafers} color="blue" />
+          ),
+          jbYieldPct: (
+            <KpiCard
+              label="综合 Yield%"
+              value={overallYield !== null ? `${overallYield.toFixed(1)}%` : null}
+              color={
+                overallYield !== null
+                  ? overallYield >= 95 ? "green" : overallYield >= 80 ? "yellow" : "red"
+                  : "white"
+              }
+              subtext="前端计算"
+            />
+          ),
+          jbWorstType: (
+            <KpiCard
+              label="最差探针卡类型"
+              value={worstCardType}
+              color="red"
+              subtext="坏 die 最多"
+            />
+          ),
+          jbTopBin: (
+            <KpiCard
+              label="Top 不良 Bin"
+              value={topBin}
+              color="yellow"
+              subtext="全量最高"
+            />
+          ),
+        }}
+      />
+    );
+
+    const lotYieldSection =
+      lotYieldData.length > 0 ? (
+        <div
+          style={{
+            background: "#0d1117",
+            border: "1px solid rgba(240,246,252,0.1)",
+            borderRadius: 8,
+            padding: 16,
+          }}
+        >
+          <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
+            🟢 LOT Yield% 最差 Top 10（绿≥95% / 黄80-95% / 红&lt;80%）
+            <span style={{ marginLeft: 8, fontSize: 11, color: "#6e7681" }}>
+              点击条形钻取
+            </span>
+          </div>
+          <ReactECharts
+            option={lotYieldOption}
+            style={{
+              height: Math.max(160, Math.min(lotYieldData.length, 10) * 26 + 40),
+              width: "100%",
+            }}
+            opts={{ renderer: "canvas" }}
+            notMerge
+            lazyUpdate
+            onEvents={{
+              click: (params: { name: string }) => {
+                const entry = lotYieldData.find((d) => d.label === params.name);
+                if (!entry) return;
+                setSelectedLotLabel(params.name);
+                fetchDrill("lot", entry.lot, "cardId", form);
+              },
+            }}
+          />
+          {drill?.parentDimKey === "lot" && (
+            <DrillDownPanel
+              title={`LOT: ${drill.parentDimVal} · 下钻：按 ${drill.subDim}`}
+              groups={drill.groups}
+              loading={drill.loading}
+              error={drill.error}
+              activeSubDim={drill.subDim}
+              subDimOptions={DRILL_FROM_LOT}
+              onSubDimChange={(d) =>
+                fetchDrill("lot", drill.parentDimVal, d, form)
+              }
+              onClose={() => {
+                setSelectedLotLabel(null);
+                setDrill(null);
+              }}
+            />
+          )}
+        </div>
+      ) : null;
+
+    const chartsGridSection = (
+      <DraggableReportBlocks
+        storageKey="pcr-ai-report:jb-start-chart-blocks"
+        defaultOrder={JB_CHART_BLOCK_ORDER}
+        axis="grid"
+        groupClassName="report-reorder-group--chartgrid"
+        labels={{
+          jbBin: "BIN 排名",
+          jbPcType: "卡类型对比",
+          jbSlot: "Slot 趋势",
+          jbFreeDim: "自由维度",
+        }}
+        sections={{
+          jbBin: (
+            <div
+              style={{
+                background: "#0d1117",
+                border: "1px solid rgba(240,246,252,0.1)",
+                borderRadius: 8,
+                padding: 16,
+              }}
+            >
+              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
+                🔴 不良 BIN 全量排名
+                <span style={{ marginLeft: 8, fontSize: 11, color: "#6e7681" }}>
+                  点击钻取
+                </span>
+              </div>
+              {aggBin && (
+                <ReactECharts
+                  option={binRankOption}
+                  style={{
+                    height: Math.max(180, (aggBin.groups?.length ?? 0) * 22 + 60),
+                    width: "100%",
+                  }}
+                  opts={{ renderer: "canvas" }}
+                  notMerge
+                  lazyUpdate
+                  onEvents={{
+                    click: (params: { name: string }) => {
+                      const bin = params.name.replace(/^Bin /, "");
+                      setSelectedBin(bin);
+                      fetchDrill("bin", bin, "cardId", form);
+                    },
+                  }}
+                />
+              )}
+              {drill?.parentDimKey === "bin" && (
+                <DrillDownPanel
+                  title={`Bin ${drill.parentDimVal} · 下钻：按 ${drill.subDim}`}
+                  groups={drill.groups}
+                  loading={drill.loading}
+                  error={drill.error}
+                  activeSubDim={drill.subDim}
+                  subDimOptions={DRILL_FROM_BIN}
+                  onSubDimChange={(d) =>
+                    fetchDrill("bin", drill.parentDimVal, d, form)
+                  }
+                  onClose={() => {
+                    setSelectedBin(null);
+                    setDrill(null);
+                  }}
+                />
+              )}
+            </div>
+          ),
+          jbPcType: (
+            <div
+              style={{
+                background: "#0d1117",
+                border: "1px solid rgba(240,246,252,0.1)",
+                borderRadius: 8,
+                padding: 16,
+              }}
+            >
+              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
+                🃏 ProbeCard Type 不良对比
+                <span style={{ marginLeft: 8, fontSize: 11, color: "#6e7681" }}>
+                  点击类型 → 钻取具体 CardId
+                </span>
+              </div>
+              {aggCardType && (
+                <ReactECharts
+                  option={cardTypeOption}
+                  style={{
+                    height: Math.max(
+                      180,
+                      new Map(
+                        aggCardType.groups?.map((g) => [g.parts.probeCardType, 1]) ?? []
+                      ).size *
+                        22 +
+                        60
+                    ),
+                    width: "100%",
+                  }}
+                  opts={{ renderer: "canvas" }}
+                  notMerge
+                  lazyUpdate
+                  onEvents={{
+                    click: (params: { name: string }) => {
+                      setSelectedCardType(params.name);
+                      fetchDrill("probeCardType", params.name, "cardId", form);
+                    },
+                  }}
+                />
+              )}
+              {drill?.parentDimKey === "probeCardType" && (
+                <DrillDownPanel
+                  title={`Type: ${drill.parentDimVal} · 下钻：按 ${drill.subDim}`}
+                  groups={drill.groups}
+                  loading={drill.loading}
+                  error={drill.error}
+                  activeSubDim={drill.subDim}
+                  subDimOptions={DRILL_FROM_CARDTYPE}
+                  onSubDimChange={(d) =>
+                    fetchDrill("probeCardType", drill.parentDimVal, d, form)
+                  }
+                  onClose={() => {
+                    setSelectedCardType(null);
+                    setDrill(null);
+                  }}
+                />
+              )}
+              {drill?.parentDimKey === "cardId" && (
+                <DrillDownPanel
+                  title={`CardId: ${drill.parentDimVal} · 下钻：按 ${drill.subDim}`}
+                  groups={drill.groups}
+                  loading={drill.loading}
+                  error={drill.error}
+                  activeSubDim={drill.subDim}
+                  subDimOptions={DRILL_FROM_CARD}
+                  onSubDimChange={(d) =>
+                    fetchDrill("cardId", drill.parentDimVal, d, form)
+                  }
+                  onClose={() => setDrill(null)}
+                />
+              )}
+            </div>
+          ),
+          jbSlot: (
+            <div
+              style={{
+                background: "#0d1117",
+                border: "1px solid rgba(240,246,252,0.1)",
+                borderRadius: 8,
+                padding: 16,
+              }}
+            >
+              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
+                📊 Slot 趋势（wafer 间比较）
+                <span style={{ marginLeft: 8, fontSize: 11, color: "#6e7681" }}>
+                  点击 Slot 钻取
+                </span>
+              </div>
+              {aggSlot && (
+                <ReactECharts
+                  option={slotOption}
+                  style={{ height: 240, width: "100%" }}
+                  opts={{ renderer: "canvas" }}
+                  notMerge
+                  lazyUpdate
+                  onEvents={{
+                    click: (params: { name: string }) => {
+                      const slotNum = params.name.replace(/^Slot /, "");
+                      setSelectedSlot(params.name);
+                      fetchDrill("slot", slotNum, "bin", form);
+                    },
+                  }}
+                />
+              )}
+              {drill?.parentDimKey === "slot" && (
+                <DrillDownPanel
+                  title={`Slot ${drill.parentDimVal} · 下钻：按 ${drill.subDim}`}
+                  groups={drill.groups}
+                  loading={drill.loading}
+                  error={drill.error}
+                  activeSubDim={drill.subDim}
+                  subDimOptions={DRILL_FROM_SLOT}
+                  onSubDimChange={(d) =>
+                    fetchDrill("slot", drill.parentDimVal, d, form)
+                  }
+                  onClose={() => {
+                    setSelectedSlot(null);
+                    setDrill(null);
+                  }}
+                />
+              )}
+            </div>
+          ),
+          jbFreeDim: (
+            <div
+              style={{
+                background: "#0d1117",
+                border: "1px solid rgba(240,246,252,0.1)",
+                borderRadius: 8,
+                padding: 16,
+              }}
+            >
+              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 6 }}>
+                🔢 自由维度聚合
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                {FREE_DIMS.map((d) => (
+                  <button
+                    key={d.value}
+                    type="button"
+                    className="chip"
+                    style={
+                      d.value === freeDim
+                        ? {
+                            background: "rgba(56,139,253,0.2)",
+                            borderColor: "#388bfd",
+                            color: "#58a6ff",
+                          }
+                        : undefined
+                    }
+                    onClick={() => handleFreeDimChange(d.value)}
+                  >
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+              {aggFree && (
+                <DarkChart
+                  option={freeOption}
+                  height={Math.max(180, (aggFree.groups?.length ?? 0) * 22 + 60)}
+                />
+              )}
+            </div>
+          ),
+        }}
+      />
+    );
+
+    const treeSection =
+      treeRoots.length > 0 ? (
+        <div
+          style={{
+            background: "#0d1117",
+            border: "1px solid rgba(240,246,252,0.1)",
+            borderRadius: 8,
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 12,
+              color: "#8b949e",
+              marginBottom: showTree ? 10 : 0,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              userSelect: "none",
+            }}
+            onClick={() => setShowTree((s) => !s)}
+          >
+            <span style={{ fontSize: 10, opacity: 0.6 }}>{showTree ? "▼" : "▶"}</span>
+            📊 分组汇总（Device → LOT → ProbeCard Type → CardId）
+            <span style={{ fontSize: 11, color: "#6e7681", fontWeight: 400 }}>
+              {showTree ? "" : `— ${treeRoots.length} 组，点击展开`}
+            </span>
+          </div>
+          {showTree && (
+            <TreeTable
+              roots={treeRoots}
+              totalHeader="坏 die"
+              renderExtra={(node, depth) =>
+                infcontrolTreeYieldExtra(list?.rows as InfcontrolLayerBinV3Row[], node, depth)
+              }
+            />
+          )}
+        </div>
+      ) : null;
+
+    const detailSection =
+      detailRows.length > 0 ? (
+        <div
+          style={{
+            background: "#0d1117",
+            border: "1px solid rgba(240,246,252,0.1)",
+            borderRadius: 8,
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 12,
+              color: "#8b949e",
+              marginBottom: showDetail ? 8 : 0,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              userSelect: "none",
+            }}
+            onClick={() => setShowDetail((s) => !s)}
+          >
+            <span style={{ fontSize: 10, opacity: 0.6 }}>{showDetail ? "▼" : "▶"}</span>
+            明细表 — 共 {list?.count ?? 0} 条（含 PROBECARDTYPE / Yield%）
+          </div>
+          {showDetail && <DataTable rows={detailRows} maxHeight={400} />}
+        </div>
+      ) : null;
+
+    return {
+      kpi: kpiSection,
+      lotYield: lotYieldSection,
+      chartsGrid: chartsGridSection,
+      tree: treeSection,
+      detail: detailSection,
+    };
+  }, [
+    hasData,
+    totalWafers,
+    overallYield,
+    worstCardType,
+    topBin,
+    lotYieldData,
+    lotYieldOption,
+    drill,
+    form,
+    fetchDrill,
+    aggBin,
+    binRankOption,
+    aggCardType,
+    cardTypeOption,
+    aggSlot,
+    slotOption,
+    aggFree,
+    freeOption,
+    freeDim,
+    handleFreeDimChange,
+    treeRoots,
+    showTree,
+    list,
+    detailRows,
+    showDetail,
+  ]);
+
   return (
     <div className="report-panel">
       {/* ── Header ── */}
@@ -809,371 +1304,11 @@ export function InfcontrolReport({ apiBase }: Props) {
       )}
 
       {hasData && (
-        <>
-          {/* ── KPI Cards ── */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
-            <KpiCard label="匹配 Wafer 数" value={totalWafers} color="blue" />
-            <KpiCard
-              label="综合 Yield%"
-              value={overallYield !== null ? `${overallYield.toFixed(1)}%` : null}
-              color={
-                overallYield !== null
-                  ? overallYield >= 95 ? "green" : overallYield >= 80 ? "yellow" : "red"
-                  : "white"
-              }
-              subtext="前端计算"
-            />
-            <KpiCard
-              label="最差探针卡类型"
-              value={worstCardType}
-              color="red"
-              subtext="坏 die 最多"
-            />
-            <KpiCard
-              label="Top 不良 Bin"
-              value={topBin}
-              color="yellow"
-              subtext="全量最高"
-            />
-          </div>
-
-          {/* ── LOT Yield% bar (full width) — click lot → drill ── */}
-          {lotYieldData.length > 0 && (
-            <div
-              style={{
-                background: "#0d1117",
-                border: "1px solid rgba(240,246,252,0.1)",
-                borderRadius: 8,
-                padding: 16,
-              }}
-            >
-              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
-                🟢 LOT Yield% 最差 Top 10（绿≥95% / 黄80-95% / 红&lt;80%）
-                <span style={{ marginLeft: 8, fontSize: 11, color: "#6e7681" }}>
-                  点击条形钻取
-                </span>
-              </div>
-              <ReactECharts
-                option={lotYieldOption}
-                style={{
-                  height: Math.max(160, Math.min(lotYieldData.length, 10) * 26 + 40),
-                  width: "100%",
-                }}
-                opts={{ renderer: "canvas" }}
-                notMerge
-                lazyUpdate
-                onEvents={{
-                  click: (params: { name: string }) => {
-                    const entry = lotYieldData.find((d) => d.label === params.name);
-                    if (!entry) return;
-                    setSelectedLotLabel(params.name);
-                    fetchDrill("lot", entry.lot, "cardId", form);
-                  },
-                }}
-              />
-              {drill?.parentDimKey === "lot" && (
-                <DrillDownPanel
-                  title={`LOT: ${drill.parentDimVal} · 下钻：按 ${drill.subDim}`}
-                  groups={drill.groups}
-                  loading={drill.loading}
-                  error={drill.error}
-                  activeSubDim={drill.subDim}
-                  subDimOptions={DRILL_FROM_LOT}
-                  onSubDimChange={(d) =>
-                    fetchDrill("lot", drill.parentDimVal, d, form)
-                  }
-                  onClose={() => { setSelectedLotLabel(null); setDrill(null); }}
-                />
-              )}
-            </div>
-          )}
-
-          {/* ── Charts 2×2 ── */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            {/* BIN ranking — click bin → drill */}
-            <div
-              style={{
-                background: "#0d1117",
-                border: "1px solid rgba(240,246,252,0.1)",
-                borderRadius: 8,
-                padding: 16,
-              }}
-            >
-              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
-                🔴 不良 BIN 全量排名
-                <span style={{ marginLeft: 8, fontSize: 11, color: "#6e7681" }}>
-                  点击钻取
-                </span>
-              </div>
-              {aggBin && (
-                <ReactECharts
-                  option={binRankOption}
-                  style={{
-                    height: Math.max(180, (aggBin.groups?.length ?? 0) * 22 + 60),
-                    width: "100%",
-                  }}
-                  opts={{ renderer: "canvas" }}
-                  notMerge
-                  lazyUpdate
-                  onEvents={{
-                    click: (params: { name: string }) => {
-                      const bin = params.name.replace(/^Bin /, "");
-                      setSelectedBin(bin);
-                      fetchDrill("bin", bin, "cardId", form);
-                    },
-                  }}
-                />
-              )}
-              {drill?.parentDimKey === "bin" && (
-                <DrillDownPanel
-                  title={`Bin ${drill.parentDimVal} · 下钻：按 ${drill.subDim}`}
-                  groups={drill.groups}
-                  loading={drill.loading}
-                  error={drill.error}
-                  activeSubDim={drill.subDim}
-                  subDimOptions={DRILL_FROM_BIN}
-                  onSubDimChange={(d) =>
-                    fetchDrill("bin", drill.parentDimVal, d, form)
-                  }
-                  onClose={() => { setSelectedBin(null); setDrill(null); }}
-                />
-              )}
-            </div>
-
-            {/* ProbeCard Type comparison — click type → drill into cardId */}
-            <div
-              style={{
-                background: "#0d1117",
-                border: "1px solid rgba(240,246,252,0.1)",
-                borderRadius: 8,
-                padding: 16,
-              }}
-            >
-              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
-                🃏 ProbeCard Type 不良对比
-                <span style={{ marginLeft: 8, fontSize: 11, color: "#6e7681" }}>
-                  点击类型 → 钻取具体 CardId
-                </span>
-              </div>
-              {aggCardType && (
-                <ReactECharts
-                  option={cardTypeOption}
-                  style={{
-                    height: Math.max(
-                      180,
-                      new Map(aggCardType.groups?.map((g) => [g.parts.probeCardType, 1]) ?? []).size * 22 + 60
-                    ),
-                    width: "100%",
-                  }}
-                  opts={{ renderer: "canvas" }}
-                  notMerge
-                  lazyUpdate
-                  onEvents={{
-                    click: (params: { name: string }) => {
-                      setSelectedCardType(params.name);
-                      fetchDrill("probeCardType", params.name, "cardId", form);
-                    },
-                  }}
-                />
-              )}
-              {drill?.parentDimKey === "probeCardType" && (
-                <DrillDownPanel
-                  title={`Type: ${drill.parentDimVal} · 下钻：按 ${drill.subDim}`}
-                  groups={drill.groups}
-                  loading={drill.loading}
-                  error={drill.error}
-                  activeSubDim={drill.subDim}
-                  subDimOptions={DRILL_FROM_CARDTYPE}
-                  onSubDimChange={(d) =>
-                    fetchDrill("probeCardType", drill.parentDimVal, d, form)
-                  }
-                  onClose={() => { setSelectedCardType(null); setDrill(null); }}
-                />
-              )}
-              {/* Nested: if drill is cardId, show it here too */}
-              {drill?.parentDimKey === "cardId" && (
-                <DrillDownPanel
-                  title={`CardId: ${drill.parentDimVal} · 下钻：按 ${drill.subDim}`}
-                  groups={drill.groups}
-                  loading={drill.loading}
-                  error={drill.error}
-                  activeSubDim={drill.subDim}
-                  subDimOptions={DRILL_FROM_CARD}
-                  onSubDimChange={(d) =>
-                    fetchDrill("cardId", drill.parentDimVal, d, form)
-                  }
-                  onClose={() => setDrill(null)}
-                />
-              )}
-            </div>
-
-            {/* Slot trend — click slot bar → drill into bins */}
-            <div
-              style={{
-                background: "#0d1117",
-                border: "1px solid rgba(240,246,252,0.1)",
-                borderRadius: 8,
-                padding: 16,
-              }}
-            >
-              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
-                📊 Slot 趋势（wafer 间比较）
-                <span style={{ marginLeft: 8, fontSize: 11, color: "#6e7681" }}>
-                  点击 Slot 钻取
-                </span>
-              </div>
-              {aggSlot && (
-                <ReactECharts
-                  option={slotOption}
-                  style={{ height: 240, width: "100%" }}
-                  opts={{ renderer: "canvas" }}
-                  notMerge
-                  lazyUpdate
-                  onEvents={{
-                    click: (params: { name: string }) => {
-                      const slotNum = params.name.replace(/^Slot /, "");
-                      setSelectedSlot(params.name);
-                      fetchDrill("slot", slotNum, "bin", form);
-                    },
-                  }}
-                />
-              )}
-              {drill?.parentDimKey === "slot" && (
-                <DrillDownPanel
-                  title={`Slot ${drill.parentDimVal} · 下钻：按 ${drill.subDim}`}
-                  groups={drill.groups}
-                  loading={drill.loading}
-                  error={drill.error}
-                  activeSubDim={drill.subDim}
-                  subDimOptions={DRILL_FROM_SLOT}
-                  onSubDimChange={(d) =>
-                    fetchDrill("slot", drill.parentDimVal, d, form)
-                  }
-                  onClose={() => { setSelectedSlot(null); setDrill(null); }}
-                />
-              )}
-            </div>
-
-            {/* Free-dim aggregate */}
-            <div
-              style={{
-                background: "#0d1117",
-                border: "1px solid rgba(240,246,252,0.1)",
-                borderRadius: 8,
-                padding: 16,
-              }}
-            >
-              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 6 }}>
-                🔢 自由维度聚合
-              </div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-                {FREE_DIMS.map((d) => (
-                  <button
-                    key={d.value}
-                    type="button"
-                    className="chip"
-                    style={
-                      d.value === freeDim
-                        ? {
-                            background: "rgba(56,139,253,0.2)",
-                            borderColor: "#388bfd",
-                            color: "#58a6ff",
-                          }
-                        : undefined
-                    }
-                    onClick={() => handleFreeDimChange(d.value)}
-                  >
-                    {d.label}
-                  </button>
-                ))}
-              </div>
-              {aggFree && (
-                <DarkChart
-                  option={freeOption}
-                  height={Math.max(180, (aggFree.groups?.length ?? 0) * 22 + 60)}
-                />
-              )}
-            </div>
-          </div>
-
-          {/* ── Tree: Device → LOT → ProbeCard Type → CardId ── */}
-          {treeRoots.length > 0 && (
-            <div
-              style={{
-                background: "#0d1117",
-                border: "1px solid rgba(240,246,252,0.1)",
-                borderRadius: 8,
-                padding: 16,
-              }}
-            >
-              <div
-                style={{ fontSize: 12, color: "#8b949e", marginBottom: showTree ? 10 : 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, userSelect: "none" }}
-                onClick={() => setShowTree((s) => !s)}
-              >
-                <span style={{ fontSize: 10, opacity: 0.6 }}>{showTree ? "▼" : "▶"}</span>
-                📊 分组汇总（Device → LOT → ProbeCard Type → CardId）
-                <span style={{ fontSize: 11, color: "#6e7681", fontWeight: 400 }}>{showTree ? "" : `— ${treeRoots.length} 组，点击展开`}</span>
-              </div>
-              {showTree && <TreeTable
-                roots={treeRoots}
-                totalHeader="坏 die"
-                renderExtra={(node, depth) => {
-                  if (depth > 1) return null;
-                  const device = node.dimKey === "device" ? node.dimValue : undefined;
-                  const lot    = node.dimKey === "lot"    ? node.dimValue : undefined;
-                  if (!list?.rows?.length) return null;
-                  const filtered = (list.rows as InfcontrolLayerBinV3Row[]).filter((r) => {
-                    if (device && r.DEVICE !== device) return false;
-                    if (lot    && r.LOT    !== lot)    return false;
-                    return true;
-                  });
-                  // Group by passId so yield is not mixed across passes
-                  const byPass = new Map<string, typeof filtered>();
-                  for (const r of filtered) {
-                    const p = r.PASSID !== undefined && r.PASSID !== null ? String(r.PASSID) : "—";
-                    if (!byPass.has(p)) byPass.set(p, []);
-                    byPass.get(p)!.push(r);
-                  }
-                  if (byPass.size === 0) return null;
-                  return (
-                    <span style={{ fontSize: 11, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      {[...byPass.entries()].map(([p, rows]) => {
-                        const yp = computeYieldPct(rows);
-                        if (yp === null) return null;
-                        return (
-                          <span key={p} style={{ color: yieldColor(yp) }}>
-                            P{p} {yp.toFixed(1)}%
-                          </span>
-                        );
-                      })}
-                    </span>
-                  );
-                }}
-              />}
-            </div>
-          )}
-
-          {/* ── Detail table ── */}
-          {detailRows.length > 0 && (
-            <div
-              style={{
-                background: "#0d1117",
-                border: "1px solid rgba(240,246,252,0.1)",
-                borderRadius: 8,
-                padding: 16,
-              }}
-            >
-              <div
-                style={{ fontSize: 12, color: "#8b949e", marginBottom: showDetail ? 8 : 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, userSelect: "none" }}
-                onClick={() => setShowDetail((s) => !s)}
-              >
-                <span style={{ fontSize: 10, opacity: 0.6 }}>{showDetail ? "▼" : "▶"}</span>
-                明细表 — 共 {list?.count ?? 0} 条（含 PROBECARDTYPE / Yield%）
-              </div>
-              {showDetail && <DataTable rows={detailRows} maxHeight={400} />}
-            </div>
-          )}
-        </>
+        <DraggableReportSections
+          storageKey="pcr-ai-report:jb-start-modules"
+          defaultOrder={JB_REPORT_SECTION_ORDER}
+          sections={jbReportSections}
+        />
       )}
     </div>
   );
