@@ -138,7 +138,7 @@ export type InfcontrolBinCell = {
   isGoodBin: boolean;
 };
 
-/** Typed 层控列表行（JB START，`…/v3` 或 **`…/v4`**） */
+/** Typed 层控列表行（JB STAR，`…/v3` 或 **`…/v4`**） */
 export type InfcontrolLayerBinV3Row = {
   KEYNUMBER?: number;
   DEVICE?: string;

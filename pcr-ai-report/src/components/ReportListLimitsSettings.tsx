@@ -17,7 +17,7 @@ export function ReportListLimitsSettings({ limits, onChange, onReset }: Props) {
       aria-labelledby="settings-list-limits"
     >
       <h2 id="settings-list-limits" className="settings-section-title">
-        📊 明细行数（Yield / JB START）
+        📊 明细行数（Yield / JB STAR）
       </h2>
       <div className="api-panel settings-limits-panel">
         <p className="field-hint settings-limits-intro">

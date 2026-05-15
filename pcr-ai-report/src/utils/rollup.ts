@@ -1,4 +1,4 @@
-/** Client-side rollups on API list payloads（JB START v2 列表行数由 limit 决定）. */
+/** Client-side rollups on API list payloads（JB STAR v2 列表行数由 limit 决定）. */
 
 /**
  * yield monitor：`TYPE` 列偶见历史值 `bin`，并非合法触发类型代码；图表与按 TYPE 汇总时跳过。

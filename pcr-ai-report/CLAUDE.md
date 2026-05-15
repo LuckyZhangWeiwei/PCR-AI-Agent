@@ -44,7 +44,7 @@ npm run preview   # 本地预览 dist/
 | Tab | 组件 | 说明 |
 | --- | --- | --- |
 | `yield` | `YieldMonitorReport` | 产量触发 · delta_diff |
-| `infcontrol` | `InfcontrolReport` | JB START / 层控 BIN |
+| `infcontrol` | `InfcontrolReport` | JB STAR / 层控 BIN |
 | `ai` | `AiAgentReport` | `GET …/siliconflow/chat` |
 | `table` | `TableRowsReport` | 表浏览（**无**可拖拽布局，查询区也未对齐 Yield/JB 样式） |
 | `settings` | 内联面板 | API 地址、健康检查、**`OverviewReport embedded`**（API 目录） |
