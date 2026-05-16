@@ -74,6 +74,9 @@ export async function runAgentLoop(
     );
 
     if (streamError) {
+      if (textBuffer) {
+        appendMessages(sessionId, { role: "assistant", content: textBuffer });
+      }
       emit({ type: "error", message: streamError });
       return;
     }
@@ -97,7 +100,8 @@ export async function runAgentLoop(
     });
 
     // Execute tools sequentially (Oracle pool constraint)
-    for (const tc of toolCalls) {
+    for (let tcIdx = 0; tcIdx < toolCalls.length; tcIdx++) {
+      const tc = toolCalls[tcIdx];
       let parsedArgs: Record<string, unknown> = {};
       try {
         parsedArgs = JSON.parse(tc.args || "{}") as Record<string, unknown>;
@@ -130,9 +134,7 @@ export async function runAgentLoop(
       const summary = historyContent.slice(0, 200);
       emit({ type: "tool_result", name: tc.name, summary });
 
-      const callId =
-        assistantToolCalls.find((a) => a.function.name === tc.name)?.id ??
-        `call_${round}_${tc.index}`;
+      const callId = assistantToolCalls[tcIdx]?.id ?? `call_${round}_${tc.index}`;
       appendMessages(sessionId, {
         role: "tool",
         tool_call_id: callId,
@@ -142,5 +144,5 @@ export async function runAgentLoop(
     // Continue to next round with tool results in history
   }
 
-  emit({ type: "error", message: "已达到最大推理轮数（5轮），请精简问题后重试" });
+  emit({ type: "error", message: `已达到最大推理轮数（${MAX_ROUNDS}轮），请精简问题后重试` });
 }
