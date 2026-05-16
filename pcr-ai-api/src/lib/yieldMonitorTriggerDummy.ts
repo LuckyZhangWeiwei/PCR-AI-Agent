@@ -338,13 +338,21 @@ export function filterYieldMonitorDummyRowsMatchingV3(
 
   const tsLo = applied.timeStampBegin ?? applied.timeStampFrom;
   const tsHi = applied.timeStampEnd ?? applied.timeStampTo;
-  if (tsLo !== undefined) {
-    const from = new Date(String(tsLo)).getTime();
-    rows = rows.filter((r) => new Date(r.TIME_STAMP).getTime() >= from);
-  }
-  if (tsHi !== undefined) {
-    const to = new Date(String(tsHi)).getTime();
-    rows = rows.filter((r) => new Date(r.TIME_STAMP).getTime() <= to);
+  if (tsLo !== undefined || tsHi !== undefined) {
+    // Dummy data has fixed historical timestamps. Shift filter bounds so that
+    // relative queries like "last 7 days" always hit data in dummy mode.
+    const maxTs = rows.reduce(
+      (m, r) => Math.max(m, new Date(r.TIME_STAMP).getTime()), 0
+    );
+    const offset = maxTs > 0 ? Date.now() - maxTs : 0;
+    if (tsLo !== undefined) {
+      const from = new Date(String(tsLo)).getTime() - offset;
+      rows = rows.filter((r) => new Date(r.TIME_STAMP).getTime() >= from);
+    }
+    if (tsHi !== undefined) {
+      const to = new Date(String(tsHi)).getTime() - offset;
+      rows = rows.filter((r) => new Date(r.TIME_STAMP).getTime() <= to);
+    }
   }
 
   return rows.map((r) => ({

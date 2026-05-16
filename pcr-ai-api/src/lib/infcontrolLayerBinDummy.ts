@@ -483,26 +483,32 @@ export function filterInfcontrolLayerBinV3DummyRowsMatching(
 
   const tsLo = applied.testStartBegin ?? applied.testStartFrom;
   const tsHi = applied.testStartEnd ?? applied.testStartTo;
-  if (tsLo !== undefined) {
-    const from = new Date(String(tsLo)).getTime();
-    rows = rows.filter(
-      (r) => new Date(String(r.TESTSTART)).getTime() >= from
-    );
-  }
-  if (tsHi !== undefined) {
-    const to = new Date(String(tsHi)).getTime();
-    rows = rows.filter((r) => new Date(String(r.TESTSTART)).getTime() <= to);
-  }
-
   const teLo = applied.testEndBegin ?? applied.testEndFrom;
   const teHi = applied.testEndEnd ?? applied.testEndTo;
-  if (teLo !== undefined) {
-    const from = new Date(String(teLo)).getTime();
-    rows = rows.filter((r) => new Date(String(r.TESTEND)).getTime() >= from);
-  }
-  if (teHi !== undefined) {
-    const to = new Date(String(teHi)).getTime();
-    rows = rows.filter((r) => new Date(String(r.TESTEND)).getTime() <= to);
+
+  if (tsLo !== undefined || tsHi !== undefined || teLo !== undefined || teHi !== undefined) {
+    // Dummy data has fixed historical timestamps. Shift filter bounds so that
+    // relative queries like "last 7 days" always hit data in dummy mode.
+    const maxTs = rows.reduce(
+      (m, r) => Math.max(m, new Date(String(r.TESTEND)).getTime()), 0
+    );
+    const offset = maxTs > 0 ? Date.now() - maxTs : 0;
+    if (tsLo !== undefined) {
+      const from = new Date(String(tsLo)).getTime() - offset;
+      rows = rows.filter((r) => new Date(String(r.TESTSTART)).getTime() >= from);
+    }
+    if (tsHi !== undefined) {
+      const to = new Date(String(tsHi)).getTime() - offset;
+      rows = rows.filter((r) => new Date(String(r.TESTSTART)).getTime() <= to);
+    }
+    if (teLo !== undefined) {
+      const from = new Date(String(teLo)).getTime() - offset;
+      rows = rows.filter((r) => new Date(String(r.TESTEND)).getTime() >= from);
+    }
+    if (teHi !== undefined) {
+      const to = new Date(String(teHi)).getTime() - offset;
+      rows = rows.filter((r) => new Date(String(r.TESTEND)).getTime() <= to);
+    }
   }
 
   return rows.map((r) => ({
