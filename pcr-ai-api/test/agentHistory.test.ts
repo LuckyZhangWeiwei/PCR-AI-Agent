@@ -11,6 +11,7 @@ describe("agentHistory", () => {
   beforeEach(() => {
     clearHistory("sess-1");
     clearHistory("sess-2");
+    clearHistory("sess-trim");
   });
 
   it("starts empty for a new sessionId", () => {
