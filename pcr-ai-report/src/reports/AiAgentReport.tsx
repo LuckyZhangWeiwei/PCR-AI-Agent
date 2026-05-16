@@ -27,12 +27,17 @@ interface ErrorMessage {
   kind: "error";
   message: string;
 }
+interface ClarificationMessage {
+  kind: "clarification";
+  question: string;
+}
 type ChatMessage =
   | UserMessage
   | AiMessage
   | ToolMessage
   | ChartMessage
-  | ErrorMessage;
+  | ErrorMessage
+  | ClarificationMessage;
 
 interface SseEvent {
   type: string;
@@ -42,6 +47,7 @@ interface SseEvent {
   summary?: string;
   option?: EChartsOption;
   message?: string;
+  question?: string;
 }
 
 interface Props {
@@ -121,6 +127,12 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
         setMessages((prev) => [
           ...prev,
           { kind: "error", message: event.message ?? "未知错误" },
+        ]);
+        break;
+      case "clarification":
+        setMessages((prev) => [
+          ...prev,
+          { kind: "clarification", question: event.question ?? "" },
         ]);
         break;
     }
@@ -252,12 +264,25 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
             );
           }
           if (msg.kind === "ai") {
+            const planMatch = !msg.streaming && msg.text.match(/\[PLAN\]([\s\S]*?)\[\/PLAN\]/);
             return (
               <div key={i} className="ai-msg ai-msg--ai">
                 <div className="ai-msg-bubble">
                   {msg.text || (msg.streaming ? "…" : "")}
                   {msg.streaming && <span className="ai-cursor" />}
                 </div>
+                {planMatch && (
+                  <button
+                    type="button"
+                    className="ai-plan-confirm"
+                    onClick={() => {
+                      setInput("确认");
+                      inputRef.current?.focus();
+                    }}
+                  >
+                    ✓ 确认执行
+                  </button>
+                )}
               </div>
             );
           }
@@ -288,6 +313,15 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
             return (
               <div key={i} className="ai-msg ai-msg--error">
                 ⚠ {msg.message}
+              </div>
+            );
+          }
+          if (msg.kind === "clarification") {
+            return (
+              <div key={i} className="ai-msg ai-msg--clarification">
+                <div className="ai-clarification-bubble">
+                  ❓ {msg.question}
+                </div>
               </div>
             );
           }

@@ -183,3 +183,34 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.ai-msg--clarification {
+  max-width: 85%;
+}
+
+.ai-clarification-bubble {
+  background: #1a2a1a;
+  border: 1px solid #3a5a3a;
+  color: #8fbe8f;
+  border-radius: 2px 12px 12px 12px;
+  padding: 8px 12px;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ai-plan-confirm {
+  margin-top: 6px;
+  padding: 4px 12px;
+  background: #1a3a1a;
+  border: 1px solid #3a6a3a;
+  color: #8fbe8f;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.ai-plan-confirm:hover {
+  background: #224422;
+  color: #aaffaa;
+}

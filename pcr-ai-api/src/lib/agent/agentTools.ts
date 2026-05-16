@@ -214,6 +214,24 @@ export const TOOL_SCHEMAS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "ask_clarification",
+      description:
+        "当用户请求模糊或缺少关键信息时，调用此工具向用户提问。问题应简洁明确，每次只问一个问题。",
+      parameters: {
+        type: "object",
+        properties: {
+          question: {
+            type: "string",
+            description: "向用户提出的澄清问题",
+          },
+        },
+        required: ["question"],
+      },
+    },
+  },
 ] as const;
 
 // ─── Chart generation ──────────────────────────────────────────────────────
@@ -225,6 +243,10 @@ export interface ChartData {
 
 export interface ChartSentinel {
   __chartOption: object;
+}
+
+export interface ClarificationSentinel {
+  __clarification: string;
 }
 
 function buildChartOption(
@@ -497,7 +519,7 @@ async function toolAggregateJbBins(
 export async function runTool(
   name: string,
   args: Record<string, unknown>
-): Promise<string | ChartSentinel> {
+): Promise<string | ChartSentinel | ClarificationSentinel> {
   switch (name) {
     case "query_yield_triggers":
       return toolQueryYieldTriggers(args);
@@ -517,6 +539,10 @@ export async function runTool(
       } catch (err) {
         return `生成图表失败: ${err instanceof Error ? err.message : String(err)}`;
       }
+    }
+    case "ask_clarification": {
+      const question = String(args["question"] ?? "");
+      return { __clarification: question };
     }
     default:
       return `未知工具: ${name}`;

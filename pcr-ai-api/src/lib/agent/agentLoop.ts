@@ -6,7 +6,7 @@ import {
   type ChatMessage,
   type ToolCall,
 } from "./agentHistory.js";
-import { TOOL_SCHEMAS, runTool, type ChartSentinel } from "./agentTools.js";
+import { TOOL_SCHEMAS, runTool, type ChartSentinel, type ClarificationSentinel } from "./agentTools.js";
 import { streamSiliconFlow, type CollectedToolCall } from "./agentStream.js";
 
 export type AgentSseEvent =
@@ -14,14 +14,36 @@ export type AgentSseEvent =
   | { type: "tool_start"; name: string; args: Record<string, unknown> }
   | { type: "tool_result"; name: string; summary: string }
   | { type: "chart"; option: object }
+  | { type: "clarification"; question: string }
   | { type: "done" }
   | { type: "error"; message: string };
 
 const SYSTEM_PROMPT = `你是 NXP ATTJ WaferTest 数据分析助手。
 
-可用工具：query_yield_triggers, aggregate_yield_triggers, query_jb_bins, aggregate_jb_bins, generate_chart。
+可用工具：query_yield_triggers, aggregate_yield_triggers, query_jb_bins, aggregate_jb_bins, generate_chart, ask_clarification。
 
-规则：
+## 决策优先级
+
+面对用户请求时，按以下顺序判断：
+
+1. **澄清优先** — 请求缺少关键信息（设备代码不明、时间范围模糊、批次号未提供等）
+   → 调用 ask_clarification 工具，问清楚后再查询
+   → 缺少多项信息时，合并为一次 ask_clarification，编号列出所有问题
+   → 不要在信息不足时直接查询或猜测参数
+
+2. **规划其次** — 请求明确，但需要 3 步及以上的连续操作
+   → 先输出 [PLAN]\\n1. 步骤一\\n2. 步骤二\\n[/PLAN]，等用户确认（"好的"/"确认"/"yes"/"ok"）后再执行
+   → 确认前不调用任何数据工具
+
+3. **反思兜底** — 工具执行失败，且换策略有可能成功
+   → 在回复中嵌入 [REFLECT]需要换策略：<原因和新策略>[/REFLECT]，最多重试 2 次
+   → 超过 2 次直接告知用户失败原因
+
+4. **直接执行** — 请求明确，步骤简单（1~2 步）
+   → 直接调用工具完成，无需规划
+
+## 数据规则
+
 - 查到数据后，主动调用 generate_chart 生成合适的图表（bar 适合计数对比，line 适合时序趋势，pie 适合占比）
 - 用中文回答，数字结论要具体（给出具体数字）
 - 时间范围未指定时，API 默认查最近 1 年数据，无需额外说明
@@ -121,6 +143,14 @@ export async function runAgentLoop(
         ) {
           emit({ type: "chart", option: (toolResult as ChartSentinel).__chartOption });
           historyContent = "[图表已生成]";
+        } else if (
+          typeof toolResult === "object" &&
+          toolResult !== null &&
+          "__clarification" in toolResult
+        ) {
+          const question = (toolResult as ClarificationSentinel).__clarification;
+          emit({ type: "clarification", question });
+          historyContent = `[已向用户提问：${question}]`;
         } else {
           historyContent =
             typeof toolResult === "string"
@@ -140,6 +170,12 @@ export async function runAgentLoop(
         tool_call_id: callId,
         content: historyContent,
       });
+    }
+    // If agent asked for clarification, stop this round and wait for user reply
+    const askedClarification = toolCalls.some((tc) => tc.name === "ask_clarification");
+    if (askedClarification) {
+      emit({ type: "done" });
+      return;
     }
     // Continue to next round with tool results in history
   }
