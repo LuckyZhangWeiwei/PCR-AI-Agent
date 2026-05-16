@@ -287,6 +287,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
             return (
               <div key={i} className="ai-msg ai-msg--user">
                 <div className="ai-msg-bubble">{msg.text}</div>
+                <div className="ai-avatar ai-avatar--user">我</div>
               </div>
             );
           }
@@ -294,6 +295,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
             const planMatch = !msg.streaming && msg.text.match(/\[PLAN\]([\s\S]*?)\[\/PLAN\]/);
             return (
               <div key={i} className="ai-msg ai-msg--ai">
+                <div className="ai-avatar ai-avatar--ai">AI</div>
                 <div className="ai-msg-bubble">
                   {msg.text || (msg.streaming ? "…" : "")}
                   {msg.streaming && <span className="ai-cursor" />}
@@ -346,6 +348,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
           if (msg.kind === "clarification") {
             return (
               <div key={i} className="ai-msg ai-msg--clarification">
+                <div className="ai-avatar ai-avatar--ai">AI</div>
                 <div className="ai-clarification-bubble">
                   ❓ {msg.question}
                 </div>
@@ -357,6 +360,9 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
         <div ref={bottomRef} />
       </div>
 
+      {loading && (
+        <div className="ai-agent-processing-hint">⏳ AI 正在处理，请稍候…</div>
+      )}
       <div className="ai-agent-input-area">
         <textarea
           ref={inputRef}
@@ -373,8 +379,9 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
           className="ai-agent-send"
           onClick={() => void sendMessage()}
           disabled={loading || !input.trim()}
+          title={loading ? "AI 正在处理中，请稍候" : undefined}
         >
-          {loading ? "…" : "发送"}
+          {loading ? "处理中" : "发送"}
         </button>
       </div>
     </div>
