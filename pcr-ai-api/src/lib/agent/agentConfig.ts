@@ -7,6 +7,7 @@ export interface AgentConfig {
 const DEFAULT_API_BASE = "https://api.siliconflow.cn/v1";
 const DEFAULT_MODEL = "deepseek-ai/DeepSeek-V3";
 
+// Reads process.env lazily at call time — do not hoist env reads to module scope.
 export function resolveAgentConfig(
   override?: Partial<AgentConfig>
 ): AgentConfig {
