@@ -2,8 +2,8 @@
 .ai-agent-report {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 120px);
-  min-height: 400px;
+  height: calc(100vh - 180px);
+  min-height: 320px;
 }
 
 .ai-agent-toolbar {
