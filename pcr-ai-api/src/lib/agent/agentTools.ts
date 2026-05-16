@@ -283,10 +283,14 @@ function clampLimit(raw: unknown, defaultVal: number, max: number): number {
 }
 
 function truncateResult(obj: unknown): string {
-  const s = JSON.stringify(obj);
-  return s.length > TOOL_RESULT_TRUNCATE
-    ? s.slice(0, TOOL_RESULT_TRUNCATE) + "…(truncated)"
-    : s;
+  try {
+    const s = JSON.stringify(obj);
+    return s.length > TOOL_RESULT_TRUNCATE
+      ? s.slice(0, TOOL_RESULT_TRUNCATE) + "…(truncated)"
+      : s;
+  } catch {
+    return "(结果序列化失败)";
+  }
 }
 
 function enrichYieldRow(row: Record<string, unknown>): Record<string, unknown> {
@@ -504,11 +508,15 @@ export async function runTool(
     case "aggregate_jb_bins":
       return toolAggregateJbBins(args);
     case "generate_chart": {
-      const chartType = args["chartType"] as "bar" | "line" | "pie" | "scatter";
-      const title = String(args["title"] ?? "");
-      const data = args["data"] as ChartData;
-      const option = buildChartOption(chartType, title, data);
-      return { __chartOption: option };
+      try {
+        const chartType = args["chartType"] as "bar" | "line" | "pie" | "scatter";
+        const title = String(args["title"] ?? "");
+        const data = args["data"] as ChartData;
+        const option = buildChartOption(chartType, title, data);
+        return { __chartOption: option };
+      } catch (err) {
+        return `生成图表失败: ${err instanceof Error ? err.message : String(err)}`;
+      }
     }
     default:
       return `未知工具: ${name}`;

@@ -45,6 +45,27 @@ describe("generate_chart tool", () => {
     assert.equal(series[0].type, "pie");
   });
 
+  it("line chart has xAxis with category type", async () => {
+    const result = await runTool("generate_chart", {
+      chartType: "line",
+      title: "Trend",
+      data: { labels: ["Jan", "Feb"], series: [{ name: "S", values: [1, 2] }] },
+    });
+    const option = (result as { __chartOption: Record<string, unknown> }).__chartOption;
+    const xAxis = option["xAxis"] as Record<string, unknown>;
+    assert.equal(xAxis["type"], "category");
+  });
+
+  it("scatter chart has no xAxis key", async () => {
+    const result = await runTool("generate_chart", {
+      chartType: "scatter",
+      title: "Scatter",
+      data: { labels: ["A", "B"], series: [{ name: "S", values: [10, 20] }] },
+    });
+    const option = (result as { __chartOption: Record<string, unknown> }).__chartOption;
+    assert.equal(option["xAxis"], undefined, "scatter should not have xAxis");
+  });
+
   it("returns string error for unknown tool", async () => {
     const result = await runTool("unknown_tool", {});
     assert.equal(typeof result, "string");
