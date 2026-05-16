@@ -18,8 +18,11 @@ export type AgentSseEvent =
   | { type: "done" }
   | { type: "error"; message: string };
 
-const SYSTEM_PROMPT = `你是 NXP ATTJ WaferTest 数据分析助手。
+function buildSystemPrompt(): string {
+  const today = new Date().toISOString().slice(0, 10);
+  return `你是 NXP ATTJ WaferTest 数据分析助手。
 
+**当前日期：${today}**
 **语言要求：必须全程用中文回答，严禁使用英文。**
 
 可用工具：query_yield_triggers, aggregate_yield_triggers, query_jb_bins, aggregate_jb_bins, generate_chart, ask_clarification。
@@ -62,6 +65,7 @@ const SYSTEM_PROMPT = `你是 NXP ATTJ WaferTest 数据分析助手。
 
 ❌ 禁止：数据工具执行完直接调用 generate_chart，不输出任何文字
 ✅ 正确：先写结论段落，再生成图表`;
+}
 
 const MAX_ROUNDS = 5;
 const TOOL_RESULT_MAX_HISTORY = 3000;
@@ -77,7 +81,7 @@ export async function runAgentLoop(
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const history = getHistory(sessionId);
     const messages: ChatMessage[] = [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: buildSystemPrompt() },
       ...history,
     ];
 
