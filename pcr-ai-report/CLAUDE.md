@@ -45,7 +45,7 @@ npm run preview   # 本地预览 dist/
 | --- | --- | --- |
 | `yield` | `YieldMonitorReport` | 产量触发 · delta_diff |
 | `infcontrol` | `InfcontrolReport` | JB STAR / 层控 BIN |
-| `ai` | `AiAgentReport` | `GET …/siliconflow/chat` |
+| `ai` | `AiAgentReport` | `POST /api/v4/agent/chat`（SSE；AI Agent 配置在设置页） |
 | `table` | `TableRowsReport` | 表浏览（**无**可拖拽布局，查询区也未对齐 Yield/JB 样式） |
 | `settings` | 内联面板 | API 地址、健康检查、**`OverviewReport embedded`**（API 目录） |
 
@@ -187,15 +187,13 @@ src/
 
 ---
 
-## 11. 近期变更纪要（2026-05-15，交接备忘）
+## 11. 近期变更纪要（2026-05-16，交接备忘）
 
-1. **品牌**：标题改为 **NXP ATTJ WaferTest Dashboard**；全行渐变 + 更大字号（`.app-title-main`）。
-2. **布局**：`@dnd-kit` 三层拖拽；顺序/隐藏 **localStorage**；查询旁 **还原布局**。
-3. **拖动**：整项拖动；**指针中线**碰撞（`createPointerMidpointCollision`）；**480ms** 过渡。
-4. **导航**：**API 目录**从顶栏 tab 移至 **⚙ 设置**（`OverviewReport` `embedded`）。
-5. **标签**：图表日轴 / 聚合维 **`formatChartDayLabel`** / **`formatAggregateDimLabel`**。
-6. **设置**：**明细默认/最多条数**（300/500 可改）见 `hooks/usePersistedReportLimits.ts`、`components/ReportListLimitsSettings.tsx`。
-7. **未做**：`TableRowsReport` 查询区与拖拽布局未与 Yield/JB 完全统一（表浏览仍保留页内 `limit` 输入）。
+1. **AI 助手链路**：`AiAgentReport` 发送 **`POST ${apiBase}/api/v4/agent/chat`**，请求体含 **`message`**、**`sessionId`**、**`agentConfig`**；响应为 SSE，每行 **`data: {type,...}`**。不要再按旧 **`GET /siliconflow/chat`** 排查聊天页。
+2. **AI 助手配置**：设置页 **AI Agent 配置** 保存到 `localStorage` 键 **`pcr-ai-report.agent.v1`**；前端会把 key/base/model 随请求发给后端。若 key 为空，后端需配置 **`AGENT_API_KEY`** / **`SILICONFLOW_API_KEY`**，否则返回 **400 CONFIG_ERROR**。
+3. **后端修复备忘**：2026-05-16 已修复 “输入后无反应” 的 SSE 断开判断问题（`req.close` → `res.close`）并加 **`AGENT_STREAM_TIMEOUT_MS`**；详见 **`../pcr-ai-api/CLAUDE.md` §6 / §11 / §12.1**。
+4. **品牌/布局旧纪要**：标题、`@dnd-kit` 三层拖拽、API 目录移入设置页、图表标签格式化、明细默认/最多条数等 2026-05-15 规则仍有效。
+5. **未做**：`TableRowsReport` 查询区与拖拽布局未与 Yield/JB 完全统一（表浏览仍保留页内 `limit` 输入）。
 
 ---
 
@@ -207,8 +205,8 @@ src/
 ```
 
 - 健康检查：`GET /health`（设置页「检查连接」）。
-- AI：`GET {API_PREFIX}/siliconflow/chat?message=…`（密钥在 API 侧 env）。
+- AI：`POST {apiBase}/api/v4/agent/chat`（SSE；`AiAgentReport` 使用 `fetch` 直接读 stream，不走 `apiGetJson`）。
 
 ---
 
-*文档版本：2026-05-15。若实现与本文冲突，以源码为准并应更新本文。*
+*文档版本：2026-05-16。若实现与本文冲突，以源码为准并应更新本文。*

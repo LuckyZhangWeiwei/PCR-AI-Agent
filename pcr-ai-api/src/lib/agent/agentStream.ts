@@ -22,6 +22,17 @@ interface RawToolCallDelta {
   function?: { name?: string; arguments?: string };
 }
 
+const DEFAULT_STREAM_TIMEOUT_MS = 30_000;
+
+function getStreamTimeoutMs(): number {
+  const raw = process.env.AGENT_STREAM_TIMEOUT_MS?.trim();
+  if (!raw) return DEFAULT_STREAM_TIMEOUT_MS;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : DEFAULT_STREAM_TIMEOUT_MS;
+}
+
 function accumulateToolCalls(
   collected: CollectedToolCall[],
   deltas: RawToolCallDelta[]
@@ -50,6 +61,7 @@ export function streamSiliconFlow(
   onChunk: (chunk: StreamChunk) => void
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    const timeoutMs = getStreamTimeoutMs();
     const body = JSON.stringify({
       ...request,
       stream: true,
@@ -77,11 +89,23 @@ export function streamSiliconFlow(
       rejectUnauthorized: false, // matches siliconflowChat.ts pattern
     };
 
+    let settled = false;
+    let timeoutId: NodeJS.Timeout | undefined;
+
+    const clearRequestTimeout = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = undefined;
+      }
+    };
+
     const req = https.request(options, (res) => {
       if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
         let errBody = "";
         res.on("data", (c: Buffer) => { errBody += c.toString(); });
         res.on("end", () => {
+          if (settled) return;
+          settled = true;
           onChunk({
             type: "error",
             message: `HTTP ${res.statusCode}: ${errBody.slice(0, 200)}`,
@@ -143,6 +167,8 @@ export function streamSiliconFlow(
       });
 
       res.on("end", () => {
+        if (settled) return;
+        settled = true;
         if (collected.length > 0) {
           onChunk({ type: "tool_calls", calls: collected.filter(Boolean) });
         }
@@ -151,18 +177,32 @@ export function streamSiliconFlow(
       });
 
       res.on("error", (err) => {
+        if (settled) return;
+        settled = true;
         onChunk({ type: "error", message: err.message });
         resolve();
       });
     });
 
     req.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      clearRequestTimeout();
       reject(err);
     });
 
-    req.setTimeout(120_000, () => {
-      req.destroy(new Error("Request timeout after 120s"));
-    });
+    const timeoutMessage = `Request timeout after ${timeoutMs}ms`;
+    const handleTimeout = () => {
+      if (settled) return;
+      settled = true;
+      clearRequestTimeout();
+      onChunk({ type: "error", message: timeoutMessage });
+      req.destroy(new Error(timeoutMessage));
+      resolve();
+    };
+
+    timeoutId = setTimeout(handleTimeout, timeoutMs);
+    req.setTimeout(timeoutMs, handleTimeout);
 
     req.write(body);
     req.end();

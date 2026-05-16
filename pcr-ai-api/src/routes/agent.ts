@@ -49,7 +49,7 @@ agentRouter.post("/chat", async (req, res) => {
   };
 
   let closed = false;
-  req.on("close", () => {
+  res.on("close", () => {
     closed = true;
   });
 

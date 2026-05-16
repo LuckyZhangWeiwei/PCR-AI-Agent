@@ -27,7 +27,7 @@ npm run dev             # tsx watch (hot-reload)
 npm run build           # tsc → dist/ + verify-dist-no-undici (no npm undici in SiliconFlow)
 npm start               # node dist/server.js (production)
 npm run typecheck       # tsc --noEmit
-npm test                # run test/rest-api-v3-dummy.test.ts
+npm test                # run all backend tests (test/*.test.ts)
 npm run docs:api-v3     # rebuild docs/API_V3.md from dist (run after changing SQL/doc templates)
 ```
 

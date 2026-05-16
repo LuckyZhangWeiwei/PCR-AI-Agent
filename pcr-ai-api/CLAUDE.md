@@ -88,7 +88,7 @@ npm run dev            # tsx watch 开发
 npm run build          # tsc → dist
 npm start              # node dist/server.js
 npm run typecheck      # tsc --noEmit
-npm test               # 当前为 test/rest-api-v3-dummy.test.ts
+npm test               # tsx --test test/*.test.ts（全部后端测试）
 npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yield 解析与 doc 脚本后跑）
 ```
 
@@ -101,7 +101,8 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 | 领域 | 入口 / 说明 |
 | --- | --- |
 | HTTP 路由 | `src/routes/api.ts`（`apiRouter`；v3/v4 层控与产量列表+聚合、`manifest`、**`GET …/siliconflow/chat`** 等） |
-| 硅基流动（出站 Chat Completions） | **`src/lib/siliconflowChat.ts`**（`callSiliconflowChat`）；路由见 **`api.ts`** **`GET /siliconflow/chat`**；**不依赖 npm 包 `undici`**（严格 TLS 用全局 **`fetch`**，宽松 TLS 用 **`node:https`**） |
+| 硅基流动（旧直连 Chat Completions） | **`src/lib/siliconflowChat.ts`**（`callSiliconflowChat`）；路由见 **`api.ts`** **`GET /siliconflow/chat`**；**不依赖 npm 包 `undici`**（严格 TLS 用全局 **`fetch`**，宽松 TLS 用 **`node:https`**） |
+| AI Agent（报表聊天页） | **`src/routes/agent.ts`** 挂在 **`POST /api/v4/agent/chat`**，SSE 输出；核心 loop 在 **`src/lib/agent/agentLoop.ts`**；流式上游请求在 **`src/lib/agent/agentStream.ts`**，超时 **`AGENT_STREAM_TIMEOUT_MS`** 默认 **30000ms**。注意：SSE 客户端断开应监听 **`res.close`**，不要用 **`req.close`**，否则 POST 请求体读完后会误判断线，前端表现为“发送后无反应”。 |
 | 浏览器 CORS | **`src/lib/corsConfig.ts`** → **`wideOpenCorsMiddleware`**；**`app.ts`** 中于 **`requestIdMiddleware`** 之后挂载；已移除 **`cors` npm 包** |
 | v4 聚合行上限（Dummy + Oracle） | **`src/lib/memoryAggregateOracleLimits.ts`**；路由 **`api.ts`** **`…/v4/aggregate`** |
 | Oracle 列名大写化（v4 聚合进 FromRows） | **`src/lib/dbRowKeyUpper.ts`** → **`normalizeDbRowKeysUpper`** |
@@ -164,6 +165,7 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 
 - [ ] 若动 **v4 聚合**：Dummy 与 Oracle **均**遵守 **`MEMORY_AGG_ORACLE_MAX_ROWS`**；Oracle 明细需经 **`normalizeDbRowKeysUpper`** 再 **`aggregate*FromRows`**。  
 - [ ] 已读 **AI_AGENT_API.md** 至少 **§0、§4、§7、§8** 中与当前任务相关的节。  
+- [ ] 若动 **AI Agent / SSE**：检查 **`src/routes/agent.ts`** 仍使用 **`res.on("close")`** 判断客户端断开；跑 **`npm test`**（含 `test/agentRoute.test.ts`、`test/agentStream.test.ts`）。  
 - [ ] 若动 v3 产量 / 层控：**Dummy 与 Oracle 两侧**都已改并通过 **`npm test`**。  
 - [ ] 若动列表 SQL：**`npm run docs:api-v3`** 已跑且 **`docs/API_V3.md`** 无意外回退。  
 - [ ] **`npm run typecheck`** 通过。  
@@ -183,16 +185,13 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 
 ---
 
-## 11. 近期变更纪要（2026-05-14，交接备忘）
+## 11. 近期变更纪要（2026-05-16，交接备忘）
 
-1. **v3 聚合**：Oracle **库内**（层控 UNPIVOT + **`v3-hyphen-tokens`**；产量 **`GROUP BY`**）；Dummy **Node**；**无** **`MEMORY_AGG_ORACLE_MAX_ROWS`**。  
-2. **v4 聚合**：Oracle 与 Dummy **均在 Node**；**COUNT + 全量 SELECT** 仅 Oracle；**`MEMORY_AGG_ORACLE_MAX_ROWS`** 对 **Dummy + Oracle** 均可能 **422**。  
-3. **`normalizeDbRowKeysUpper`**（**`src/lib/dbRowKeyUpper.ts`**）：v4 Oracle 聚合前进 **`aggregate*FromRows`**，与 Dummy 行键一致。  
-4. **`src/lib/memoryAggregateOracleLimits.ts`** + **`.env.example`**：仅描述 **v4** 聚合行上限。  
-5. **`src/lib/apiV4Docs.ts`**、**`apiManifest.ts`**：与上述行为一致的说明。  
-6. **`test/rest-api-v3-dummy.test.ts`**：v4 与 v3 Dummy 聚合对齐等断言。  
-7. **前端**：若使用 **v4** 聚合，遇 **422** 应收窄筛选或调服务端 **`MEMORY_AGG_ORACLE_MAX_ROWS`**（勿提交含密钥的 **`.env`**）。  
-8. **勿提交**：**`pcr-ai-api/dist.tar`**、**`node_modules`**。
+1. **AI Agent “输入后无反应”修复**：根因是 **`src/routes/agent.ts`** 用 **`req.on("close")`** 判断客户端断开；POST body 读完也会触发该事件，导致后续 SSE 事件不写回。已改为 **`res.on("close")`**。回归测试：**`test/agentRoute.test.ts`**。
+2. **AI Agent 上游超时**：**`src/lib/agent/agentStream.ts`** 新增总超时，默认 **30000ms**，可通过 **`AGENT_STREAM_TIMEOUT_MS`** 覆盖；避免 SiliconFlow 连接/响应卡住时前端一直空等。回归测试：**`test/agentStream.test.ts`**。
+3. **测试入口**：**`package.json`** 的 **`npm test`** 已改为 **`tsx --test test/*.test.ts`**，会跑 agent、chart、history、config、REST dummy 等全部后端测试。
+4. **v3/v4 聚合旧纪要**：Oracle/Dummy v4 聚合、**`MEMORY_AGG_ORACLE_MAX_ROWS`**、**`normalizeDbRowKeysUpper`** 等规则仍有效；涉及列表/聚合改动时继续遵守 Dummy/Oracle 双路径同步。
+5. **勿提交**：**`pcr-ai-api/dist.tar`**、**`node_modules`**、真实 **`.env`** 或任何密钥。
 
 ---
 
@@ -200,8 +199,10 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 
 ### 12.1 硅基流动代理
 
-- **路由**：**`GET /api/v1|/api/v3|/api/v4/siliconflow/chat?message=…`**（UTF-8 查询参数）；出站 **`POST`** 由 **`src/lib/siliconflowChat.ts`** 发往 **`SILICONFLOW_API_BASE`**（默认 **`https://api.siliconflow.cn/v1`**）。
-- **密钥**：常量 **`SILICONFLOW_API_KEY`** 写在 **`src/lib/siliconflowChat.ts`**（源码硬编码，无需 `.env` / PM2 配置密钥即可用 AI 路由）。轮换密钥时改该常量并 **`npm run build`**。
+- **旧直连路由**：**`GET /api/v1|/api/v3|/api/v4/siliconflow/chat?message=…`**（UTF-8 查询参数）；出站 **`POST`** 由 **`src/lib/siliconflowChat.ts`** 发往 **`SILICONFLOW_API_BASE`**（默认 **`https://api.siliconflow.cn/v1`**）。
+- **旧直连密钥**：常量 **`SILICONFLOW_API_KEY`** 写在 **`src/lib/siliconflowChat.ts`**（源码硬编码，仅用于旧 **`GET /siliconflow/chat`** 路由）。轮换密钥时改该常量并 **`npm run build`**。
+- **报表 AI Agent 路由**：前端 **`AiAgentReport`** 调 **`POST /api/v4/agent/chat`**，后端读取请求体 **`agentConfig.apiKey`**，否则回退 **`AGENT_API_KEY`** / **`SILICONFLOW_API_KEY`** 环境变量；没有 key 会返回 **400 CONFIG_ERROR**。此路由不使用 `siliconflowChat.ts` 的硬编码 key。
+- **AI Agent 超时**：**`AGENT_STREAM_TIMEOUT_MS`** 控制 `agentStream.ts` 连接/首响应/流式停滞超时，默认 **30000ms**；超时时通过 SSE 写回 **`{ type: "error", message: "Request timeout after ...ms" }`**。
 - **TLS**：见 **`SILICONFLOW_TLS_INSECURE`**、**`SILICONFLOW_TLS_STRICT`**、**`NODE_EXTRA_CA_CERTS`**（**`.env.example`**）。**禁止 npm 包 `undici`**（见 **`.cursor/rules/no-undici.mdc`**）：严格校验用 Node 内置 **`fetch`**；跳过证书链用 **`node:https`** + **`rejectUnauthorized: false`**（仅硅基流动出站）。
 - **构建守卫**：**`npm run build`** = **`tsc`** + **`scripts/verify-dist-no-undici.mjs`**（`dist/lib/siliconflowChat.js` 不得 `import 'undici'`）。发布时在 **`pcr-ai-api`** 目录 **`npm ci`** 再 **`npm run build`**，勿只复制旧 **`dist/`**。
 - **Node 版本**：声明 **`>=18.12.1`**；**全局 `fetch` / `AbortSignal.timeout`** 依赖 Node 18。生产例：**v18.12.1** 可用。
