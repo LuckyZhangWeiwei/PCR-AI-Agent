@@ -75,7 +75,6 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
   const [input, setInput] = useState("");
   const [sessionId, setSessionId] = useState(genId);
   const [loading, setLoading] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const atBottomRef = useRef(true);
@@ -83,13 +82,16 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
   const handleMessagesScroll = () => {
     const el = messagesRef.current;
     if (!el) return;
-    atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    // 120px threshold: generous enough that a new message appearing while the
+    // user is "at the bottom" still triggers auto-scroll even if the browser
+    // hasn't finished updating layout yet.
+    atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
   };
 
   useEffect(() => {
-    if (atBottomRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
+    if (!atBottomRef.current) return;
+    const el = messagesRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
   const handleSseEvent = useCallback((event: SseEvent) => {
@@ -372,7 +374,6 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
           }
           return null;
         })}
-        <div ref={bottomRef} />
       </div>
 
       {loading && (
