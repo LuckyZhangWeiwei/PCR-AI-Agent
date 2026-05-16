@@ -351,7 +351,9 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
           if (msg.kind === "chart") {
             return (
               <div key={i} className="ai-msg ai-msg--chart">
-                <DarkChart option={msg.option} height={320} />
+                <div className="ai-chart-wrap">
+                  <DarkChart option={msg.option} height={320} />
+                </div>
               </div>
             );
           }

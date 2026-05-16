@@ -227,6 +227,12 @@
   max-width: 700px;
 }
 
+.ai-chart-wrap {
+  display: block;
+  width: 100%;
+  min-height: 320px;
+}
+
 .ai-msg--error {
   color: #e05555;
   font-size: 13px;
