@@ -63,10 +63,17 @@ const WELCOME: AiMessage = {
   streaming: false,
 };
 
+function genId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+
 export function AiAgentReport({ apiBase, agentConfig }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME]);
   const [input, setInput] = useState("");
-  const [sessionId, setSessionId] = useState(() => crypto.randomUUID());
+  const [sessionId, setSessionId] = useState(genId);
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -259,7 +266,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
   };
 
   const newSession = () => {
-    setSessionId(crypto.randomUUID());
+    setSessionId(genId());
     setMessages([WELCOME]);
     setInput("");
     inputRef.current?.focus();
