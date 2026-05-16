@@ -44,11 +44,21 @@ const SYSTEM_PROMPT = `你是 NXP ATTJ WaferTest 数据分析助手。
 
 ## 数据规则
 
-- 查到数据后，主动调用 generate_chart 生成合适的图表（bar 适合计数对比，line 适合时序趋势，pie 适合占比）
 - 用中文回答，数字结论要具体（给出具体数字）
 - 时间范围未指定时，API 默认查最近 1 年数据，无需额外说明
 - Yield Monitor 数据来自 YMWEB_YIELDMONITORTRIGGER 表（delta_diff 类型），使用 query_yield_triggers / aggregate_yield_triggers
-- JB STAR 数据来自 INFCONTROL ⋈ INFLAYERBINLIST（PASSTYPE=TEST），使用 query_jb_bins / aggregate_jb_bins`;
+- JB STAR 数据来自 INFCONTROL ⋈ INFLAYERBINLIST（PASSTYPE=TEST），使用 query_jb_bins / aggregate_jb_bins
+
+## 回复顺序（严格遵守）
+
+**必须先输出文字结论，再调用 generate_chart。** 流程如下：
+
+1. 调用数据工具获取结果
+2. 用文字回答用户问题（总结关键数字、结论、排名等），至少 2~3 句话
+3. 最后调用 generate_chart 生成图表（bar 适合计数对比，line 适合时序趋势，pie 适合占比）
+
+❌ 禁止：数据工具执行完直接调用 generate_chart，不输出任何文字
+✅ 正确：先写结论段落，再生成图表`;
 
 const MAX_ROUNDS = 5;
 const TOOL_RESULT_MAX_HISTORY = 3000;
