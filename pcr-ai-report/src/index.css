@@ -149,11 +149,34 @@ code {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
+.api-panel input[type="password"] {
+  width: 100%;
+  padding: 8px 11px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
 .api-panel input[type="text"]:focus,
+.api-panel input[type="password"]:focus,
 .api-panel input[type="number"]:focus {
   outline: none;
   border-color: var(--border-hi);
   box-shadow: 0 0 0 3px rgba(88,166,255,0.12);
+}
+
+.api-panel-key-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.api-panel-key-row input {
+  flex: 1;
+  min-width: 0;
 }
 
 .api-panel input[type="number"] {

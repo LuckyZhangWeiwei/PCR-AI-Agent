@@ -190,49 +190,42 @@ export default function App() {
           />
 
           <section className="settings-section">
-            <h3>AI Agent 配置</h3>
-            <div className="settings-field">
-              <label>API Key</label>
-              <div className="settings-input-row">
-                <input
-                  type={agentApiKeyVisible ? "text" : "password"}
-                  value={agentConfig.apiKey}
-                  placeholder="sk-..."
-                  onChange={(e) => updateAgentConfig({ apiKey: e.target.value })}
-                  className="settings-input"
-                  autoComplete="off"
-                />
-                <button
-                  type="button"
-                  className="settings-btn-icon"
-                  onClick={() => setAgentApiKeyVisible((v) => !v)}
-                  title={agentApiKeyVisible ? "隐藏" : "显示"}
-                >
-                  {agentApiKeyVisible ? "🙈" : "👁"}
+            <h2 className="settings-section-title">AI Agent 配置</h2>
+            <div className="api-panel">
+              <label>
+                <span>API Key</span>
+                <div className="api-panel-key-row">
+                  <input
+                    type={agentApiKeyVisible ? "text" : "password"}
+                    value={agentConfig.apiKey}
+                    placeholder="sk-..."
+                    onChange={(e) => updateAgentConfig({ apiKey: e.target.value })}
+                    autoComplete="off"
+                  />
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    onClick={() => setAgentApiKeyVisible((v) => !v)}
+                    title={agentApiKeyVisible ? "隐藏" : "显示"}
+                  >
+                    {agentApiKeyVisible ? "🙈" : "👁"}
+                  </button>
+                </div>
+              </label>
+              <label>
+                <span>API Base URL</span>
+                <input type="text" value={agentConfig.apiBase} onChange={(e) => updateAgentConfig({ apiBase: e.target.value })} />
+              </label>
+              <label>
+                <span>模型</span>
+                <input type="text" value={agentConfig.model} onChange={(e) => updateAgentConfig({ model: e.target.value })} />
+              </label>
+              <div className="api-panel-actions">
+                <button type="button" className="btn ghost" onClick={resetAgentConfig}>
+                  恢复默认
                 </button>
               </div>
             </div>
-            <div className="settings-field">
-              <label>API Base URL</label>
-              <input
-                type="text"
-                value={agentConfig.apiBase}
-                onChange={(e) => updateAgentConfig({ apiBase: e.target.value })}
-                className="settings-input"
-              />
-            </div>
-            <div className="settings-field">
-              <label>模型</label>
-              <input
-                type="text"
-                value={agentConfig.model}
-                onChange={(e) => updateAgentConfig({ model: e.target.value })}
-                className="settings-input"
-              />
-            </div>
-            <button type="button" className="settings-btn-reset" onClick={resetAgentConfig}>
-              恢复默认
-            </button>
           </section>
 
           <section className="settings-section settings-section--catalog" aria-labelledby="settings-api-catalog">
