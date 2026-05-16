@@ -59,7 +59,7 @@ interface Props {
 
 const WELCOME: AiMessage = {
   kind: "ai",
-  text: "你好！我是 NXP ATTJ WaferTest 数据分析助手。你可以问我：\n- 最近 7 天 device WA03P02G 的触发次数\n- 按 probeCardType 分析 JB STAR 坏 bin 分布\n- 某批次的 lot yield 趋势",
+  text: "NXP ATTJ WaferTest 数据分析助手。可问：最近 7 天 WA03P02G 触发次数 / 按 probeCardType 分析 JB STAR 坏 bin / 某批次 lot yield 趋势",
   streaming: false,
 };
 
