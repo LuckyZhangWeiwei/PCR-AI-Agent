@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import ReactECharts from "echarts-for-react";
 import { apiGetJson } from "../api/client";
 import { API_PREFIX, YIELD_AGGREGATE_PATH } from "../api/paths";
@@ -205,6 +205,10 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
   const [showDetail, setShowDetail] = useState(false);
   // The probeCard the user selected by clicking a bar inside the drill panel
   const [selectedProbeCard, setSelectedProbeCard] = useState<string | null>(null);
+  // Dedicated list rows for DUT distribution — fetched with probeCard filter
+  // so we're not limited by the main list's row cap
+  const [dutList, setDutList] = useState<YieldMonitorV3Response | null>(null);
+  const [loadingDut, setLoadingDut] = useState(false);
   const [selectedCardTypeName, setSelectedCardTypeName] = useState<string | null>(null);
   const [selectedLotId,       setSelectedLotId]       = useState<string | null>(null);
   const [selectedDevice,      setSelectedDevice]      = useState<string | null>(null);
@@ -403,6 +407,25 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     [list, aggTime, form, fetchFreeAgg]
   );
 
+  // Fetch DUT rows specifically for the selected probeCard.
+  // The main list has a row cap and no probeCard filter, so cards whose rows
+  // fall outside the cap always produce an empty DUT chart in production.
+  useEffect(() => {
+    if (!selectedProbeCard) { setDutList(null); return; }
+    let cancelled = false;
+    setLoadingDut(true);
+    setDutList(null);
+    apiGetJson<YieldMonitorV3Response>(
+      apiBase,
+      `${API_PREFIX}/yield-monitor-triggers/v4`,
+      { ...buildListParams(form, listLimits), probeCard: selectedProbeCard }
+    )
+      .then((res) => { if (!cancelled) setDutList(res); })
+      .catch(() => { if (!cancelled) setDutList(null); })
+      .finally(() => { if (!cancelled) setLoadingDut(false); });
+    return () => { cancelled = true; };
+  }, [selectedProbeCard, apiBase, form, listLimits]);
+
   // ── KPI derivations ──────────────────────────────────────────────────────
 
   const totalTriggers =
@@ -511,13 +534,14 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     };
   }, [aggCardType, selectedCardTypeName]);
 
-  // DUT distribution — only meaningful once a specific ProbeCard is selected
+  // DUT distribution — rows come from dutList (targeted probeCard fetch),
+  // not the main list, so the row-cap no longer hides data in production.
   const dutRows = useMemo(() => {
-    if (!selectedProbeCard || !list?.rows?.length) return null;
-    return (list.rows as YieldMonitorV3Row[]).filter(
-      (r) => r.PROBECARD === selectedProbeCard
-    );
-  }, [selectedProbeCard, list]);
+    if (!selectedProbeCard) return null;
+    if (loadingDut) return null;           // still fetching — show spinner
+    if (!dutList?.rows?.length) return []; // fetch done, genuinely no data
+    return dutList.rows as YieldMonitorV3Row[];
+  }, [selectedProbeCard, dutList, loadingDut]);
 
   const dutOption = useMemo((): EChartsOption => {
     const entries = tallyDutNumbers(dutRows ?? []).slice(0, 10);
@@ -891,10 +915,14 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
                   已选探针卡：{selectedProbeCard}
                 </div>
               )}
-              {selectedProbeCard && dutRows !== null ? (
+              {selectedProbeCard && loadingDut ? (
+                <div style={{ color: "#8b949e", fontSize: 12, padding: "12px 0" }}>
+                  加载中…
+                </div>
+              ) : selectedProbeCard && dutRows !== null ? (
                 dutRows.length === 0 ? (
                   <div style={{ color: "#8b949e", fontSize: 12, padding: "12px 0" }}>
-                    该探针卡在当前明细范围内无数据（明细最多 {listLimits.defaultLimit} 条）
+                    该探针卡暂无触发记录
                   </div>
                 ) : (
                   <DarkChart
