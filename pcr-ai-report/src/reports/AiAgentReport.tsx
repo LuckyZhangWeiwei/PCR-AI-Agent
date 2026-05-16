@@ -67,10 +67,20 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
   const [sessionId, setSessionId] = useState(() => crypto.randomUUID());
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const atBottomRef = useRef(true);
+
+  const handleMessagesScroll = () => {
+    const el = messagesRef.current;
+    if (!el) return;
+    atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+  };
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (atBottomRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [messages]);
 
   const handleSseEvent = useCallback((event: SseEvent) => {
@@ -84,15 +94,24 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
               ...last,
               text: last.text + (event.delta ?? ""),
             };
+          } else {
+            // second round: last message is a tool result, create new ai bubble
+            copy.push({ kind: "ai", text: event.delta ?? "", streaming: true });
           }
           return copy;
         });
         break;
       case "tool_start":
-        setMessages((prev) => [
-          ...prev,
-          { kind: "tool", name: event.name ?? "", summary: "", open: false },
-        ]);
+        setMessages((prev) => {
+          const copy = [...prev];
+          const last = copy[copy.length - 1];
+          // discard the empty placeholder ai bubble created before SSE started
+          if (last && last.kind === "ai" && last.text === "" && last.streaming) {
+            copy.pop();
+          }
+          copy.push({ kind: "tool", name: event.name ?? "", summary: "", open: false });
+          return copy;
+        });
         break;
       case "tool_result":
         setMessages((prev) => {
@@ -262,7 +281,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
         </button>
       </div>
 
-      <div className="ai-agent-messages">
+      <div className="ai-agent-messages" ref={messagesRef} onScroll={handleMessagesScroll}>
         {messages.map((msg, i) => {
           if (msg.kind === "user") {
             return (
