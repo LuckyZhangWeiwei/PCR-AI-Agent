@@ -2,6 +2,14 @@
 
 ---
 
+## 2026-05-16 — Agent ask_clarification 防空校验 + 前端空气泡修复
+
+**完成内容：**
+- `pcr-ai-api/src/lib/agent/agentTools.ts`：`ask_clarification` 工具对 `question` 做非空/trim 校验，空白时返回错误字符串让模型重试，防止空 clarification 事件导致对话死锁。
+- `pcr-ai-report/src/reports/AiAgentReport.tsx`：`case "clarification"` SSE 处理改为检查最后一条消息是否为空 AI 气泡，若是则原地替换为 clarification 气泡，而不是追加，消除 ask_clarification 仅触发时界面出现空白 AI 框的问题。
+
+**测试：** `tsc --noEmit`（pcr-ai-api）及 `tsc -b`（pcr-ai-report）均无类型错误；无功能回归。
+
 ## 2026-05-16 — AI Agent SSE 无响应修复
 
 **完成内容：**

@@ -20,3 +20,4 @@
 - ✅ LLM Query Agent：完成 Node.js ReAct Agent 原型（Function Calling + 硅基流动） — 2026-05-16 完成
 - ✅ AI 助手 Tab 实现：从占位升级为真实对话（接入 Agent） — 2026-05-16 完成
 - ✅ AI Agent SSE 无响应修复与回归测试 — 2026-05-16 完成
+- ✅ Agent ask_clarification 防空校验 + 前端空气泡修复 — 2026-05-16 完成

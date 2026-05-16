@@ -541,7 +541,8 @@ export async function runTool(
       }
     }
     case "ask_clarification": {
-      const question = String(args["question"] ?? "");
+      const question = String(args["question"] ?? "").trim();
+      if (!question) return "ask_clarification 参数错误: question 不能为空";
       return { __clarification: question };
     }
     default:

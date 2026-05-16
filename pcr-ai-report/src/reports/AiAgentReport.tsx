@@ -129,12 +129,20 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
           { kind: "error", message: event.message ?? "未知错误" },
         ]);
         break;
-      case "clarification":
-        setMessages((prev) => [
-          ...prev,
-          { kind: "clarification", question: event.question ?? "" },
-        ]);
+      case "clarification": {
+        const question = event.question ?? "";
+        setMessages((prev) => {
+          const copy = [...prev];
+          const last = copy[copy.length - 1];
+          if (last && last.kind === "ai" && last.text === "") {
+            copy[copy.length - 1] = { kind: "clarification", question };
+          } else {
+            copy.push({ kind: "clarification", question });
+          }
+          return copy;
+        });
         break;
+      }
     }
   }, []);
 
