@@ -3,6 +3,8 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import type { AgentConfig } from "../hooks/usePersistedAgentConfig.js";
 import { DarkChart } from "../components/DarkChart.js";
 import type { EChartsOption } from "echarts";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface UserMessage {
   kind: "user";
@@ -296,8 +298,14 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
             return (
               <div key={i} className="ai-msg ai-msg--ai">
                 <div className="ai-avatar ai-avatar--ai">AI</div>
-                <div className="ai-msg-bubble">
-                  {msg.text || (msg.streaming ? "…" : "")}
+                <div className="ai-msg-bubble ai-msg-bubble--md">
+                  {msg.text ? (
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {msg.text}
+                    </ReactMarkdown>
+                  ) : (
+                    msg.streaming ? "…" : ""
+                  )}
                   {msg.streaming && <span className="ai-cursor" />}
                 </div>
                 {planMatch && (

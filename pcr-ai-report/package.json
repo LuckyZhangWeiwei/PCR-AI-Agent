@@ -17,6 +17,8 @@
     "echarts-for-react": "^3.0.6",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
+    "react-markdown": "^9.1.0",
+    "remark-gfm": "^4.0.1",
     "tslib": "^2.8.1"
   },
   "devDependencies": {

@@ -18,8 +18,25 @@ interface Session {
 }
 
 const sessions = new Map<string, Session>();
-const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const SESSION_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
 const MAX_MESSAGES = 40;
+
+/**
+ * Trim history to MAX_MESSAGES while never splitting a tool-call group.
+ * A tool-call group is: one assistant message with tool_calls[] followed by
+ * one or more tool messages.  Dropping the assistant part but keeping the
+ * tool parts (or vice-versa) causes an API error on the next round.
+ */
+function trimMessages(messages: ChatMessage[]): ChatMessage[] {
+  if (messages.length <= MAX_MESSAGES) return messages;
+  // Drop from the front until we are within the limit AND the first
+  // remaining message is a "user" message (clean conversation start).
+  let start = messages.length - MAX_MESSAGES;
+  while (start < messages.length && messages[start].role !== "user") {
+    start++;
+  }
+  return messages.slice(start);
+}
 
 function touch(sessionId: string): Session {
   let s = sessions.get(sessionId);
@@ -42,9 +59,7 @@ export function appendMessages(
 ): void {
   const s = touch(sessionId);
   s.messages.push(...msgs);
-  while (s.messages.length > MAX_MESSAGES) {
-    s.messages.shift();
-  }
+  s.messages = trimMessages(s.messages);
 }
 
 export function clearHistory(sessionId: string): void {
@@ -62,7 +77,7 @@ const cleanupTimer = setInterval(() => {
       sessions.delete(id);
     }
   }
-}, 5 * 60 * 1000);
+}, 10 * 60 * 1000);
 
 // Allow process to exit cleanly in tests
 if (typeof cleanupTimer.unref === "function") cleanupTimer.unref();
