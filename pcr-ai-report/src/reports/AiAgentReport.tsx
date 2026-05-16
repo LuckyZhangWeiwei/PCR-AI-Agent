@@ -164,21 +164,26 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
       const decoder = new TextDecoder();
       let buf = "";
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split("\n");
-        buf = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          try {
-            const ev = JSON.parse(line.slice(6)) as SseEvent;
-            handleSseEvent(ev);
-          } catch {
-            // skip malformed line
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const ev = JSON.parse(line.slice(6)) as SseEvent;
+              handleSseEvent(ev);
+            } catch {
+              // skip malformed line
+            }
           }
         }
+      } catch (readerErr) {
+        reader.cancel().catch(() => undefined);
+        throw readerErr;
       }
     } catch (err) {
       setMessages((prev) => {
