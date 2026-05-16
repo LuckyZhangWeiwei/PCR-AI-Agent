@@ -4,6 +4,7 @@ import { API_PREFIX } from "./api/paths";
 import { ReportListLimitsSettings } from "./components/ReportListLimitsSettings";
 import { usePersistedApiBase } from "./hooks/usePersistedApiBase";
 import { usePersistedReportLimits } from "./hooks/usePersistedReportLimits";
+import { usePersistedAgentConfig } from "./hooks/usePersistedAgentConfig.js";
 import { AiAgentReport } from "./reports/AiAgentReport";
 import { InfcontrolReport } from "./reports/InfcontrolReport";
 import { OverviewReport } from "./reports/OverviewReport";
@@ -17,6 +18,8 @@ export default function App() {
   const [apiBase, setApiBase, resetApiBase] = usePersistedApiBase();
   const [listLimits, setListLimits, resetListLimits] = usePersistedReportLimits();
   const [apiBaseInput, setApiBaseInput] = useState(apiBase);
+  const [agentConfig, updateAgentConfig, resetAgentConfig] = usePersistedAgentConfig();
+  const [agentApiKeyVisible, setAgentApiKeyVisible] = useState(false);
 
   // Sync input when apiBase changes externally (resetApiBase)
   useEffect(() => { setApiBaseInput(apiBase); }, [apiBase]);
@@ -121,7 +124,8 @@ export default function App() {
         <InfcontrolReport apiBase={apiBase} listLimits={listLimits} />
       </div>
       <div className="tab-panel" hidden={tab !== "ai"}>
-        <AiAgentReport apiBase={apiBase} />
+        {/* @ts-expect-error -- agentConfig prop added in Task 9 */}
+        <AiAgentReport apiBase={apiBase} agentConfig={agentConfig} />
       </div>
       <div className="tab-panel" hidden={tab !== "table"}>
         <TableRowsReport apiBase={apiBase} listLimits={listLimits} />
@@ -185,6 +189,52 @@ export default function App() {
             onChange={setListLimits}
             onReset={resetListLimits}
           />
+
+          <section className="settings-section">
+            <h3>AI Agent 配置</h3>
+            <div className="settings-field">
+              <label>API Key</label>
+              <div className="settings-input-row">
+                <input
+                  type={agentApiKeyVisible ? "text" : "password"}
+                  value={agentConfig.apiKey}
+                  placeholder="sk-..."
+                  onChange={(e) => updateAgentConfig({ apiKey: e.target.value })}
+                  className="settings-input"
+                  autoComplete="off"
+                />
+                <button
+                  type="button"
+                  className="settings-btn-icon"
+                  onClick={() => setAgentApiKeyVisible((v) => !v)}
+                  title={agentApiKeyVisible ? "隐藏" : "显示"}
+                >
+                  {agentApiKeyVisible ? "🙈" : "👁"}
+                </button>
+              </div>
+            </div>
+            <div className="settings-field">
+              <label>API Base URL</label>
+              <input
+                type="text"
+                value={agentConfig.apiBase}
+                onChange={(e) => updateAgentConfig({ apiBase: e.target.value })}
+                className="settings-input"
+              />
+            </div>
+            <div className="settings-field">
+              <label>模型</label>
+              <input
+                type="text"
+                value={agentConfig.model}
+                onChange={(e) => updateAgentConfig({ model: e.target.value })}
+                className="settings-input"
+              />
+            </div>
+            <button type="button" className="settings-btn-reset" onClick={resetAgentConfig}>
+              恢复默认
+            </button>
+          </section>
 
           <section className="settings-section settings-section--catalog" aria-labelledby="settings-api-catalog">
             <h2 id="settings-api-catalog" className="settings-section-title">
