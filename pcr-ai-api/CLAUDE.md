@@ -188,7 +188,7 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 ## 11. 近期变更纪要（2026-05-16，交接备忘）
 
 1. **AI Agent “输入后无反应”修复**：根因是 **`src/routes/agent.ts`** 用 **`req.on("close")`** 判断客户端断开；POST body 读完也会触发该事件，导致后续 SSE 事件不写回。已改为 **`res.on("close")`**。回归测试：**`test/agentRoute.test.ts`**。
-2. **AI Agent 上游超时**：**`src/lib/agent/agentStream.ts`** 新增总超时，默认 **30000ms**，可通过 **`AGENT_STREAM_TIMEOUT_MS`** 覆盖；避免 SiliconFlow 连接/响应卡住时前端一直空等。回归测试：**`test/agentStream.test.ts`**。
+2. **AI Agent 上游超时**：**`src/lib/agent/agentStream.ts`** 总超时默认 **90000ms**（多工具轮次需要），可通过 **`AGENT_STREAM_TIMEOUT_MS`** 覆盖；避免 SiliconFlow 连接/响应卡住时前端一直空等。回归测试：**`test/agentStream.test.ts`**。
 3. **测试入口**：**`package.json`** 的 **`npm test`** 已改为 **`tsx --test test/*.test.ts`**，会跑 agent、chart、history、config、REST dummy 等全部后端测试。
 4. **v3/v4 聚合旧纪要**：Oracle/Dummy v4 聚合、**`MEMORY_AGG_ORACLE_MAX_ROWS`**、**`normalizeDbRowKeysUpper`** 等规则仍有效；涉及列表/聚合改动时继续遵守 Dummy/Oracle 双路径同步。
 5. **勿提交**：**`pcr-ai-api/dist.tar`**、**`node_modules`**、真实 **`.env`** 或任何密钥。
@@ -202,7 +202,7 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 - **旧直连路由**：**`GET /api/v1|/api/v3|/api/v4/siliconflow/chat?message=…`**（UTF-8 查询参数）；出站 **`POST`** 由 **`src/lib/siliconflowChat.ts`** 发往 **`SILICONFLOW_API_BASE`**（默认 **`https://api.siliconflow.cn/v1`**）。
 - **旧直连密钥**：常量 **`SILICONFLOW_API_KEY`** 写在 **`src/lib/siliconflowChat.ts`**（源码硬编码，仅用于旧 **`GET /siliconflow/chat`** 路由）。轮换密钥时改该常量并 **`npm run build`**。
 - **报表 AI Agent 路由**：前端 **`AiAgentReport`** 调 **`POST /api/v4/agent/chat`**，后端读取请求体 **`agentConfig.apiKey`**，否则回退 **`AGENT_API_KEY`** / **`SILICONFLOW_API_KEY`** 环境变量；没有 key 会返回 **400 CONFIG_ERROR**。此路由不使用 `siliconflowChat.ts` 的硬编码 key。
-- **AI Agent 超时**：**`AGENT_STREAM_TIMEOUT_MS`** 控制 `agentStream.ts` 连接/首响应/流式停滞超时，默认 **30000ms**；超时时通过 SSE 写回 **`{ type: "error", message: "Request timeout after ...ms" }`**。
+- **AI Agent 超时**：**`AGENT_STREAM_TIMEOUT_MS`** 控制 `agentStream.ts` 连接/首响应/流式停滞超时，默认 **90000ms**；超时时通过 SSE 写回 **`{ type: "error", message: "Request timeout after ...ms" }`**。
 - **TLS**：见 **`SILICONFLOW_TLS_INSECURE`**、**`SILICONFLOW_TLS_STRICT`**、**`NODE_EXTRA_CA_CERTS`**（**`.env.example`**）。**禁止 npm 包 `undici`**（见 **`.cursor/rules/no-undici.mdc`**）：严格校验用 Node 内置 **`fetch`**；跳过证书链用 **`node:https`** + **`rejectUnauthorized: false`**（仅硅基流动出站）。
 - **构建守卫**：**`npm run build`** = **`tsc`** + **`scripts/verify-dist-no-undici.mjs`**（`dist/lib/siliconflowChat.js` 不得 `import 'undici'`）。发布时在 **`pcr-ai-api`** 目录 **`npm ci`** 再 **`npm run build`**，勿只复制旧 **`dist/`**。
 - **Node 版本**：声明 **`>=18.12.1`**；**全局 `fetch` / `AbortSignal.timeout`** 依赖 Node 18。生产例：**v18.12.1** 可用。

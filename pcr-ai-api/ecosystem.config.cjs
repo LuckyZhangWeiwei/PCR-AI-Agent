@@ -50,6 +50,11 @@ const ORACLE_FORWARD_KEYS = [
   "SILICONFLOW_TLS_INSECURE",
   "SILICONFLOW_TLS_STRICT",
   "NODE_EXTRA_CA_CERTS",
+  // AI Agent (POST /api/v4/agent/chat) server-side key override
+  "AGENT_API_KEY",
+  "AGENT_API_BASE",
+  "AGENT_MODEL",
+  "AGENT_STREAM_TIMEOUT_MS",
 ];
 
 function forwardEnvFromProcess(keys) {
