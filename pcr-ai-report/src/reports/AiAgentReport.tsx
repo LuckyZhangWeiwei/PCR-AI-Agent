@@ -1,123 +1,316 @@
-import { useCallback, useState } from "react";
-import { apiGetJson, displayApiOrigin } from "../api/client";
-import { API_PREFIX } from "../api/paths";
+import "./AiAgentReport.css";
+import { useState, useRef, useEffect, useCallback } from "react";
+import type { AgentConfig } from "../hooks/usePersistedAgentConfig.js";
+import { DarkChart } from "../components/DarkChart.js";
+import type { EChartsOption } from "echarts";
 
-type Props = { apiBase: string };
-
-type SiliconflowChatJson = {
+interface UserMessage {
+  kind: "user";
+  text: string;
+}
+interface AiMessage {
+  kind: "ai";
+  text: string;
+  streaming: boolean;
+}
+interface ToolMessage {
+  kind: "tool";
+  name: string;
+  summary: string;
+  open: boolean;
+}
+interface ChartMessage {
+  kind: "chart";
+  option: EChartsOption;
+}
+interface ErrorMessage {
+  kind: "error";
   message: string;
-  reply: string | null;
-  model: string;
-  reasoningContent?: string;
+}
+type ChatMessage =
+  | UserMessage
+  | AiMessage
+  | ToolMessage
+  | ChartMessage
+  | ErrorMessage;
+
+interface SseEvent {
+  type: string;
+  delta?: string;
+  name?: string;
+  args?: Record<string, unknown>;
+  summary?: string;
+  option?: EChartsOption;
+  message?: string;
+}
+
+interface Props {
+  apiBase: string;
+  agentConfig: AgentConfig;
+}
+
+const WELCOME: AiMessage = {
+  kind: "ai",
+  text: "你好！我是 NXP ATTJ WaferTest 数据分析助手。你可以问我：\n- 最近 7 天 device WA03P02G 的触发次数\n- 按 probeCardType 分析 JB STAR 坏 bin 分布\n- 某批次的 lot yield 趋势",
+  streaming: false,
 };
 
-const DEFAULT_PROMPT = "用一句话介绍你自己。";
-
-export function AiAgentReport({ apiBase }: Props) {
-  const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
+export function AiAgentReport({ apiBase, agentConfig }: Props) {
+  const [messages, setMessages] = useState<ChatMessage[]>([WELCOME]);
+  const [input, setInput] = useState("");
+  const [sessionId, setSessionId] = useState(() => crypto.randomUUID());
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<SiliconflowChatJson | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const callSiliconflow = useCallback(async () => {
-    const message = prompt.trim();
-    if (!message) {
-      setError("请输入要向模型发送的内容。");
-      setResult(null);
-      return;
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const handleSseEvent = useCallback((event: SseEvent) => {
+    switch (event.type) {
+      case "text":
+        setMessages((prev) => {
+          const copy = [...prev];
+          const last = copy[copy.length - 1];
+          if (last && last.kind === "ai") {
+            copy[copy.length - 1] = {
+              ...last,
+              text: last.text + (event.delta ?? ""),
+            };
+          }
+          return copy;
+        });
+        break;
+      case "tool_start":
+        setMessages((prev) => [
+          ...prev,
+          { kind: "tool", name: event.name ?? "", summary: "", open: false },
+        ]);
+        break;
+      case "tool_result":
+        setMessages((prev) => {
+          const copy = [...prev];
+          for (let i = copy.length - 1; i >= 0; i--) {
+            const m = copy[i];
+            if (m.kind === "tool" && m.name === event.name && m.summary === "") {
+              copy[i] = { ...m, summary: event.summary ?? "" };
+              break;
+            }
+          }
+          return copy;
+        });
+        break;
+      case "chart":
+        setMessages((prev) => [
+          ...prev,
+          { kind: "chart", option: event.option ?? {} },
+        ]);
+        break;
+      case "done":
+        setMessages((prev) => {
+          const copy = [...prev];
+          const last = copy[copy.length - 1];
+          if (last && last.kind === "ai" && last.streaming) {
+            copy[copy.length - 1] = { ...last, streaming: false };
+          }
+          return copy;
+        });
+        break;
+      case "error":
+        setMessages((prev) => [
+          ...prev,
+          { kind: "error", message: event.message ?? "未知错误" },
+        ]);
+        break;
     }
+  }, []);
+
+  const sendMessage = useCallback(async () => {
+    const text = input.trim();
+    if (!text || loading) return;
+
+    setInput("");
     setLoading(true);
-    setError(null);
-    setResult(null);
+    setMessages((prev) => [
+      ...prev,
+      { kind: "user", text },
+      { kind: "ai", text: "", streaming: true },
+    ]);
+
     try {
-      const res = await apiGetJson<SiliconflowChatJson>(
-        apiBase,
-        `${API_PREFIX}/siliconflow/chat`,
-        { message },
-        { cache: "no-store" }
-      );
-      setResult(res);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
+      const response = await fetch(`${apiBase}/api/v4/agent/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, sessionId, agentConfig }),
+      });
+
+      if (!response.ok || !response.body) {
+        const errBody = await response
+          .json()
+          .catch(() => ({ message: "请求失败" })) as { message?: string };
+        setMessages((prev) => {
+          const copy = [...prev];
+          copy[copy.length - 1] = {
+            kind: "error",
+            message: errBody.message ?? `HTTP ${response.status}`,
+          };
+          return copy;
+        });
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const ev = JSON.parse(line.slice(6)) as SseEvent;
+            handleSseEvent(ev);
+          } catch {
+            // skip malformed line
+          }
+        }
+      }
+    } catch (err) {
+      setMessages((prev) => {
+        const copy = [...prev];
+        const last = copy[copy.length - 1];
+        if (last && (last.kind === "ai" || last.kind === "error")) {
+          copy[copy.length - 1] = {
+            kind: "error",
+            message: err instanceof Error ? err.message : String(err),
+          };
+        }
+        return copy;
+      });
     } finally {
       setLoading(false);
+      setMessages((prev) => {
+        const copy = [...prev];
+        const last = copy[copy.length - 1];
+        if (last && last.kind === "ai" && last.streaming) {
+          copy[copy.length - 1] = { ...last, streaming: false };
+        }
+        return copy;
+      });
     }
-  }, [apiBase, prompt]);
+  }, [input, loading, sessionId, agentConfig, apiBase, handleSseEvent]);
 
-  const effectiveOrigin = displayApiOrigin(apiBase);
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      void sendMessage();
+    }
+  };
+
+  const newSession = () => {
+    setSessionId(crypto.randomUUID());
+    setMessages([WELCOME]);
+    setInput("");
+    inputRef.current?.focus();
+  };
+
+  const toggleTool = (index: number) => {
+    setMessages((prev) => {
+      const copy = [...prev];
+      const m = copy[index];
+      if (m.kind === "tool") copy[index] = { ...m, open: !m.open };
+      return copy;
+    });
+  };
 
   return (
-    <section className="report-panel">
-      <header className="report-panel-header">
-        <div>
-          <h2>🤖 AI 助手</h2>
-          <p className="report-desc">
-            与其它 Tab 相同，请求使用页顶「<strong>服务器地址</strong>」作为
-            base URL（经规范化后如下），再拼接{" "}
-            <code>{API_PREFIX}/siliconflow/chat</code>（查询参数{" "}
-            <code>message</code>
-            ）；由服务端携带硅基流动密钥转发（密钥硬编码在{" "}
-            <strong>pcr-ai-api</strong> 的 <code>siliconflowChat.ts</code>
-            ，部署后需 <code>npm run build</code> 并重启 API）。
-          </p>
-          <p className="muted small ai-agent-base-line">
-            本页请求路径（不含 <code>message</code> 查询串）：{" "}
-            <code className="ai-agent-base-url">
-              {effectiveOrigin}
-              {API_PREFIX}/siliconflow/chat
-            </code>
-          </p>
-        </div>
-        <div className="report-actions">
-          <button
-            type="button"
-            className="btn primary"
-            onClick={callSiliconflow}
-            disabled={loading}
-          >
-            {loading ? "请求中…" : "调用硅基流动"}
-          </button>
-        </div>
-      </header>
-
-      {error ? <div className="alert error">{error}</div> : null}
-
-      <div className="ai-agent-layout">
-        <div className="ai-agent-col card subtle">
-          <h3>输入</h3>
-          <textarea
-            className="ai-agent-textarea"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            spellCheck={false}
-            placeholder="输入要发给模型的内容…"
-            aria-label="发给硅基流动的消息"
-          />
-        </div>
-        <div className="ai-agent-col card subtle">
-          <h3>模型回复</h3>
-          {result ? (
-            <>
-              <p className="ai-agent-meta">
-                模型：<code>{result.model}</code>
-              </p>
-              {result.reasoningContent ? (
-                <details className="ai-agent-reasoning">
-                  <summary>推理过程（reasoning）</summary>
-                  <pre className="ai-agent-reasoning-pre">
-                    {result.reasoningContent}
-                  </pre>
-                </details>
-              ) : null}
-              <pre className="ai-agent-reply">{result.reply ?? ""}</pre>
-            </>
-          ) : (
-            <p className="ai-agent-placeholder">
-              点击「调用硅基流动」后，回复将显示在这里。
-            </p>
-          )}
-        </div>
+    <div className="ai-agent-report">
+      <div className="ai-agent-toolbar">
+        <span className="ai-agent-title">AI 数据分析助手</span>
+        <button type="button" className="ai-agent-btn-new" onClick={newSession}>
+          新对话
+        </button>
       </div>
-    </section>
+
+      <div className="ai-agent-messages">
+        {messages.map((msg, i) => {
+          if (msg.kind === "user") {
+            return (
+              <div key={i} className="ai-msg ai-msg--user">
+                <div className="ai-msg-bubble">{msg.text}</div>
+              </div>
+            );
+          }
+          if (msg.kind === "ai") {
+            return (
+              <div key={i} className="ai-msg ai-msg--ai">
+                <div className="ai-msg-bubble">
+                  {msg.text || (msg.streaming ? "…" : "")}
+                  {msg.streaming && <span className="ai-cursor" />}
+                </div>
+              </div>
+            );
+          }
+          if (msg.kind === "tool") {
+            return (
+              <div key={i} className="ai-msg ai-msg--tool">
+                <button
+                  type="button"
+                  className="ai-tool-toggle"
+                  onClick={() => toggleTool(i)}
+                >
+                  🔧 {msg.name} {msg.open ? "▲" : "▼"}
+                </button>
+                {msg.open && msg.summary && (
+                  <div className="ai-tool-detail">{msg.summary}</div>
+                )}
+              </div>
+            );
+          }
+          if (msg.kind === "chart") {
+            return (
+              <div key={i} className="ai-msg ai-msg--chart">
+                <DarkChart option={msg.option} height={320} />
+              </div>
+            );
+          }
+          if (msg.kind === "error") {
+            return (
+              <div key={i} className="ai-msg ai-msg--error">
+                ⚠ {msg.message}
+              </div>
+            );
+          }
+          return null;
+        })}
+        <div ref={bottomRef} />
+      </div>
+
+      <div className="ai-agent-input-area">
+        <textarea
+          ref={inputRef}
+          className="ai-agent-input"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="输入问题，Enter 发送，Shift+Enter 换行…"
+          rows={2}
+          disabled={loading}
+        />
+        <button
+          type="button"
+          className="ai-agent-send"
+          onClick={() => void sendMessage()}
+          disabled={loading || !input.trim()}
+        >
+          {loading ? "…" : "发送"}
+        </button>
+      </div>
+    </div>
   );
 }
