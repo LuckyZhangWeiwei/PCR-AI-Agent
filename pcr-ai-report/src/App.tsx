@@ -75,7 +75,7 @@ export default function App() {
         <div className="app-title-block">
           <div className="app-brand-row">
             <span className="app-brand-badge">NXP</span>
-            <h1 className="app-title-main">ATTJ WaferTest Dashboard</h1>
+            <h1 className="app-title-main">ATTJ WaferTest PCR Dashboard</h1>
             <div className="app-feature-chips">
               <span className="app-chip">Probe Card Yield Monitor</span>
               <span className="app-chip">Layer BIN Analysis</span>
