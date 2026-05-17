@@ -1,10 +1,12 @@
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import ReactECharts from "echarts-for-react";
 import { apiGetJson } from "../api/client";
-import { API_PREFIX, INFCONTROL_AGGREGATE_PATH } from "../api/paths";
+import { INFCONTROL_AGGREGATE_PATH, INFCONTROL_COMBINED_PATH } from "../api/paths";
 import type {
   AggregateGroup,
+  InfcontrolAggregateBlock,
   InfcontrolAggregateResponse,
+  InfcontrolCombinedResponse,
   InfcontrolLayerBinsV3Response,
   InfcontrolLayerBinV3Row,
 } from "../api/types";
@@ -27,10 +29,6 @@ import {
   chartSplitLine,
   chartTextColor,
 } from "../theme/chartTheme";
-import {
-  allSettledWithConcurrency,
-  REPORT_AGGREGATE_FANOUT_CONCURRENCY,
-} from "../utils/asyncConcurrency";
 import { datetimeLocalToIso } from "../utils/datetimeLocal";
 import {
   buildTree,
@@ -279,12 +277,12 @@ function infcontrolTreeYieldExtra(
 export function InfcontrolReport({ apiBase, listLimits }: Props) {
   const [form, setForm] = useState<FormState>(initialForm);
   const [list,        setList]        = useState<InfcontrolLayerBinsV3Response | null>(null);
-  const [aggBin,      setAggBin]      = useState<InfcontrolAggregateResponse | null>(null);
+  const [aggBin,      setAggBin]      = useState<InfcontrolAggregateBlock | null>(null);
   // probeCardType,bin aggregate — chart shows type-level; cardId accessed via drill
-  const [aggCardType, setAggCardType] = useState<InfcontrolAggregateResponse | null>(null);
-  const [aggSlot,     setAggSlot]     = useState<InfcontrolAggregateResponse | null>(null);
-  const [aggTree,     setAggTree]     = useState<InfcontrolAggregateResponse | null>(null);
-  const [aggDevice,   setAggDevice]   = useState<InfcontrolAggregateResponse | null>(null);
+  const [aggCardType, setAggCardType] = useState<InfcontrolAggregateBlock | null>(null);
+  const [aggSlot,     setAggSlot]     = useState<InfcontrolAggregateBlock | null>(null);
+  const [aggTree,     setAggTree]     = useState<InfcontrolAggregateBlock | null>(null);
+  const [aggDevice,   setAggDevice]   = useState<InfcontrolAggregateBlock | null>(null);
   const [aggFree,     setAggFree]     = useState<InfcontrolAggregateResponse | null>(null);
   const [freeDim, setFreeDim] = useState("bin");
 
@@ -428,102 +426,36 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     setSelectedDevice(null);
     setAggFree(null);
 
-    const core = buildCoreParams(form);
-
-    // Phase 1: 明细列表（受 limit 约束，通常很快）
     try {
-      const listRes = await apiGetJson<InfcontrolLayerBinsV3Response>(
+      const res = await apiGetJson<InfcontrolCombinedResponse>(
         apiBase,
-        `${API_PREFIX}/infcontrol-layer-bins/v4`,
-        buildListParams(form, listLimits),
+        INFCONTROL_COMBINED_PATH,
+        {
+          ...buildListParams(form, listLimits),
+          aggs: [
+            `${jbAggregateGroupBy("bin")}:30`,
+            `${jbAggregateGroupBy("probeCardType")}:25`,
+            `${jbAggregateGroupBy("slot")}:50`,
+            `${jbAggregateGroupBy("device", "lot", "probeCardType", "cardId")}:100`,
+            `${jbAggregateGroupBy("device")}:30`,
+          ].join("|"),
+        }
       );
-      setList(listRes);
+      setList(res);
+      setAggBin(res.aggregates[jbAggregateGroupBy("bin")] ?? null);
+      setAggCardType(res.aggregates[jbAggregateGroupBy("probeCardType")] ?? null);
+      setAggSlot(res.aggregates[jbAggregateGroupBy("slot")] ?? null);
+      setAggTree(
+        res.aggregates[jbAggregateGroupBy("device", "lot", "probeCardType", "cardId")] ?? null
+      );
+      setAggDevice(res.aggregates[jbAggregateGroupBy("device")] ?? null);
     } catch (e) {
-      setErrorList(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setErrorList(msg);
+      setErrorAgg(msg);
     } finally {
       setLoadingList(false);
-    }
-
-    // Phase 2: 图表聚合（v3 库内全量匹配行；与 limit 无关，并行 2 路）
-    const [binRes, cardTypeRes, slotRes, treeRes, deviceRes] =
-      (await allSettledWithConcurrency(
-        [
-          () =>
-            apiGetJson<InfcontrolAggregateResponse>(
-              apiBase,
-              INFCONTROL_AGGREGATE_PATH,
-              { ...core, groupBy: jbAggregateGroupBy("bin"), groupTop: 30 },
-            ),
-          () =>
-            apiGetJson<InfcontrolAggregateResponse>(
-              apiBase,
-              INFCONTROL_AGGREGATE_PATH,
-              { ...core, groupBy: jbAggregateGroupBy("probeCardType"), groupTop: 25 },
-            ),
-          () =>
-            apiGetJson<InfcontrolAggregateResponse>(
-              apiBase,
-              INFCONTROL_AGGREGATE_PATH,
-              { ...core, groupBy: jbAggregateGroupBy("slot"), groupTop: 50 },
-            ),
-          () =>
-            apiGetJson<InfcontrolAggregateResponse>(
-              apiBase,
-              INFCONTROL_AGGREGATE_PATH,
-              {
-                ...core,
-                groupBy: jbAggregateGroupBy(
-                  "device",
-                  "lot",
-                  "probeCardType",
-                  "cardId",
-                ),
-                groupTop: 100,
-              },
-            ),
-          () =>
-            apiGetJson<InfcontrolAggregateResponse>(
-              apiBase,
-              INFCONTROL_AGGREGATE_PATH,
-              { ...core, groupBy: jbAggregateGroupBy("device"), groupTop: 30 },
-            ),
-        ],
-        REPORT_AGGREGATE_FANOUT_CONCURRENCY,
-      )) as [
-        PromiseSettledResult<InfcontrolAggregateResponse>,
-        PromiseSettledResult<InfcontrolAggregateResponse>,
-        PromiseSettledResult<InfcontrolAggregateResponse>,
-        PromiseSettledResult<InfcontrolAggregateResponse>,
-        PromiseSettledResult<InfcontrolAggregateResponse>,
-      ];
-
-    setLoadingAgg(false);
-
-    if (binRes.status === "fulfilled") setAggBin(binRes.value);
-    if (cardTypeRes.status === "fulfilled") setAggCardType(cardTypeRes.value);
-    if (slotRes.status === "fulfilled") setAggSlot(slotRes.value);
-    if (treeRes.status === "fulfilled") setAggTree(treeRes.value);
-    if (deviceRes.status === "fulfilled") setAggDevice(deviceRes.value);
-    const aggFail = (
-      label: string,
-      res: PromiseSettledResult<InfcontrolAggregateResponse>,
-    ) => {
-      if (res.status !== "rejected") return "";
-      const detail =
-        res.reason instanceof Error ? res.reason.message : String(res.reason);
-      return `${label}：${detail}`;
-    };
-    const aggErrors = [
-      aggFail("BIN 聚合", binRes),
-      aggFail("探针卡类型聚合", cardTypeRes),
-      aggFail("Slot 聚合", slotRes),
-      aggFail("树表聚合", treeRes),
-      aggFail("Device 聚合", deviceRes),
-    ].filter(Boolean);
-    if (aggErrors.length > 0) {
-      setErrorAgg(
-        `部分图表不可用（limit 仅限制明细；聚合统计全部匹配行。请收窄 testEnd 等筛选）：${aggErrors.join("；")}`,
-      );
+      setLoadingAgg(false);
     }
 
     void fetchFreeAgg(freeDim, form);
