@@ -39,10 +39,10 @@
 .ai-agent-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 12px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 5px;
 }
 
 .ai-msg {
@@ -111,11 +111,13 @@
 
 /* Markdown prose inside AI bubbles */
 .ai-msg-bubble--md { white-space: normal; }
-.ai-msg-bubble--md p { margin: 0 0 3px; }
+.ai-msg-bubble--md p { margin: 0 0 2px; }
 .ai-msg-bubble--md p:last-child { margin-bottom: 0; }
 .ai-msg-bubble--md ul,
-.ai-msg-bubble--md ol { margin: 2px 0 3px 16px; padding: 0; }
-.ai-msg-bubble--md li { margin-bottom: 1px; }
+.ai-msg-bubble--md ol { margin: 1px 0 2px 15px; padding: 0; }
+.ai-msg-bubble--md li { margin-bottom: 0; line-height: 1.5; }
+/* react-markdown wraps loose list items in <p>; collapse that extra margin */
+.ai-msg-bubble--md li > p { margin: 0; }
 .ai-msg-bubble--md strong { color: #e8e8e8; }
 .ai-msg-bubble--md em { color: #bbb; }
 .ai-msg-bubble--md code {
@@ -131,9 +133,9 @@
   background: #1a1a2a;
   border: 1px solid #333;
   border-radius: 4px;
-  padding: 8px 10px;
+  padding: 6px 10px;
   overflow-x: auto;
-  margin: 6px 0;
+  margin: 4px 0;
 }
 .ai-msg-bubble--md pre code {
   background: none;
@@ -144,13 +146,13 @@
 .ai-msg-bubble--md table {
   border-collapse: collapse;
   width: 100%;
-  margin: 6px 0;
+  margin: 4px 0;
   font-size: 12px;
 }
 .ai-msg-bubble--md th,
 .ai-msg-bubble--md td {
   border: 1px solid #444;
-  padding: 4px 8px;
+  padding: 3px 7px;
   text-align: left;
 }
 .ai-msg-bubble--md th { background: #2a2a3a; color: #ccc; }
@@ -159,7 +161,7 @@
 .ai-msg-bubble--md h2,
 .ai-msg-bubble--md h3 {
   color: #ccc;
-  margin: 4px 0 2px;
+  margin: 3px 0 1px;
   font-size: 13px;
 }
 .ai-msg-bubble--md blockquote {
