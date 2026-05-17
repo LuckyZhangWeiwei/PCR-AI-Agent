@@ -7,5 +7,8 @@ export const API_PREFIX = "/api/v4";
 export const INFCONTROL_AGGREGATE_PATH =
   "/api/v3/infcontrol-layer-bins/v3/aggregate";
 
+export const INFCONTROL_COMBINED_PATH =
+  "/api/v4/infcontrol-layer-bins/v4/combined";
+
 export const YIELD_AGGREGATE_PATH =
   "/api/v3/yield-monitor-triggers/v3/aggregate";

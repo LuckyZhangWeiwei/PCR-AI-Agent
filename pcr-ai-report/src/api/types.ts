@@ -87,6 +87,19 @@ export type InfcontrolAggregateResponse = {
   groups: AggregateGroup[];
 };
 
+/** Single aggregate block from **`GET …/v4/combined`** response `aggregates` map. */
+export interface InfcontrolAggregateBlock {
+  groupBy: string;
+  groupTop: number;
+  totalRowsMatching: number;
+  groups: AggregateGroup[];
+}
+
+/** **`GET …/v4/combined`** response — list rows + all aggregates in one call. */
+export interface InfcontrolCombinedResponse extends InfcontrolLayerBinsV3Response {
+  aggregates: Record<string, InfcontrolAggregateBlock>;
+}
+
 /** GET …/infcontrol-layer-bins/v2（v2 列表；报表层控已改用 v3，类型仍可用于对照） */
 export type InfcontrolLayerBinV2BinCell = {
   value: number;
