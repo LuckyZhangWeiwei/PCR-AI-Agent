@@ -40,8 +40,11 @@ import {
   buildInfcontrolLayerBinAggregateGroupParts,
   buildInfcontrolLayerBinAggregateSql,
   buildInfcontrolLayerBinMatchingCountSql,
+  parseInfcontrolLayerBinAggregateGroupSpec,
   parseInfcontrolLayerBinAggregateQuery,
+  type InfcontrolLayerBinGroupBy,
 } from "../lib/infcontrolLayerBinAggregate.js";
+import { parseAggsParam } from "../lib/parseAggsParam.js";
 import {
   INFCONTROL_V3_AGGREGATE_DOCUMENTATION,
   parseInfcontrolLayerBinsV3AggregateQuery,
@@ -798,6 +801,154 @@ infcontrolRouter.get("/infcontrol-layer-bins/v4/aggregate", async (req, res) => 
       filters: parsed.applied,
       totalRowsMatching,
       groups,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return sendAgentError(
+      res,
+      500,
+      "ORACLE_QUERY_FAILED",
+      "Oracle query failed",
+      enrichOracleDriverDetail(message)
+    );
+  }
+});
+
+/**
+ * **v4 层控合并查询**：一次 Oracle 查询（top N 明细行）同时返回 **rows**（展示用）与
+ * **aggregates**（各维度在 top N 行上的内存聚合）。
+ * 聚合在 Node 内对原始行（含 BIN0…BIN255）完成；展示行在聚合后 enrich（BIN 列已剥离）。
+ * 无 MEMORY_AGG_ORACLE_MAX_ROWS 限制（固定 top N，不拉全量行）。
+ */
+infcontrolRouter.get("/infcontrol-layer-bins/v4/combined", async (req, res) => {
+  const parsed = parseInfcontrolLayerBinsV3Query(
+    req.query as Record<string, unknown>
+  );
+  if (!parsed.ok) {
+    return sendAgentError(
+      res,
+      400,
+      "VALIDATION_ERROR",
+      parsed.error,
+      "See GET /api/v1/manifest infcontrol-layer-bins/v4."
+    );
+  }
+
+  const aggsResult = parseAggsParam(req.query.aggs);
+  if (!aggsResult.ok) {
+    return sendAgentError(
+      res,
+      400,
+      "VALIDATION_ERROR",
+      aggsResult.error,
+      "aggs format: groupBy:groupTop|groupBy:groupTop|… (e.g. bin:30|probeCardType,bin:25)"
+    );
+  }
+
+  const limit = clampLimitFromQuery(
+    req.query as Record<string, unknown>,
+    200,
+    API_V3_LIST_LIMIT_MAX
+  );
+
+  // Validate and resolve each agg spec's groupBy string → InfcontrolLayerBinGroupBy[]
+  const resolvedSpecs: {
+    key: string;
+    groupBy: InfcontrolLayerBinGroupBy[];
+    groupTop: number;
+  }[] = [];
+  for (const spec of aggsResult.specs) {
+    const gs = parseInfcontrolLayerBinAggregateGroupSpec({
+      groupBy: spec.groupBy,
+      groupTop: String(spec.groupTop),
+    });
+    if (!gs.ok) {
+      return sendAgentError(
+        res,
+        400,
+        "VALIDATION_ERROR",
+        `aggs groupBy "${spec.groupBy}": ${gs.error}`,
+        "Each groupBy must include exactly one 'bin' dimension (e.g. probeCardType,bin)."
+      );
+    }
+    resolvedSpecs.push({ key: spec.groupBy, groupBy: gs.groupBy, groupTop: spec.groupTop });
+  }
+
+  if (infcontrolLayerBinsUseDummy()) {
+    const dummyRows = filterInfcontrolLayerBinV3DummyRows(parsed.applied, limit);
+    const aggregates: Record<string, unknown> = {};
+    for (const rs of resolvedSpecs) {
+      const { totalRowsMatching, groups } = aggregateInfcontrolLayerBinV3FromRows(
+        dummyRows,
+        rs.groupBy,
+        rs.groupTop
+      );
+      aggregates[rs.key] = { groupBy: rs.key, groupTop: rs.groupTop, totalRowsMatching, groups };
+    }
+    const enrichedRows = dummyRows.map((row) =>
+      enrichInfcontrolLayerBinV3ListRow(row as Record<string, unknown>)
+    );
+    return res.json({
+      meta: {
+        apiVersion: "4",
+        requestId: reqId(req),
+        combinedPath: "infcontrol-layer-bins/v4/combined",
+      },
+      limit,
+      limitMax: API_V3_LIST_LIMIT_MAX,
+      orderBy: "TESTEND DESC NULLS LAST, SLOT, PASSID, PASSNUM",
+      filters: { ...parsed.applied, limit },
+      count: enrichedRows.length,
+      rows: enrichedRows,
+      aggregates,
+    });
+  }
+
+  const sql = buildInfcontrolLayerBinsV3Sql(parsed.whereAndSql);
+  const binds: BindParameters = { ...parsed.binds, lim: limit };
+
+  try {
+    const rawRows = await withConnection(async (conn) => {
+      const result = await conn.execute(sql, binds, {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+      });
+      return result.rows || [];
+    });
+
+    // Normalize column names to uppercase before aggregation (required by aggregateInfcontrolLayerBinV3FromRows)
+    const normalizedRows = (rawRows as Record<string, unknown>[]).map(
+      (r) => normalizeDbRowKeysUpper(r) as InfcontrolLayerBinDummyRow
+    );
+
+    // Aggregate BEFORE enrichment — enrichInfcontrolLayerBinV3ListRow strips BIN0…BIN255 columns
+    const aggregates: Record<string, unknown> = {};
+    for (const rs of resolvedSpecs) {
+      const { totalRowsMatching, groups } = aggregateInfcontrolLayerBinV3FromRows(
+        normalizedRows,
+        rs.groupBy,
+        rs.groupTop
+      );
+      aggregates[rs.key] = { groupBy: rs.key, groupTop: rs.groupTop, totalRowsMatching, groups };
+    }
+
+    // Enrich rows for display (adds PROBECARDTYPE, passBinPair, etc.)
+    const enrichedRows = normalizedRows.map((r) =>
+      enrichInfcontrolLayerBinV3ListRow(r as Record<string, unknown>)
+    );
+
+    return res.json({
+      meta: {
+        apiVersion: "4",
+        requestId: reqId(req),
+        combinedPath: "infcontrol-layer-bins/v4/combined",
+      },
+      limit,
+      limitMax: API_V3_LIST_LIMIT_MAX,
+      orderBy: "TESTEND DESC NULLS LAST, SLOT, PASSID, PASSNUM",
+      filters: { ...parsed.applied, limit },
+      count: enrichedRows.length,
+      rows: enrichedRows,
+      aggregates,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
