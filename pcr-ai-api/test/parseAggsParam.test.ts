@@ -64,5 +64,6 @@ describe("parseAggsParam", () => {
   it("uses maxSpecs parameter", () => {
     const r = parseAggsParam("bin:10|slot:10|device:10", 2);
     assert.ok(!r.ok);
+    assert.ok(r.error.includes("at most 2"));
   });
 });
