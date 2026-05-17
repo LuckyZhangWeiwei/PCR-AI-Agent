@@ -819,6 +819,7 @@ infcontrolRouter.get("/infcontrol-layer-bins/v4/aggregate", async (req, res) => 
  * **aggregates**（各维度在 top N 行上的内存聚合）。
  * 聚合在 Node 内对原始行（含 BIN0…BIN255）完成；展示行在聚合后 enrich（BIN 列已剥离）。
  * 无 MEMORY_AGG_ORACLE_MAX_ROWS 限制（固定 top N，不拉全量行）。
+ * `aggregates[x].totalRowsMatching` 等于本次 **top N 拉取的行数**，非 Oracle 全量匹配行数（与列表共用同一批数据，语义一致）。
  */
 infcontrolRouter.get("/infcontrol-layer-bins/v4/combined", async (req, res) => {
   const parsed = parseInfcontrolLayerBinsV3Query(
@@ -871,6 +872,7 @@ infcontrolRouter.get("/infcontrol-layer-bins/v4/combined", async (req, res) => {
         "Each groupBy must include exactly one 'bin' dimension (e.g. probeCardType,bin)."
       );
     }
+    // Use spec.groupTop (not gs.groupTop) — the combined endpoint has no groupTop cap
     resolvedSpecs.push({ key: spec.groupBy, groupBy: gs.groupBy, groupTop: spec.groupTop });
   }
 
