@@ -447,7 +447,11 @@ export function filterInfcontrolLayerBinV3DummyRowsMatching(
   applied: Record<string, unknown>
 ): Array<InfcontrolLayerBinDummyRow & { PROBECARDTYPE: string | null }> {
   let rows = [...getInfcontrolLayerBinDummyRowsInternal()].filter(
-    (r) => String(r.PASSTYPE).trim().toUpperCase() === "TEST"
+    (r) =>
+      String(r.PASSTYPE).trim().toUpperCase() === "TEST" &&
+      !["kk", "gg", "c"].some((pfx) =>
+        String(r.LOT ?? "").trim().toLowerCase().startsWith(pfx)
+      )
   );
 
   const ci = (col: string, param: string) => {

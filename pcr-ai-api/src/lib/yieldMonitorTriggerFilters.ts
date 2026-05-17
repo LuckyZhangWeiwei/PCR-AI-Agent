@@ -178,6 +178,9 @@ export function parseYieldMonitorTriggerV3Query(
     (binds as Record<string, string>).v3_type_scope = YIELD_MONITOR_V3_TYPE_SCOPE;
     applied.typeScope = YIELD_MONITOR_V3_TYPE_SCOPE;
 
+    // Exclude internal/test lots starting with kk, gg, or c (case-insensitive)
+    clauses.push(`NOT REGEXP_LIKE(t.LOTID, '^(kk|gg|c)', 'i')`);
+
     const strEqTrimCi = (param: string, columnSql: string, bindName: string) => {
       const v = firstString(firstQueryValue(q, param));
       if (v === undefined) return;
