@@ -3,6 +3,10 @@ import type { AgentConfig } from "./agentConfig.js";
 import {
   getHistory,
   appendMessages,
+  needsSummarization,
+  popOldMessagesForSummarization,
+  storeSummary,
+  getSummary,
   type ChatMessage,
   type ToolCall,
 } from "./agentHistory.js";
@@ -22,6 +26,44 @@ export type AgentSseEvent =
 const MAX_ROUNDS = 5;
 const TOOL_RESULT_MAX_HISTORY = 3000;
 
+/**
+ * Calls the LLM to produce a compact Chinese summary of the given older
+ * conversation turns.  On failure returns an empty string (best-effort).
+ */
+async function summarizeHistory(
+  oldMessages: ChatMessage[],
+  agentConfig: AgentConfig
+): Promise<string> {
+  // Build a text representation — skip raw tool JSON to keep it readable.
+  const lines: string[] = [];
+  for (const m of oldMessages) {
+    if (!m.content || m.role === "tool") continue;
+    const label = m.role === "user" ? "用户" : "AI";
+    lines.push(`[${label}]: ${String(m.content).slice(0, 600)}`);
+  }
+  if (lines.length === 0) return "";
+
+  const prompt =
+    "请将以下探针卡良率分析系统的历史对话压缩为简洁的中文摘要（不超过300字）。" +
+    "重点保留：用户查询的产品/时间/卡号等条件、关键数字结论、已确认的异常发现、当前分析方向。" +
+    "禁止使用 Markdown 图片语法。\n\n对话历史：\n" +
+    lines.join("\n");
+
+  let summary = "";
+  try {
+    await streamSiliconFlow(
+      { model: agentConfig.model, messages: [{ role: "user", content: prompt }] },
+      agentConfig,
+      (chunk) => {
+        if (chunk.type === "delta") summary += chunk.text;
+      }
+    );
+  } catch {
+    // Summarization is best-effort; failure is non-fatal.
+  }
+  return summary.trim();
+}
+
 export async function runAgentLoop(
   message: string,
   sessionId: string,
@@ -30,10 +72,28 @@ export async function runAgentLoop(
 ): Promise<void> {
   appendMessages(sessionId, { role: "user", content: message });
 
+  // If the history is getting long, compress older turns into a rolling summary.
+  if (needsSummarization(sessionId)) {
+    const old = popOldMessagesForSummarization(sessionId);
+    if (old.length > 0) {
+      const existing = getSummary(sessionId);
+      // Prepend any prior summary text so it is folded in cumulatively.
+      const toSummarize: ChatMessage[] = existing
+        ? [{ role: "assistant", content: `【已有摘要】\n${existing}` }, ...old]
+        : old;
+      const newSummary = await summarizeHistory(toSummarize, agentConfig);
+      if (newSummary) storeSummary(sessionId, newSummary);
+    }
+  }
+
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const history = getHistory(sessionId);
+    const summary = getSummary(sessionId);
     const messages: ChatMessage[] = [
       { role: "system", content: buildSystemPrompt() },
+      ...(summary
+        ? [{ role: "system" as const, content: `【历史对话摘要】\n${summary}` }]
+        : []),
       ...history,
     ];
 
