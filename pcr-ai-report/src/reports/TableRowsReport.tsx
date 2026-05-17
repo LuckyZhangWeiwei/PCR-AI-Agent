@@ -57,11 +57,10 @@ export function TableRowsReport({ apiBase, listLimits }: Props) {
     <section className="report-panel">
       <header className="report-panel-header">
         <div>
-          <h2>数据表浏览（运维）</h2>
+          <h2>📋 Table Browser</h2>
           <p className="report-desc">
-            直接预览数据库里某张表的前若干行，便于核对字段。
-            <strong>若无权限或不了解表名，请不要使用本页</strong>
-            ，请优先用「yield monitor」或「JB STAR」。
+            Preview raw rows from any database table for field inspection.
+            <strong> Only use this if you know the table name and have access</strong> — prefer Yield Monitor or JB STAR for analysis.
           </p>
         </div>
         <div className="report-actions">

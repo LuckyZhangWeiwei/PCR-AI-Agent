@@ -1283,8 +1283,9 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         <div>
           <h2>🔬 JB STAR</h2>
           <p className="report-desc">
-            层控 BIN 数据（PASSTYPE = TEST）。复合筛选，一键触发：明细 + BIN 排名 +
-            探针卡类型对比 + Slot 趋势。点击图表钻取。Yield% 由前端从 bins[].isGoodBin + GROSSDIE 计算。
+            Layer BIN data (<code>PASSTYPE = TEST</code>). Single query fetches detail rows + BIN ranking +
+            probe card type comparison + slot trend. Click any chart to drill down.
+            Yield% is calculated in-browser from <code>bins[].isGoodBin</code> ÷ <code>GROSSDIE</code>.
           </p>
         </div>
       </div>

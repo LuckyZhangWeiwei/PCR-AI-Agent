@@ -72,9 +72,10 @@
 }
 
 .ai-avatar--ai {
-  background: #1e2d4a;
-  color: #7ab0e8;
-  border: 1px solid #2a4a7a;
+  width: 34px;
+  height: 34px;
+  background: #0d1e36;
+  border: 1px solid #3d7ab8;
   order: -1;
 }
 
@@ -172,6 +173,12 @@
   border: none;
   border-top: 1px solid #333;
   margin: 4px 0;
+}
+
+.ai-img-placeholder {
+  color: #888;
+  font-style: italic;
+  font-size: 0.9em;
 }
 
 .ai-cursor {

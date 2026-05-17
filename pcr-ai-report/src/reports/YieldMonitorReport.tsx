@@ -1144,8 +1144,9 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         <div>
           <h2>⚡ Yield Monitor</h2>
           <p className="report-desc">
-            产量触发分析（TYPE = delta_diff）。选填筛选条件后点「查询」，
-            并行获取明细 + 时间趋势 + 探针卡类型/LOT 聚合。点击探针卡类型→钻取卡ID→点选→查看 DUT 分布。
+            Trigger analysis (<code>TYPE = delta_diff</code>). Set filters and click <strong>Query</strong> to
+            fetch detail rows + time trend + probe card type / LOT aggregates in parallel.
+            Click probe card type <span className="desc-arrow">→</span> drill to card ID <span className="desc-arrow">→</span> select <span className="desc-arrow">→</span> view DUT distribution.
           </p>
         </div>
       </div>

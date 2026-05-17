@@ -195,6 +195,30 @@ src/
 4. **品牌/布局旧纪要**：标题、`@dnd-kit` 三层拖拽、API 目录移入设置页、图表标签格式化、明细默认/最多条数等 2026-05-15 规则仍有效。
 5. **未做**：`TableRowsReport` 查询区与拖拽布局未与 Yield/JB 完全统一（表浏览仍保留页内 `limit` 输入）。
 
+## 12. 近期变更纪要（2026-05-17，交接备忘）
+
+1. **Dashboard 标题重设计**：  
+   - `App.tsx` 顶栏：`[NXP badge] ATTJ WaferTest Dashboard` + 四个功能 chips（`Probe Card Yield Monitor` / `Layer BIN Analysis` / `Trigger Trends` / `✦ AI Query`）在同一行，CSS `.app-brand-row` + `.app-feature-chips`。  
+   - Tab 标签全改英文：`⚡ Yield Monitor`、`🔬 JB Star`、`🤖 AI Agent`、`📋 Table Browser`、`⚙ Settings`。  
+   - `index.css` 新增 `.app-brand-badge`、`.app-chip`、`.app-chip--ai` 及 header 底部渐变分割线 `::after`。
+
+2. **Report 区段标题样式**：  
+   - `h2 + .report-desc` 改为同一 flex 行（`flex-wrap: wrap`）；宽屏一行，窄屏自动换行。  
+   - `h2::before` 添加蓝→紫竖条装饰；`.report-desc code` 高亮技术关键词（`TYPE = delta_diff` 等）。  
+   - 四个报表描述文字全改英文（`YieldMonitorReport`、`InfcontrolReport`、`TableRowsReport`、`AiAgentReport`）。
+
+3. **AI Agent 界面改进**：  
+   - `RobotAvatar` 组件（内联 SVG，34 × 34 圆形）替代纯文字 “AI” 头像。  
+   - `ReactMarkdown` 覆盖 `img` 渲染器，将 AI 生成的 `![alt](url)` 转为灰色斜体 `[alt]`，防止破图。  
+   - Toolbar 标题改为 `🤖 AI Agent — Wafer Test Data Analytics`，”新对话” → “New Chat”。
+
+4. **AI 系统提示词（`agentPrompt.ts`）变更**：  
+   - 模板字符串内的 ` ``` ` 代码块已转义为 `\`\`\``（原 bug 导致 esbuild 崩溃）。  
+   - 新增 **领域知识**：探针卡层级 `device → probeCardType → probeCard/cardId → dut/site`、每个 lot 绑定具体的卡。  
+   - 探针卡维度区分规则：区分”哪张卡”（`probeCard`/`cardId`）vs”哪种卡”（`probeCardType`）。  
+   - 图表生成规则：AI **不主动**调用 `generate_chart`，只在结论末尾提示用户是否需要图表，等确认后再生成。  
+   - 格式限制：禁止 Markdown 图片语法 `![...](url)`。
+
 ---
 
 ## 12. 与 API 联调速查

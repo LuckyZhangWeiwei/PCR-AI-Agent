@@ -6,6 +6,31 @@ import type { EChartsOption } from "echarts";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+function RobotAvatar() {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      {/* antenna */}
+      <line x1="12" y1="1.5" x2="12" y2="4.5" stroke="#7ab0e8" strokeWidth="1.2" strokeLinecap="round"/>
+      <circle cx="12" cy="1.2" r="1.1" fill="#5bc8f5"/>
+      {/* head */}
+      <rect x="4" y="4.5" width="16" height="13" rx="3" fill="#162540" stroke="#3d7ab8" strokeWidth="0.8"/>
+      {/* left eye */}
+      <circle cx="9" cy="10" r="2.2" fill="#0a1e35"/>
+      <circle cx="9" cy="10" r="1.4" fill="#5bc8f5" opacity="0.9"/>
+      <circle cx="9.6" cy="9.3" r="0.5" fill="white" opacity="0.8"/>
+      {/* right eye */}
+      <circle cx="15" cy="10" r="2.2" fill="#0a1e35"/>
+      <circle cx="15" cy="10" r="1.4" fill="#5bc8f5" opacity="0.9"/>
+      <circle cx="15.6" cy="9.3" r="0.5" fill="white" opacity="0.8"/>
+      {/* mouth */}
+      <path d="M8.5 14.5 Q12 17 15.5 14.5" stroke="#5bc8f5" strokeWidth="1.1" fill="none" strokeLinecap="round"/>
+      {/* ear bolts */}
+      <circle cx="4" cy="11" r="1" fill="#2a5a9a" stroke="#3d7ab8" strokeWidth="0.5"/>
+      <circle cx="20" cy="11" r="1" fill="#2a5a9a" stroke="#3d7ab8" strokeWidth="0.5"/>
+    </svg>
+  );
+}
+
 interface UserMessage {
   kind: "user";
   text: string;
@@ -286,9 +311,9 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
   return (
     <div className="ai-agent-report">
       <div className="ai-agent-toolbar">
-        <span className="ai-agent-title">AI 数据分析助手</span>
+        <span className="ai-agent-title">🤖 AI Agent — Wafer Test Data Analytics</span>
         <button type="button" className="ai-agent-btn-new" onClick={newSession}>
-          新对话
+          New Chat
         </button>
       </div>
 
@@ -306,10 +331,17 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
             const planMatch = !msg.streaming && msg.text.match(/\[PLAN\]([\s\S]*?)\[\/PLAN\]/);
             return (
               <div key={i} className="ai-msg ai-msg--ai">
-                <div className="ai-avatar ai-avatar--ai">AI</div>
+                <div className="ai-avatar ai-avatar--ai"><RobotAvatar /></div>
                 <div className="ai-msg-bubble ai-msg-bubble--md">
                   {msg.text ? (
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        img: ({ alt }) => (
+                          <span className="ai-img-placeholder">[{alt}]</span>
+                        ),
+                      }}
+                    >
                       {msg.text}
                     </ReactMarkdown>
                   ) : (
@@ -367,7 +399,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
           if (msg.kind === "clarification") {
             return (
               <div key={i} className="ai-msg ai-msg--clarification">
-                <div className="ai-avatar ai-avatar--ai">AI</div>
+                <div className="ai-avatar ai-avatar--ai"><RobotAvatar /></div>
                 <div className="ai-clarification-bubble">
                   ❓ {msg.question}
                 </div>
