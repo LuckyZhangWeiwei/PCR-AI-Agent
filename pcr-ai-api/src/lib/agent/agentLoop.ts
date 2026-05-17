@@ -26,6 +26,129 @@ export type AgentSseEvent =
 const MAX_ROUNDS = 5;
 const TOOL_RESULT_MAX_HISTORY = 3000;
 
+// ─── DeepSeek embedded-call filter ──────────────────────────────────────────
+// DeepSeek V3 via SiliconFlow sometimes puts its native function-call tokens
+// directly in the content stream rather than in the structured tool_calls field.
+// The tokens use both ASCII | and fullwidth ｜ (U+FF5C) and ▁ (U+2581).
+//   <｜tool▁sep｜>     — separates function name from args
+//   <｜tool▁call▁end｜> — ends a single call
+//   <｜tool▁calls▁end｜> — ends the call block
+// This filter intercepts the stream, suppresses these tokens from the UI,
+// and recovers CollectedToolCall objects for normal execution.
+
+const DS_START_RE = /(?:function)?<[|｜]tool[_▁]/;
+const DS_SEP_RE = /<[|｜]tool[_▁]sep[|｜]>/;
+const DS_CALL_END_RE = /<[|｜]tool[_▁]call[_▁]end[|｜]>/;
+const DS_CALLS_END_RE = /<[|｜]tool[_▁]calls[_▁]end[|｜]>/g;
+
+interface FilteredEmitter {
+  /** Feed a raw text delta from the LLM stream. */
+  push(delta: string): void;
+  /** Call after streaming ends — flushes buffered text and returns embedded calls. */
+  finalize(): CollectedToolCall[];
+  /** Clean text accumulated for history recording (no DeepSeek tokens). */
+  cleanText: string;
+}
+
+function createDeepSeekFilter(
+  outerEmit: (event: AgentSseEvent) => void
+): FilteredEmitter {
+  let pending = "";      // text awaiting token-detection scan
+  let inToken = false;   // currently inside a <｜tool...｜> block
+  let tokenBuf = "";     // accumulates token content while inToken
+  const calls: CollectedToolCall[] = [];
+  let callIdx = 0;
+  let cleanText = "";
+
+  const LOOKAHEAD = 30; // chars to keep as lookahead before flushing
+
+  function flushPending(force = false): void {
+    if (inToken) return;
+    const safeLen = force ? pending.length : Math.max(0, pending.length - LOOKAHEAD);
+    if (safeLen > 0) {
+      const safe = pending.slice(0, safeLen);
+      cleanText += safe;
+      outerEmit({ type: "text", delta: safe });
+      pending = pending.slice(safeLen);
+    }
+  }
+
+  function tryExtractFromTokenBuf(): void {
+    const endMatch = DS_CALL_END_RE.exec(tokenBuf);
+    if (!endMatch) return; // token not complete yet
+
+    const callContent = tokenBuf.slice(0, endMatch.index);
+    const after = tokenBuf.slice(endMatch.index + endMatch[0].length);
+
+    const sepMatch = DS_SEP_RE.exec(callContent);
+    if (sepMatch) {
+      const afterSep = callContent.slice(sepMatch.index + sepMatch[0].length);
+      const nlIdx = afterSep.indexOf("\n\n");
+      if (nlIdx !== -1) {
+        const fnName = afterSep.slice(0, nlIdx).trim();
+        let args = afterSep.slice(nlIdx + 2).trim();
+        // Strip any markdown code fence artifacts
+        args = args.replace(/^```[a-z]*\s*/i, "").replace(/\s*```\s*$/m, "").trim();
+        if (fnName) {
+          calls.push({ index: callIdx, id: `ds_embedded_${callIdx}`, name: fnName, args });
+          callIdx++;
+        }
+      }
+    }
+
+    // Strip all-calls-end tokens from remainder
+    tokenBuf = after.replace(DS_CALLS_END_RE, "").trim();
+
+    // Check for another call immediately following
+    if (DS_START_RE.test(tokenBuf.slice(0, 20))) {
+      tryExtractFromTokenBuf();
+    } else if (!tokenBuf) {
+      inToken = false;
+    } else {
+      // Unexpected remainder — emit it as text
+      inToken = false;
+      pending = tokenBuf;
+      tokenBuf = "";
+      scanForTokens();
+    }
+  }
+
+  function scanForTokens(): void {
+    const match = DS_START_RE.exec(pending);
+    if (!match) {
+      flushPending();
+      return;
+    }
+    // Emit everything before the token
+    if (match.index > 0) {
+      const before = pending.slice(0, match.index);
+      cleanText += before;
+      outerEmit({ type: "text", delta: before });
+    }
+    inToken = true;
+    tokenBuf = pending.slice(match.index);
+    pending = "";
+    tryExtractFromTokenBuf();
+  }
+
+  return {
+    push(delta: string): void {
+      if (inToken) {
+        tokenBuf += delta;
+        tryExtractFromTokenBuf();
+      } else {
+        pending += delta;
+        scanForTokens();
+      }
+    },
+    finalize(): CollectedToolCall[] {
+      flushPending(true);
+      return calls;
+    },
+    get cleanText() { return cleanText; },
+  };
+}
+
 /**
  * Calls the LLM to produce a compact Chinese summary of the given older
  * conversation turns.  On failure returns an empty string (best-effort).
@@ -97,7 +220,7 @@ export async function runAgentLoop(
       ...history,
     ];
 
-    let textBuffer = "";
+    const dsFilter = createDeepSeekFilter(emit);
     const toolCalls: CollectedToolCall[] = [];
     let finishReason = "stop";
     let streamError: string | undefined;
@@ -108,8 +231,8 @@ export async function runAgentLoop(
       (chunk) => {
         switch (chunk.type) {
           case "delta":
-            textBuffer += chunk.text;
-            emit({ type: "text", delta: chunk.text });
+            // Route through DeepSeek token filter; it handles emit internally.
+            dsFilter.push(chunk.text);
             break;
           case "tool_calls":
             toolCalls.push(...chunk.calls);
@@ -123,6 +246,17 @@ export async function runAgentLoop(
         }
       }
     );
+
+    // Flush any buffered text and collect any embedded DeepSeek tool calls.
+    const embeddedCalls = dsFilter.finalize();
+    const textBuffer = dsFilter.cleanText; // clean text (no tokens) for history
+
+    if (embeddedCalls.length > 0 && toolCalls.length === 0) {
+      // SiliconFlow returned function calls as text content instead of tool_calls.
+      // Recover them so execution continues normally.
+      toolCalls.push(...embeddedCalls);
+      finishReason = "tool_calls";
+    }
 
     if (streamError) {
       if (textBuffer) {
