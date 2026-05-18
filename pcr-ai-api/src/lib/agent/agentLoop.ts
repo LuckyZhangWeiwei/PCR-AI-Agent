@@ -13,6 +13,7 @@ import {
 import { TOOL_SCHEMAS } from "./agentToolSchemas.js";
 import { runTool, type ChartSentinel, type ClarificationSentinel } from "./agentToolHandlers.js";
 import { buildSystemPrompt } from "./agentPrompt.js";
+import { fetchOrCacheManifest } from "./agentManifest.js";
 import { streamSiliconFlow, type CollectedToolCall } from "./agentStream.js";
 
 export type AgentSseEvent =
@@ -209,11 +210,13 @@ export async function runAgentLoop(
     }
   }
 
+  const manifest = await fetchOrCacheManifest().catch(() => undefined);
+
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const history = getHistory(sessionId);
     const summary = getSummary(sessionId);
     const messages: ChatMessage[] = [
-      { role: "system", content: buildSystemPrompt() },
+      { role: "system", content: buildSystemPrompt(manifest) },
       ...(summary
         ? [{ role: "system" as const, content: `【历史对话摘要】\n${summary}` }]
         : []),

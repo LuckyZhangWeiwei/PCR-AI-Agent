@@ -190,4 +190,40 @@ export const TOOL_SCHEMAS = [
       },
     },
   },
+  {
+    type: "function" as const,
+    function: {
+      name: "get_filter_values",
+      description:
+        "查询某个筛选维度的可用值列表（如探针卡、批次号、测试机等）。在需要精确筛选但不知道具体值时调用。不要用它查 device 或时间范围——那些已在系统提示词的数据快照中。",
+      parameters: {
+        type: "object",
+        properties: {
+          domain: {
+            type: "string",
+            enum: ["yield", "jb"],
+            description: "数据域：yield = Yield Monitor；jb = JB STAR",
+          },
+          field: {
+            type: "string",
+            description:
+              "yield 支持: probeCard, probeCardType, hostname, lotId；jb 支持: cardId, probeCardType, testerId, lot",
+          },
+          filterBy: {
+            type: "object",
+            description: "可选前置过滤，如 { device: 'WA03P02G' }",
+            properties: {
+              device: { type: "string" },
+              probeCardType: { type: "string" },
+            },
+          },
+          limit: {
+            type: "number",
+            description: "返回条数，默认 20，最大 50",
+          },
+        },
+        required: ["domain", "field"],
+      },
+    },
+  },
 ] as const;

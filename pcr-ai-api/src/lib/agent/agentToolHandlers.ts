@@ -45,6 +45,7 @@ import {
   type ChartSentinel,
   type ClarificationSentinel,
 } from "./agentChartTool.js";
+import { runGetFilterValues } from "./agentFilterValuesTool.js";
 
 export type { ChartSentinel, ClarificationSentinel };
 
@@ -294,6 +295,8 @@ export async function runTool(
       if (!question) return "ask_clarification 参数错误: question 不能为空";
       return { __clarification: question };
     }
+    case "get_filter_values":
+      return runGetFilterValues(args);
     default:
       return `未知工具: ${name}`;
   }
