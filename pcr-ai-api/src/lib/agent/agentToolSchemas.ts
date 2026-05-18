@@ -191,7 +191,7 @@ export const TOOL_SCHEMAS = [
     },
   },
   {
-    type: "function" as const,
+    type: "function",
     function: {
       name: "get_filter_values",
       description:
@@ -216,6 +216,7 @@ export const TOOL_SCHEMAS = [
               device: { type: "string" },
               probeCardType: { type: "string" },
             },
+            additionalProperties: false,
           },
           limit: {
             type: "number",
