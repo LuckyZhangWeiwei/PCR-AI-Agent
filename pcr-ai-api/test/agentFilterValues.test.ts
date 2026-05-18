@@ -25,15 +25,20 @@ test("yield/probeCard returns distinct list with counts", async () => {
 });
 
 test("yield/probeCard with filterBy.device narrows results", async () => {
-  // First get all probeCards to find a device that exists
+  // Without filter: should have results
   const allRaw = await runGetFilterValues({ domain: "yield", field: "probeCard" });
-  const allResult = JSON.parse(allRaw) as { values: string[] };
+  const allResult = JSON.parse(allRaw) as { values: string[]; totalDistinct: number };
   assert.ok(allResult.values.length > 0);
 
-  // Get devices to pick one
-  const devRaw = await runGetFilterValues({ domain: "yield", field: "lotId" });
-  const devResult = JSON.parse(devRaw) as { values: string[]; totalDistinct: number };
-  assert.ok(devResult.totalDistinct > 0);
+  // With a non-existent device: filterBy must be applied → zero results
+  const filteredRaw = await runGetFilterValues({
+    domain: "yield",
+    field: "probeCard",
+    filterBy: { device: "__NO_SUCH_DEVICE__" },
+  });
+  const filteredResult = JSON.parse(filteredRaw) as { values: string[]; totalDistinct: number };
+  assert.ok(Array.isArray(filteredResult.values));
+  assert.equal(filteredResult.totalDistinct, 0, "filterBy.device should narrow to 0 for non-existent device");
 });
 
 test("yield/probeCardType returns leading-segment values", async () => {
@@ -56,15 +61,20 @@ test("jb/cardId returns results in Dummy mode", async () => {
 });
 
 test("jb/lot with filterBy.device filters results", async () => {
-  // Get the first device from jb
-  const devRaw = await runGetFilterValues({ domain: "jb", field: "cardId" });
-  const devResult = JSON.parse(devRaw) as { values: string[] };
-  assert.ok(devResult.values.length > 0);
+  // Without filter: should have results
+  const allRaw = await runGetFilterValues({ domain: "jb", field: "lot" });
+  const allResult = JSON.parse(allRaw) as { values: string[]; totalDistinct: number };
+  assert.ok(allResult.values.length > 0);
 
-  // Querying lots is valid and returns results
-  const raw = await runGetFilterValues({ domain: "jb", field: "lot" });
-  const result = JSON.parse(raw) as { values: string[] };
-  assert.ok(result.values.length > 0);
+  // With a non-existent device: filterBy must be applied → zero results
+  const filteredRaw = await runGetFilterValues({
+    domain: "jb",
+    field: "lot",
+    filterBy: { device: "__NO_SUCH_DEVICE__" },
+  });
+  const filteredResult = JSON.parse(filteredRaw) as { values: string[]; totalDistinct: number };
+  assert.ok(Array.isArray(filteredResult.values));
+  assert.equal(filteredResult.totalDistinct, 0, "filterBy.device should narrow to 0 for non-existent device");
 });
 
 test("unknown field returns error string", async () => {
