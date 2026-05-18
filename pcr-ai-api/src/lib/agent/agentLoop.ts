@@ -210,7 +210,12 @@ export async function runAgentLoop(
     }
   }
 
-  const manifest = await fetchOrCacheManifest().catch(() => undefined);
+  // Fetch manifest with a 5-second cap so a slow/unavailable Oracle DB
+  // never blocks the agent loop (returns undefined → prompt uses fallback text).
+  const manifest = await Promise.race([
+    fetchOrCacheManifest(),
+    new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 5000)),
+  ]).catch(() => undefined);
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const history = getHistory(sessionId);
