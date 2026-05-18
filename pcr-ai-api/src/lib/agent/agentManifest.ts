@@ -40,13 +40,15 @@ async function fetchYieldDomain(): Promise<DataManifest["yield"]> {
     );
     if (rows.length === 0) return emptyDomain();
 
-    let timeMin = rows[0]!.TIME_STAMP;
-    let timeMax = rows[0]!.TIME_STAMP;
+    let timeMin: string | null = null;
+    let timeMax: string | null = null;
     const devCount = new Map<string, number>();
 
     for (const r of rows) {
-      if (r.TIME_STAMP && r.TIME_STAMP < timeMin) timeMin = r.TIME_STAMP;
-      if (r.TIME_STAMP && r.TIME_STAMP > timeMax) timeMax = r.TIME_STAMP;
+      if (r.TIME_STAMP) {
+        if (timeMin === null || r.TIME_STAMP < timeMin) timeMin = r.TIME_STAMP;
+        if (timeMax === null || r.TIME_STAMP > timeMax) timeMax = r.TIME_STAMP;
+      }
       devCount.set(r.DEVICE, (devCount.get(r.DEVICE) ?? 0) + 1);
     }
 
@@ -55,7 +57,7 @@ async function fetchYieldDomain(): Promise<DataManifest["yield"]> {
       .slice(0, 10)
       .map(([device, count]) => ({ device, count }));
 
-    return { timeMin: timeMin || null, timeMax: timeMax || null, topDevices };
+    return { timeMin, timeMax, topDevices };
   }
 
   const timeRangeSql = `
@@ -110,15 +112,18 @@ async function fetchJbDomain(): Promise<DataManifest["jb"]> {
     );
     if (rows.length === 0) return emptyDomain();
 
-    let timeMin = String(rows[0]!.TESTEND);
-    let timeMax = String(rows[0]!.TESTEND);
+    let timeMin: string | null = null;
+    let timeMax: string | null = null;
     const devCount = new Map<string, number>();
 
     for (const r of rows) {
       const te = String(r.TESTEND);
-      if (te && te < timeMin) timeMin = te;
-      if (te && te > timeMax) timeMax = te;
-      devCount.set(String(r.DEVICE), (devCount.get(String(r.DEVICE)) ?? 0) + 1);
+      if (te) {
+        if (timeMin === null || te < timeMin) timeMin = te;
+        if (timeMax === null || te > timeMax) timeMax = te;
+      }
+      const dev = String(r.DEVICE);
+      devCount.set(dev, (devCount.get(dev) ?? 0) + 1);
     }
 
     const topDevices = [...devCount.entries()]
@@ -126,7 +131,7 @@ async function fetchJbDomain(): Promise<DataManifest["jb"]> {
       .slice(0, 10)
       .map(([device, count]) => ({ device, count }));
 
-    return { timeMin: timeMin || null, timeMax: timeMax || null, topDevices };
+    return { timeMin, timeMax, topDevices };
   }
 
   const timeRangeSql = `
