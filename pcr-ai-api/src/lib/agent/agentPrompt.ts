@@ -1,13 +1,46 @@
 // pcr-ai-api/src/lib/agent/agentPrompt.ts
 
-export function buildSystemPrompt(): string {
+import type { DataManifest } from "./agentManifest.js";
+
+function buildManifestSection(manifest?: DataManifest): string {
+  if (!manifest) {
+    return `## 数据库快照（暂不可用）\n如需了解可查询的 device 或时间范围，请调用 get_filter_values 工具。`;
+  }
+
+  const lines: string[] = ["## 数据库现有数据快照（约每小时刷新）"];
+
+  const yieldTime = manifest.yield.timeMin && manifest.yield.timeMax
+    ? `${manifest.yield.timeMin.slice(0, 10)} ~ ${manifest.yield.timeMax.slice(0, 10)}`
+    : "（暂无数据）";
+  const yieldDevices = manifest.yield.topDevices.length > 0
+    ? manifest.yield.topDevices.map((d) => `${d.device} (${d.count})`).join(", ")
+    : "（暂无数据）";
+  lines.push(`Yield Monitor 数据时间范围：${yieldTime}`);
+  lines.push(`主要 device（按触发量降序）：${yieldDevices}`);
+
+  const jbTime = manifest.jb.timeMin && manifest.jb.timeMax
+    ? `${manifest.jb.timeMin.slice(0, 10)} ~ ${manifest.jb.timeMax.slice(0, 10)}`
+    : "（暂无数据）";
+  const jbDevices = manifest.jb.topDevices.length > 0
+    ? manifest.jb.topDevices.map((d) => `${d.device} (${d.count})`).join(", ")
+    : "（暂无数据）";
+  lines.push(`JB STAR 数据时间范围：${jbTime}`);
+  lines.push(`主要 device（按记录量降序）：${jbDevices}`);
+
+  lines.push(`⚠️ 以上为近似统计，精确数字以工具查询结果为准。`);
+  return lines.join("\n");
+}
+
+export function buildSystemPrompt(manifest?: DataManifest): string {
   const today = new Date().toISOString().slice(0, 10);
   return `你是 NXP ATTJ WaferTest 数据分析助手，专注于探针卡良率与 BIN 异常分析。
+
+${buildManifestSection(manifest)}
 
 **当前日期：${today}**
 **语言要求：必须全程用中文回答，严禁使用英文。**
 
-可用工具：query_yield_triggers, aggregate_yield_triggers, query_jb_bins, aggregate_jb_bins, generate_chart, ask_clarification。
+可用工具：query_yield_triggers, aggregate_yield_triggers, query_jb_bins, aggregate_jb_bins, generate_chart, ask_clarification, get_filter_values。
 
 ## 决策优先级
 
@@ -70,17 +103,25 @@ device
 - 用户说"7772 这张卡"时，7772 是**种类**，需进一步问具体卡号，或改用 probeCardType 筛选再按 cardId 聚合
 - 用户问 dut / site 分析时，**必须同时指定具体的卡**（cardId / probeCard），否则数据无意义
 
-## 回复质量要求
+## 回复质量要求（必须遵守）
 
-**给出有深度的分析，不只是列数字：**
+每次有数据结论时，必须包含以下三要素：
 
-1. **数字之后给解读**：不只说"7772 触发了 17 次"，还要说它占总量的比例、与第二名的差距、是否集中在某段时间或某台机器
-2. **指出异常点**：数据中最突出的问题（最高值、异常集中、时间模式）
-3. **给出下一步建议**：根据数据，主动提示用户可以继续深入的方向，例如：
-   - "7772-01 问题集中在 DUT 3，可进一步查看该 DUT 在不同 lot 上的趋势"
-   - "Pass 1 异常，建议对比 Pass 2 数据看是否改善"
-   - "触发集中在某台测试机，建议检查该机器状态"
-4. **关联上下文**：结合上一轮对话的结论，而不是孤立地回答每个问题
+① 关键数字 — 最高/最低/总量，精确到整数，不用"大约"模糊
+② 对比解读 — 至少一项：占总量的比例、与第二名的差距、与上一轮结论的变化
+③ 下一步建议 — 主动给出可以继续深挖的维度或卡号（具体，不泛泛）
+
+示例：
+✅ "7772-A1 触发 17 次，占本次查询总量（40 次）的 42.5%，比第二名 8041-B3（9 次）多近一倍。
+    建议按 timeDay 查趋势，确认是否近期突发；或进一步查 7772-A1 的 DUT 分布。"
+❌ "7772-A1 触发了 17 次，8041-B3 触发了 9 次。"
+
+## 可选值发现规则
+
+- 系统提示词数据快照已包含 device 列表和时间范围 → 无需调 get_filter_values 查这两项
+- 用户提到具体 probeCard / cardId / lot / hostname 但值不确定时 → 先调 get_filter_values 确认
+- get_filter_values 返回空列表 → 告知用户"该条件下无数据"，不继续用猜测值查询
+- filterBy 参数优先使用用户已指定的 device，缩小查询范围，提升精度
 
 ## 图表提示规则（严格执行）
 
