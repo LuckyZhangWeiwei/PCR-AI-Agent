@@ -79,6 +79,7 @@ function dummyJb(
   limit: number
 ): FilterValuesResult {
   const rows = getInfcontrolLayerBinDummyRows().filter((r) => {
+    if (String(r.PASSTYPE).trim() !== "TEST") return false;
     if (filterBy["device"] && String(r.DEVICE).trim() !== filterBy["device"]) return false;
     if (filterBy["probeCardType"]) {
       if (probeCardTypeLeadingSegment(r.CARDID) !== filterBy["probeCardType"]) return false;
@@ -128,14 +129,17 @@ async function oracleYield(
   let sql: string;
   if (field === "probeCardType") {
     sql = `
-      SELECT sub.pct AS grp_key, COUNT(*) AS cnt
+      SELECT grp_key, cnt, COUNT(*) OVER () AS total_distinct
       FROM (
-        SELECT NVL(REGEXP_SUBSTR(TRIM(t.PROBECARD), '^[^-]+', 1, 1), '') AS pct
-        FROM YMWEB_YIELDMONITORTRIGGER t
-        WHERE ${where}
-      ) sub
-      WHERE sub.pct IS NOT NULL AND sub.pct != ''
-      GROUP BY sub.pct
+        SELECT sub.pct AS grp_key, COUNT(*) AS cnt
+        FROM (
+          SELECT NVL(REGEXP_SUBSTR(TRIM(t.PROBECARD), '^[^-]+', 1, 1), '') AS pct
+          FROM YMWEB_YIELDMONITORTRIGGER t
+          WHERE ${where}
+        ) sub
+        WHERE sub.pct IS NOT NULL AND sub.pct != ''
+        GROUP BY sub.pct
+      )
       ORDER BY cnt DESC
       FETCH FIRST :lim ROWS ONLY
     `;
@@ -144,11 +148,14 @@ async function oracleYield(
       : field === "hostname" ? "t.HOSTNAME"
       : "t.LOTID";
     sql = `
-      SELECT ${col} AS grp_key, COUNT(*) AS cnt
-      FROM YMWEB_YIELDMONITORTRIGGER t
-      WHERE ${where}
-        AND ${col} IS NOT NULL AND TRIM(${col}) != ''
-      GROUP BY ${col}
+      SELECT grp_key, cnt, COUNT(*) OVER () AS total_distinct
+      FROM (
+        SELECT ${col} AS grp_key, COUNT(*) AS cnt
+        FROM YMWEB_YIELDMONITORTRIGGER t
+        WHERE ${where}
+          AND ${col} IS NOT NULL AND TRIM(${col}) != ''
+        GROUP BY ${col}
+      )
       ORDER BY cnt DESC
       FETCH FIRST :lim ROWS ONLY
     `;
@@ -159,10 +166,11 @@ async function oracleYield(
     return (r.rows ?? []) as Record<string, unknown>[];
   });
 
+  const totalDistinct = rows.length > 0 ? Number(rows[0]!["TOTAL_DISTINCT"] ?? rows.length) : 0;
   const values = rows.map(
     (r) => `${String(r["GRP_KEY"] ?? "")} (${Number(r["CNT"] ?? 0)}次)`
   );
-  return { domain: "yield", field, values, totalDistinct: rows.length };
+  return { domain: "yield", field, values, totalDistinct };
 }
 
 async function oracleJb(
@@ -193,13 +201,16 @@ async function oracleJb(
   let sql: string;
   if (field === "probeCardType") {
     sql = `
-      SELECT sub.pct AS grp_key, COUNT(*) AS cnt
+      SELECT grp_key, cnt, COUNT(*) OVER () AS total_distinct
       FROM (
-        SELECT NVL(REGEXP_SUBSTR(TRIM(t1.CARDID), '^[^-]+', 1, 1), '') AS pct
-        ${fromClause}
-      ) sub
-      WHERE sub.pct IS NOT NULL AND sub.pct != ''
-      GROUP BY sub.pct
+        SELECT sub.pct AS grp_key, COUNT(*) AS cnt
+        FROM (
+          SELECT NVL(REGEXP_SUBSTR(TRIM(t1.CARDID), '^[^-]+', 1, 1), '') AS pct
+          ${fromClause}
+        ) sub
+        WHERE sub.pct IS NOT NULL AND sub.pct != ''
+        GROUP BY sub.pct
+      )
       ORDER BY cnt DESC
       FETCH FIRST :lim ROWS ONLY
     `;
@@ -208,10 +219,13 @@ async function oracleJb(
       : field === "testerId" ? "t1.TESTERID"
       : "t1.LOT";
     sql = `
-      SELECT ${col} AS grp_key, COUNT(*) AS cnt
-      ${fromClause}
-        AND ${col} IS NOT NULL AND TRIM(${col}) != ''
-      GROUP BY ${col}
+      SELECT grp_key, cnt, COUNT(*) OVER () AS total_distinct
+      FROM (
+        SELECT ${col} AS grp_key, COUNT(*) AS cnt
+        ${fromClause}
+          AND ${col} IS NOT NULL AND TRIM(${col}) != ''
+        GROUP BY ${col}
+      )
       ORDER BY cnt DESC
       FETCH FIRST :lim ROWS ONLY
     `;
@@ -222,10 +236,11 @@ async function oracleJb(
     return (r.rows ?? []) as Record<string, unknown>[];
   });
 
+  const totalDistinct = rows.length > 0 ? Number(rows[0]!["TOTAL_DISTINCT"] ?? rows.length) : 0;
   const values = rows.map(
     (r) => `${String(r["GRP_KEY"] ?? "")} (${Number(r["CNT"] ?? 0)}次)`
   );
-  return { domain: "jb", field, values, totalDistinct: rows.length };
+  return { domain: "jb", field, values, totalDistinct };
 }
 
 // ─── Public entry point ───────────────────────────────────────────────────────
@@ -235,27 +250,43 @@ export async function runGetFilterValues(
 ): Promise<string> {
   const domain = String(args["domain"] ?? "");
   const field = String(args["field"] ?? "");
-  const filterBy = (args["filterBy"] as Record<string, string> | undefined) ?? {};
   const limit = clampLimit(args["limit"]);
+
+  // Safely coerce filterBy values to strings — LLM may pass numbers or nulls.
+  const rawFilterBy = args["filterBy"];
+  const filterBy: Record<string, string | undefined> = {};
+  if (rawFilterBy !== null && typeof rawFilterBy === "object") {
+    const fb = rawFilterBy as Record<string, unknown>;
+    if (fb["device"] != null) filterBy["device"] = String(fb["device"]);
+    if (fb["probeCardType"] != null) filterBy["probeCardType"] = String(fb["probeCardType"]);
+  }
 
   if (domain === "yield") {
     if (!(YIELD_FIELDS as readonly string[]).includes(field)) {
       return `get_filter_values 错误: yield domain 不支持 field="${field}"。支持: ${YIELD_FIELDS.join(", ")}`;
     }
-    const result = yieldMonitorTriggersUseDummy()
-      ? dummyYield(field as YieldField, filterBy, limit)
-      : await oracleYield(field as YieldField, filterBy, limit);
-    return JSON.stringify(result);
+    try {
+      const result = yieldMonitorTriggersUseDummy()
+        ? dummyYield(field as YieldField, filterBy, limit)
+        : await oracleYield(field as YieldField, filterBy, limit);
+      return JSON.stringify(result);
+    } catch (err) {
+      return `get_filter_values 错误: ${err instanceof Error ? err.message : String(err)}`;
+    }
   }
 
   if (domain === "jb") {
     if (!(JB_FIELDS as readonly string[]).includes(field)) {
       return `get_filter_values 错误: jb domain 不支持 field="${field}"。支持: ${JB_FIELDS.join(", ")}`;
     }
-    const result = infcontrolLayerBinsUseDummy()
-      ? dummyJb(field as JbField, filterBy, limit)
-      : await oracleJb(field as JbField, filterBy, limit);
-    return JSON.stringify(result);
+    try {
+      const result = infcontrolLayerBinsUseDummy()
+        ? dummyJb(field as JbField, filterBy, limit)
+        : await oracleJb(field as JbField, filterBy, limit);
+      return JSON.stringify(result);
+    } catch (err) {
+      return `get_filter_values 错误: ${err instanceof Error ? err.message : String(err)}`;
+    }
   }
 
   return `get_filter_values 错误: domain 必须是 "yield" 或 "jb"，收到 "${domain}"`;
