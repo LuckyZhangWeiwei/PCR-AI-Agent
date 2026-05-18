@@ -73,9 +73,17 @@ export default function App() {
     <div className="app-shell">
       <header className="app-header">
         <div className="app-title-block">
-          <h1 className="app-title-main">NXP ATTJ WaferTest Dashboard</h1>
-          <p>探针卡良率监控 · 层控 BIN 分析 · 触发趋势 · AI 智能查询</p>
-          <span className="app-hint">选标签页 → 填筛选条件 → 查询 → 点图表可下钻 · Yield% 由前端从 bins 实时计算</span>
+          <div className="app-brand-row">
+            <span className="app-brand-badge">NXP</span>
+            <h1 className="app-title-main">ATTJ WaferTest PCR Dashboard</h1>
+            <div className="app-feature-chips">
+              <span className="app-chip">Probe Card Yield Monitor</span>
+              <span className="app-chip">Layer BIN Analysis</span>
+              <span className="app-chip">Trigger Trends</span>
+              <span className="app-chip app-chip--ai">✦ AI Query</span>
+            </div>
+          </div>
+          <span className="app-hint">Select tab → Set filters → Query → Click chart to drill down · Yield% calculated from bins in browser</span>
         </div>
       </header>
 
@@ -99,21 +107,21 @@ export default function App() {
           className={`tab ${tab === "ai" ? "active" : ""}`}
           onClick={() => setTab("ai")}
         >
-          🤖 AI 助手
+          🤖 AI Agent
         </button>
         <button
           type="button"
           className={`tab ${tab === "table" ? "active" : ""}`}
           onClick={() => setTab("table")}
         >
-          📋 表浏览
+          📋 Table Browser
         </button>
         <button
           type="button"
           className={`tab tab-settings ${tab === "settings" ? "active" : ""}`}
           onClick={() => setTab("settings")}
         >
-          ⚙ 设置
+          ⚙ Settings
         </button>
       </nav>
 

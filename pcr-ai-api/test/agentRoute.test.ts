@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+
+// Use dummy data so fetchOrCacheManifest() doesn't attempt Oracle pool connections,
+// which would block the Node.js event loop in a test environment without a DB.
+process.env["YIELD_MONITOR_TRIGGERS_DUMMY"] = "true";
+process.env["INFCONTROL_LAYER_BINS_DUMMY"] = "true";
+
 import { createApp } from "../src/app.js";
 
 test("POST /api/v4/agent/chat writes SSE errors after the request body closes", async (t) => {

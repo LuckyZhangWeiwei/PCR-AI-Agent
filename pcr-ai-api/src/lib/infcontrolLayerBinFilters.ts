@@ -236,6 +236,9 @@ export function parseInfcontrolLayerBinsV3Query(
       applied[param] = t;
     };
 
+    // Exclude internal/test lots starting with kk, gg, or c (case-insensitive)
+    clauses.push(`NOT REGEXP_LIKE(t1.LOT, '^(kk|gg|c)', 'i')`);
+
     strEqTrimCi("device", "t1.DEVICE", "ic3_device");
     strEqTrimCi("lot", "t1.LOT", "ic3_lot");
     strEqTrimCi("meslot", "t1.MESLOT", "ic3_meslot");

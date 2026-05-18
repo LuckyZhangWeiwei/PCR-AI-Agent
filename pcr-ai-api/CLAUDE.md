@@ -78,6 +78,17 @@
    - **产量**：请求**未出现**任一 **timeStamp\***（4 个键）时，**`parseYieldMonitorTriggerV3Query`** 追加 **`t.TIME_STAMP`** 同上。  
    - **v3 aggregate** 复用上述解析器，与列表一致。Dummy 侧读 **`filters`** 中回显的 ISO 时间串，与 Oracle 语义对齐。
 
+7. **LOT 前缀排除（全路径固定 WHERE，2026-05-17）**  
+   - 所有 v3/v4 查询（列表、聚合、combined、full-matching）均排除以 **`kk`、`gg`、`c`（忽略大小写）开头**的 LOT，这些属于内部测试批次。  
+   - **Oracle**：  
+     - 产量：`parseYieldMonitorTriggerV3Query` 追加 `NOT REGEXP_LIKE(t.LOTID, '^(kk|gg|c)', 'i')`  
+     - 层控：`parseInfcontrolLayerBinsV3Query` 追加 `NOT REGEXP_LIKE(t1.LOT, '^(kk|gg|c)', 'i')`  
+   - 两个聚合 parser（`parseYieldMonitorTriggerV3AggregateQuery` / `parseInfcontrolLayerBinsV3AggregateQuery`）内部调用各自的列表 parser，**自动继承**此过滤；full-matching SQL 同理。  
+   - **Dummy**：  
+     - `filterYieldMonitorDummyRowsMatchingV3`：过滤 `LOTID` 起始前缀  
+     - `filterInfcontrolLayerBinV3DummyRowsMatching`：过滤 `LOT` 起始前缀  
+   - **改动此规则时**：必须同步改 Oracle filter 与对应 Dummy matching 函数（dummy-parity 原则）。
+
 ---
 
 ## 5. 常用命令

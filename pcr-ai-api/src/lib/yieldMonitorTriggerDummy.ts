@@ -305,7 +305,10 @@ export function filterYieldMonitorDummyRowsMatchingV3(
 ): Array<YieldMonitorTriggerDummyRow & { PROBECARDTYPE: string | null }> {
   let rows = [...getYieldMonitorTriggerDummyRowsInternal()].filter(
     (r) =>
-      String(r.TYPE).trim().toLowerCase() === YIELD_MONITOR_V3_TYPE_SCOPE
+      String(r.TYPE).trim().toLowerCase() === YIELD_MONITOR_V3_TYPE_SCOPE &&
+      !["kk", "gg", "c"].some((pfx) =>
+        String(r.LOTID ?? "").trim().toLowerCase().startsWith(pfx)
+      )
   );
 
   const ci = (param: keyof YieldMonitorTriggerDummyRow, key: string) => {
