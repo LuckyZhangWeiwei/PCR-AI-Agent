@@ -446,13 +446,16 @@ export function aggregateInfcontrolLayerBinDummyRows(
 export function filterInfcontrolLayerBinV3DummyRowsMatching(
   applied: Record<string, unknown>
 ): Array<InfcontrolLayerBinDummyRow & { PROBECARDTYPE: string | null }> {
-  let rows = [...getInfcontrolLayerBinDummyRowsInternal()].filter(
-    (r) =>
-      String(r.PASSTYPE).trim().toUpperCase() === "TEST" &&
+  let rows = [...getInfcontrolLayerBinDummyRowsInternal()].filter((r) => {
+    const pt = String(r.PASSTYPE).trim().toUpperCase();
+    return (
+      (pt === "TEST" || pt === "INTERRUPT") &&
+      String(r.LAYERNAME ?? "").trim().toUpperCase() !== "ABANDONED" &&
       !["kk", "gg", "c"].some((pfx) =>
         String(r.LOT ?? "").trim().toLowerCase().startsWith(pfx)
       )
-  );
+    );
+  });
 
   const ci = (col: string, param: string) => {
     const v = applied[param];

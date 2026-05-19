@@ -63,8 +63,8 @@ export function parseInfcontrolLayerBinsV3AggregateQuery(
   );
   const whereSql =
     adapted.length > 0
-      ? `WHERE lb.PASSTYPE = 'TEST' AND ${adapted}`
-      : `WHERE lb.PASSTYPE = 'TEST'`;
+      ? `WHERE UPPER(TRIM(lb.PASSTYPE)) IN ('TEST', 'INTERRUPT') AND UPPER(TRIM(lb.LAYERNAME)) <> 'ABANDONED' AND ${adapted}`
+      : `WHERE UPPER(TRIM(lb.PASSTYPE)) IN ('TEST', 'INTERRUPT') AND UPPER(TRIM(lb.LAYERNAME)) <> 'ABANDONED'`;
 
   const applied = {
     ...v3.applied,

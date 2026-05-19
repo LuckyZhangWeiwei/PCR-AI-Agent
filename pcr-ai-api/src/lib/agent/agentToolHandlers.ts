@@ -25,6 +25,7 @@ import {
 import {
   buildInfcontrolLayerBinAggregateSql,
   buildInfcontrolLayerBinMatchingCountSql,
+  buildInfcontrolLayerBinAggregateGroupParts,
   type InfcontrolLayerBinGroupBy,
 } from "../infcontrolLayerBinAggregate.js";
 import {
@@ -257,10 +258,19 @@ async function toolAggregateJbBins(
       typeof totalRows[0]?.["TOTAL_MATCHING"] === "number"
         ? (totalRows[0]["TOTAL_MATCHING"] as number)
         : 0;
-    return {
-      groups: (aggResult.rows ?? []) as Record<string, unknown>[],
-      total: totalCount,
-    };
+    const rawGroups = (aggResult.rows ?? []) as Record<string, unknown>[];
+    const builtGroups = rawGroups.map((grpRow) => {
+      const grpKey = String(grpRow["GRP_KEY"] ?? "");
+      const cnt = Number(grpRow["CNT"] ?? 0);
+      return {
+        ...buildInfcontrolLayerBinAggregateGroupParts(
+          grpKey,
+          parsed.groupBy as InfcontrolLayerBinGroupBy[]
+        ),
+        count: cnt,
+      };
+    });
+    return { groups: builtGroups, total: totalCount };
   });
 
   return truncateResult({ totalRowsMatching: total, groups });

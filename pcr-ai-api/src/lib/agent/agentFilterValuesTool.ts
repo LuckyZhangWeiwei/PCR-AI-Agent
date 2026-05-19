@@ -79,7 +79,9 @@ function dummyJb(
   limit: number
 ): FilterValuesResult {
   const rows = getInfcontrolLayerBinDummyRows().filter((r) => {
-    if (String(r.PASSTYPE).trim() !== "TEST") return false;
+    const pt = String(r.PASSTYPE).trim().toUpperCase();
+    if (pt !== "TEST" && pt !== "INTERRUPT") return false;
+    if (String(r.LAYERNAME ?? "").trim().toUpperCase() === "ABANDONED") return false;
     if (filterBy["device"] && String(r.DEVICE).trim() !== filterBy["device"]) return false;
     if (filterBy["probeCardType"]) {
       if (probeCardTypeLeadingSegment(r.CARDID) !== filterBy["probeCardType"]) return false;
@@ -179,7 +181,8 @@ async function oracleJb(
   limit: number
 ): Promise<FilterValuesResult> {
   const conditions: string[] = [
-    `t2.PASSTYPE = 'TEST'`,
+    `UPPER(TRIM(t2.PASSTYPE)) IN ('TEST', 'INTERRUPT')`,
+    `UPPER(TRIM(t2.LAYERNAME)) <> 'ABANDONED'`,
     `NOT REGEXP_LIKE(t1.LOT, '^(kk|gg|c)', 'i')`,
   ];
   const binds: Record<string, string | number> = { lim: limit };

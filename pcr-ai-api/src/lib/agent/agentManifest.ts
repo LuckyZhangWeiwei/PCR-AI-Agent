@@ -105,11 +105,14 @@ async function fetchYieldDomain(): Promise<DataManifest["yield"]> {
 
 async function fetchJbDomain(): Promise<DataManifest["jb"]> {
   if (infcontrolLayerBinsUseDummy()) {
-    const rows = getInfcontrolLayerBinDummyRows().filter(
-      (r) =>
-        String(r.PASSTYPE).trim() === "TEST" &&
+    const rows = getInfcontrolLayerBinDummyRows().filter((r) => {
+      const pt = String(r.PASSTYPE).trim().toUpperCase();
+      return (
+        (pt === "TEST" || pt === "INTERRUPT") &&
+        String(r.LAYERNAME ?? "").trim().toUpperCase() !== "ABANDONED" &&
         !/^(kk|gg|c)/i.test(String(r.LOT))
-    );
+      );
+    });
     if (rows.length === 0) return emptyDomain();
 
     let timeMin: string | null = null;
@@ -138,14 +141,16 @@ async function fetchJbDomain(): Promise<DataManifest["jb"]> {
     SELECT MIN(t2.TESTEND) AS ts_min, MAX(t2.TESTEND) AS ts_max
     FROM INFCONTROL t1
     JOIN INFLAYERBINLIST t2 ON t1.ID = t2.INFCONTROLID
-    WHERE t2.PASSTYPE = 'TEST'
+    WHERE UPPER(TRIM(t2.PASSTYPE)) IN ('TEST', 'INTERRUPT')
+      AND UPPER(TRIM(t2.LAYERNAME)) <> 'ABANDONED'
       AND NOT REGEXP_LIKE(t1.LOT, '^(kk|gg|c)', 'i')
   `;
   const topDeviceSql = `
     SELECT t1.DEVICE, COUNT(*) AS cnt
     FROM INFCONTROL t1
     JOIN INFLAYERBINLIST t2 ON t1.ID = t2.INFCONTROLID
-    WHERE t2.PASSTYPE = 'TEST'
+    WHERE UPPER(TRIM(t2.PASSTYPE)) IN ('TEST', 'INTERRUPT')
+      AND UPPER(TRIM(t2.LAYERNAME)) <> 'ABANDONED'
       AND NOT REGEXP_LIKE(t1.LOT, '^(kk|gg|c)', 'i')
     GROUP BY t1.DEVICE
     ORDER BY cnt DESC

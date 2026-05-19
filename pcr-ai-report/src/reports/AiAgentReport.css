@@ -111,13 +111,13 @@
 
 /* Markdown prose inside AI bubbles */
 .ai-msg-bubble--md { white-space: normal; }
-.ai-msg-bubble--md p { margin: 0 0 2px; }
+.ai-msg-bubble--md p { margin: 0 0 1px; }
 .ai-msg-bubble--md p:last-child { margin-bottom: 0; }
 .ai-msg-bubble--md ul,
-.ai-msg-bubble--md ol { margin: 1px 0 2px 15px; padding: 0; }
-.ai-msg-bubble--md li { margin-bottom: 0; line-height: 1.5; }
+.ai-msg-bubble--md ol { margin: 0 0 2px 16px; padding: 0; }
+.ai-msg-bubble--md li { margin: 0; padding: 0; line-height: 1.45; }
 /* react-markdown wraps loose list items in <p>; collapse that extra margin */
-.ai-msg-bubble--md li > p { margin: 0; }
+.ai-msg-bubble--md li > p { margin: 0; padding: 0; }
 .ai-msg-bubble--md strong { color: #e8e8e8; }
 .ai-msg-bubble--md em { color: #bbb; }
 .ai-msg-bubble--md code {

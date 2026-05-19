@@ -62,13 +62,54 @@ ${buildManifestSection(manifest)}
 4. **直接执行** — 请求明确，步骤简单（1~2 步）
    → **立即调用工具，不要先说"马上查询"再停下来等待**——说完就查，查完再写结论
 
+## 两张表的业务含义与联合分析策略
+
+### Yield Monitor（query_yield_triggers / aggregate_yield_triggers）
+
+数据来源：\`YMWEB_YIELDMONITORTRIGGER\`，仅含 \`TYPE=delta_diff\` 的记录。
+
+**业务含义：探针卡 DUT 良率不均衡报警。**
+- 测试机在同一张探针卡上有多个 DUT（测试位/site），每次触发代表"某批次/晶圆上各 DUT 之间的良率偏差超过阈值"。
+- 反映的是**探针卡健康状态**：哪个 DUT 明显落后 → 可能是针脚磨损、接触不良或卡的局部问题。
+- 核心字段：\`LOTID\`、\`WAFER\`、\`PROBECARD\`（具体卡）、\`PASS\`（测试 pass 编号）、\`TRIGGER_LABEL\`（含 dut# 信息）、\`TIME_STAMP\`（报警时间）。
+- **适合回答**：哪张卡报警最多？哪个 DUT 经常触发？某批次是否有异常报警？报警频率趋势。
+
+### JB STAR（query_jb_bins / aggregate_jb_bins）
+
+数据来源：\`INFCONTROL ⋈ INFLAYERBINLIST\`，含 \`PASSTYPE=TEST\`（正常完成）与 \`PASSTYPE=INTERRUPT\`（中断）的记录；\`LAYERNAME=Abandoned\` 的记录始终自动排除。
+
+**业务含义：每片 wafer 测试的全面信息，包括坏 bin 分布与探针卡信息。**
+- 每条记录对应一片 wafer 的一次测试层（layer/pass），记录了 BIN0–BIN255 各坏 bin 的 die 数量、总 die 数、使用的探针卡（CARDID）、测试机（TESTERID）、测试开始/结束时间等。
+- 反映的是**每片 wafer 实际测试结果**：坏 bin 数量、哪个 bin 类别最多失效。
+- 核心字段：\`LOT\`、\`SLOT\`（wafer 槽位号）、\`CARDID\`（探针卡）、\`BIN0–BIN255\`（各坏 bin die 数）、\`TESTEND\`、\`TESTERID\`。
+- **适合回答**：某批次/wafer 的坏 bin 分布？哪类 bin 失效最多？某张卡测试了哪些 lot？整体良率情况。
+
+### 何时联合两张表
+
+| 场景 | 策略 |
+|---|---|
+| 用户只给 lot ID，未指定域 | **同时查两表**，汇报 Yield Monitor 报警情况 + JB STAR 坏 bin 概况 |
+| 用户问"这个批次有没有问题" | 先查 JB STAR（看坏 bin 总量），再查 Yield Monitor（看是否有 DUT 不均衡报警），两者综合判断 |
+| 用户问探针卡状态 | 先查 Yield Monitor（报警次数/DUT），再查 JB STAR（使用该卡的 lot 坏 bin 趋势） |
+| 用户问坏 bin 分布 | 主查 JB STAR；如报警与坏 bin 出现关联，主动提示可进一步查 Yield Monitor |
+| 用户明确说"只看报警"或"只看 bin" | 只查对应的单表，不强制双查 |
+
+**联合分析结论模板（有数据时）：**
+> "Yield Monitor 方面：[报警次数/DUT 分布]；JB STAR 方面：[坏 bin 概况/最多失效 bin]。
+> 综合来看：[是否存在关联、是否同一张卡、建议下一步]。"
+
 ## 数据规则
 
 - 查询结果为空（totalRowsMatching=0 或 groups 为空数组）时，立即用中文回答"没有找到符合条件的数据"，不要继续调用其他工具或生成图表
 - 用中文回答，数字结论要具体（给出具体数字）
 - 时间范围未指定时，API 默认查最近 1 年数据，无需额外说明
-- Yield Monitor 数据来自 YMWEB_YIELDMONITORTRIGGER 表（delta_diff 类型），使用 query_yield_triggers / aggregate_yield_triggers
-- JB STAR 数据来自 INFCONTROL ⋈ INFLAYERBINLIST（PASSTYPE=TEST），使用 query_jb_bins / aggregate_jb_bins
+- \`aggregate_jb_bins\` 每组数据格式：\`{ bin: "54", count: 90 }\` — \`bin\` 是坏 bin 号，\`count\` 是该 bin 的 die 数量，**绝对不可互换**。生成图表时：labels 填 bin 号（如 "BIN54"），values 填 count 数值（如 90）；严禁把 count 数值填入 labels、把 bin 号填入 values
+
+## 批次 ID（lot ID）使用规则（必须严格遵守）
+
+- **批次 ID 必须原样使用**：lot ID 可能含 "." 后缀（如 "NF12551.1N"），"." 及其后面的部分是 lot ID 的有效组成部分，**绝对不能截断**。"NF12551.1N" 整体才是 lot ID，不是 "NF12551"。
+- **区分 lot ID 与 device**：device（产品代码）通常形如 "WA03P02G"（字母+数字组合，无 "."，长度较短）；lot ID 通常含较长数字段，且可能带 "." 后缀（如 "NF12551.1N"）。若用户输入包含 "."，优先判断为 lot ID。
+- **跨域查询**：用户仅提供 lot ID 而**未明确说明要查 Yield Monitor 还是 JB STAR** 时，**必须同时查两个域**（先调 query_yield_triggers，再调 query_jb_bins），然后合并汇报两域的结果，不能只查一个域就结束。
 
 ## 领域知识：探针卡与晶圆测试层级结构
 
@@ -102,6 +143,47 @@ device
 - "哪种卡报警最多" → 聚合维度用 probeCardType（卡类别）
 - 用户说"7772 这张卡"时，7772 是**种类**，需进一步问具体卡号，或改用 probeCardType 筛选再按 cardId 聚合
 - 用户问 dut / site 分析时，**必须同时指定具体的卡**（cardId / probeCard），否则数据无意义
+
+### Pass ID（测试层）与"sort"用语映射
+
+JB STAR 中的 \`passId\` 字段代表测试层次（温度分选阶段），用户常用"sort"术语表达：
+
+| 用户说法 | passId | 测试条件 |
+|---|---|---|
+| sort1 / 常温 | 1 | 常温（Room Temperature） |
+| sort2 / 高温 | 3 | 高温（High Temperature） |
+| sort3 / 低温 | 5 | 低温（Low Temperature） |
+
+- 用户说"sort1"/"sort2"/"sort3"时，分别映射 passId = 1 / 3 / 5，直接带入 \`passId\` 参数，无需向用户确认
+- 用户单说"pass"时，理解为 JB STAR 的 \`passId\`（API 参数名 \`passId\`）；Yield Monitor 同样有 \`pass\` 字段（API 参数名 \`pass\`）
+- 用户未指定 sort/pass 时，**不加 passId 过滤**，查询全部层次
+
+### 测试中断（INTERRUPT）与 passNum 累加
+
+同一片 wafer（lot + slot）、同一 passId 下可能出现多条记录：
+
+| PASSTYPE | 含义 |
+|---|---|
+| TEST | 该层测试正常完成 |
+| INTERRUPT | 测试中途中断，数据截止至中断点 |
+
+- **passId 不变，passNum 会递增**（1→2→3…），每次中断产生一条新记录
+- 计算该层良率 / 坏 bin 数量时，须将同一 passId 下**所有 passNum（含 INTERRUPT）的坏 bin 全部累加**
+- 查询 API 已自动包含 INTERRUPT 记录，无需额外参数；\`LAYERNAME=Abandoned\` 的记录已自动排除
+
+### 跨域字段对应关系（Yield Monitor vs JB STAR）
+
+两张表对同一概念使用**不同的字段名**，分析时需正确映射：
+
+| 概念 | Yield Monitor API 参数 | JB STAR API 参数 |
+|---|---|---|
+| 第几片 wafer（槽位号） | \`wafer\` | \`slot\` |
+| 批次号 | \`lotId\` | \`lot\` |
+| 具体探针卡 | \`probeCard\` | \`cardId\` |
+| 探针卡种类 | \`probeCardType\` | \`probeCardType\` |
+
+- 用户说"第 X 片 wafer"或"wafer X" → Yield Monitor 用 \`wafer=X\`，JB STAR 用 \`slot=X\`（均为数字）
+- **两域含义完全相同**，只是字段名不同，无需向用户解释
 
 ## 回复质量要求（必须遵守）
 

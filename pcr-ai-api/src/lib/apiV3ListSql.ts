@@ -48,8 +48,8 @@ const ORDER_BY_LAYER_BINS_V3_OUTER =
 export function buildInfcontrolLayerBinsV3Sql(whereAndSql: string): string {
   const extra = whereAndSql.trim();
   const whereBlock = extra
-    ? `WHERE t2.PASSTYPE = 'TEST' AND ${extra}`
-    : `WHERE t2.PASSTYPE = 'TEST'`;
+    ? `WHERE UPPER(TRIM(t2.PASSTYPE)) IN ('TEST', 'INTERRUPT') AND UPPER(TRIM(t2.LAYERNAME)) <> 'ABANDONED' AND ${extra}`
+    : `WHERE UPPER(TRIM(t2.PASSTYPE)) IN ('TEST', 'INTERRUPT') AND UPPER(TRIM(t2.LAYERNAME)) <> 'ABANDONED'`;
   const selectList = infcontrolLayerBinsV3SelectList("ic", "lb");
   return `
 SELECT
@@ -75,8 +75,8 @@ ${ORDER_BY_LAYER_BINS_V3_OUTER}
 export function buildInfcontrolLayerBinsV3SqlFullMatching(whereAndSql: string): string {
   const extra = whereAndSql.trim();
   const whereBlock = extra
-    ? `WHERE t2.PASSTYPE = 'TEST' AND ${extra}`
-    : `WHERE t2.PASSTYPE = 'TEST'`;
+    ? `WHERE UPPER(TRIM(t2.PASSTYPE)) IN ('TEST', 'INTERRUPT') AND UPPER(TRIM(t2.LAYERNAME)) <> 'ABANDONED' AND ${extra}`
+    : `WHERE UPPER(TRIM(t2.PASSTYPE)) IN ('TEST', 'INTERRUPT') AND UPPER(TRIM(t2.LAYERNAME)) <> 'ABANDONED'`;
   const selectList = infcontrolLayerBinsV3SelectList("ic", "lb");
   return `
 SELECT

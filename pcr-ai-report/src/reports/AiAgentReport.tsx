@@ -141,9 +141,14 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
         setMessages((prev) => {
           const copy = [...prev];
           const last = copy[copy.length - 1];
-          // discard the empty placeholder ai bubble created before SSE started
-          if (last && last.kind === "ai" && last.text === "" && last.streaming) {
-            copy.pop();
+          if (last && last.kind === "ai" && last.streaming) {
+            if (last.text === "") {
+              // discard the empty placeholder ai bubble created before SSE started
+              copy.pop();
+            } else {
+              // AI finished speaking before calling a tool — stop its cursor
+              copy[copy.length - 1] = { ...last, streaming: false };
+            }
           }
           copy.push({ kind: "tool", name: event.name ?? "", summary: "", open: false });
           return copy;
@@ -169,14 +174,11 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
         ]);
         break;
       case "done":
-        setMessages((prev) => {
-          const copy = [...prev];
-          const last = copy[copy.length - 1];
-          if (last && last.kind === "ai" && last.streaming) {
-            copy[copy.length - 1] = { ...last, streaming: false };
-          }
-          return copy;
-        });
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.kind === "ai" && m.streaming ? { ...m, streaming: false } : m
+          )
+        );
         break;
       case "error":
         setMessages((prev) => [
@@ -274,14 +276,11 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
       });
     } finally {
       setLoading(false);
-      setMessages((prev) => {
-        const copy = [...prev];
-        const last = copy[copy.length - 1];
-        if (last && last.kind === "ai" && last.streaming) {
-          copy[copy.length - 1] = { ...last, streaming: false };
-        }
-        return copy;
-      });
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.kind === "ai" && m.streaming ? { ...m, streaming: false } : m
+        )
+      );
     }
   }, [input, loading, sessionId, agentConfig, apiBase, handleSseEvent]);
 
