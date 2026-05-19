@@ -243,7 +243,7 @@ function drillFromTree(
 
 function lotYields(
   rows: InfcontrolLayerBinV3Row[]
-): Array<{ lot: string; passId: string; slot: string; label: string; yieldPct: number }> {
+): Array<{ lot: string; passId: string; slot: string; device: string; label: string; yieldPct: number }> {
   const byKey = new Map<string, InfcontrolLayerBinV3Row[]>();
   for (const r of rows) {
     const lot    = r.LOT    ?? "—";
@@ -253,18 +253,19 @@ function lotYields(
     if (!byKey.has(key)) byKey.set(key, []);
     byKey.get(key)!.push(r);
   }
-  const result: Array<{ lot: string; passId: string; slot: string; label: string; yieldPct: number }> = [];
+  const result: Array<{ lot: string; passId: string; slot: string; device: string; label: string; yieldPct: number }> = [];
   for (const [key, keyRows] of byKey.entries()) {
     const yp = computeYieldPct(keyRows);
     if (yp === null) continue;
     const r0     = keyRows[0];
-    const lot    = r0.LOT ?? "—";
+    const lot    = r0.LOT    ?? "—";
+    const device = r0.DEVICE ?? "";
     const passId = r0.PASSID !== undefined && r0.PASSID !== null ? String(r0.PASSID) : "";
     const slot   = r0.SLOT   !== undefined && r0.SLOT   !== null ? String(r0.SLOT)   : "";
-    let label = lot;
+    let label = device ? `${device} · ${lot}` : lot;
     if (passId) label += ` [P${passId}]`;
     if (slot)   label += ` S${slot}`;
-    result.push({ lot, passId, slot, label, yieldPct: yp });
+    result.push({ lot, passId, slot, device, label, yieldPct: yp });
     void key;
   }
   return result.sort((a, b) => a.yieldPct - b.yieldPct);
@@ -528,7 +529,18 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
 
   // ── KPI derivations ──────────────────────────────────────────────────────
 
-  const totalWafers = aggBin?.totalRowsMatching ?? null;
+  const totalWafers = useMemo(() => {
+    const rawRows = list?.rows;
+    if (!rawRows?.length) return aggBin?.totalRowsMatching ?? null;
+    const rows = rawRows as InfcontrolLayerBinV3Row[];
+    const seen = new Set<number>();
+    for (const row of rows) {
+      if (row.KEYNUMBER != null && String(row.PASSTYPE ?? "").toUpperCase().trim() !== "INTERRUPT") {
+        seen.add(row.KEYNUMBER);
+      }
+    }
+    return seen.size > 0 ? seen.size : (aggBin?.totalRowsMatching ?? null);
+  }, [list?.rows, aggBin?.totalRowsMatching]);
 
   const overallYield = useMemo(() => {
     if (!list?.rows?.length) return null;
@@ -868,7 +880,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                   ? overallYield >= 95 ? "green" : overallYield >= 80 ? "yellow" : "red"
                   : "white"
               }
-              subtext="前端计算"
+              subtext="好品率"
               showLabel={false}
             />
           ),
@@ -1342,7 +1354,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
           <p className="report-desc">
             Layer BIN data (<code>PASSTYPE = TEST</code>). Single query fetches detail rows + BIN ranking +
             probe card type comparison + slot trend. Click any chart to drill down.
-            Yield% is calculated in-browser from <code>bins[].isGoodBin</code> ÷ <code>GROSSDIE</code>.
+            Yield% is calculated in-browser from <code>bins[].isGoodBin</code> / <code>GROSSDIE</code>.
           </p>
         </div>
       </div>
