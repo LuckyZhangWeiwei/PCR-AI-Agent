@@ -209,6 +209,38 @@ type DrillState = {
   error: string | null;
 };
 
+// Dimensions available in aggTree parts (device→lot→probeCardType→cardId→bin).
+// Any drill where both the filter key and all subDim keys are in this set
+// can be served from the cached aggTree without hitting Oracle.
+const TREE_DRILL_DIMS = new Set(["device", "lot", "probeCardType", "cardId", "bin"]);
+
+function drillFromTree(
+  treeGroups: AggregateGroup[],
+  filterKey: string,
+  filterVal: string,
+  subDimKeys: string[],
+): AggregateGroup[] {
+  const sums = new Map<string, number>();
+  const partsMap = new Map<string, Record<string, string>>();
+  for (const g of treeGroups) {
+    if (g.parts[filterKey] !== filterVal) continue;
+    const subParts: Record<string, string> = {};
+    let valid = true;
+    for (const k of subDimKeys) {
+      const v = g.parts[k];
+      if (v === undefined) { valid = false; break; }
+      subParts[k] = v;
+    }
+    if (!valid) continue;
+    const key = subDimKeys.map((k) => subParts[k]).join("\x00");
+    sums.set(key, (sums.get(key) ?? 0) + g.count);
+    if (!partsMap.has(key)) partsMap.set(key, subParts);
+  }
+  return [...sums.entries()]
+    .map(([key, count]) => ({ key, count, parts: partsMap.get(key)! }))
+    .sort((a, b) => b.count - a.count);
+}
+
 function lotYields(
   rows: InfcontrolLayerBinV3Row[]
 ): Array<{ lot: string; passId: string; slot: string; label: string; yieldPct: number }> {
@@ -331,18 +363,43 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       subDim: string,
       currentForm: FormState
     ) => {
+      const subDimKeys = jbAggregateGroupBy(
+        ...subDim.split(",").map((s) => s.trim()).filter(Boolean),
+      ).split(",");
+
+      // ── In-memory path: derive from cached aggTree (no Oracle call) ──────────
+      // Works when both the filter key and all child dim keys are dimensions
+      // present in the aggTree parts: device / lot / probeCardType / cardId / bin.
+      // Falls back to Oracle when slot or passId appear, or when the requested
+      // value is absent from the cached rows.
+      const treeGroups = aggTree?.groups;
+      if (
+        treeGroups != null &&
+        TREE_DRILL_DIMS.has(parentDimKey) &&
+        subDimKeys.every((k) => TREE_DRILL_DIMS.has(k))
+      ) {
+        const groups = drillFromTree(treeGroups, parentDimKey, parentDimVal, subDimKeys);
+        if (groups.length > 0) {
+          setDrills((prev) => ({
+            ...prev,
+            [parentDimKey]: { parentDimKey, parentDimVal, subDim, groups, loading: false, error: null },
+          }));
+          return;
+        }
+        // Zero results → value not in cached rows → fall through to Oracle below.
+      }
+
+      // ── Oracle fallback ───────────────────────────────────────────────────────
+      // Used for slot / passId sub-dimensions, or when the cache missed the value.
       setDrills((prev) => ({
         ...prev,
         [parentDimKey]: { parentDimKey, parentDimVal, subDim, groups: [], loading: true, error: null },
       }));
       try {
-        const gby = jbAggregateGroupBy(
-          ...subDim.split(",").map((s) => s.trim()).filter(Boolean),
-        );
         const params = {
           ...buildCoreParams(currentForm),
           [parentDimKey]: parentDimVal,
-          groupBy: gby,
+          groupBy: subDimKeys.join(","),
           groupTop: 50,
         };
         const res = await apiGetJson<InfcontrolAggregateResponse>(
@@ -387,7 +444,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         });
       }
     },
-    [apiBase]
+    [apiBase, aggTree]
   );
 
   const fetchFreeAgg = useCallback(
@@ -436,7 +493,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
             `${jbAggregateGroupBy("bin")}:30`,
             `${jbAggregateGroupBy("probeCardType")}:25`,
             `${jbAggregateGroupBy("slot")}:50`,
-            `${jbAggregateGroupBy("device", "lot", "probeCardType", "cardId")}:100`,
+            `${jbAggregateGroupBy("device", "lot", "probeCardType", "cardId")}:1000`,
             `${jbAggregateGroupBy("device")}:30`,
           ].join("|"),
         }
