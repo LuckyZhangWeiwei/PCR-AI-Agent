@@ -170,25 +170,29 @@ const DRILL_FROM_DEVICE_JB: { label: string; value: string }[] = [
 
 const DRILL_FROM_CARDTYPE: { label: string; value: string }[] = [
   { label: "CardId", value: "cardId" },
+  { label: "Device", value: "device" },
   { label: "Slot",   value: "slot"   },
   { label: "Bin",    value: "bin"    },
   { label: "Lot",    value: "lot"    },
 ];
 
 const DRILL_FROM_CARD: { label: string; value: string }[] = [
-  { label: "Slot", value: "slot" },
-  { label: "Bin",  value: "bin"  },
-  { label: "Lot",  value: "lot"  },
+  { label: "Slot",   value: "slot"   },
+  { label: "Bin",    value: "bin"    },
+  { label: "Device", value: "device" },
+  { label: "Lot",    value: "lot"    },
 ];
 
 const DRILL_FROM_SLOT: { label: string; value: string }[] = [
   { label: "Bin",    value: "bin"    },
   { label: "CardId", value: "cardId" },
+  { label: "Device", value: "device" },
   { label: "Lot",    value: "lot"    },
 ];
 
 const DRILL_FROM_BIN: { label: string; value: string }[] = [
   { label: "CardId", value: "cardId" },
+  { label: "Device", value: "device" },
   { label: "Lot",    value: "lot"    },
   { label: "Slot",   value: "slot"   },
 ];
@@ -397,10 +401,19 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         [parentDimKey]: { parentDimKey, parentDimVal, subDim, groups: [], loading: true, error: null },
       }));
       try {
+        // When probeCardType is the parent dim and cardId is not already in subDims,
+        // inject cardId into the groupBy so we can filter by card prefix client-side,
+        // then re-aggregate back to the original sub-dimensions.
+        const needCardIdInjection =
+          parentDimKey === "probeCardType" && !subDimKeys.includes("cardId");
+        const requestGroupBy = needCardIdInjection
+          ? [...subDimKeys, "cardId"]
+          : subDimKeys;
+
         const params = {
           ...buildCoreParams(currentForm),
           [parentDimKey]: parentDimVal,
-          groupBy: subDimKeys.join(","),
+          groupBy: requestGroupBy.join(","),
           groupTop: 50,
         };
         const res = await apiGetJson<InfcontrolAggregateResponse>(
@@ -413,18 +426,30 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         let groups = res.groups;
 
         if (parentDimKey === "probeCardType") {
-          // Only filter when the result parts contain cardId (i.e. subDim involves cardId).
-          // For slot/bin/lot sub-dims the parts don't have cardId, so we cannot derive
-          // the type membership — leave those results unfiltered rather than returning empty.
-          if (groups.some((g) => g.parts.cardId !== undefined)) {
-            const typeLower = parentDimVal.trim().toLowerCase();
-            groups = groups.filter((g) => {
-              const cardId = (g.parts.cardId ?? "").trim();
-              if (!cardId) return false;
-              const dash = cardId.indexOf("-");
-              const prefix = (dash > 0 ? cardId.slice(0, dash) : cardId).toLowerCase();
-              return prefix === typeLower;
-            });
+          const typeLower = parentDimVal.trim().toLowerCase();
+          const filtered = groups.filter((g) => {
+            const cardId = (g.parts.cardId ?? "").trim();
+            if (!cardId) return false;
+            const dash = cardId.indexOf("-");
+            const prefix = (dash > 0 ? cardId.slice(0, dash) : cardId).toLowerCase();
+            return prefix === typeLower;
+          });
+          if (needCardIdInjection) {
+            // Re-aggregate to original subDimKeys, stripping the injected cardId.
+            const sums = new Map<string, number>();
+            const partsMap = new Map<string, Record<string, string>>();
+            for (const g of filtered) {
+              const subParts: Record<string, string> = {};
+              for (const k of subDimKeys) subParts[k] = g.parts[k] ?? "";
+              const key = subDimKeys.map((k) => subParts[k]).join("\x00");
+              sums.set(key, (sums.get(key) ?? 0) + g.count);
+              if (!partsMap.has(key)) partsMap.set(key, subParts);
+            }
+            groups = [...sums.entries()]
+              .map(([k, count]) => ({ key: k, count, parts: partsMap.get(k)! }))
+              .sort((a, b) => b.count - a.count);
+          } else {
+            groups = filtered;
           }
         }
 
