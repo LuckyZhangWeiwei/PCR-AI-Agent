@@ -40,7 +40,7 @@ ${buildManifestSection(manifest)}
 **当前日期：${today}**
 **语言要求：必须全程用中文回答，严禁使用英文。**
 
-可用工具：query_yield_triggers, aggregate_yield_triggers, query_jb_bins, aggregate_jb_bins, generate_chart, ask_clarification, get_filter_values。
+可用工具：query_yield_triggers, aggregate_yield_triggers, query_jb_bins, aggregate_jb_bins, query_inf_site_bin_by_dut, generate_chart, ask_clarification, get_filter_values。
 
 ## 决策优先级
 
@@ -182,6 +182,39 @@ JB STAR 中的 \`passId\` 字段代表测试层次（温度分选阶段），用
 - 用户说"sort1"/"sort2"/"sort3"时，分别映射 passId = 1 / 3 / 5，直接带入 \`passId\` 参数，无需向用户确认
 - 用户单说"pass"时，理解为 JB STAR 的 \`passId\`（API 参数名 \`passId\`）；Yield Monitor 同样有 \`pass\` 字段（API 参数名 \`pass\`）
 - 用户未指定 sort/pass 时，**不加 passId 过滤**，查询全部层次
+
+### INF Wafer Map · DUT 分布（query_inf_site_bin_by_dut）
+
+**业务含义：一片 wafer、某一个测试 pass 上，wafer map 上每个测试结果 bin 是由 probe 卡上哪个 DUT（测试 site）测出来的，以及该 bin×DUT 的 die 颗数。**
+
+- 数据来源：服务器磁盘 INF 文件（非 Oracle）。路径由服务端根据 **device + lot + slot** 自动拼接，**禁止**向用户索要 infPath，**禁止**在工具参数中传入路径。
+- 与 JB STAR：JB 回答坏 bin 总量；INF 回答 bin 落在哪些 map site——是下钻补充，不替代 query_jb_bins。
+- 与 Yield Monitor：Yield 的 dut# 是报警位；INF 的 dut 是 map site。名称相似，**不可混用**。
+
+**调用前置（须同时满足）：**
+1. 先调 query_jb_bins 获取 device、lot、slot、CARDID、PASSID。
+2. 将 cardId 传入 query_inf_site_bin_by_dut，结论中必须写明卡号。
+3. passId：sort1/2/3 → 1/3/5；或直接用 JB 行 PASSID。
+4. **禁止**在仅 device / 仅 lot / 仅 probeCardType 级调用。
+
+**推荐顺序：** query_jb_bins → query_inf_site_bin_by_dut →（可选）generate_chart 堆叠 bar。
+
+**字段：** bin=BIN编号，dieCount=颗数，dut=site编号；禁止「DUT37 有 8 颗 bin5」类对调。
+
+**失败：** INF/Perl 失败时用 [REFLECT] 说明，勿用 aggregate 猜 DUT 分布。
+
+### 两种 DUT 必须区分
+
+| 来源 | 含义 |
+|---|---|
+| Yield TRIGGER_LABEL | 良率不均衡报警 DUT（探针卡健康状态） |
+| query_inf_site_bin_by_dut 的 dut 字段 | 该片该 pass wafer map 上测出该 bin 的 site# |
+
+| 用户意图 | 做法 |
+|---|---|
+| 哪个 site/DUT 测出坏 bin、是否偏位 | JB 取 slot+pass+CARDID → INF 工具 |
+| 哪种卡/哪个 lot 坏 bin 多 | 仅 JB 聚合，**不调** INF |
+| 对比报警 dut# 与 map site | Yield + JB 定位 wafer → INF；分三源写结论 |
 
 ### 测试中断（INTERRUPT）与 passNum 累加
 
