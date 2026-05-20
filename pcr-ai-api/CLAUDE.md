@@ -17,7 +17,8 @@
 | 顺序 | 文件 | 用途 |
 | --- | --- | --- |
 | 1 | [`docs/AI_AGENT_API.md`](docs/AI_AGENT_API.md) | **主手册**：manifest、Dummy、v3 通俗说明、§8 curl、错误码、§9 源码索引 |
-| 1b | [`../docs/SITE_BIN_BY_LOT_INTEGRATION.md`](../docs/SITE_BIN_BY_LOT_INTEGRATION.md) | **INF map × bin × DUT**：`buildInfPath`、报表下钻、Agent 工具/prompt（REST 已实现，UI/Agent 待做） |
+| 1b | [`docs/SITE_BIN_BY_LOT_API.md`](docs/SITE_BIN_BY_LOT_API.md) | **site-bin-bylot 用法**：curl / Dummy URL / `fetch` 示例 |
+| 1c | [`../docs/SITE_BIN_BY_LOT_INTEGRATION.md`](../docs/SITE_BIN_BY_LOT_INTEGRATION.md) | **INF map × bin × DUT**：`buildInfPath`、报表下钻、Agent 工具/prompt（UI/Agent 待做） |
 | 2 | [`docs/API_V3.md`](docs/API_V3.md) | **v3 列表**完整 SQL（由 `npm run docs:api-v3` 从 `dist` 再生） |
 | 3 | [`.env.example`](.env.example) | 环境变量与 Dummy 开关说明 |
 | 4 | [`.cursor/rules/dummy-parity.mdc`](.cursor/rules/dummy-parity.mdc) | **Oracle 与 Dummy 双路径必须同步**（改筛选/WHERE/响应形状时必读） |
@@ -113,7 +114,7 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 | 领域 | 入口 / 说明 |
 | --- | --- |
 | HTTP 路由 | `src/routes/api.ts`（`apiRouter`；v3/v4 层控与产量列表+聚合、`manifest`、**`GET …/siliconflow/chat`**、**`GET …/inf-analysis/site-bin-bylot`** 等） |
-| **INF wafer pass × bin × probe DUT** | **`GET /api/v1/inf-analysis/site-bin-bylot`**（亦挂载 `/api/v3`、`/api/v4`）：**`src/routes/infAnalysisRoutes.ts`** → **`src/lib/outputSiteBinByLot.ts`** → **`src/perlscripts/output_site_bin_bylot.pl --json`**。按 **一片 wafer 的一个或多个测试 pass**（`passId` = INF `PASS_ID`）统计：**各 bin 测试结果**（`bin30` 等，来自 **`iBinCodeLast`**）由 **probe card 哪个 DUT**（**`iTestSiteLast`** → 响应 **`dut`**）测得；**`dieCount`** 为该 pass 的 map 上该 bin×DUT 的 die 颗数。**非** Oracle JB `BINn` 列。构建时 **`scripts/copy-perlscripts.mjs`** 复制 `.pl` 到 **`dist/perlscripts/`**。环境变量见 **`.env.example`**（`PERL_BIN`、`PERL_SCRIPT_TIMEOUT_MS`、`INF_PATH_ALLOWED_ROOT`）。测试 **`test/outputSiteBinByLot.test.ts`**。 |
+| **INF wafer pass × bin × probe DUT** | **`GET /api/v1/inf-analysis/site-bin-bylot`**（亦挂载 `/api/v3`、`/api/v4`）：**`src/routes/infAnalysisRoutes.ts`** → **`outputSiteBinByLot.ts`** / **`outputSiteBinByLotDummy.ts`**（Dummy 时固定路径走 **`docs/site-bin-bylot-dummy-r_1-1.passes.json`**）→ 否则 **`output_site_bin_bylot.pl --json`**。Dummy 开关：**`SITE_BIN_BY_LOT_DUMMY`** 或 **`INFCONTROL_LAYER_BINS_DUMMY`**（`dist`/production 恒关）。测试 **`test/outputSiteBinByLot.test.ts`**。集成设计 **[`../docs/SITE_BIN_BY_LOT_INTEGRATION.md`](../docs/SITE_BIN_BY_LOT_INTEGRATION.md)**。 |
 | 硅基流动（旧直连 Chat Completions） | **`src/lib/siliconflowChat.ts`**（`callSiliconflowChat`）；路由见 **`api.ts`** **`GET /siliconflow/chat`**；**不依赖 npm 包 `undici`**（严格 TLS 用全局 **`fetch`**，宽松 TLS 用 **`node:https`**） |
 | AI Agent（报表聊天页） | **`src/routes/agent.ts`** 挂在 **`POST /api/v4/agent/chat`**，SSE 输出；系统提示在 **`src/lib/agent/agentPrompt.ts`**（含 JB BIN **`bin`/`count` 不可互换**及**文字结论**禁写反，如 BIN8 54 颗 ≠ BIN54 8 颗）；核心 loop **`agentLoop.ts`**；流式上游 **`agentStream.ts`**，超时 **`AGENT_STREAM_TIMEOUT_MS`** 默认 **90000ms**。SSE 断开须监听 **`res.close`**，勿用 **`req.close`**。 |
 | 浏览器 CORS | **`src/lib/corsConfig.ts`** → **`wideOpenCorsMiddleware`**；**`app.ts`** 中于 **`requestIdMiddleware`** 之后挂载；已移除 **`cors` npm 包** |

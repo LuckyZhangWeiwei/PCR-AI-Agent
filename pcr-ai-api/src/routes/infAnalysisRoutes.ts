@@ -8,6 +8,7 @@ import {
   SITE_BIN_BY_LOT_SUMMARY,
   validateInfPath,
 } from "../lib/outputSiteBinByLot.js";
+import { tryResolveSiteBinByLotDummy } from "../lib/outputSiteBinByLotDummy.js";
 import { reqId } from "../lib/routeHelpers.js";
 
 export const infAnalysisRouter = Router();
@@ -40,6 +41,20 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
   }
 
   try {
+    const dummyData = tryResolveSiteBinByLotDummy(infPath, passIds);
+    if (dummyData !== null) {
+      return res.json({
+        meta: {
+          apiVersion: "1",
+          requestId: reqId(req),
+          summary: SITE_BIN_BY_LOT_SUMMARY,
+        },
+        infPath,
+        passIds,
+        ...dummyData,
+      });
+    }
+
     const result = await runOutputSiteBinByLot(infPath, passIds);
     if (result.exitCode !== 0) {
       const detail = [result.stderr.trim(), result.stdout.trim()]

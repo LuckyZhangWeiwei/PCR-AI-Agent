@@ -772,7 +772,7 @@ export const apiManifest = {
         stderr: "optional string",
       },
       example:
-        "/api/v1/inf-analysis/site-bin-bylot?infPath=/data/lot/sample.inf&passId=1&passId=2",
+        "/api/v1/inf-analysis/site-bin-bylot?infPath=/data/probe_logs/ps16_SMTPID/teststuffs/infanylist/r_1-1&passId=1&passId=2",
     },
     {
       path: "/api/v1/db/ping",

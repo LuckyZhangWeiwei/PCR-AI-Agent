@@ -1,0 +1,1247 @@
+{
+  "passes": [
+    {
+      "passId": 1,
+      "bins": [
+        {
+          "bin": "bin2",
+          "duts": [
+            {
+              "dut": 2,
+              "dieCount": 1
+            },
+            {
+              "dut": 4,
+              "dieCount": 1
+            },
+            {
+              "dut": 7,
+              "dieCount": 2
+            },
+            {
+              "dut": 8,
+              "dieCount": 2
+            },
+            {
+              "dut": 10,
+              "dieCount": 1
+            },
+            {
+              "dut": 11,
+              "dieCount": 1
+            },
+            {
+              "dut": 16,
+              "dieCount": 2
+            },
+            {
+              "dut": 18,
+              "dieCount": 1
+            },
+            {
+              "dut": 20,
+              "dieCount": 1
+            },
+            {
+              "dut": 21,
+              "dieCount": 1
+            },
+            {
+              "dut": 23,
+              "dieCount": 1
+            },
+            {
+              "dut": 25,
+              "dieCount": 1
+            },
+            {
+              "dut": 31,
+              "dieCount": 1
+            },
+            {
+              "dut": 33,
+              "dieCount": 1
+            },
+            {
+              "dut": 34,
+              "dieCount": 1
+            },
+            {
+              "dut": 35,
+              "dieCount": 1
+            },
+            {
+              "dut": 36,
+              "dieCount": 2
+            },
+            {
+              "dut": 38,
+              "dieCount": 1
+            },
+            {
+              "dut": 45,
+              "dieCount": 1
+            },
+            {
+              "dut": 46,
+              "dieCount": 3
+            },
+            {
+              "dut": 47,
+              "dieCount": 3
+            },
+            {
+              "dut": 50,
+              "dieCount": 2
+            },
+            {
+              "dut": 52,
+              "dieCount": 2
+            },
+            {
+              "dut": 53,
+              "dieCount": 1
+            },
+            {
+              "dut": 56,
+              "dieCount": 1
+            },
+            {
+              "dut": 59,
+              "dieCount": 1
+            },
+            {
+              "dut": 61,
+              "dieCount": 1
+            },
+            {
+              "dut": 62,
+              "dieCount": 1
+            },
+            {
+              "dut": 66,
+              "dieCount": 1
+            },
+            {
+              "dut": 67,
+              "dieCount": 2
+            },
+            {
+              "dut": 68,
+              "dieCount": 1
+            },
+            {
+              "dut": 69,
+              "dieCount": 2
+            },
+            {
+              "dut": 70,
+              "dieCount": 2
+            },
+            {
+              "dut": 71,
+              "dieCount": 2
+            },
+            {
+              "dut": 72,
+              "dieCount": 1
+            },
+            {
+              "dut": 73,
+              "dieCount": 2
+            },
+            {
+              "dut": 75,
+              "dieCount": 1
+            },
+            {
+              "dut": 76,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin3",
+          "duts": [
+            {
+              "dut": 0,
+              "dieCount": 1
+            },
+            {
+              "dut": 2,
+              "dieCount": 1
+            },
+            {
+              "dut": 4,
+              "dieCount": 1
+            },
+            {
+              "dut": 6,
+              "dieCount": 2
+            },
+            {
+              "dut": 9,
+              "dieCount": 1
+            },
+            {
+              "dut": 10,
+              "dieCount": 1
+            },
+            {
+              "dut": 11,
+              "dieCount": 1
+            },
+            {
+              "dut": 13,
+              "dieCount": 1
+            },
+            {
+              "dut": 15,
+              "dieCount": 1
+            },
+            {
+              "dut": 19,
+              "dieCount": 1
+            },
+            {
+              "dut": 24,
+              "dieCount": 1
+            },
+            {
+              "dut": 27,
+              "dieCount": 2
+            },
+            {
+              "dut": 29,
+              "dieCount": 1
+            },
+            {
+              "dut": 32,
+              "dieCount": 1
+            },
+            {
+              "dut": 33,
+              "dieCount": 1
+            },
+            {
+              "dut": 34,
+              "dieCount": 1
+            },
+            {
+              "dut": 41,
+              "dieCount": 1
+            },
+            {
+              "dut": 42,
+              "dieCount": 2
+            },
+            {
+              "dut": 45,
+              "dieCount": 1
+            },
+            {
+              "dut": 46,
+              "dieCount": 1
+            },
+            {
+              "dut": 49,
+              "dieCount": 2
+            },
+            {
+              "dut": 50,
+              "dieCount": 1
+            },
+            {
+              "dut": 58,
+              "dieCount": 2
+            },
+            {
+              "dut": 62,
+              "dieCount": 1
+            },
+            {
+              "dut": 63,
+              "dieCount": 1
+            },
+            {
+              "dut": 66,
+              "dieCount": 2
+            },
+            {
+              "dut": 70,
+              "dieCount": 1
+            },
+            {
+              "dut": 72,
+              "dieCount": 1
+            },
+            {
+              "dut": 75,
+              "dieCount": 1
+            },
+            {
+              "dut": 77,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin5",
+          "duts": [
+            {
+              "dut": 14,
+              "dieCount": 1
+            },
+            {
+              "dut": 50,
+              "dieCount": 1
+            },
+            {
+              "dut": 77,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin10",
+          "duts": [
+            {
+              "dut": 64,
+              "dieCount": 1
+            },
+            {
+              "dut": 66,
+              "dieCount": 1
+            },
+            {
+              "dut": 77,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin27",
+          "duts": [
+            {
+              "dut": 19,
+              "dieCount": 1
+            },
+            {
+              "dut": 20,
+              "dieCount": 1
+            },
+            {
+              "dut": 69,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin30",
+          "duts": [
+            {
+              "dut": 1,
+              "dieCount": 1
+            },
+            {
+              "dut": 9,
+              "dieCount": 1
+            },
+            {
+              "dut": 24,
+              "dieCount": 1
+            },
+            {
+              "dut": 28,
+              "dieCount": 1
+            },
+            {
+              "dut": 30,
+              "dieCount": 2
+            },
+            {
+              "dut": 42,
+              "dieCount": 1
+            },
+            {
+              "dut": 50,
+              "dieCount": 1
+            },
+            {
+              "dut": 59,
+              "dieCount": 1
+            },
+            {
+              "dut": 77,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin31",
+          "duts": [
+            {
+              "dut": 35,
+              "dieCount": 1
+            },
+            {
+              "dut": 37,
+              "dieCount": 1
+            },
+            {
+              "dut": 39,
+              "dieCount": 1
+            },
+            {
+              "dut": 57,
+              "dieCount": 1
+            },
+            {
+              "dut": 70,
+              "dieCount": 1
+            },
+            {
+              "dut": 71,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin36",
+          "duts": [
+            {
+              "dut": 71,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin39",
+          "duts": [
+            {
+              "dut": 32,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin42",
+          "duts": [
+            {
+              "dut": 6,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin55",
+          "duts": [
+            {
+              "dut": 0,
+              "dieCount": 22
+            },
+            {
+              "dut": 1,
+              "dieCount": 22
+            },
+            {
+              "dut": 2,
+              "dieCount": 23
+            },
+            {
+              "dut": 3,
+              "dieCount": 25
+            },
+            {
+              "dut": 4,
+              "dieCount": 24
+            },
+            {
+              "dut": 5,
+              "dieCount": 27
+            },
+            {
+              "dut": 6,
+              "dieCount": 24
+            },
+            {
+              "dut": 7,
+              "dieCount": 25
+            },
+            {
+              "dut": 8,
+              "dieCount": 24
+            },
+            {
+              "dut": 9,
+              "dieCount": 24
+            },
+            {
+              "dut": 10,
+              "dieCount": 21
+            },
+            {
+              "dut": 11,
+              "dieCount": 23
+            },
+            {
+              "dut": 12,
+              "dieCount": 19
+            },
+            {
+              "dut": 13,
+              "dieCount": 23
+            },
+            {
+              "dut": 14,
+              "dieCount": 24
+            },
+            {
+              "dut": 15,
+              "dieCount": 25
+            },
+            {
+              "dut": 16,
+              "dieCount": 27
+            },
+            {
+              "dut": 17,
+              "dieCount": 28
+            },
+            {
+              "dut": 18,
+              "dieCount": 26
+            },
+            {
+              "dut": 19,
+              "dieCount": 26
+            },
+            {
+              "dut": 20,
+              "dieCount": 25
+            },
+            {
+              "dut": 21,
+              "dieCount": 28
+            },
+            {
+              "dut": 22,
+              "dieCount": 26
+            },
+            {
+              "dut": 23,
+              "dieCount": 25
+            },
+            {
+              "dut": 24,
+              "dieCount": 22
+            },
+            {
+              "dut": 25,
+              "dieCount": 20
+            },
+            {
+              "dut": 26,
+              "dieCount": 24
+            },
+            {
+              "dut": 27,
+              "dieCount": 23
+            },
+            {
+              "dut": 28,
+              "dieCount": 24
+            },
+            {
+              "dut": 29,
+              "dieCount": 26
+            },
+            {
+              "dut": 30,
+              "dieCount": 24
+            },
+            {
+              "dut": 31,
+              "dieCount": 29
+            },
+            {
+              "dut": 32,
+              "dieCount": 27
+            },
+            {
+              "dut": 33,
+              "dieCount": 28
+            },
+            {
+              "dut": 34,
+              "dieCount": 28
+            },
+            {
+              "dut": 35,
+              "dieCount": 27
+            },
+            {
+              "dut": 36,
+              "dieCount": 22
+            },
+            {
+              "dut": 37,
+              "dieCount": 22
+            },
+            {
+              "dut": 38,
+              "dieCount": 21
+            },
+            {
+              "dut": 39,
+              "dieCount": 23
+            },
+            {
+              "dut": 40,
+              "dieCount": 26
+            },
+            {
+              "dut": 41,
+              "dieCount": 25
+            },
+            {
+              "dut": 42,
+              "dieCount": 25
+            },
+            {
+              "dut": 43,
+              "dieCount": 29
+            },
+            {
+              "dut": 44,
+              "dieCount": 28
+            },
+            {
+              "dut": 45,
+              "dieCount": 25
+            },
+            {
+              "dut": 46,
+              "dieCount": 25
+            },
+            {
+              "dut": 47,
+              "dieCount": 24
+            },
+            {
+              "dut": 48,
+              "dieCount": 28
+            },
+            {
+              "dut": 49,
+              "dieCount": 25
+            },
+            {
+              "dut": 50,
+              "dieCount": 19
+            },
+            {
+              "dut": 51,
+              "dieCount": 19
+            },
+            {
+              "dut": 52,
+              "dieCount": 22
+            },
+            {
+              "dut": 53,
+              "dieCount": 25
+            },
+            {
+              "dut": 54,
+              "dieCount": 27
+            },
+            {
+              "dut": 55,
+              "dieCount": 25
+            },
+            {
+              "dut": 56,
+              "dieCount": 25
+            },
+            {
+              "dut": 57,
+              "dieCount": 26
+            },
+            {
+              "dut": 58,
+              "dieCount": 26
+            },
+            {
+              "dut": 59,
+              "dieCount": 23
+            },
+            {
+              "dut": 60,
+              "dieCount": 26
+            },
+            {
+              "dut": 61,
+              "dieCount": 24
+            },
+            {
+              "dut": 62,
+              "dieCount": 24
+            },
+            {
+              "dut": 63,
+              "dieCount": 23
+            },
+            {
+              "dut": 64,
+              "dieCount": 20
+            },
+            {
+              "dut": 65,
+              "dieCount": 25
+            },
+            {
+              "dut": 66,
+              "dieCount": 22
+            },
+            {
+              "dut": 67,
+              "dieCount": 25
+            },
+            {
+              "dut": 68,
+              "dieCount": 23
+            },
+            {
+              "dut": 69,
+              "dieCount": 22
+            },
+            {
+              "dut": 70,
+              "dieCount": 23
+            },
+            {
+              "dut": 71,
+              "dieCount": 22
+            },
+            {
+              "dut": 72,
+              "dieCount": 23
+            },
+            {
+              "dut": 73,
+              "dieCount": 21
+            },
+            {
+              "dut": 74,
+              "dieCount": 25
+            },
+            {
+              "dut": 75,
+              "dieCount": 22
+            },
+            {
+              "dut": 76,
+              "dieCount": 21
+            },
+            {
+              "dut": 77,
+              "dieCount": 18
+            }
+          ]
+        },
+        {
+          "bin": "bin60",
+          "duts": [
+            {
+              "dut": 1,
+              "dieCount": 1
+            },
+            {
+              "dut": 13,
+              "dieCount": 1
+            },
+            {
+              "dut": 20,
+              "dieCount": 1
+            },
+            {
+              "dut": 22,
+              "dieCount": 1
+            },
+            {
+              "dut": 25,
+              "dieCount": 1
+            },
+            {
+              "dut": 27,
+              "dieCount": 1
+            },
+            {
+              "dut": 28,
+              "dieCount": 2
+            },
+            {
+              "dut": 29,
+              "dieCount": 1
+            },
+            {
+              "dut": 47,
+              "dieCount": 1
+            },
+            {
+              "dut": 51,
+              "dieCount": 1
+            },
+            {
+              "dut": 52,
+              "dieCount": 1
+            },
+            {
+              "dut": 54,
+              "dieCount": 1
+            },
+            {
+              "dut": 68,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin61",
+          "duts": [
+            {
+              "dut": 0,
+              "dieCount": 2
+            },
+            {
+              "dut": 4,
+              "dieCount": 2
+            },
+            {
+              "dut": 5,
+              "dieCount": 1
+            },
+            {
+              "dut": 6,
+              "dieCount": 1
+            },
+            {
+              "dut": 8,
+              "dieCount": 1
+            },
+            {
+              "dut": 10,
+              "dieCount": 2
+            },
+            {
+              "dut": 11,
+              "dieCount": 1
+            },
+            {
+              "dut": 22,
+              "dieCount": 1
+            },
+            {
+              "dut": 23,
+              "dieCount": 1
+            },
+            {
+              "dut": 30,
+              "dieCount": 1
+            },
+            {
+              "dut": 36,
+              "dieCount": 2
+            },
+            {
+              "dut": 37,
+              "dieCount": 1
+            },
+            {
+              "dut": 41,
+              "dieCount": 1
+            },
+            {
+              "dut": 42,
+              "dieCount": 1
+            },
+            {
+              "dut": 44,
+              "dieCount": 1
+            },
+            {
+              "dut": 45,
+              "dieCount": 1
+            },
+            {
+              "dut": 47,
+              "dieCount": 1
+            },
+            {
+              "dut": 69,
+              "dieCount": 1
+            },
+            {
+              "dut": 76,
+              "dieCount": 1
+            },
+            {
+              "dut": 77,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin62",
+          "duts": [
+            {
+              "dut": 13,
+              "dieCount": 1
+            },
+            {
+              "dut": 50,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin85",
+          "duts": [
+            {
+              "dut": 75,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin92",
+          "duts": [
+            {
+              "dut": 25,
+              "dieCount": 1
+            },
+            {
+              "dut": 36,
+              "dieCount": 1
+            },
+            {
+              "dut": 52,
+              "dieCount": 1
+            },
+            {
+              "dut": 63,
+              "dieCount": 1
+            },
+            {
+              "dut": 76,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin98",
+          "duts": [
+            {
+              "dut": 12,
+              "dieCount": 1
+            },
+            {
+              "dut": 55,
+              "dieCount": 1
+            },
+            {
+              "dut": 65,
+              "dieCount": 1
+            },
+            {
+              "dut": 68,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin101",
+          "duts": [
+            {
+              "dut": 28,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin121",
+          "duts": [
+            {
+              "dut": 19,
+              "dieCount": 1
+            },
+            {
+              "dut": 30,
+              "dieCount": 1
+            },
+            {
+              "dut": 37,
+              "dieCount": 1
+            },
+            {
+              "dut": 40,
+              "dieCount": 1
+            },
+            {
+              "dut": 55,
+              "dieCount": 1
+            },
+            {
+              "dut": 59,
+              "dieCount": 1
+            },
+            {
+              "dut": 61,
+              "dieCount": 1
+            },
+            {
+              "dut": 63,
+              "dieCount": 1
+            },
+            {
+              "dut": 73,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin131",
+          "duts": [
+            {
+              "dut": 12,
+              "dieCount": 2
+            },
+            {
+              "dut": 22,
+              "dieCount": 1
+            },
+            {
+              "dut": 23,
+              "dieCount": 1
+            },
+            {
+              "dut": 24,
+              "dieCount": 1
+            },
+            {
+              "dut": 25,
+              "dieCount": 1
+            },
+            {
+              "dut": 41,
+              "dieCount": 1
+            },
+            {
+              "dut": 45,
+              "dieCount": 2
+            },
+            {
+              "dut": 50,
+              "dieCount": 1
+            },
+            {
+              "dut": 51,
+              "dieCount": 1
+            },
+            {
+              "dut": 53,
+              "dieCount": 1
+            },
+            {
+              "dut": 55,
+              "dieCount": 1
+            },
+            {
+              "dut": 61,
+              "dieCount": 1
+            },
+            {
+              "dut": 62,
+              "dieCount": 1
+            },
+            {
+              "dut": 63,
+              "dieCount": 1
+            },
+            {
+              "dut": 66,
+              "dieCount": 1
+            },
+            {
+              "dut": 68,
+              "dieCount": 1
+            },
+            {
+              "dut": 73,
+              "dieCount": 1
+            },
+            {
+              "dut": 76,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin147",
+          "duts": [
+            {
+              "dut": 37,
+              "dieCount": 1
+            },
+            {
+              "dut": 38,
+              "dieCount": 1
+            },
+            {
+              "dut": 59,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin148",
+          "duts": [
+            {
+              "dut": 51,
+              "dieCount": 1
+            },
+            {
+              "dut": 53,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin153",
+          "duts": [
+            {
+              "dut": 49,
+              "dieCount": 1
+            },
+            {
+              "dut": 75,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin169",
+          "duts": [
+            {
+              "dut": 24,
+              "dieCount": 1
+            },
+            {
+              "dut": 39,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin172",
+          "duts": [
+            {
+              "dut": 32,
+              "dieCount": 1
+            },
+            {
+              "dut": 73,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin175",
+          "duts": [
+            {
+              "dut": 10,
+              "dieCount": 1
+            },
+            {
+              "dut": 12,
+              "dieCount": 1
+            },
+            {
+              "dut": 18,
+              "dieCount": 1
+            },
+            {
+              "dut": 20,
+              "dieCount": 1
+            },
+            {
+              "dut": 24,
+              "dieCount": 1
+            },
+            {
+              "dut": 38,
+              "dieCount": 1
+            },
+            {
+              "dut": 63,
+              "dieCount": 1
+            },
+            {
+              "dut": 72,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin200",
+          "duts": [
+            {
+              "dut": 32,
+              "dieCount": 1
+            },
+            {
+              "dut": 52,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin223",
+          "duts": [
+            {
+              "dut": 9,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin228",
+          "duts": [
+            {
+              "dut": 0,
+              "dieCount": 1
+            },
+            {
+              "dut": 27,
+              "dieCount": 1
+            }
+          ]
+        },
+        {
+          "bin": "bin237",
+          "duts": [
+            {
+              "dut": 46,
+              "dieCount": 1
+            },
+            {
+              "dut": 70,
+              "dieCount": 1
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

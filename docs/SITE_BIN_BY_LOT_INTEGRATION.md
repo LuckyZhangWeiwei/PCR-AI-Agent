@@ -25,11 +25,19 @@
 
 ## 2. HTTP API（已实现）
 
+**可复制示例（curl / Dummy / 生产）：** [`pcr-ai-api/docs/SITE_BIN_BY_LOT_API.md`](../pcr-ai-api/docs/SITE_BIN_BY_LOT_API.md)
+
 ```
 GET /api/v1/inf-analysis/site-bin-bylot?infPath=...&passId=1&passId=2
 ```
 
 亦挂载 `/api/v3`、`/api/v4`（同一路由）。
+
+**联调 Dummy 一键 URL（需 `SITE_BIN_BY_LOT_DUMMY=true` 或 `INFCONTROL_LAYER_BINS_DUMMY=true`）：**
+
+```text
+http://127.0.0.1:30008/api/v1/inf-analysis/site-bin-bylot?infPath=/data/probe_logs/ps16_SMTPID/teststuffs/infanylist/r_1-1&passId=1&passId=2
+```
 
 ### 查询参数
 
@@ -39,6 +47,13 @@ GET /api/v1/inf-analysis/site-bin-bylot?infPath=...&passId=1&passId=2
 | `passId`（别名 `pass_id`） | 是 | 一个或多个整数；可重复传参或逗号分隔 |
 
 环境变量见 `pcr-ai-api/.env.example`：`PERL_BIN`、`PERL_SCRIPT_TIMEOUT_MS`、`INF_PATH_ALLOWED_ROOT`（可选，限制 `infPath` 必须在某根目录下）。
+
+### Dummy（联调，不影响 production / dist）
+
+- 开关：`SITE_BIN_BY_LOT_DUMMY=true`，或与 JB 一致 `INFCONTROL_LAYER_BINS_DUMMY=true`；`NODE_ENV=test` 时自动开启。
+- 样本：`pcr-ai-api/docs/site-bin-bylot-dummy-r_1-1.passes.json`；**仅**当 `infPath` 等于  
+  `/data/probe_logs/ps16_SMTPID/teststuffs/infanylist/r_1-1` 时返回硬编码 `passes`（不调 Perl）。
+- 其它 `infPath` 在 Dummy 开启时仍走 Perl 原路径；Dummy 关闭时行为与改前完全一致。
 
 ### 响应形状
 
