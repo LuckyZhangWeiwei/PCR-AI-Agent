@@ -11,7 +11,9 @@ function devProxy(target: string): ProxyOptions {
   return {
     target,
     changeOrigin: true,
-    timeout: 60_000,
+    /** AI Agent SSE 多轮工具 + Oracle 常超过 60s；与后端 AGENT_STREAM_TIMEOUT_MS 默认 270s 对齐 */
+    timeout: 300_000,
+    proxyTimeout: 300_000,
     configure(proxy) {
       proxy.on("error", (err, _req, res) => {
         const errno = err as NodeJS.ErrnoException;

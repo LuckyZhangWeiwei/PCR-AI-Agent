@@ -18,6 +18,7 @@ import { streamSiliconFlow, type CollectedToolCall } from "./agentStream.js";
 
 export type AgentSseEvent =
   | { type: "text"; delta: string }
+  | { type: "status"; message: string }
   | { type: "tool_start"; name: string; args: Record<string, unknown> }
   | { type: "tool_result"; name: string; summary: string }
   | { type: "chart"; option: object }
@@ -303,6 +304,7 @@ export async function runAgentLoop(
       }
 
       emit({ type: "tool_start", name: tc.name, args: parsedArgs });
+      emit({ type: "status", message: `正在执行工具 ${tc.name}…` });
 
       let historyContent: string;
       try {

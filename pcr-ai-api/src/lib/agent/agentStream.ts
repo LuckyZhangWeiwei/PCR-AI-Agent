@@ -169,6 +169,7 @@ export function streamSiliconFlow(
       res.on("end", () => {
         if (settled) return;
         settled = true;
+        clearRequestTimeout();
         if (collected.length > 0) {
           onChunk({ type: "tool_calls", calls: collected.filter(Boolean) });
         }

@@ -45,7 +45,10 @@ agentRouter.post("/chat", async (req, res) => {
   res.flushHeaders();
 
   const writeEvent = (event: AgentSseEvent) => {
+    if (closed) return;
     res.write(`data: ${JSON.stringify(event)}\n\n`);
+    const resWithFlush = res as typeof res & { flush?: () => void };
+    if (typeof resWithFlush.flush === "function") resWithFlush.flush();
   };
 
   let closed = false;
@@ -53,9 +56,18 @@ agentRouter.post("/chat", async (req, res) => {
     closed = true;
   });
 
+  writeEvent({ type: "status", message: "已连接，正在分析…" });
+
+  const heartbeatMs = 15_000;
+  const heartbeat = setInterval(() => {
+    if (!closed) {
+      writeEvent({ type: "status", message: "仍在处理中（查询或模型推理可能较慢）…" });
+    }
+  }, heartbeatMs);
+
   try {
     await runAgentLoop(message, sessionId, config, (event) => {
-      if (!closed) writeEvent(event);
+      writeEvent(event);
     });
   } catch (err) {
     if (!closed) {
@@ -65,6 +77,7 @@ agentRouter.post("/chat", async (req, res) => {
       });
     }
   } finally {
+    clearInterval(heartbeat);
     if (!closed) res.end();
   }
 });

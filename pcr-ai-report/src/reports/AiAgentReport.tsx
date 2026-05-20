@@ -77,6 +77,18 @@ interface SseEvent {
   question?: string;
 }
 
+/** 略大于后端 AGENT_STREAM_TIMEOUT_MS 默认 270s，避免客户端先断 */
+const AGENT_CHAT_CLIENT_TIMEOUT_MS = 300_000;
+
+function parseSseLine(line: string, onEvent: (event: SseEvent) => void): void {
+  if (!line.startsWith("data: ")) return;
+  try {
+    onEvent(JSON.parse(line.slice(6)) as SseEvent);
+  } catch {
+    // skip malformed line
+  }
+}
+
 interface Props {
   apiBase: string;
   agentConfig: AgentConfig;
@@ -100,6 +112,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
   const [input, setInput] = useState("");
   const [sessionId, setSessionId] = useState(genId);
   const [loading, setLoading] = useState(false);
+  const [statusHint, setStatusHint] = useState("");
   const messagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const atBottomRef = useRef(true);
@@ -200,6 +213,9 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
         });
         break;
       }
+      case "status":
+        if (event.message) setStatusHint(event.message);
+        break;
     }
   }, []);
 
@@ -209,17 +225,24 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
 
     setInput("");
     setLoading(true);
+    setStatusHint("正在连接服务器…");
     setMessages((prev) => [
       ...prev,
       { kind: "user", text },
       { kind: "ai", text: "", streaming: true },
     ]);
 
+    const abort =
+      typeof AbortSignal.timeout === "function"
+        ? AbortSignal.timeout(AGENT_CHAT_CLIENT_TIMEOUT_MS)
+        : undefined;
+
     try {
       const response = await fetch(`${apiBase}/api/v4/agent/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text, sessionId, agentConfig }),
+        signal: abort,
       });
 
       if (!response.ok || !response.body) {
@@ -249,13 +272,12 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
           const lines = buf.split("\n");
           buf = lines.pop() ?? "";
           for (const line of lines) {
-            if (!line.startsWith("data: ")) continue;
-            try {
-              const ev = JSON.parse(line.slice(6)) as SseEvent;
-              handleSseEvent(ev);
-            } catch {
-              // skip malformed line
-            }
+            parseSseLine(line, handleSseEvent);
+          }
+        }
+        if (buf.trim()) {
+          for (const line of buf.split("\n")) {
+            parseSseLine(line, handleSseEvent);
           }
         }
       } catch (readerErr) {
@@ -263,19 +285,25 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
         throw readerErr;
       }
     } catch (err) {
+      const isTimeout =
+        err instanceof DOMException &&
+        (err.name === "TimeoutError" || err.name === "AbortError");
+      const message = isTimeout
+        ? `请求超时（${Math.round(AGENT_CHAT_CLIENT_TIMEOUT_MS / 60_000)} 分钟）。可缩小时间范围后重试，或检查 API / 硅基流动是否可达。`
+        : err instanceof Error
+          ? err.message
+          : String(err);
       setMessages((prev) => {
         const copy = [...prev];
         const last = copy[copy.length - 1];
         if (last && (last.kind === "ai" || last.kind === "error")) {
-          copy[copy.length - 1] = {
-            kind: "error",
-            message: err instanceof Error ? err.message : String(err),
-          };
+          copy[copy.length - 1] = { kind: "error", message };
         }
         return copy;
       });
     } finally {
       setLoading(false);
+      setStatusHint("");
       setMessages((prev) =>
         prev.map((m) =>
           m.kind === "ai" && m.streaming ? { ...m, streaming: false } : m
@@ -410,7 +438,9 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
       </div>
 
       {loading && (
-        <div className="ai-agent-processing-hint">⏳ AI 正在处理，请稍候…</div>
+        <div className="ai-agent-processing-hint">
+          ⏳ {statusHint || "AI 正在处理，请稍候…"}
+        </div>
       )}
       <div className="ai-agent-input-area">
         <textarea
