@@ -53,7 +53,7 @@ export type { ChartSentinel, ClarificationSentinel };
 
 const TOOL_LIST_LIMIT = 50;
 const TOOL_LIST_LIMIT_MAX = 200;
-const TOOL_RESULT_TRUNCATE = 3000;
+const TOOL_RESULT_TRUNCATE = 6000;
 
 function clampLimit(raw: unknown, defaultVal: number, max: number): number {
   const n = typeof raw === "number" ? raw : defaultVal;

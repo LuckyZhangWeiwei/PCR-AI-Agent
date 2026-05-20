@@ -47,9 +47,17 @@ export function formatJbRowsForAgent(
 export function wrapJbQueryResultForAgent(
   rows: Record<string, unknown>[]
 ): Record<string, unknown> {
+  const slotSet = new Set<number>();
+  for (const r of rows) {
+    const v = r["SLOT"] ?? r["slot"];
+    const n = Number(v);
+    if (Number.isFinite(n) && n > 0) slotSet.add(n);
+  }
+  const distinctSlots = [...slotSet].sort((a, b) => a - b);
   return {
     _binFieldGuide: BIN_SCHEMA_HINT,
     count: rows.length,
+    distinctSlots,
     rows: formatJbRowsForAgent(rows),
   };
 }

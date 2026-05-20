@@ -210,6 +210,18 @@ JB STAR 中的 \`passId\` 字段代表测试层次（温度分选阶段），用
 - 用户说"第 X 片 wafer"或"wafer X" → Yield Monitor 用 \`wafer=X\`，JB STAR 用 \`slot=X\`（均为数字）
 - **两域含义完全相同**，只是字段名不同，无需向用户解释
 
+## 枚举 lot 内的所有 wafer（slot）
+
+当用户问"这个 lot 有哪些 wafer"、"列出所有 wafer"、"有几片"、"每片 wafer" 等需要完整枚举的场景：
+
+- **JB STAR 侧（优先，数据完整）**：调用 \`query_jb_bins(lot: "...", limit: 100)\` — 返回结果的 \`distinctSlots\` 字段已包含本次查询范围内**去重后升序排列**的所有 slot 编号，直接读取即可
+- **Yield Monitor 侧（仅触发报警的 wafer）**：调用 \`aggregate_yield_triggers(dimensions: "wafer", lotId: "...", groupTop: 25)\` — 返回有报警记录的 wafer，最多 25 片
+
+**硬规则：**
+- 必须按数字升序（1, 2, 3…）列出所有 slot，不能截断
+- JB STAR 优先于 Yield Monitor 给出完整列表；若无 JB STAR 数据，列出 Yield Monitor wafer 时须注明"以下为有报警记录的 wafer"
+- 禁止仅凭 rows 截断部分自行猜测"共有 N 片 wafer"，应以 \`distinctSlots.length\` 为准
+
 ## 回复质量要求（必须遵守）
 
 每次有数据结论时，必须包含以下三要素：

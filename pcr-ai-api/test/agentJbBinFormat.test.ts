@@ -35,9 +35,23 @@ describe("agentJbBinFormat", () => {
     assert.deepEqual(row.goodBins, [{ bin: 250, dieCount: 7890, isGoodBin: true }]);
   });
 
-  it("wrapJbQueryResultForAgent includes field guide", () => {
+  it("wrapJbQueryResultForAgent includes field guide and empty distinctSlots", () => {
     const out = wrapJbQueryResultForAgent([]);
     assert.ok(String(out._binFieldGuide).includes("dieCount"));
     assert.equal(out.count, 0);
+    assert.deepEqual(out.distinctSlots, []);
+  });
+
+  it("wrapJbQueryResultForAgent computes distinctSlots sorted ascending", () => {
+    const rows = [
+      { SLOT: 3, bins: [] },
+      { SLOT: 1, bins: [] },
+      { SLOT: 3, bins: [] },
+      { SLOT: 25, bins: [] },
+      { SLOT: 2, bins: [] },
+    ] as Record<string, unknown>[];
+    const out = wrapJbQueryResultForAgent(rows);
+    assert.deepEqual(out.distinctSlots, [1, 2, 3, 25]);
+    assert.equal(out.count, 5);
   });
 });

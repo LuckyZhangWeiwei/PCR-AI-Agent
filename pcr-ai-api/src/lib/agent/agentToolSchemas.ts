@@ -67,7 +67,7 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "query_jb_bins",
       description:
-        "查询 JB STAR Layer Bins 数据列表（INFCONTROL ⋈ INFLAYERBINLIST，PASSTYPE=TEST）。返回 rows[].badBins/goodBins：每项 { bin: BIN编号, dieCount: die颗数 }，禁止把 dieCount 写成 BIN 号。",
+        "查询 JB STAR Layer Bins 数据列表（INFCONTROL ⋈ INFLAYERBINLIST，PASSTYPE=TEST）。返回 rows[].badBins/goodBins：每项 { bin: BIN编号, dieCount: die颗数 }，禁止把 dieCount 写成 BIN 号。结果中 distinctSlots 字段列出本次查询范围内所有出现过的 slot 编号（去重升序），可直接用于 wafer 列表枚举。",
       parameters: {
         type: "object",
         properties: {
