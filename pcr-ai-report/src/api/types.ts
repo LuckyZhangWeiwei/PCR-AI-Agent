@@ -204,3 +204,25 @@ export type YieldMonitorV3Response = {
   count: number;
   rows: YieldMonitorV3Row[];
 };
+
+export type SiteBinDutEntry = {
+  dut: number | "single";
+  dieCount: number;
+};
+
+export type SiteBinEntry = {
+  bin: string;
+  duts: SiteBinDutEntry[];
+};
+
+export type SiteBinPass = {
+  passId: number;
+  bins: SiteBinEntry[];
+};
+
+export type SiteBinByLotResponse = {
+  meta: { apiVersion: string; requestId: string; summary: string };
+  infPath: string;
+  passIds: number[];
+  passes: SiteBinPass[];
+};

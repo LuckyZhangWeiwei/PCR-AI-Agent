@@ -12,3 +12,6 @@ export const INFCONTROL_COMBINED_PATH =
 
 export const YIELD_AGGREGATE_PATH =
   "/api/v3/yield-monitor-triggers/v3/aggregate";
+
+/** INF wafer pass × bin × DUT distribution — uses v1 path (stable across API_PREFIX changes) */
+export const SITE_BIN_BY_LOT_PATH = "/api/v1/inf-analysis/site-bin-bylot";
