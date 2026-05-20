@@ -7,6 +7,8 @@ type Props = {
   /** Keys to hide (e.g. heavy nested blobs) */
   omitKeys?: string[];
   maxHeight?: number;
+  /** Called when user clicks a row. Receives the full row object. */
+  onRowClick?: (row: Record<string, unknown>) => void;
 };
 
 /** omitKeys 与行内键名大小写均可匹配 */
@@ -92,6 +94,7 @@ export function DataTable({
   columnOrder,
   omitKeys,
   maxHeight = 420,
+  onRowClick,
 }: Props) {
   if (rows.length === 0) {
     return <p className="data-table-empty">No rows.</p>;
@@ -113,7 +116,11 @@ export function DataTable({
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i}>
+            <tr
+              key={i}
+              className={onRowClick ? "clickable" : undefined}
+              onClick={onRowClick ? () => onRowClick(row) : undefined}
+            >
               {columns.map((c) => (
                 <td
                   key={c}
