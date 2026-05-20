@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import ReactECharts from "echarts-for-react";
 import { apiGetJson } from "../api/client";
 import { INFCONTROL_AGGREGATE_PATH, INFCONTROL_COMBINED_PATH } from "../api/paths";
@@ -328,6 +328,10 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
   const [errorList,   setErrorList]   = useState<string | null>(null);
   const [errorAgg,    setErrorAgg]    = useState<string | null>(null);
   const [drills,      setDrills]      = useState<Record<string, DrillState>>({});
+  // Cache per parent-dim key: stores results for every tab fetched in the current query window.
+  // Keyed by parentDimKey → { val: parentDimVal, tabs: { subDim → groups } }.
+  // Stored in a ref so cache hits never trigger re-renders and fetchDrill stays dep-free of drills.
+  const drillCacheRef = useRef<Record<string, { val: string; tabs: Record<string, AggregateGroup[]> }>>({});
   const [showTree,   setShowTree]   = useState(false);
   const [showDetail, setShowDetail] = useState(false);
   const [selectedLotLabel, setSelectedLotLabel] = useState<string | null>(null);
@@ -372,6 +376,16 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         ...subDim.split(",").map((s) => s.trim()).filter(Boolean),
       ).split(",");
 
+      // ── Tab cache: reuse already-fetched results for the same bar + tab ──────
+      const cached = drillCacheRef.current[parentDimKey];
+      if (cached?.val === parentDimVal && subDim in cached.tabs) {
+        setDrills((prev) => ({
+          ...prev,
+          [parentDimKey]: { parentDimKey, parentDimVal, subDim, groups: cached.tabs[subDim], loading: false, error: null },
+        }));
+        return;
+      }
+
       // ── In-memory path: derive from cached aggTree (no Oracle call) ──────────
       // Works when both the filter key and all child dim keys are dimensions
       // present in the aggTree parts: device / lot / probeCardType / cardId / bin.
@@ -385,6 +399,9 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       ) {
         const groups = drillFromTree(treeGroups, parentDimKey, parentDimVal, subDimKeys);
         if (groups.length > 0) {
+          if (!drillCacheRef.current[parentDimKey] || drillCacheRef.current[parentDimKey].val !== parentDimVal)
+            drillCacheRef.current[parentDimKey] = { val: parentDimVal, tabs: {} };
+          drillCacheRef.current[parentDimKey].tabs[subDim] = groups;
           setDrills((prev) => ({
             ...prev,
             [parentDimKey]: { parentDimKey, parentDimVal, subDim, groups, loading: false, error: null },
@@ -460,6 +477,9 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         setDrills((prev) => {
           const d = prev[parentDimKey];
           if (!d || d.parentDimVal !== parentDimVal) return prev;
+          if (!drillCacheRef.current[parentDimKey] || drillCacheRef.current[parentDimKey].val !== parentDimVal)
+            drillCacheRef.current[parentDimKey] = { val: parentDimVal, tabs: {} };
+          drillCacheRef.current[parentDimKey].tabs[subDim] = groups;
           return { ...prev, [parentDimKey]: { ...d, groups, loading: false } };
         });
       } catch (e) {
@@ -496,6 +516,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     setErrorList(null);
     setErrorAgg(null);
     setDrills({});
+    drillCacheRef.current = {};
     setSelectedLotLabel(null);
     setSelectedBin(null);
     setSelectedCardType(null);

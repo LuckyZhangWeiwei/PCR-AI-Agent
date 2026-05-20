@@ -165,22 +165,31 @@ export function DrillDownPanel({
         </div>
       </div>
 
-      {loading && (
-        <div style={{ color: "#8b949e", fontSize: 12, padding: "8px 0" }}>
-          加载中…
-        </div>
-      )}
-      {error && (
+      {!loading && error && (
         <div style={{ color: "#ff7b72", fontSize: 12, padding: "8px 0" }}>
           {error}
         </div>
       )}
-      {!loading && !error && groups.length === 0 && (
+      {loading ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            height: 160,
+            color: "#8b949e",
+            fontSize: 12,
+            background: "rgba(240,246,252,0.03)",
+            borderRadius: 4,
+          }}
+        >
+          加载中…
+        </div>
+      ) : !error && groups.length === 0 ? (
         <div style={{ color: "#8b949e", fontSize: 12, padding: "8px 0" }}>
           暂无数据
         </div>
-      )}
-      {!loading && groups.length > 0 && (
+      ) : !error && groups.length > 0 ? (
         <DarkChart
           option={option}
           height={Math.max(160, sorted.length * 28 + 60)}
@@ -190,7 +199,7 @@ export function DrillDownPanel({
               : undefined
           }
         />
-      )}
+      ) : null}
     </div>
   );
 }
