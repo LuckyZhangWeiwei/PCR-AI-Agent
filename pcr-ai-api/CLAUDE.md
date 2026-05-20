@@ -111,7 +111,8 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 
 | 领域 | 入口 / 说明 |
 | --- | --- |
-| HTTP 路由 | `src/routes/api.ts`（`apiRouter`；v3/v4 层控与产量列表+聚合、`manifest`、**`GET …/siliconflow/chat`** 等） |
+| HTTP 路由 | `src/routes/api.ts`（`apiRouter`；v3/v4 层控与产量列表+聚合、`manifest`、**`GET …/siliconflow/chat`**、**`GET …/inf-analysis/site-bin-bylot`** 等） |
+| **INF wafer pass × bin × probe DUT** | **`GET /api/v1/inf-analysis/site-bin-bylot`**（亦挂载 `/api/v3`、`/api/v4`）：**`src/routes/infAnalysisRoutes.ts`** → **`src/lib/outputSiteBinByLot.ts`** → **`src/perlscripts/output_site_bin_bylot.pl --json`**。按 **一片 wafer 的一个或多个测试 pass**（`passId` = INF `PASS_ID`）统计：**各 bin 测试结果**（`bin30` 等，来自 **`iBinCodeLast`**）由 **probe card 哪个 DUT**（**`iTestSiteLast`** → 响应 **`dut`**）测得；**`dieCount`** 为该 pass 的 map 上该 bin×DUT 的 die 颗数。**非** Oracle JB `BINn` 列。构建时 **`scripts/copy-perlscripts.mjs`** 复制 `.pl` 到 **`dist/perlscripts/`**。环境变量见 **`.env.example`**（`PERL_BIN`、`PERL_SCRIPT_TIMEOUT_MS`、`INF_PATH_ALLOWED_ROOT`）。测试 **`test/outputSiteBinByLot.test.ts`**。 |
 | 硅基流动（旧直连 Chat Completions） | **`src/lib/siliconflowChat.ts`**（`callSiliconflowChat`）；路由见 **`api.ts`** **`GET /siliconflow/chat`**；**不依赖 npm 包 `undici`**（严格 TLS 用全局 **`fetch`**，宽松 TLS 用 **`node:https`**） |
 | AI Agent（报表聊天页） | **`src/routes/agent.ts`** 挂在 **`POST /api/v4/agent/chat`**，SSE 输出；系统提示在 **`src/lib/agent/agentPrompt.ts`**（含 JB BIN **`bin`/`count` 不可互换**及**文字结论**禁写反，如 BIN8 54 颗 ≠ BIN54 8 颗）；核心 loop **`agentLoop.ts`**；流式上游 **`agentStream.ts`**，超时 **`AGENT_STREAM_TIMEOUT_MS`** 默认 **90000ms**。SSE 断开须监听 **`res.close`**，勿用 **`req.close`**。 |
 | 浏览器 CORS | **`src/lib/corsConfig.ts`** → **`wideOpenCorsMiddleware`**；**`app.ts`** 中于 **`requestIdMiddleware`** 之后挂载；已移除 **`cors` npm 包** |
@@ -183,7 +184,8 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 - [ ] 若改 **`PROBECARDTYPE`** 语义：**`probeCardTypeLeadingSegment`**、**`api.ts`** 两处 enrich、Dummy 的 **`filterInfcontrolLayerBinV3DummyRowsMatching`** / **`filterYieldMonitorDummyRowsMatchingV3`**（及聚合维度 **`probeCardType`** 取值）须与 Oracle 同步。  
 - [ ] 未误改 **`dist` / production** 下 Dummy 关闭语义（`listDummyRuntime.ts`）。  
 - [ ] 若动 **硅基流动 / CORS**：见 **§12**；密钥仅 **`.env`**，勿硬编码。  
-- [ ] 若升级 **`oracledb`**：须评估 **§8.1**（6.x 与 **Instant Client 18.1+**）；勿在未升级客户端时升到 6.x。
+- [ ] 若升级 **`oracledb`**：须评估 **§8.1**（6.x 与 **Instant Client 18.1+**）；勿在未升级客户端时升到 6.x。  
+- [ ] 若动 **site-bin-bylot**：同步 **`output_site_bin_bylot.pl`**、**`outputSiteBinByLot.ts`**、**`infAnalysisRoutes.ts`**、**`apiManifest.ts`**；服务器需 Perl + INFAnalysis；**`infPath` 须在 API 主机可读**。
 
 ---
 
@@ -204,6 +206,7 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 4. **v3/v4 聚合旧纪要**：Oracle/Dummy v4 聚合、**`MEMORY_AGG_ORACLE_MAX_ROWS`**、**`normalizeDbRowKeysUpper`** 等规则仍有效；涉及列表/聚合改动时继续遵守 Dummy/Oracle 双路径同步。
 5. **勿提交**：**`pcr-ai-api/dist.tar`**、**`node_modules`**、真实 **`.env`** 或任何密钥。
 6. **AI Agent 坏 bin 表述（2026-05-20）**：**`agentPrompt.ts`** 专节「坏 Bin 编号与数量」+ **`agentJbBinFormat.ts`**：`query_jb_bins` 工具回传前将 **`bins[]` 的 `n`/`value`** 规范为 **`badBins`/`goodBins` 的 `bin`/`dieCount`**（与 **`aggregate_jb_bins`** 的 **`bin`/`count`** 同义），降低模型把「BIN37 8 颗」写反的概率。回归 **`test/agentJbBinFormat.test.ts`**。改口径时同步 **`agentPrompt.ts`**、**`agentToolHandlers.ts`**、**`agentToolSchemas.ts`**。
+7. **INF site-bin-bylot（2026-05-20）**：**`GET /api/v1/inf-analysis/site-bin-bylot?infPath=&passId=`** — 看 **每片 wafer 按 pass**（可多 pass）的 **bin 测试结果由 probe card 哪个 DUT 测出**；JSON **`passes[].bins[].bin`** 为 `binN`，**`duts[].dut`** 为 DUT 号，**`dieCount`** 为 map 颗数。勿与 JB Oracle **`/infcontrol-layer-bins`** 的 BIN 列计数混淆。发布须 **`npm run build`**（含 copy perlscripts）。
 
 ---
 

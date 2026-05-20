@@ -745,6 +745,36 @@ export const apiManifest = {
         "/api/v1/yield-monitor-triggers/v4/aggregate?dimensions=device,hostname&timeStampBegin=2026-05-13T00:00:00.000Z&timeStampEnd=2026-05-13T23:59:59.999Z&groupTop=20",
     },
     {
+      path: "/api/v1/inf-analysis/site-bin-bylot",
+      method: "GET",
+      purpose:
+        "Per wafer test pass (one or more PASS_ID): from an on-disk INF wafer map, list which probe-card DUT (test site) produced each bin result and die counts. Not Oracle JB BIN columns—reads INF iBinCodeLast + iTestSiteLast via perl output_site_bin_bylot.pl --json. Requires Perl + INFAnalysis on API host; infPath must exist on that machine.",
+      queryParameters: [
+        {
+          name: "infPath",
+          type: "string",
+          optional: false,
+          note: "INF file path on API server (alias: inf_path)",
+        },
+        {
+          name: "passId",
+          type: "number",
+          optional: false,
+          note: "Wafer test pass(es) to include—repeat or comma-separated, e.g. passId=1&passId=2 (alias: pass_id)",
+        },
+      ],
+      responseShape: {
+        meta: "{ apiVersion, requestId, summary }",
+        infPath: "string",
+        passIds: "number[] (requested passes)",
+        passes:
+          "per pass: { passId (wafer pass), bins: [{ bin: 'bin30' (test bin label), duts: [{ dut (probe card DUT#), dieCount (die on map for bin×DUT) }] }] }",
+        stderr: "optional string",
+      },
+      example:
+        "/api/v1/inf-analysis/site-bin-bylot?infPath=/data/lot/sample.inf&passId=1&passId=2",
+    },
+    {
       path: "/api/v1/db/ping",
       method: "GET",
       purpose: "Health check against Oracle via SELECT 1 FROM DUAL (main pool).",

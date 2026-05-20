@@ -6,7 +6,7 @@
   "description": "RESTful API for PCR AI backed by Oracle (oracledb pool)",
   "main": "dist/server.js",
   "scripts": {
-    "build": "tsc && node scripts/verify-dist-no-undici.mjs",
+    "build": "tsc && node scripts/copy-perlscripts.mjs && node scripts/verify-dist-no-undici.mjs",
     "start": "node dist/server.js",
     "dev": "tsx watch src/server.ts",
     "typecheck": "tsc --noEmit",

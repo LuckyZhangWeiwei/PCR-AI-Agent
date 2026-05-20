@@ -57,7 +57,7 @@ The default API base is `http://10.192.130.89:30008` (set in `.env.development` 
 
 - **`server.ts`** — bootstraps Express, starts the Oracle pool, logs Dummy state on startup.
 - **`app.ts`** — creates the Express app, mounts middleware and routers.
-- **`routes/api.ts`** — all `/api/v1`, `/api/v3`, and **`/api/v4`** endpoints (same router; v4 mirrors v3 list surfaces but aggregates in Node from the full matching row set—see `pcr-ai-api/CLAUDE.md`).
+- **`routes/api.ts`** — all `/api/v1`, `/api/v3`, and **`/api/v4`** endpoints (same router; v4 mirrors v3 list surfaces but aggregates in Node from the full matching row set—see `pcr-ai-api/CLAUDE.md`). Also **`GET /inf-analysis/site-bin-bylot`** (INF wafer map: per pass, which probe-card DUT produced each bin—see `pcr-ai-api/CLAUDE.md` §6 / §11.7).
 - **`oracle.ts`** — two named pools: default (`withConnection`) for the main Oracle schema and `probeweb` (`withProbeWebConnection`) for yield-monitor routes. **Driver:** `oracledb@5.5.0` pinned for compatibility with older Oracle 11g clients on hosts that cannot upgrade Instant Client (see `pcr-ai-api/CLAUDE.md` §8 before bumping to v6).
 - **`lib/`** — domain logic grouped by feature:
   - `yieldMonitorTrigger*` — v1/v3 list, v3 aggregate, Dummy, SQL, filter parsing, DUT label extraction.
