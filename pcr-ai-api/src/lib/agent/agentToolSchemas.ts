@@ -67,7 +67,7 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "query_jb_bins",
       description:
-        "查询 JB STAR Layer Bins 数据列表（INFCONTROL ⋈ INFLAYERBINLIST，PASSTYPE=TEST）。",
+        "查询 JB STAR Layer Bins 数据列表（INFCONTROL ⋈ INFLAYERBINLIST，PASSTYPE=TEST）。返回 rows[].badBins/goodBins：每项 { bin: BIN编号, dieCount: die颗数 }，禁止把 dieCount 写成 BIN 号。",
       parameters: {
         type: "object",
         properties: {

@@ -203,7 +203,7 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 3. **测试入口**：**`package.json`** 的 **`npm test`** 已改为 **`tsx --test test/*.test.ts`**，会跑 agent、chart、history、config、REST dummy 等全部后端测试。
 4. **v3/v4 聚合旧纪要**：Oracle/Dummy v4 聚合、**`MEMORY_AGG_ORACLE_MAX_ROWS`**、**`normalizeDbRowKeysUpper`** 等规则仍有效；涉及列表/聚合改动时继续遵守 Dummy/Oracle 双路径同步。
 5. **勿提交**：**`pcr-ai-api/dist.tar`**、**`node_modules`**、真实 **`.env`** 或任何密钥。
-6. **AI Agent 坏 bin 表述（2026-05-20）**：**`agentPrompt.ts`**「数据规则」要求 **`aggregate_jb_bins`** 的 **`bin`**（号）与 **`count`**/**`value`**（颗数）在 JSON、图表 labels/values、**中文结论**中均不可对调；示例 `{ bin: "8", count: 54 }` → 只能说「BIN8 共 54 颗」，禁止「BIN54 共 8 颗」。改 Agent 口径时只改 **`agentPrompt.ts`**（及必要时本表 **`agentToolSchemas`** 描述），无需动 Oracle/Dummy。
+6. **AI Agent 坏 bin 表述（2026-05-20）**：**`agentPrompt.ts`** 专节「坏 Bin 编号与数量」+ **`agentJbBinFormat.ts`**：`query_jb_bins` 工具回传前将 **`bins[]` 的 `n`/`value`** 规范为 **`badBins`/`goodBins` 的 `bin`/`dieCount`**（与 **`aggregate_jb_bins`** 的 **`bin`/`count`** 同义），降低模型把「BIN37 8 颗」写反的概率。回归 **`test/agentJbBinFormat.test.ts`**。改口径时同步 **`agentPrompt.ts`**、**`agentToolHandlers.ts`**、**`agentToolSchemas.ts`**。
 
 ---
 

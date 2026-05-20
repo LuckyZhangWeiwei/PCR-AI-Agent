@@ -47,6 +47,7 @@ import {
   type ClarificationSentinel,
 } from "./agentChartTool.js";
 import { runGetFilterValues } from "./agentFilterValuesTool.js";
+import { wrapJbQueryResultForAgent } from "./agentJbBinFormat.js";
 
 export type { ChartSentinel, ClarificationSentinel };
 
@@ -191,7 +192,7 @@ async function toolQueryJbBins(
     const rows = filterInfcontrolLayerBinV3DummyRows(parsed.applied, limit).map(
       (r) => enrichJbRow(r as Record<string, unknown>)
     );
-    return truncateResult({ count: rows.length, rows });
+    return truncateResult(wrapJbQueryResultForAgent(rows));
   }
 
   const sql = buildInfcontrolLayerBinsV3Sql(parsed.whereAndSql);
@@ -204,7 +205,7 @@ async function toolQueryJbBins(
     return (result.rows ?? []) as Record<string, unknown>[];
   });
   const enriched = rows.map(enrichJbRow);
-  return truncateResult({ count: enriched.length, rows: enriched });
+  return truncateResult(wrapJbQueryResultForAgent(enriched));
 }
 
 async function toolAggregateJbBins(
