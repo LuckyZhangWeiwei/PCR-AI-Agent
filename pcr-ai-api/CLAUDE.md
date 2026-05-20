@@ -113,7 +113,7 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 | --- | --- |
 | HTTP 路由 | `src/routes/api.ts`（`apiRouter`；v3/v4 层控与产量列表+聚合、`manifest`、**`GET …/siliconflow/chat`** 等） |
 | 硅基流动（旧直连 Chat Completions） | **`src/lib/siliconflowChat.ts`**（`callSiliconflowChat`）；路由见 **`api.ts`** **`GET /siliconflow/chat`**；**不依赖 npm 包 `undici`**（严格 TLS 用全局 **`fetch`**，宽松 TLS 用 **`node:https`**） |
-| AI Agent（报表聊天页） | **`src/routes/agent.ts`** 挂在 **`POST /api/v4/agent/chat`**，SSE 输出；核心 loop 在 **`src/lib/agent/agentLoop.ts`**；流式上游请求在 **`src/lib/agent/agentStream.ts`**，超时 **`AGENT_STREAM_TIMEOUT_MS`** 默认 **30000ms**。注意：SSE 客户端断开应监听 **`res.close`**，不要用 **`req.close`**，否则 POST 请求体读完后会误判断线，前端表现为“发送后无反应”。 |
+| AI Agent（报表聊天页） | **`src/routes/agent.ts`** 挂在 **`POST /api/v4/agent/chat`**，SSE 输出；系统提示在 **`src/lib/agent/agentPrompt.ts`**（含 JB BIN **`bin`/`count` 不可互换**及**文字结论**禁写反，如 BIN8 54 颗 ≠ BIN54 8 颗）；核心 loop **`agentLoop.ts`**；流式上游 **`agentStream.ts`**，超时 **`AGENT_STREAM_TIMEOUT_MS`** 默认 **90000ms**。SSE 断开须监听 **`res.close`**，勿用 **`req.close`**。 |
 | 浏览器 CORS | **`src/lib/corsConfig.ts`** → **`wideOpenCorsMiddleware`**；**`app.ts`** 中于 **`requestIdMiddleware`** 之后挂载；已移除 **`cors` npm 包** |
 | v4 聚合行上限（Dummy + Oracle） | **`src/lib/memoryAggregateOracleLimits.ts`**；路由 **`api.ts`** **`…/v4/aggregate`** |
 | Oracle 列名大写化（v4 聚合进 FromRows） | **`src/lib/dbRowKeyUpper.ts`** → **`normalizeDbRowKeysUpper`** |
@@ -203,6 +203,7 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 3. **测试入口**：**`package.json`** 的 **`npm test`** 已改为 **`tsx --test test/*.test.ts`**，会跑 agent、chart、history、config、REST dummy 等全部后端测试。
 4. **v3/v4 聚合旧纪要**：Oracle/Dummy v4 聚合、**`MEMORY_AGG_ORACLE_MAX_ROWS`**、**`normalizeDbRowKeysUpper`** 等规则仍有效；涉及列表/聚合改动时继续遵守 Dummy/Oracle 双路径同步。
 5. **勿提交**：**`pcr-ai-api/dist.tar`**、**`node_modules`**、真实 **`.env`** 或任何密钥。
+6. **AI Agent 坏 bin 表述（2026-05-20）**：**`agentPrompt.ts`**「数据规则」要求 **`aggregate_jb_bins`** 的 **`bin`**（号）与 **`count`**/**`value`**（颗数）在 JSON、图表 labels/values、**中文结论**中均不可对调；示例 `{ bin: "8", count: 54 }` → 只能说「BIN8 共 54 颗」，禁止「BIN54 共 8 颗」。改 Agent 口径时只改 **`agentPrompt.ts`**（及必要时本表 **`agentToolSchemas`** 描述），无需动 Oracle/Dummy。
 
 ---
 
