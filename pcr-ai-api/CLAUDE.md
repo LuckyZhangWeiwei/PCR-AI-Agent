@@ -17,6 +17,7 @@
 | 顺序 | 文件 | 用途 |
 | --- | --- | --- |
 | 1 | [`docs/AI_AGENT_API.md`](docs/AI_AGENT_API.md) | **主手册**：manifest、Dummy、v3 通俗说明、§8 curl、错误码、§9 源码索引 |
+| 1b | [`../docs/SITE_BIN_BY_LOT_INTEGRATION.md`](../docs/SITE_BIN_BY_LOT_INTEGRATION.md) | **INF map × bin × DUT**：`buildInfPath`、报表下钻、Agent 工具/prompt（REST 已实现，UI/Agent 待做） |
 | 2 | [`docs/API_V3.md`](docs/API_V3.md) | **v3 列表**完整 SQL（由 `npm run docs:api-v3` 从 `dist` 再生） |
 | 3 | [`.env.example`](.env.example) | 环境变量与 Dummy 开关说明 |
 | 4 | [`.cursor/rules/dummy-parity.mdc`](.cursor/rules/dummy-parity.mdc) | **Oracle 与 Dummy 双路径必须同步**（改筛选/WHERE/响应形状时必读） |
@@ -185,7 +186,7 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 - [ ] 未误改 **`dist` / production** 下 Dummy 关闭语义（`listDummyRuntime.ts`）。  
 - [ ] 若动 **硅基流动 / CORS**：见 **§12**；密钥仅 **`.env`**，勿硬编码。  
 - [ ] 若升级 **`oracledb`**：须评估 **§8.1**（6.x 与 **Instant Client 18.1+**）；勿在未升级客户端时升到 6.x。  
-- [ ] 若动 **site-bin-bylot**：同步 **`output_site_bin_bylot.pl`**、**`outputSiteBinByLot.ts`**、**`infAnalysisRoutes.ts`**、**`apiManifest.ts`**；服务器需 Perl + INFAnalysis；**`infPath` 须在 API 主机可读**。
+- [ ] 若动 **site-bin-bylot**：同步 **`output_site_bin_bylot.pl`**、**`outputSiteBinByLot.ts`**、**`infAnalysisRoutes.ts`**、**`apiManifest.ts`**；服务器需 Perl + INFAnalysis；**`infPath` 须在 API 主机可读**。若做报表/Agent：读 **[`../docs/SITE_BIN_BY_LOT_INTEGRATION.md`](../docs/SITE_BIN_BY_LOT_INTEGRATION.md)**。
 
 ---
 
@@ -206,7 +207,7 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 4. **v3/v4 聚合旧纪要**：Oracle/Dummy v4 聚合、**`MEMORY_AGG_ORACLE_MAX_ROWS`**、**`normalizeDbRowKeysUpper`** 等规则仍有效；涉及列表/聚合改动时继续遵守 Dummy/Oracle 双路径同步。
 5. **勿提交**：**`pcr-ai-api/dist.tar`**、**`node_modules`**、真实 **`.env`** 或任何密钥。
 6. **AI Agent 坏 bin 表述（2026-05-20）**：**`agentPrompt.ts`** 专节「坏 Bin 编号与数量」+ **`agentJbBinFormat.ts`**：`query_jb_bins` 工具回传前将 **`bins[]` 的 `n`/`value`** 规范为 **`badBins`/`goodBins` 的 `bin`/`dieCount`**（与 **`aggregate_jb_bins`** 的 **`bin`/`count`** 同义），降低模型把「BIN37 8 颗」写反的概率。回归 **`test/agentJbBinFormat.test.ts`**。改口径时同步 **`agentPrompt.ts`**、**`agentToolHandlers.ts`**、**`agentToolSchemas.ts`**。
-7. **INF site-bin-bylot（2026-05-20）**：**`GET /api/v1/inf-analysis/site-bin-bylot?infPath=&passId=`** — 看 **每片 wafer 按 pass**（可多 pass）的 **bin 测试结果由 probe card 哪个 DUT 测出**；JSON **`passes[].bins[].bin`** 为 `binN`，**`duts[].dut`** 为 DUT 号，**`dieCount`** 为 map 颗数。勿与 JB Oracle **`/infcontrol-layer-bins`** 的 BIN 列计数混淆。发布须 **`npm run build`**（含 copy perlscripts）。
+7. **INF site-bin-bylot（2026-05-20）**：**`GET /api/v1/inf-analysis/site-bin-bylot?infPath=&passId=`** — 看 **每片 wafer 按 pass**（可多 pass）的 **bin 测试结果由 probe card 哪个 DUT 测出**；JSON **`passes[].bins[].bin`** 为 `binN`，**`duts[].dut`** 为 DUT 号，**`dieCount`** 为 map 颗数。勿与 JB Oracle **`/infcontrol-layer-bins`** 的 BIN 列计数混淆。发布须 **`npm run build`**（含 copy perlscripts）。**报表/Agent 集成设计**见 **[`../docs/SITE_BIN_BY_LOT_INTEGRATION.md`](../docs/SITE_BIN_BY_LOT_INTEGRATION.md)**（`buildInfPath(device,lot,slot)`、下钻后请求、`query_inf_site_bin_by_dut` prompt 附录）。
 
 ---
 

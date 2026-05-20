@@ -12,7 +12,8 @@ This is a two-package monorepo (no shared workspace tooling — each package has
 | [`pcr-ai-report/`](pcr-ai-report/) | React 19 + TypeScript + Vite + ECharts + **@dnd-kit** | Browser dashboard (**NXP ATTJ WaferTest Dashboard**) that queries the API |
 
 > **Deep API context:** [`pcr-ai-api/CLAUDE.md`](pcr-ai-api/CLAUDE.md) — Dummy/Oracle, v3/v4 aggregate, `MEMORY_AGG_ORACLE_MAX_ROWS`, SiliconFlow, CORS (§3、§11–§12).  
-> **Deep report context:** [`pcr-ai-report/CLAUDE.md`](pcr-ai-report/CLAUDE.md) — draggable layout, localStorage keys, query panel, chart labels, tab/settings shell (§6–§11, **2026-05-15**). Read the relevant package doc before editing that package.
+> **Deep report context:** [`pcr-ai-report/CLAUDE.md`](pcr-ai-report/CLAUDE.md) — draggable layout, localStorage keys, query panel, chart labels, tab/settings shell (§6–§11, **2026-05-15**). Read the relevant package doc before editing that package.  
+> **INF site-bin-bylot（报表 + Agent 集成，待实现）：** [`docs/SITE_BIN_BY_LOT_INTEGRATION.md`](docs/SITE_BIN_BY_LOT_INTEGRATION.md) — `infPath` 由 device+lot+slot 拼接、下钻后调 API、Agent 工具与 prompt 附录。
 
 ---
 

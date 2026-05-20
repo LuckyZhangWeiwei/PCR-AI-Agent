@@ -19,6 +19,7 @@
 | --- | --- | --- |
 | 1 | 根目录 [`../CLAUDE.md`](../CLAUDE.md) | 双包命令、代理、整体数据流 |
 | 2 | [`../pcr-ai-api/CLAUDE.md`](../pcr-ai-api/CLAUDE.md) | v3/v4、Dummy、聚合上限、硅基流动代理 |
+| 2b | [`../docs/SITE_BIN_BY_LOT_INTEGRATION.md`](../docs/SITE_BIN_BY_LOT_INTEGRATION.md) | INF **bin×DUT** 详情：下钻到 device+lot+slot 后调 API、堆叠条图、勿占顶层聚合图 |
 | 3 | [`.env.development`](.env.development) / [`.env.production`](.env.production) | 开发代理 vs 生产 `VITE_API_BASE_URL` |
 | 4 | [`.env.example`](.env.example) | 勿在 dev 直连 `10.x` 的说明 |
 
