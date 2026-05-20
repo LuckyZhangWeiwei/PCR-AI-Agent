@@ -227,4 +227,25 @@ export const TOOL_SCHEMAS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "query_inf_site_bin_by_dut",
+      description:
+        "读取该片 wafer 的 INF 文件（服务端由 device+lot+slot 自动拼路径），按 pass 统计各 bin 由哪个 DUT(site) 测得及 dieCount。数据来自磁盘 INF，非 Oracle JB；与 query_jb_bins 数据源不同。调用前须已通过 query_jb_bins 获得 device+lot+slot+CARDID。",
+      parameters: {
+        type: "object",
+        properties: {
+          device:   { type: "string", description: "产品代码，必填" },
+          lot:      { type: "string", description: "批次 ID，含 '.' 后缀，必填" },
+          slot:     { type: "number", description: "wafer 槽位 SLOT，必填" },
+          passId:   { type: "number", description: "PASS_ID；sort1/2/3→1/3/5" },
+          passIds:  { type: "array", items: { type: "number" }, description: "多 pass 对比" },
+          focusBin: { type: "number", description: "结论聚焦某一 BIN" },
+          cardId:   { type: "string", description: "探针卡 ID（来自 query_jb_bins 的 CARDID），用于结论描述卡号" },
+        },
+        required: ["device", "lot", "slot"],
+      },
+    },
+  },
 ] as const;
