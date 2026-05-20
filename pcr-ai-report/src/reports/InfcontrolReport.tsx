@@ -21,6 +21,7 @@ import {
   resetReportLayoutStorage,
 } from "../components/DraggableReportSections";
 import { DrillDownPanel, formatGroupLabel } from "../components/DrillDownPanel";
+import { InfDutDistPanel } from "../components/InfDutDistPanel";
 import { KpiCard } from "../components/KpiCard";
 import { TreeTable } from "../components/TreeTable";
 import {
@@ -311,6 +312,35 @@ function infcontrolTreeYieldExtra(
   );
 }
 
+type InfCtx = {
+  device: string;
+  lot: string;
+  slot: number;
+  passIds: number[];
+  cardId?: string;
+  focusBin?: string;
+} | null;
+
+function resolveInfCtxFromDrill(
+  parentDimKey: string,
+  parentDimVal: string,
+  subDim: string,
+  clickedKey: string,
+  form: FormState
+): InfCtx {
+  if (subDim !== "slot") return null;
+  const slot = parseInt(clickedKey, 10);
+  if (!Number.isFinite(slot)) return null;
+
+  const device = parentDimKey === "device" ? parentDimVal : form.device;
+  const lot    = parentDimKey === "lot"    ? parentDimVal : form.lot;
+  if (!device || !lot) return null;
+
+  const passIds = form.passId ? [Number(form.passId)] : [1, 3, 5];
+  const cardId  = form.cardId || undefined;
+  return { device, lot, slot, passIds, cardId };
+}
+
 export function InfcontrolReport({ apiBase, listLimits }: Props) {
   const [form, setForm] = useState<FormState>(initialForm);
   const [list,        setList]        = useState<InfcontrolLayerBinsV3Response | null>(null);
@@ -339,6 +369,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
   const [selectedCardType, setSelectedCardType] = useState<string | null>(null);
   const [selectedSlot,     setSelectedSlot]     = useState<string | null>(null);
   const [selectedDevice,   setSelectedDevice]   = useState<string | null>(null);
+  const [infCtx, setInfCtx] = useState<InfCtx>(null);
   const [layoutEpoch, setLayoutEpoch] = useState(0);
 
   const resetReportLayout = useCallback(() => {
@@ -528,6 +559,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     setAggTree(null);
     setAggDevice(null);
     setSelectedDevice(null);
+    setInfCtx(null);
     setAggFree(null);
 
     try {
@@ -997,6 +1029,11 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
               onSubDimChange={(d) =>
                 fetchDrill("lot", drills["lot"]!.parentDimVal, d, form)
               }
+              onBarClick={(key) => {
+                const d = drills["lot"]!;
+                const ctx = resolveInfCtxFromDrill(d.parentDimKey, d.parentDimVal, d.subDim, key, form);
+                if (ctx) setInfCtx(ctx);
+              }}
               onClose={() => {
                 setSelectedLotLabel(null);
                 setDrills((prev) => { const n = { ...prev }; delete n["lot"]; return n; });
@@ -1062,6 +1099,11 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                   onSubDimChange={(d) =>
                     fetchDrill("device", drills["device"]!.parentDimVal, d, form)
                   }
+                  onBarClick={(key) => {
+                    const d = drills["device"]!;
+                    const ctx = resolveInfCtxFromDrill(d.parentDimKey, d.parentDimVal, d.subDim, key, form);
+                    if (ctx) setInfCtx(ctx);
+                  }}
                   onClose={() => {
                     setSelectedDevice(null);
                     setDrills((prev) => { const n = { ...prev }; delete n["device"]; return n; });
@@ -1112,6 +1154,11 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                   onSubDimChange={(d) =>
                     fetchDrill("bin", drills["bin"]!.parentDimVal, d, form)
                   }
+                  onBarClick={(key) => {
+                    const d = drills["bin"]!;
+                    const ctx = resolveInfCtxFromDrill(d.parentDimKey, d.parentDimVal, d.subDim, key, form);
+                    if (ctx) setInfCtx(ctx);
+                  }}
                   onClose={() => {
                     setSelectedBin(null);
                     setDrills((prev) => { const n = { ...prev }; delete n["bin"]; return n; });
@@ -1168,6 +1215,11 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                   onSubDimChange={(d) =>
                     fetchDrill("probeCardType", drills["probeCardType"]!.parentDimVal, d, form)
                   }
+                  onBarClick={(key) => {
+                    const d = drills["probeCardType"]!;
+                    const ctx = resolveInfCtxFromDrill(d.parentDimKey, d.parentDimVal, d.subDim, key, form);
+                    if (ctx) setInfCtx(ctx);
+                  }}
                   onClose={() => {
                     setSelectedCardType(null);
                     setDrills((prev) => { const n = { ...prev }; delete n["probeCardType"]; return n; });
@@ -1231,6 +1283,11 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                   onSubDimChange={(d) =>
                     fetchDrill("slot", drills["slot"]!.parentDimVal, d, form)
                   }
+                  onBarClick={(key) => {
+                    const d = drills["slot"]!;
+                    const ctx = resolveInfCtxFromDrill(d.parentDimKey, d.parentDimVal, d.subDim, key, form);
+                    if (ctx) setInfCtx(ctx);
+                  }}
                   onClose={() => {
                     setSelectedSlot(null);
                     setDrills((prev) => { const n = { ...prev }; delete n["slot"]; return n; });
@@ -1348,7 +1405,28 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
             <span style={{ fontSize: 10, opacity: 0.6 }}>{showDetail ? "▼" : "▶"}</span>
             共 {list?.count ?? 0} 条（含 PROBECARDTYPE / Yield%）
           </div>
-          {showDetail && <DataTable rows={detailRows} maxHeight={400} />}
+          {showDetail && (
+            <DataTable
+              rows={detailRows}
+              maxHeight={400}
+              onRowClick={(row) => {
+                const device = String(row["DEVICE"] ?? "").trim();
+                const lot    = String(row["LOT"]    ?? "").trim();
+                const slot   = parseInt(String(row["SLOT"]   ?? ""), 10);
+                const passId = parseInt(String(row["PASSID"] ?? ""), 10);
+                const cardId = String(row["CARDID"] ?? "").trim() || undefined;
+                if (device && lot && Number.isFinite(slot)) {
+                  setInfCtx({
+                    device,
+                    lot,
+                    slot,
+                    passIds: Number.isFinite(passId) ? [passId] : [1, 3, 5],
+                    cardId,
+                  });
+                }
+              }}
+            />
+          )}
         </div>
       ) : null;
 
@@ -1551,6 +1629,18 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
           defaultOrder={JB_REPORT_SECTION_ORDER}
           sections={jbReportSections}
           layoutEpoch={layoutEpoch}
+        />
+      )}
+      {infCtx && (
+        <InfDutDistPanel
+          device={infCtx.device}
+          lot={infCtx.lot}
+          slot={infCtx.slot}
+          passIds={infCtx.passIds}
+          cardId={infCtx.cardId}
+          focusBin={infCtx.focusBin}
+          apiBase={apiBase}
+          onClose={() => setInfCtx(null)}
         />
       )}
     </div>
