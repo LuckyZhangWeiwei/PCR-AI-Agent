@@ -1088,6 +1088,11 @@ button.chip:hover {
   padding: 6px;
 }
 
+.report-reorder-group--chartgrid .report-reorder-body {
+  display: flex;
+  flex-direction: column;
+}
+
 /* 排名/下钻图表内层容器（Yield / JB） */
 .report-chart-panel {
   background: #0d1117;
@@ -1197,6 +1202,23 @@ button.chip:hover {
   .report-reorder-group.report-reorder-group--chartgrid {
     grid-template-columns: 1fr;
   }
+}
+
+/* INF DUT 分布：独立容器，显示在触发源下一行（不嵌套在 chart-panel / 表格滚动区内） */
+.inf-dut-standalone-row {
+  width: 100%;
+  margin-top: 10px;
+  box-sizing: border-box;
+  min-width: 0;
+  overflow: visible;
+  background: #0d1117;
+  border: 1px solid rgba(240, 246, 252, 0.1);
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+
+.report-reorder-body > .inf-dut-standalone-row {
+  margin-top: 10px;
 }
 
 .inf-dut-dist-panel-meta {

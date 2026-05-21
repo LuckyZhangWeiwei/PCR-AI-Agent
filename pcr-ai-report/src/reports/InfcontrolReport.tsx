@@ -166,7 +166,6 @@ const JB_REPORT_SECTION_ORDER = [
   "chartsGrid",
   "tree",
   "detail",
-  "infDut",
 ] as const;
 
 const JB_KPI_BLOCK_ORDER = ["jbWafer", "jbYieldPct", "jbWorstType", "jbTopBin"] as const;
@@ -332,11 +331,83 @@ type InfCtxData = {
   cardId?: string;
   focusBin?: string;
   goodBinNumbers: Set<number>;
-  /** 明细表行索引（与 detailRows 顺序一致）；钻取打开时为 undefined */
+  /** 明细表行索引（list.rows 原始下标）；钻取打开时为 undefined */
   detailRowIndex?: number;
+  /** DUT 面板锚点：显示在触发源下方 */
+  anchor: InfDutAnchor;
 };
 
 type InfCtx = InfCtxData | null;
+
+type JbChartBlockId = (typeof JB_CHART_BLOCK_ORDER)[number];
+
+type InfDutAnchor =
+  | { source: "detail" }
+  | { source: "lotYield" }
+  | { source: "chartsGrid"; block: JbChartBlockId };
+
+function infDutAnchorForParentDimKey(parentDimKey: string): InfDutAnchor | null {
+  switch (parentDimKey) {
+    case "lot":
+      return { source: "lotYield" };
+    case "device":
+      return { source: "chartsGrid", block: "jbDevice" };
+    case "bin":
+      return { source: "chartsGrid", block: "jbBin" };
+    case "probeCardType":
+      return { source: "chartsGrid", block: "jbPcType" };
+    case "slot":
+      return { source: "chartsGrid", block: "jbSlot" };
+    default:
+      return null;
+  }
+}
+
+function infDutAnchorsMatch(a: InfDutAnchor, b: InfDutAnchor): boolean {
+  if (a.source !== b.source) return false;
+  if (a.source === "chartsGrid" && b.source === "chartsGrid") {
+    return a.block === b.block;
+  }
+  return true;
+}
+
+function infDutAnchorFromDrill(d: DrillState): InfDutAnchor {
+  return (
+    infDutAnchorForParentDimKey(d.parentDimKey) ?? {
+      source: "chartsGrid",
+      block: "jbSlot",
+    }
+  );
+}
+
+function InfDutAnchorRow({
+  infCtx,
+  match,
+  apiBase,
+  onClose,
+}: {
+  infCtx: InfCtx;
+  match: (anchor: InfDutAnchor) => boolean;
+  apiBase: string;
+  onClose: () => void;
+}) {
+  if (!infCtx || !match(infCtx.anchor)) return null;
+  return (
+    <div className="inf-dut-standalone-row">
+      <InfDutDistPanel
+        device={infCtx.device}
+        lot={infCtx.lot}
+        slot={infCtx.slot}
+        passIds={infCtx.passIds}
+        cardId={infCtx.cardId}
+        focusBin={infCtx.focusBin}
+        goodBinNumbers={infCtx.goodBinNumbers}
+        apiBase={apiBase}
+        onClose={onClose}
+      />
+    </div>
+  );
+}
 
 /** 图表钻取打开 INF DUT 时须在查询区填写 Lot。 */
 function queryLotRequired(form: FormState): string | null {
@@ -353,6 +424,7 @@ type InfCtxForSlotOpts = {
   focusBin?: string;
   detailRowIndex?: number;
   binFilter?: string;
+  anchor: InfDutAnchor;
 };
 
 /** 按 slot 组装 INF DUT 上下文：明细行用 opts.lot，图表钻取用查询区 Lot。 */
@@ -360,7 +432,7 @@ function buildInfCtxForSlot(
   form: FormState,
   listRows: InfcontrolLayerBinV3Row[] | undefined,
   slot: number,
-  opts: InfCtxForSlotOpts = {}
+  opts: InfCtxForSlotOpts
 ): InfCtxData | null {
   const lot = (opts.lot?.trim() || queryLotRequired(form)) ?? null;
   if (!lot) return null;
@@ -399,6 +471,7 @@ function buildInfCtxForSlot(
       passIds
     ),
     detailRowIndex: opts.detailRowIndex,
+    anchor: opts.anchor,
   };
 }
 
@@ -465,7 +538,8 @@ function resolveInfCtxFromDrill(
   subDim: string,
   clickedKey: string,
   form: FormState,
-  listRows?: InfcontrolLayerBinV3Row[]
+  listRows: InfcontrolLayerBinV3Row[] | undefined,
+  anchor: InfDutAnchor
 ): InfCtxData | null {
   if (!queryLotRequired(form)) return null;
   if (subDim !== "slot") return null;
@@ -487,6 +561,7 @@ function resolveInfCtxFromDrill(
     device: deviceHint,
     binFilter,
     focusBin,
+    anchor,
   });
 }
 
@@ -1112,12 +1187,31 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         d.subDim,
         clickedKey,
         form,
-        listRowsForInf
+        listRowsForInf,
+        infDutAnchorFromDrill(d)
       );
       if (ctx) setInfCtx(ctx);
     },
     [form, listRowsForInf]
   );
+
+  const closeInfDut = useCallback(() => setInfCtx(null), []);
+
+  /** 关闭下钻面板时，若 DUT 由该下钻打开则一并关闭 */
+  const closeDrillPanel = useCallback((parentDimKey: string, before?: () => void) => {
+    before?.();
+    setDrills((prev) => {
+      const n = { ...prev };
+      delete n[parentDimKey];
+      return n;
+    });
+    const drillAnchor = infDutAnchorForParentDimKey(parentDimKey);
+    if (!drillAnchor) return;
+    setInfCtx((prev) => {
+      if (!prev) return null;
+      return infDutAnchorsMatch(prev.anchor, drillAnchor) ? null : prev;
+    });
+  }, []);
 
   const jbReportSections = useMemo(() => {
     if (!hasData) return {};
@@ -1176,8 +1270,9 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
 
     const lotYieldSection =
       lotYieldData.length > 0 ? (
-        <div className="report-chart-panel">
-          <ChartDrillSplit
+        <>
+          <div className="report-chart-panel">
+            <ChartDrillSplit
             hint={
               <>
                 <span>绿≥95% · 黄80–95% · 红&lt;80%</span>
@@ -1221,15 +1316,19 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                     fetchDrill("lot", drills["lot"]!.parentDimVal, d, form)
                   }
                   onBarClick={(key) => openInfFromDrill(drills["lot"]!, key)}
-                  onClose={() => {
-                    setSelectedLotLabel(null);
-                    setDrills((prev) => { const n = { ...prev }; delete n["lot"]; return n; });
-                  }}
+                  onClose={() => closeDrillPanel("lot", () => setSelectedLotLabel(null))}
                 />
               ) : null
             }
           />
-        </div>
+          </div>
+          <InfDutAnchorRow
+            infCtx={infCtx}
+            match={(a) => a.source === "lotYield"}
+            apiBase={apiBase}
+            onClose={closeInfDut}
+          />
+        </>
       ) : null;
 
     const chartsGridSection = (
@@ -1249,6 +1348,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         }}
         sections={{
           jbDevice: (
+            <>
             <div className="report-chart-panel">
               <ChartDrillSplit
                 hint="点击 Device 钻取"
@@ -1287,17 +1387,22 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                         fetchDrill("device", drills["device"]!.parentDimVal, d, form)
                       }
                       onBarClick={(key) => openInfFromDrill(drills["device"]!, key)}
-                      onClose={() => {
-                        setSelectedDevice(null);
-                        setDrills((prev) => { const n = { ...prev }; delete n["device"]; return n; });
-                      }}
+                      onClose={() => closeDrillPanel("device", () => setSelectedDevice(null))}
                     />
                   ) : null
                 }
               />
-            </div>
+              </div>
+              <InfDutAnchorRow
+                infCtx={infCtx}
+                match={(a) => a.source === "chartsGrid" && a.block === "jbDevice"}
+                apiBase={apiBase}
+                onClose={closeInfDut}
+              />
+            </>
           ),
           jbBin: (
+            <>
             <div className="report-chart-panel">
               <ChartDrillSplit
                 hint="点击钻取"
@@ -1337,17 +1442,22 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                         fetchDrill("bin", drills["bin"]!.parentDimVal, d, form)
                       }
                       onBarClick={(key) => openInfFromDrill(drills["bin"]!, key)}
-                      onClose={() => {
-                        setSelectedBin(null);
-                        setDrills((prev) => { const n = { ...prev }; delete n["bin"]; return n; });
-                      }}
+                      onClose={() => closeDrillPanel("bin", () => setSelectedBin(null))}
                     />
                   ) : null
                 }
               />
-            </div>
+              </div>
+              <InfDutAnchorRow
+                infCtx={infCtx}
+                match={(a) => a.source === "chartsGrid" && a.block === "jbBin"}
+                apiBase={apiBase}
+                onClose={closeInfDut}
+              />
+            </>
           ),
           jbPcType: (
+            <>
             <div className="report-chart-panel">
               <ChartDrillSplit
                 hint="点击类型 → 钻取具体 CardId"
@@ -1394,10 +1504,9 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                             fetchDrill("probeCardType", drills["probeCardType"]!.parentDimVal, d, form)
                           }
                           onBarClick={(key) => openInfFromDrill(drills["probeCardType"]!, key)}
-                          onClose={() => {
-                            setSelectedCardType(null);
-                            setDrills((prev) => { const n = { ...prev }; delete n["probeCardType"]; return n; });
-                          }}
+                          onClose={() =>
+                            closeDrillPanel("probeCardType", () => setSelectedCardType(null))
+                          }
                         />
                       ) : null}
                       {drills["cardId"] != null ? (
@@ -1420,9 +1529,17 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                   ) : null
                 }
               />
-            </div>
+              </div>
+              <InfDutAnchorRow
+                infCtx={infCtx}
+                match={(a) => a.source === "chartsGrid" && a.block === "jbPcType"}
+                apiBase={apiBase}
+                onClose={closeInfDut}
+              />
+            </>
           ),
           jbSlot: (
+            <>
             <div className="report-chart-panel">
               <ChartDrillSplit
                 hint="点击 Slot 钻取；查看 DUT 分布须先在查询条件填写 Lot"
@@ -1444,7 +1561,10 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                             const ctx = buildInfCtxForSlot(
                               form,
                               listRowsForInf,
-                              slotN
+                              slotN,
+                              {
+                                anchor: { source: "chartsGrid", block: "jbSlot" },
+                              }
                             );
                             if (ctx) setInfCtx(ctx);
                           }
@@ -1470,15 +1590,19 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                         fetchDrill("slot", drills["slot"]!.parentDimVal, d, form)
                       }
                       onBarClick={(key) => openInfFromDrill(drills["slot"]!, key)}
-                      onClose={() => {
-                        setSelectedSlot(null);
-                        setDrills((prev) => { const n = { ...prev }; delete n["slot"]; return n; });
-                      }}
+                      onClose={() => closeDrillPanel("slot", () => setSelectedSlot(null))}
                     />
                   ) : null
                 }
               />
-            </div>
+              </div>
+              <InfDutAnchorRow
+                infCtx={infCtx}
+                match={(a) => a.source === "chartsGrid" && a.block === "jbSlot"}
+                apiBase={apiBase}
+                onClose={closeInfDut}
+              />
+            </>
           ),
           jbFreeDim: (
             <div className="report-chart-panel">
@@ -1558,6 +1682,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
 
     const detailSection =
       detailRows.length > 0 ? (
+        <>
         <div
           style={{
             background: "#0d1117",
@@ -1613,6 +1738,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                     passIds,
                     cardId,
                     detailRowIndex: Number.isInteger(listIdx) ? listIdx : undefined,
+                    anchor: { source: "detail" },
                   });
                   if (ctx) setInfCtx(ctx);
                 }
@@ -1620,21 +1746,13 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
             />
           )}
         </div>
-      ) : null;
-
-    const infDutSection =
-      infCtx != null ? (
-        <InfDutDistPanel
-          device={infCtx.device}
-          lot={infCtx.lot}
-          slot={infCtx.slot}
-          passIds={infCtx.passIds}
-          cardId={infCtx.cardId}
-          focusBin={infCtx.focusBin}
-          goodBinNumbers={infCtx.goodBinNumbers}
+        <InfDutAnchorRow
+          infCtx={infCtx}
+          match={(a) => a.source === "detail"}
           apiBase={apiBase}
-          onClose={() => setInfCtx(null)}
+          onClose={closeInfDut}
         />
+        </>
       ) : null;
 
     return {
@@ -1643,7 +1761,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       chartsGrid: chartsGridSection,
       tree: treeSection,
       detail: detailSection,
-      infDut: infDutSection,
     };
   }, [
     hasData,
@@ -1677,6 +1794,8 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     showDetail,
     layoutEpoch,
     openInfFromDrill,
+    closeInfDut,
+    closeDrillPanel,
     listRowsForInf,
     infCtx,
     apiBase,
