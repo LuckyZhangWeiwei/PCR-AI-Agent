@@ -11,9 +11,9 @@ This is a two-package monorepo (no shared workspace tooling — each package has
 | [`pcr-ai-api/`](pcr-ai-api/) | Node.js + Express + TypeScript + **oracledb 5.5**（锁定；见 `pcr-ai-api/CLAUDE.md` §8） | Read-only REST API backed by Oracle |
 | [`pcr-ai-report/`](pcr-ai-report/) | React 19 + TypeScript + Vite + ECharts + **@dnd-kit** | Browser dashboard (**NXP ATTJ WaferTest Dashboard**) that queries the API |
 
-> **Deep API context:** [`pcr-ai-api/CLAUDE.md`](pcr-ai-api/CLAUDE.md) — Dummy/Oracle, v3/v4 aggregate, `MEMORY_AGG_ORACLE_MAX_ROWS`, SiliconFlow, CORS (§3、§11–§12).  
-> **Deep report context:** [`pcr-ai-report/CLAUDE.md`](pcr-ai-report/CLAUDE.md) — draggable layout, localStorage keys, query panel, chart labels, tab/settings shell (§6–§11, **2026-05-15**). Read the relevant package doc before editing that package.  
-> **INF site-bin-bylot（报表 + Agent 集成，待实现）：** [`docs/SITE_BIN_BY_LOT_INTEGRATION.md`](docs/SITE_BIN_BY_LOT_INTEGRATION.md) — `infPath` 由 device+lot+slot 拼接、下钻后调 API、Agent 工具与 prompt 附录。
+> **Deep API context:** [`pcr-ai-api/CLAUDE.md`](pcr-ai-api/CLAUDE.md) — Dummy/Oracle, v3/v4 aggregate, `MEMORY_AGG_ORACLE_MAX_ROWS`, SiliconFlow, CORS, Oracle driver pinning.  
+> **Deep report context:** [`pcr-ai-report/CLAUDE.md`](pcr-ai-report/CLAUDE.md) — draggable layout, localStorage keys, query panel, chart labels, tab/settings shell. Read the relevant package doc before editing that package.  
+> **INF site-bin-bylot（API 已实现，报表 `InfDutDistPanel` 已接入）：** [`docs/SITE_BIN_BY_LOT_INTEGRATION.md`](docs/SITE_BIN_BY_LOT_INTEGRATION.md) — `infPath` 由 device+lot+slot 拼接、下钻后调 API、Agent 工具与 prompt 附录。
 
 ---
 
@@ -24,12 +24,14 @@ This is a two-package monorepo (no shared workspace tooling — each package has
 ```bash
 cd pcr-ai-api
 npm ci                  # install deps
-npm run dev             # tsx watch (hot-reload)
-npm run build           # tsc → dist/ + verify-dist-no-undici (no npm undici in SiliconFlow)
+npm run dev             # tsx watch (hot-reload); defaults both Dummy flags to true — set PCR_AI_LOCAL_DUMMY=false to use real Oracle
+npm run build           # tsc → dist/ + copy-perlscripts + verify-dist-no-undici
 npm start               # node dist/server.js (production)
 npm run typecheck       # tsc --noEmit
 npm test                # run all backend tests (test/*.test.ts)
 npm run docs:api-v3     # rebuild docs/API_V3.md from dist (run after changing SQL/doc templates)
+npm run pm2:start       # build + pm2 start ecosystem.config.cjs
+npm run pm2:reload      # build + pm2 reload (zero-downtime on server)
 ```
 
 Default port: **30008** (override via `PORT=` in `.env`).  
@@ -42,6 +44,7 @@ cd pcr-ai-report
 npm ci                  # install deps
 npm run dev             # Vite dev server (reads .env.development)
 npm run build           # tsc -b && vite build → dist/
+npm run pack:dist       # build + tar dist/ → dist.tar for nginx deploy (extract at web root)
 npm run lint            # eslint
 npm run preview         # serve the built dist/ locally
 ```
@@ -56,6 +59,7 @@ The default API base is `http://10.192.130.89:30008` (set in `.env.development` 
 
 ### API (`pcr-ai-api/src/`)
 
+- **`loadEnv.ts`** — imported first by `server.ts`; runs `polyfillUtilIsDate.ts` (Node 23+ compat for oracledb 5.5), loads `.env` via dotenv, then sets both `*_DUMMY=true` when running under `tsx` dev (not dist/production/test). Override with `PCR_AI_LOCAL_DUMMY=false`.
 - **`server.ts`** — bootstraps Express, starts the Oracle pool, logs Dummy state on startup.
 - **`app.ts`** — creates the Express app, mounts middleware and routers.
 - **`routes/api.ts`** — all `/api/v1`, `/api/v3`, and **`/api/v4`** endpoints (same router; v4 mirrors v3 list surfaces but aggregates in Node from the full matching row set—see `pcr-ai-api/CLAUDE.md`). Also **`GET /inf-analysis/site-bin-bylot`** (INF wafer map: per pass, which probe-card DUT produced each bin—see `pcr-ai-api/CLAUDE.md` §6 / §11.7).
@@ -79,9 +83,11 @@ Set `YIELD_MONITOR_TRIGGERS_DUMMY=true` or `INFCONTROL_LAYER_BINS_DUMMY=true` in
 - **`api/client.ts`** — `apiGetJson<T>()` wraps `fetch`, normalizes the base URL, serializes query params, and throws on non-2xx with a structured error message.
 - **`api/paths.ts`** — single constant `API_PREFIX = "/api/v4"` shared by all report components.
 - **`reports/`** — `YieldMonitorReport`, `InfcontrolReport` (both use **`DraggableReportSections`** + nested **`DraggableReportBlocks`** for KPI/chart grids, **`.query-panel`**, layout reset); `AiAgentReport`, `TableRowsReport`, `OverviewReport` (settings only when `embedded`).
-- **`components/DraggableReportSections.tsx`** — `@dnd-kit` reorder/close/hide + **`localStorage`**; **`createPointerMidpointCollision`** for tall blocks; see **`pcr-ai-report/CLAUDE.md` §6**.
-- **`components/`** — also `DarkChart`, `DataTable`, `QueryInspector`, `KpiCard` (`showLabel` for KPI strips), `TreeTable`, `DrillDownPanel`.
-- **`utils/`** — `asyncConcurrency.ts` (`REPORT_ORACLE_FANOUT_CONCURRENCY = 1`); `datetimeLocal.ts` (`formatChartDayLabel`, `formatAggregateDimLabel`); `yieldCalc.ts`, `rollup.ts`, `binFilterLines.ts`.
+- **`components/DraggableReportSections.tsx`** — `@dnd-kit` reorder/close/hide + **`localStorage`**; **`createPointerMidpointCollision`** for tall blocks; see the "可拖拽布局" section in `pcr-ai-report/CLAUDE.md`.
+- **`components/ChartDrillSplit.tsx`** — CSS grid `1fr 1fr` wrapper: left = main chart, right = drill panel spanning full grid row; `overflow:hidden` prevents page-widening on first click.
+- **`components/InfDutDistPanel.tsx`** — stacked bar of bin×DUT per pass for a JB STAR lot/slot; calls `GET /inf-analysis/site-bin-bylot`; filters to good bins by default using `infGoodBins.ts`.
+- **`components/`** — also `DarkChart`, `DataTable`, `QueryInspector`, `KpiCard` (`showLabel` for KPI strips), `TreeTable`, `DrillDownPanel`, `CollapsibleQueryPanel`.
+- **`utils/`** — `asyncConcurrency.ts` (`REPORT_ORACLE_FANOUT_CONCURRENCY = 1`); `datetimeLocal.ts` (`formatChartDayLabel`, `formatAggregateDimLabel`); `yieldCalc.ts`, `rollup.ts`, `binFilterLines.ts`; `drillAggregate.ts` (`drillFromTree` — slice cached aggTree by parent dim instead of re-fetching); `infGoodBins.ts` (merge good bins from BIN1 + `isGoodBin` flags + PASSBIN hyphen format); `buildInfPath.ts` (frontend mirror of API `buildInfPath`).
 - **`theme/chartTheme.ts`** — dark-palette constants shared across all chart options.
 
 ### Communication flow
