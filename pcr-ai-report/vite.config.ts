@@ -44,6 +44,10 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    build: {
+      // ECharts + reports in one bundle (~1.1 MB minified).
+      chunkSizeWarningLimit: 1700,
+    },
     server: {
       /** localhost 页面直打内网 IP 会被 Chrome Private Network Access 拦截；开发时走同源 + 代理 */
       proxy: {
