@@ -60,15 +60,25 @@ export const horizontalBarCategoryAxisLabel = {
   ellipsis: "...",
 };
 
-/** Yield 排名条图高度（按可见条数，略紧凑） */
-export function rankBarChartHeight(rowCount: number, maxRows = 20): number {
+/** Yield 排名条图高度（按可见条数） */
+export function rankBarChartHeight(
+  rowCount: number,
+  maxRows = 20,
+  variant: "default" | "compact" = "default"
+): number {
   const n = Math.min(Math.max(rowCount, 1), maxRows);
+  if (variant === "compact") return Math.max(118, n * 15 + 30);
   return Math.max(148, n * 18 + 40);
 }
 
 /** 下钻面板内条图 */
-export function drillBarChartHeight(rowCount: number, maxRows = 10): number {
+export function drillBarChartHeight(
+  rowCount: number,
+  maxRows = 10,
+  variant: "default" | "compact" = "default"
+): number {
   const n = Math.min(Math.max(rowCount, 1), maxRows);
+  if (variant === "compact") return Math.max(108, n * 17 + 28);
   return Math.max(124, n * 20 + 36);
 }
 

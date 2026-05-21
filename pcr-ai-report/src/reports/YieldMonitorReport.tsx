@@ -43,6 +43,7 @@ import {
   dateShortcutLast7Days,
   dateShortcutThisMonth,
   dateShortcutToday,
+  parseDutNumber,
   tallyDutNumbers,
 } from "../utils/yieldCalc";
 import type { ReportListLimits } from "../hooks/usePersistedReportLimits";
@@ -197,6 +198,9 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
   const [aggTree, setAggTree] = useState<YieldMonitorV3AggregateResponse | null>(null);
   const [aggFree, setAggFree] = useState<YieldMonitorV3AggregateResponse | null>(null);
   const [freeDim, setFreeDim] = useState("timeDay");
+  /** 自由维度块内选中的探针卡（与 chPcType 的 selectedProbeCard 独立） */
+  const [freeDimSelectedProbeCard, setFreeDimSelectedProbeCard] =
+    useState<string | null>(null);
 
   const [loadingList, setLoadingList] = useState(false);
   const [loadingAgg, setLoadingAgg] = useState(false);
@@ -245,20 +249,26 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
 
   const fetchDrill = useCallback(
     async (
-      parentDimKey: string,
-      parentDimVal: string,
+      drillStateKey: string,
+      filterDim: string,
+      filterVal: string,
       subDim: string,
       currentForm: FormState
     ) => {
       setDrills((prev) => ({
         ...prev,
-        [parentDimKey]: { parentDimKey, parentDimVal, subDim, groups: [], loading: true, error: null },
+        [drillStateKey]: {
+          parentDimKey: filterDim,
+          parentDimVal: filterVal,
+          subDim,
+          groups: [],
+          loading: true,
+          error: null,
+        },
       }));
       try {
-        // probeCardType is not a real DB column — the API ignores it as a filter.
-        // Send probeCard prefix instead (no-op for other parentDimKeys).
         const extraParams: Record<string, string | number | undefined> = {
-          [parentDimKey]: parentDimVal,
+          [filterDim]: filterVal,
         };
         const params = {
           ...buildCoreParams(currentForm),
@@ -271,12 +281,9 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
           YIELD_AGGREGATE_PATH,
           params
         );
-        // When drilling from probeCardType → probeCard, the API ignores the
-        // probeCardType filter (not a real column). Filter client-side:
-        // PROBECARDTYPE = leading segment before the first '-' in PROBECARD.
         let groups = res.groups;
-        if (parentDimKey === "probeCardType" && subDim === "probeCard") {
-          const typeLower = parentDimVal.trim().toLowerCase();
+        if (filterDim === "probeCardType" && subDim === "probeCard") {
+          const typeLower = filterVal.trim().toLowerCase();
           groups = groups.filter((g) => {
             const card = (g.parts.probeCard ?? g.key).trim();
             const dash = card.indexOf("-");
@@ -285,15 +292,22 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
           });
         }
         setDrills((prev) => {
-          const d = prev[parentDimKey];
-          if (!d || d.parentDimVal !== parentDimVal) return prev;
-          return { ...prev, [parentDimKey]: { ...d, groups, loading: false } };
+          const d = prev[drillStateKey];
+          if (!d || d.parentDimVal !== filterVal) return prev;
+          return { ...prev, [drillStateKey]: { ...d, groups, loading: false } };
         });
       } catch (e) {
         setDrills((prev) => {
-          const d = prev[parentDimKey];
-          if (!d || d.parentDimVal !== parentDimVal) return prev;
-          return { ...prev, [parentDimKey]: { ...d, loading: false, error: e instanceof Error ? e.message : String(e) } };
+          const d = prev[drillStateKey];
+          if (!d || d.parentDimVal !== filterVal) return prev;
+          return {
+            ...prev,
+            [drillStateKey]: {
+              ...d,
+              loading: false,
+              error: e instanceof Error ? e.message : String(e),
+            },
+          };
         });
       }
     },
@@ -322,6 +336,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     setErrorList(null);
     setErrorAgg(null);
     setDrills({});
+    setFreeDimSelectedProbeCard(null);
     setSelectedProbeCard(null);
     setSelectedCardTypeName(null);
     setSelectedLotId(null);
@@ -405,29 +420,67 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
   const handleFreeDimChange = useCallback(
     (dim: string) => {
       setFreeDim(dim);
+      setFreeDimSelectedProbeCard(null);
+      setDrills((prev) => {
+        const next = { ...prev };
+        delete next.freeDim;
+        return next;
+      });
       if (list || aggTime) fetchFreeAgg(dim, form);
     },
     [list, aggTime, form, fetchFreeAgg]
   );
 
-  // Fetch DUT rows specifically for the selected probeCard.
-  // The main list has a row cap and no probeCard filter, so cards whose rows
-  // fall outside the cap always produce an empty DUT chart in production.
+  /** 当前应加载 DUT 分布的探针卡（PcType 下钻 vs 自由维度） */
+  const dutProbeCardTarget = useMemo(() => {
+    if (
+      freeDimSelectedProbeCard &&
+      (freeDim === "probeCard" ||
+        drills.freeDim?.subDim === "probeCard")
+    ) {
+      return freeDimSelectedProbeCard;
+    }
+    if (
+      selectedProbeCard &&
+      drills.probeCardType?.subDim === "probeCard"
+    ) {
+      return selectedProbeCard;
+    }
+    return null;
+  }, [
+    freeDimSelectedProbeCard,
+    freeDim,
+    drills.freeDim,
+    selectedProbeCard,
+    drills.probeCardType,
+  ]);
+
   useEffect(() => {
-    if (!selectedProbeCard) { setDutList(null); return; }
+    if (!dutProbeCardTarget) {
+      setDutList(null);
+      return;
+    }
     let cancelled = false;
     setLoadingDut(true);
     setDutList(null);
     apiGetJson<YieldMonitorV3Response>(
       apiBase,
       `${API_PREFIX}/yield-monitor-triggers/v4`,
-      { ...buildListParams(form, listLimits), probeCard: selectedProbeCard }
+      { ...buildListParams(form, listLimits), probeCard: dutProbeCardTarget }
     )
-      .then((res) => { if (!cancelled) setDutList(res); })
-      .catch(() => { if (!cancelled) setDutList(null); })
-      .finally(() => { if (!cancelled) setLoadingDut(false); });
-    return () => { cancelled = true; };
-  }, [selectedProbeCard, apiBase, form, listLimits]);
+      .then((res) => {
+        if (!cancelled) setDutList(res);
+      })
+      .catch(() => {
+        if (!cancelled) setDutList(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingDut(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dutProbeCardTarget, apiBase, form, listLimits]);
 
   // ── KPI derivations ──────────────────────────────────────────────────────
 
@@ -537,18 +590,25 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     };
   }, [aggCardType, selectedCardTypeName]);
 
-  // DUT distribution — rows come from dutList (targeted probeCard fetch),
-  // not the main list, so the row-cap no longer hides data in production.
+  // DUT distribution — rows from dutList (probeCard filter); keyed by dutProbeCardTarget
   const dutRows = useMemo(() => {
-    if (!selectedProbeCard) return null;
-    if (loadingDut) return null;           // still fetching — show spinner
-    if (!dutList?.rows?.length) return []; // fetch done, genuinely no data
+    if (!dutProbeCardTarget) return null;
+    if (loadingDut) return null;
+    if (!dutList?.rows?.length) return [];
     return dutList.rows as YieldMonitorV3Row[];
-  }, [selectedProbeCard, dutList, loadingDut]);
+  }, [dutProbeCardTarget, dutList, loadingDut]);
+
+  const dutTally = useMemo(() => {
+    if (!dutRows?.length) return [];
+    return tallyDutNumbers(
+      dutRows.map((r) => ({
+        dutNumber: r.dutNumber ?? parseDutNumber(r.TRIGGER_LABEL),
+      }))
+    ).slice(0, 10);
+  }, [dutRows]);
 
   const dutOption = useMemo((): EChartsOption => {
-    const entries = tallyDutNumbers(dutRows ?? []).slice(0, 10);
-    const sorted = [...entries].sort((a, b) => a.count - b.count);
+    const sorted = [...dutTally].sort((a, b) => a.count - b.count);
     return {
       ...horizontalBarChartBase(),
       xAxis: {
@@ -577,35 +637,50 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         },
       ],
     };
-  }, [dutRows]);
+  }, [dutTally]);
 
-  /** Shown at bottom of ProbeCard Type drill panel after a card bar is clicked */
-  const probeCardDutFooter = useMemo(() => {
-    if (!selectedProbeCard) return null;
-    if (drills["probeCardType"]?.subDim !== "probeCard") return null;
-
-    return (
+  const dutDistributionFooter = useCallback(
+    (cardId: string, chartVariant: "default" | "compact" = "default") => (
       <>
         <div className="chart-drill-panel-footer-title">
-          DUT# 分布 · {selectedProbeCard}
+          DUT# 分布 · {cardId}
         </div>
         {loadingDut ? (
           <div style={{ color: "#8b949e", fontSize: 12, padding: "8px 0" }}>
             加载中…
           </div>
-        ) : dutRows !== null && dutRows.length === 0 ? (
+        ) : dutRows === null ? null : dutRows.length === 0 ? (
           <div style={{ color: "#8b949e", fontSize: 12, padding: "4px 0" }}>
             该探针卡暂无触发记录
           </div>
-        ) : dutRows !== null && dutRows.length > 0 ? (
+        ) : dutTally.length === 0 ? (
+          <div style={{ color: "#8b949e", fontSize: 12, padding: "4px 0" }}>
+            有触发记录，但 TRIGGER_LABEL 中未解析到 dut#
+          </div>
+        ) : (
           <DarkChart
             option={dutOption}
-            height={rankBarChartHeight(tallyDutNumbers(dutRows).length, 10)}
+            height={rankBarChartHeight(dutTally.length, 10, chartVariant)}
           />
-        ) : null}
+        )}
       </>
-    );
-  }, [selectedProbeCard, drills, loadingDut, dutRows, dutOption]);
+    ),
+    [loadingDut, dutRows, dutTally, dutOption]
+  );
+
+  const probeCardDutFooter = useMemo(() => {
+    if (!selectedProbeCard) return null;
+    if (drills.probeCardType?.subDim !== "probeCard") return null;
+    return dutDistributionFooter(selectedProbeCard);
+  }, [selectedProbeCard, drills.probeCardType, dutDistributionFooter]);
+
+  const freeDimDutFooter = useMemo(() => {
+    if (!freeDimSelectedProbeCard) return null;
+    if (freeDim !== "probeCard" && drills.freeDim?.subDim !== "probeCard") {
+      return null;
+    }
+    return dutDistributionFooter(freeDimSelectedProbeCard, "compact");
+  }, [freeDimSelectedProbeCard, freeDim, drills.freeDim, dutDistributionFooter]);
 
   const lotOption = useMemo((): EChartsOption => {
     const sorted = [...(aggLot?.groups ?? [])]
@@ -688,10 +763,28 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     };
   }, [aggDevice, selectedDevice]);
 
+  const freeSortedGroups = useMemo(
+    () =>
+      [...(aggFree?.groups ?? [])]
+        .sort((a, b) => a.count - b.count)
+        .slice(-10),
+    [aggFree]
+  );
+
   const freeOption = useMemo((): EChartsOption => {
-    const sorted = [...(aggFree?.groups ?? [])]
-      .sort((a, b) => a.count - b.count)
-      .slice(-10);
+    const sorted = freeSortedGroups;
+    const clickable =
+      freeDim === "probeCardType" || freeDim === "probeCard";
+    /** 与 DrillDownPanel 下钻条一致：选中亮蓝、其余变淡 */
+    const COL = chartAccent;
+    const COL_B = "#2080ff";
+    const COL_D = "rgba(88,166,255,0.3)";
+    const freeDimHighlightKey =
+      freeDim === "probeCardType" && drills.freeDim
+        ? drills.freeDim.parentDimVal
+        : freeDim === "probeCard"
+          ? freeDimSelectedProbeCard
+          : null;
     return {
       ...horizontalBarChartBase(),
       xAxis: {
@@ -709,14 +802,60 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       series: [
         {
           type: "bar",
-          cursor: "default",
-          data: sorted.map((g) => g.count),
-          itemStyle: { color: chartAccent, borderRadius: [0, 4, 4, 0] as unknown as number },
+          cursor: clickable ? "pointer" : "default",
+          data: sorted.map((g) => {
+            const name = g.parts[freeDim] ?? g.key;
+            const isSel =
+              freeDimHighlightKey !== null && name === freeDimHighlightKey;
+            return {
+              value: g.count,
+              itemStyle: {
+                color: isSel
+                  ? COL_B
+                  : freeDimHighlightKey !== null
+                    ? COL_D
+                    : COL,
+                borderRadius: [0, 4, 4, 0] as unknown as number,
+              },
+            };
+          }),
+          label: {
+            show: true,
+            position: "right",
+            color: chartAxisColor,
+            fontSize: 10,
+          },
           animationDuration: 600,
         },
       ],
     };
-  }, [aggFree, freeDim]);
+  }, [freeSortedGroups, freeDim, drills.freeDim, freeDimSelectedProbeCard]);
+
+  const freeDimChartEvents = useMemo((): Record<string, (p: unknown) => void> | undefined => {
+    if (freeDim === "probeCardType") {
+      return {
+        click: (p: unknown) => {
+          const idx = (p as { dataIndex?: number }).dataIndex;
+          if (idx == null || idx < 0 || idx >= freeSortedGroups.length) return;
+          const g = freeSortedGroups[idx]!;
+          const val = g.parts.probeCardType ?? g.key;
+          setFreeDimSelectedProbeCard(null);
+          fetchDrill("freeDim", "probeCardType", val, "probeCard", form);
+        },
+      };
+    }
+    if (freeDim === "probeCard") {
+      return {
+        click: (p: unknown) => {
+          const idx = (p as { dataIndex?: number }).dataIndex;
+          if (idx == null || idx < 0 || idx >= freeSortedGroups.length) return;
+          const g = freeSortedGroups[idx]!;
+          setFreeDimSelectedProbeCard(g.parts.probeCard ?? g.key);
+        },
+      };
+    }
+    return undefined;
+  }, [freeDim, freeSortedGroups, form, fetchDrill]);
 
   // ── Tree ─────────────────────────────────────────────────────────────────
 
@@ -838,7 +977,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
                         click: (params: unknown) => {
                           const { name } = params as { name: string };
                           setSelectedDevice(name);
-                          fetchDrill("device", name, "lotId", form);
+                          fetchDrill("device", "device", name, "lotId", form);
                         },
                       }}
                     />
@@ -855,7 +994,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
                       activeSubDim={drills["device"]!.subDim}
                       subDimOptions={DRILL_FROM_DEVICE}
                       onSubDimChange={(d) =>
-                        fetchDrill("device", drills["device"]!.parentDimVal, d, form)
+                        fetchDrill("device", drills.device!.parentDimKey, drills.device!.parentDimVal, d, form)
                       }
                       onClose={() => {
                         setSelectedDevice(null);
@@ -888,7 +1027,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
                           const { name } = params as { name: string };
                           setSelectedCardTypeName(name);
                           setSelectedProbeCard(null);
-                          fetchDrill("probeCardType", name, "probeCard", form);
+                          fetchDrill("probeCardType", "probeCardType", name, "probeCard", form);
                         },
                       }}
                     />
@@ -906,7 +1045,13 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
                       subDimOptions={DRILL_FROM_CARDTYPE}
                       onSubDimChange={(d) => {
                         if (d !== "probeCard") setSelectedProbeCard(null);
-                        fetchDrill("probeCardType", drills["probeCardType"]!.parentDimVal, d, form);
+                        fetchDrill(
+                          "probeCardType",
+                          drills.probeCardType!.parentDimKey,
+                          drills.probeCardType!.parentDimVal,
+                          d,
+                          form
+                        );
                       }}
                       onClose={() => {
                         setSelectedCardTypeName(null);
@@ -918,7 +1063,11 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
                           ? (key) => setSelectedProbeCard(key)
                           : undefined
                       }
-                      selectedKey={drills["probeCardType"]!.subDim === "probeCard" ? selectedProbeCard : null}
+                      selectedKey={
+                        drills.probeCardType?.subDim === "probeCard"
+                          ? selectedProbeCard
+                          : null
+                      }
                       footer={probeCardDutFooter}
                     />
                   ) : null
@@ -945,7 +1094,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
                         click: (params: unknown) => {
                           const { name } = params as { name: string };
                           setSelectedLotId(name);
-                          fetchDrill("lotId", name, "probeCardType", form);
+                          fetchDrill("lotId", "lotId", name, "probeCardType", form);
                         },
                       }}
                     />
@@ -962,7 +1111,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
                       activeSubDim={drills["lotId"]!.subDim}
                       subDimOptions={DRILL_FROM_LOT}
                       onSubDimChange={(d) =>
-                        fetchDrill("lotId", drills["lotId"]!.parentDimVal, d, form)
+                        fetchDrill("lotId", drills.lotId!.parentDimKey, drills.lotId!.parentDimVal, d, form)
                       }
                       onClose={() => {
                         setSelectedLotId(null);
@@ -1004,11 +1153,96 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
                   </button>
                 ))}
               </div>
-              {aggFree && (
-                <DarkChart
-                  option={freeOption}
-                  height={rankBarChartHeight(aggFree.groups.length, 10)}
+              {freeDim === "probeCardType" ? (
+                <ChartDrillSplit
+                  hint="点击类型 → 钻取 ProbeCard → 点选具体卡，DUT# 分布显示在右侧面板底部"
+                  chart={
+                    aggFree ? (
+                      <DarkChart
+                        option={freeOption}
+                        height={rankBarChartHeight(freeSortedGroups.length, 10, "compact")}
+                        onEvents={freeDimChartEvents}
+                      />
+                    ) : null
+                  }
+                  drill={
+                    drills.freeDim != null ? (
+                      <DrillDownPanel
+                        compact
+                        layout="side"
+                        title={`${drills.freeDim.parentDimVal} · 下钻：按 ${drills.freeDim.subDim}`}
+                        groups={drills.freeDim.groups}
+                        loading={drills.freeDim.loading}
+                        error={drills.freeDim.error}
+                        activeSubDim={drills.freeDim.subDim}
+                        subDimOptions={DRILL_FROM_CARDTYPE}
+                        onSubDimChange={(d) => {
+                          if (d !== "probeCard") setFreeDimSelectedProbeCard(null);
+                          fetchDrill(
+                            "freeDim",
+                            drills.freeDim!.parentDimKey,
+                            drills.freeDim!.parentDimVal,
+                            d,
+                            form
+                          );
+                        }}
+                        onClose={() => {
+                          setFreeDimSelectedProbeCard(null);
+                          setDrills((prev) => {
+                            const n = { ...prev };
+                            delete n.freeDim;
+                            return n;
+                          });
+                        }}
+                        onBarClick={
+                          drills.freeDim.subDim === "probeCard"
+                            ? (key) => setFreeDimSelectedProbeCard(key)
+                            : undefined
+                        }
+                        selectedKey={
+                          drills.freeDim.subDim === "probeCard"
+                            ? freeDimSelectedProbeCard
+                            : null
+                        }
+                        footer={freeDimDutFooter}
+                      />
+                    ) : null
+                  }
                 />
+              ) : freeDim === "probeCard" ? (
+                <>
+                  <div style={{ fontSize: 11, color: "#6e7681", marginBottom: 8 }}>
+                    点击探针卡查看 DUT# 分布
+                  </div>
+                  {aggFree && (
+                    <DarkChart
+                      option={freeOption}
+                      height={rankBarChartHeight(freeSortedGroups.length, 10, "compact")}
+                      onEvents={freeDimChartEvents}
+                    />
+                  )}
+                  {freeDimDutFooter ? (
+                    <div
+                      className="chart-drill-panel chart-drill-panel--inline-dut"
+                      style={{
+                        border: "1px solid #388bfd",
+                        borderRadius: 8,
+                        background: "#0d1929",
+                        padding: 12,
+                        marginTop: 12,
+                      }}
+                    >
+                      {freeDimDutFooter}
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                aggFree && (
+                  <DarkChart
+                    option={freeOption}
+                    height={rankBarChartHeight(freeSortedGroups.length, 10, "compact")}
+                  />
+                )
               )}
             </div>
           ),
@@ -1103,6 +1337,10 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     form,
     fetchDrill,
     probeCardDutFooter,
+    freeDimDutFooter,
+    freeDimChartEvents,
+    freeSortedGroups,
+    freeDimSelectedProbeCard,
     loadingDut,
     dutRows,
     aggLot,

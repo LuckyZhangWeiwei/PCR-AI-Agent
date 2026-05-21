@@ -32,6 +32,8 @@ type Props = {
   layout?: "below" | "side";
   /** Rendered at the bottom of this panel (e.g. DUT distribution after picking a probe card) */
   footer?: ReactNode;
+  /** Slightly shorter bar chart (e.g. free-dimension drill column) */
+  compact?: boolean;
 };
 
 const COL_PANEL = chartAccent;
@@ -74,6 +76,7 @@ export function DrillDownPanel({
   selectedKey,
   layout = "below",
   footer,
+  compact = false,
 }: Props) {
   const sorted = [...groups].sort((a, b) => a.count - b.count).slice(-10);
 
@@ -185,7 +188,7 @@ export function DrillDownPanel({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            height: 120,
+            height: compact ? 96 : 120,
             color: "#8b949e",
             fontSize: 12,
             background: "rgba(240,246,252,0.03)",
@@ -202,7 +205,7 @@ export function DrillDownPanel({
         <div className="chart-drill-panel-chart">
           <DarkChart
             option={option}
-            height={drillBarChartHeight(sorted.length)}
+            height={drillBarChartHeight(sorted.length, 10, compact ? "compact" : "default")}
             onEvents={
               onBarClick
                 ? {
