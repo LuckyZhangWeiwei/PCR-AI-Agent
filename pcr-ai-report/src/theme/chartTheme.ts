@@ -60,6 +60,12 @@ export const horizontalBarCategoryAxisLabel = {
   ellipsis: "...",
 };
 
+/** 较长类目（如 LOT Yield% Top）— 不截断，配合 grid.containLabel 自动留白 */
+export const horizontalBarCategoryAxisLabelFull = {
+  color: chartTextColor,
+  fontSize: 11,
+};
+
 export type BarChartHeightVariant = "default" | "medium" | "compact";
 
 /** 排名条图高度（按可见条数） */

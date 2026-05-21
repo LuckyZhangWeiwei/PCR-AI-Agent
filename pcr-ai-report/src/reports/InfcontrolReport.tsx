@@ -29,6 +29,7 @@ import {
   chartAxisColor,
   chartSplitLine,
   horizontalBarCategoryAxisLabel,
+  horizontalBarCategoryAxisLabelFull,
   horizontalBarChartBase,
   JB_SLOT_TREND_CHART_HEIGHT,
   rankBarChartHeight,
@@ -763,10 +764,17 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         axisLabel: { color: chartAxisColor, formatter: "{value}%" },
         splitLine: { lineStyle: { color: chartSplitLine } },
       },
+      grid: {
+        left: 8,
+        right: 52,
+        top: 8,
+        bottom: 8,
+        containLabel: true,
+      },
       yAxis: {
         type: "category",
         data: data.map((d) => d.label),
-        axisLabel: { ...horizontalBarCategoryAxisLabel, interval: 0 },
+        axisLabel: { ...horizontalBarCategoryAxisLabelFull, interval: 0 },
       },
       series: [
         {
