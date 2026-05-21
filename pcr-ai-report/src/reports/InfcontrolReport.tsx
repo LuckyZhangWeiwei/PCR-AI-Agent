@@ -338,6 +338,70 @@ type InfCtxData = {
 
 type InfCtx = InfCtxData | null;
 
+/** 图表钻取打开 INF DUT 时须在查询区填写 Lot。 */
+function queryLotRequired(form: FormState): string | null {
+  const lot = form.lot.trim();
+  return lot || null;
+}
+
+type InfCtxForSlotOpts = {
+  device?: string;
+  /** 明细行点击时传入该行 LOT；钻取路径不传，须依赖查询区 Lot */
+  lot?: string;
+  passIds?: number[];
+  cardId?: string;
+  focusBin?: string;
+  detailRowIndex?: number;
+  binFilter?: string;
+};
+
+/** 按 slot 组装 INF DUT 上下文：明细行用 opts.lot，图表钻取用查询区 Lot。 */
+function buildInfCtxForSlot(
+  form: FormState,
+  listRows: InfcontrolLayerBinV3Row[] | undefined,
+  slot: number,
+  opts: InfCtxForSlotOpts = {}
+): InfCtxData | null {
+  const lot = (opts.lot?.trim() || queryLotRequired(form)) ?? null;
+  if (!lot) return null;
+
+  let device = (opts.device ?? form.device.trim()) || "";
+  let passIds =
+    opts.passIds ??
+    (form.passId ? [Number(form.passId)] : [1, 3, 5]);
+  let cardId = opts.cardId ?? (form.cardId.trim() || undefined);
+
+  if (!device) {
+    const fromList = resolveDeviceLotFromListRows(
+      listRows,
+      slot,
+      opts.binFilter,
+      lot
+    );
+    if (!fromList) return null;
+    device = fromList.device;
+    if (opts.passIds == null && fromList.passIds) passIds = fromList.passIds;
+    if (!cardId && fromList.cardId) cardId = fromList.cardId;
+  }
+
+  return {
+    device,
+    lot,
+    slot,
+    passIds,
+    cardId,
+    focusBin: opts.focusBin,
+    goodBinNumbers: collectGoodBinNumbersFromJbRows(
+      listRows,
+      device,
+      lot,
+      slot,
+      passIds
+    ),
+    detailRowIndex: opts.detailRowIndex,
+  };
+}
+
 /** DrillDownPanel 条形 click 传的是 y 轴文案（如 `Slot 5` 或 `LOT NF12615.1X · Slot 20 · Bin 4`）。 */
 function parseSlotFromDrillBarLabel(clickedKey: string): number | null {
   const t = clickedKey.trim();
@@ -345,11 +409,6 @@ function parseSlotFromDrillBarLabel(clickedKey: string): number | null {
   if (m) return parseInt(m[1], 10);
   const n = parseInt(t, 10);
   return Number.isFinite(n) ? n : null;
-}
-
-function parseLotFromDrillBarLabel(clickedKey: string): string | null {
-  const m = /\bLOT\s+([^\s·]+)/i.exec(clickedKey.trim());
-  return m ? m[1].trim() : null;
 }
 
 /** 从 BIN 下钻到 slot 时按 lot+slot 聚合，条形上显示 LOT。 */
@@ -373,16 +432,19 @@ function rowMatchesBinFilter(row: InfcontrolLayerBinV3Row, binToken: string | un
   return false;
 }
 
-/** 筛选未填 device/lot 时，从本次查询已返回的明细行反查（与不良 BIN 下钻一致）。 */
+/** 从明细行反查 device（lot 须与查询区填写的一致）。 */
 function resolveDeviceLotFromListRows(
   rows: InfcontrolLayerBinV3Row[] | undefined,
   slot: number,
-  binFilter?: string
+  binFilter?: string,
+  requiredLot?: string
 ): Pick<InfCtxData, "device" | "lot" | "passIds" | "cardId"> | null {
   if (!rows?.length) return null;
   const binToken = binFilter ? normalizeBinToken(binFilter) : undefined;
+  const lotNeed = requiredLot?.trim();
   for (const r of rows) {
     if (Number(r.SLOT) !== slot) continue;
+    if (lotNeed && String(r.LOT ?? "").trim() !== lotNeed) continue;
     if (!rowMatchesBinFilter(r, binToken)) continue;
     const device = String(r.DEVICE ?? "").trim();
     const lot = String(r.LOT ?? "").trim();
@@ -405,29 +467,12 @@ function resolveInfCtxFromDrill(
   form: FormState,
   listRows?: InfcontrolLayerBinV3Row[]
 ): InfCtxData | null {
+  if (!queryLotRequired(form)) return null;
   if (subDim !== "slot") return null;
   const slot = parseSlotFromDrillBarLabel(clickedKey);
   if (slot === null) return null;
 
-  let device =
-    parentDimKey === "device" ? parentDimVal.trim() : form.device.trim();
-  let lot =
-    parentDimKey === "lot"
-      ? parentDimVal.trim()
-      : parseLotFromDrillBarLabel(clickedKey) || form.lot.trim();
-  let passIds = form.passId ? [Number(form.passId)] : [1, 3, 5];
-  let cardId = form.cardId.trim() || undefined;
-
-  if (!device || !lot) {
-    const binFilter = parentDimKey === "bin" ? parentDimVal : undefined;
-    const fromList = resolveDeviceLotFromListRows(listRows, slot, binFilter);
-    if (!fromList) return null;
-    device = fromList.device;
-    lot = fromList.lot;
-    passIds = fromList.passIds;
-    if (!cardId && fromList.cardId) cardId = fromList.cardId;
-  }
-
+  const binFilter = parentDimKey === "bin" ? parentDimVal : undefined;
   const focusBin =
     parentDimKey === "bin" && parentDimVal
       ? /^bin/i.test(parentDimVal)
@@ -435,15 +480,14 @@ function resolveInfCtxFromDrill(
         : `bin${normalizeBinToken(parentDimVal)}`
       : undefined;
 
-  const goodBinNumbers = collectGoodBinNumbersFromJbRows(
-    listRows,
-    device,
-    lot,
-    slot,
-    passIds
-  );
+  const deviceHint =
+    parentDimKey === "device" ? parentDimVal.trim() : form.device.trim() || undefined;
 
-  return { device, lot, slot, passIds, cardId, focusBin, goodBinNumbers };
+  return buildInfCtxForSlot(form, listRows, slot, {
+    device: deviceHint,
+    binFilter,
+    focusBin,
+  });
 }
 
 export function InfcontrolReport({ apiBase, listLimits }: Props) {
@@ -1021,23 +1065,37 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
 
   const detailRows = useMemo(() => {
     if (!list?.rows?.length) return [];
-    return (list.rows as InfcontrolLayerBinV3Row[]).map((r, index) => {
+    const mapped = (list.rows as InfcontrolLayerBinV3Row[]).map((r, index) => {
       const yp = computeYieldPct([r]);
       const goodBins = collectGoodBinNumbersFromJbRow(r);
       return {
-        [JB_DETAIL_LIST_INDEX]: index,
-        [JB_DETAIL_GOOD_BINS]: [...goodBins],
-        TESTEND:       r.TESTEND ?? "",
-        DEVICE:        r.DEVICE ?? "",
-        LOT:           r.LOT ?? "",
-        SLOT:          r.SLOT ?? "",
-        PROBECARDTYPE: r.PROBECARDTYPE ?? "—",
-        CARDID:        r.CARDID ?? "",
-        PASSID:        r.PASSID ?? "",
-        "Yield%":      yp !== null ? `${yp.toFixed(1)}%` : "—",
+        row: {
+          [JB_DETAIL_LIST_INDEX]: index,
+          [JB_DETAIL_GOOD_BINS]: [...goodBins],
+          TESTEND:       r.TESTEND ?? "",
+          DEVICE:        r.DEVICE ?? "",
+          LOT:           r.LOT ?? "",
+          SLOT:          r.SLOT ?? "",
+          PROBECARDTYPE: r.PROBECARDTYPE ?? "—",
+          CARDID:        r.CARDID ?? "",
+          PASSID:        r.PASSID ?? "",
+          "Yield%":      yp !== null ? `${yp.toFixed(1)}%` : "—",
+        },
+        yieldSort: yp ?? Number.POSITIVE_INFINITY,
       };
     });
+    mapped.sort((a, b) => a.yieldSort - b.yieldSort);
+    return mapped.map((m) => m.row);
   }, [list]);
+
+  /** 明细排序后，用 list 行号反查当前表中的选中行 */
+  const detailSelectedRowIndex = useMemo(() => {
+    if (infCtx?.detailRowIndex == null) return null;
+    const i = detailRows.findIndex(
+      (r) => Number(r[JB_DETAIL_LIST_INDEX]) === infCtx.detailRowIndex
+    );
+    return i >= 0 ? i : null;
+  }, [detailRows, infCtx?.detailRowIndex]);
 
   const chips = useMemo(() => activeChips(form, listLimits), [form, listLimits]);
   const hasData = !!(list || aggBin || aggCardType);
@@ -1047,6 +1105,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
 
   const openInfFromDrill = useCallback(
     (d: DrillState, clickedKey: string) => {
+      if (!queryLotRequired(form)) return;
       const ctx = resolveInfCtxFromDrill(
         d.parentDimKey,
         d.parentDimVal,
@@ -1366,7 +1425,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
           jbSlot: (
             <div className="report-chart-panel">
               <ChartDrillSplit
-                hint="点击 Slot 钻取"
+                hint="点击 Slot 钻取；查看 DUT 分布须先在查询条件填写 Lot"
                 chart={
                   aggSlot && (aggSlot.groups?.length ?? 0) > 0 ? (
                     <ReactECharts
@@ -1381,24 +1440,13 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                           setSelectedSlot(params.name);
                           fetchDrill("slot", slotNum, "bin", form);
                           const slotN = parseSlotFromDrillBarLabel(params.name);
-                          const dev = form.device.trim();
-                          const lot = form.lot.trim();
-                          if (slotN !== null && dev && lot) {
-                            const passIds = form.passId ? [Number(form.passId)] : [1, 3, 5];
-                            setInfCtx({
-                              device: dev,
-                              lot,
-                              slot: slotN,
-                              passIds,
-                              cardId: form.cardId || undefined,
-                              goodBinNumbers: collectGoodBinNumbersFromJbRows(
-                                listRowsForInf,
-                                dev,
-                                lot,
-                                slotN,
-                                passIds
-                              ),
-                            });
+                          if (slotN !== null) {
+                            const ctx = buildInfCtxForSlot(
+                              form,
+                              listRowsForInf,
+                              slotN
+                            );
+                            if (ctx) setInfCtx(ctx);
                           }
                         },
                       }}
@@ -1532,13 +1580,13 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
             onClick={() => setShowDetail((s) => !s)}
           >
             <span style={{ fontSize: 10, opacity: 0.6 }}>{showDetail ? "▼" : "▶"}</span>
-            共 {list?.count ?? 0} 条（含 PROBECARDTYPE / Yield%）
+            共 {list?.count ?? 0} 条（含 PROBECARDTYPE / Yield%）· 点击行查看 DUT 分布
           </div>
           {showDetail && (
             <DataTable
               rows={detailRows}
               maxHeight={400}
-              selectedRowIndex={infCtx?.detailRowIndex ?? null}
+              selectedRowIndex={detailSelectedRowIndex}
               omitKeys={[JB_DETAIL_LIST_INDEX, JB_DETAIL_GOOD_BINS]}
               columnOrder={[
                 "TESTEND",
@@ -1559,23 +1607,14 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                 if (device && lot && Number.isFinite(slot)) {
                   const passIds = Number.isFinite(passId) ? [passId] : [1, 3, 5];
                   const listIdx = Number(row[JB_DETAIL_LIST_INDEX]);
-                  const goodBinNumbers = collectGoodBinNumbersFromJbRows(
-                    listRowsForInf,
+                  const ctx = buildInfCtxForSlot(form, listRowsForInf, slot, {
                     device,
                     lot,
-                    slot,
-                    passIds
-                  );
-                  const detailRowIndex = Number.isInteger(listIdx) ? listIdx : undefined;
-                  setInfCtx({
-                    device,
-                    lot,
-                    slot,
                     passIds,
                     cardId,
-                    goodBinNumbers,
-                    detailRowIndex,
+                    detailRowIndex: Number.isInteger(listIdx) ? listIdx : undefined,
                   });
+                  if (ctx) setInfCtx(ctx);
                 }
               }}
             />
@@ -1634,6 +1673,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     showTree,
     list,
     detailRows,
+    detailSelectedRowIndex,
     showDetail,
     layoutEpoch,
     openInfFromDrill,
