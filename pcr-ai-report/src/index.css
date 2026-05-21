@@ -946,6 +946,22 @@ button.chip:hover {
   margin: 0 0 10px 0;
 }
 
+/* 每日触发量趋势：收紧模块与图表容器边距 */
+.report-reorder-item:has(.yield-trend-block) {
+  padding: 8px;
+}
+
+.report-reorder-item:has(.yield-trend-block) .report-reorder-item-head {
+  margin-bottom: 6px;
+}
+
+.yield-trend-block {
+  background: #0d1117;
+  border: 1px solid rgba(240, 246, 252, 0.1);
+  border-radius: 8;
+  padding: 8px 10px 6px;
+}
+
 /* Grip + title — drag affordance */
 .report-reorder-drag-head {
   display: flex;

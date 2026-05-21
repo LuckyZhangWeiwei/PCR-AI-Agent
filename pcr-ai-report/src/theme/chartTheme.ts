@@ -82,4 +82,13 @@ export function drillBarChartHeight(
   return Math.max(124, n * 20 + 36);
 }
 
-export const YIELD_TREND_CHART_HEIGHT = 180;
+export const YIELD_TREND_CHART_HEIGHT = 168;
+
+/** 折线趋势图（每日触发量）— 较紧的 grid */
+export const yieldTrendChartGrid = {
+  left: 40,
+  right: 12,
+  top: 24,
+  bottom: 32,
+  containLabel: true,
+};

@@ -32,6 +32,7 @@ import {
   horizontalBarChartBase,
   rankBarChartHeight,
   YIELD_TREND_CHART_HEIGHT,
+  yieldTrendChartGrid,
 } from "../theme/chartTheme";
 import {
   allSettledWithConcurrency,
@@ -512,6 +513,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     const counts = groups.map((g) => g.count);
     return {
       ...baseChartOption(),
+      grid: yieldTrendChartGrid,
       xAxis: {
         type: "category",
         data: dates,
@@ -930,14 +932,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
 
     const timeTrendSection =
       aggTime ? (
-        <div
-          style={{
-            background: "#0d1117",
-            border: "1px solid rgba(240,246,252,0.1)",
-            borderRadius: 8,
-            padding: 16,
-          }}
-        >
+        <div className="yield-trend-block">
           <DarkChart option={timeTrendOption} height={YIELD_TREND_CHART_HEIGHT} />
         </div>
       ) : null;
