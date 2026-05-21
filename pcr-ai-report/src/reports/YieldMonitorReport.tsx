@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import ReactECharts from "echarts-for-react";
 import { apiGetJson } from "../api/client";
 import { API_PREFIX, YIELD_AGGREGATE_PATH } from "../api/paths";
 import type {
@@ -9,6 +8,7 @@ import type {
   YieldMonitorV3Row,
 } from "../api/types";
 import { CollapsibleQueryPanel } from "../components/CollapsibleQueryPanel";
+import { ChartDrillSplit } from "../components/ChartDrillSplit";
 import { DarkChart } from "../components/DarkChart";
 import { DataTable } from "../components/DataTable";
 import {
@@ -28,7 +28,8 @@ import {
   chartAccent3,
   chartAxisColor,
   chartSplitLine,
-  chartTextColor,
+  horizontalBarCategoryAxisLabel,
+  horizontalBarChartBase,
 } from "../theme/chartTheme";
 import {
   allSettledWithConcurrency,
@@ -497,7 +498,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       .slice(-10);
     const COL = chartAccent2, COL_B = "#bf8dff", COL_D = "rgba(163,113,247,0.3)";
     return {
-      ...baseChartOption(),
+      ...horizontalBarChartBase(),
       xAxis: {
         type: "value",
         axisLabel: { color: chartAxisColor },
@@ -506,7 +507,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       yAxis: {
         type: "category",
         data: sorted.map((g) => g.parts.probeCardType ?? g.key),
-        axisLabel: { color: chartTextColor, fontSize: 11 },
+        axisLabel: horizontalBarCategoryAxisLabel,
       },
       series: [
         {
@@ -547,7 +548,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     const entries = tallyDutNumbers(dutRows ?? []).slice(0, 10);
     const sorted = [...entries].sort((a, b) => a.count - b.count);
     return {
-      ...baseChartOption(),
+      ...horizontalBarChartBase(),
       xAxis: {
         type: "value",
         axisLabel: { color: chartAxisColor },
@@ -556,7 +557,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       yAxis: {
         type: "category",
         data: sorted.map((e) => `dut#${e.dut}`),
-        axisLabel: { color: chartTextColor, fontSize: 11 },
+        axisLabel: horizontalBarCategoryAxisLabel,
       },
       series: [
         {
@@ -582,7 +583,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       .slice(-10);
     const COL = "#f0883e", COL_B = "#ff9f60", COL_D = "rgba(240,136,62,0.3)";
     return {
-      ...baseChartOption(),
+      ...horizontalBarChartBase(),
       xAxis: {
         type: "value",
         axisLabel: { color: chartAxisColor },
@@ -591,7 +592,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       yAxis: {
         type: "category",
         data: sorted.map((g) => g.parts.lotId ?? g.key),
-        axisLabel: { color: chartTextColor, fontSize: 11 },
+        axisLabel: horizontalBarCategoryAxisLabel,
       },
       series: [
         {
@@ -625,7 +626,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       .slice(-20);
     const COL = "#79c0ff", COL_B = "#58a6ff", COL_D = "rgba(88,166,255,0.2)";
     return {
-      ...baseChartOption(),
+      ...horizontalBarChartBase(),
       xAxis: {
         type: "value",
         axisLabel: { color: chartAxisColor },
@@ -634,7 +635,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       yAxis: {
         type: "category",
         data: sorted.map((g) => g.parts.device ?? g.key),
-        axisLabel: { color: chartTextColor, fontSize: 11 },
+        axisLabel: horizontalBarCategoryAxisLabel,
       },
       series: [
         {
@@ -662,7 +663,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       .sort((a, b) => a.count - b.count)
       .slice(-10);
     return {
-      ...baseChartOption(),
+      ...horizontalBarChartBase(),
       xAxis: {
         type: "value",
         axisLabel: { color: chartAxisColor },
@@ -673,7 +674,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         data: sorted.map((g) =>
           formatAggregateDimLabel(freeDim, g.parts[freeDim] ?? g.key),
         ),
-        axisLabel: { color: chartTextColor, fontSize: 10 },
+        axisLabel: { ...horizontalBarCategoryAxisLabel, fontSize: 10 },
       },
       series: [
         {
@@ -796,44 +797,44 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
                 padding: 16,
               }}
             >
-              <div style={{ fontSize: 11, color: "#6e7681", marginBottom: 8 }}>
-                点击 Device → 钻取 LOT / Pass / Wafer 分布
-              </div>
-              {aggDevice && (
-                <ReactECharts
-                  option={deviceOption}
-                  style={{
-                    height: Math.max(180, (aggDevice.groups?.length ?? 0) * 22 + 60),
-                    width: "100%",
-                  }}
-                  opts={{ renderer: "canvas" }}
-                  notMerge
-                  lazyUpdate
-                  onEvents={{
-                    click: (params: { name: string }) => {
-                      setSelectedDevice(params.name);
-                      fetchDrill("device", params.name, "lotId", form);
-                    },
-                  }}
-                />
-              )}
-              {drills["device"] != null && (
-                <DrillDownPanel
-                  title={`Device: ${drills["device"]!.parentDimVal} · 下钻：按 ${drills["device"]!.subDim}`}
-                  groups={drills["device"]!.groups}
-                  loading={drills["device"]!.loading}
-                  error={drills["device"]!.error}
-                  activeSubDim={drills["device"]!.subDim}
-                  subDimOptions={DRILL_FROM_DEVICE}
-                  onSubDimChange={(d) =>
-                    fetchDrill("device", drills["device"]!.parentDimVal, d, form)
-                  }
-                  onClose={() => {
-                    setSelectedDevice(null);
-                    setDrills((prev) => { const n = { ...prev }; delete n["device"]; return n; });
-                  }}
-                />
-              )}
+              <ChartDrillSplit
+                hint="点击 Device → 钻取 LOT / Pass / Wafer 分布"
+                chart={
+                  aggDevice ? (
+                    <DarkChart
+                      option={deviceOption}
+                      height={Math.max(180, (aggDevice.groups?.length ?? 0) * 22 + 60)}
+                      onEvents={{
+                        click: (params: unknown) => {
+                          const { name } = params as { name: string };
+                          setSelectedDevice(name);
+                          fetchDrill("device", name, "lotId", form);
+                        },
+                      }}
+                    />
+                  ) : null
+                }
+                drill={
+                  drills["device"] != null ? (
+                    <DrillDownPanel
+                      layout="side"
+                      title={`Device: ${drills["device"]!.parentDimVal} · 下钻：按 ${drills["device"]!.subDim}`}
+                      groups={drills["device"]!.groups}
+                      loading={drills["device"]!.loading}
+                      error={drills["device"]!.error}
+                      activeSubDim={drills["device"]!.subDim}
+                      subDimOptions={DRILL_FROM_DEVICE}
+                      onSubDimChange={(d) =>
+                        fetchDrill("device", drills["device"]!.parentDimVal, d, form)
+                      }
+                      onClose={() => {
+                        setSelectedDevice(null);
+                        setDrills((prev) => { const n = { ...prev }; delete n["device"]; return n; });
+                      }}
+                    />
+                  ) : null
+                }
+              />
             </div>
           ),
           chPcType: (
@@ -845,53 +846,53 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
                 padding: 16,
               }}
             >
-              <div style={{ fontSize: 11, color: "#6e7681", marginBottom: 8 }}>
-                点击类型 → 钻取卡ID → 点选卡查看 DUT
-              </div>
-              {aggCardType && (
-                <ReactECharts
-                  option={cardTypeOption}
-                  style={{
-                    height: Math.max(180, (aggCardType.groups?.length ?? 0) * 22 + 60),
-                    width: "100%",
-                  }}
-                  opts={{ renderer: "canvas" }}
-                  notMerge
-                  lazyUpdate
-                  onEvents={{
-                    click: (params: { name: string }) => {
-                      setSelectedCardTypeName(params.name);
-                      setSelectedProbeCard(null);
-                      fetchDrill("probeCardType", params.name, "probeCard", form);
-                    },
-                  }}
-                />
-              )}
-              {drills["probeCardType"] != null && (
-                <DrillDownPanel
-                  title={`${drills["probeCardType"]!.parentDimVal} · 下钻：按 ${drills["probeCardType"]!.subDim}`}
-                  groups={drills["probeCardType"]!.groups}
-                  loading={drills["probeCardType"]!.loading}
-                  error={drills["probeCardType"]!.error}
-                  activeSubDim={drills["probeCardType"]!.subDim}
-                  subDimOptions={DRILL_FROM_CARDTYPE}
-                  onSubDimChange={(d) => {
-                    if (d !== "probeCard") setSelectedProbeCard(null);
-                    fetchDrill("probeCardType", drills["probeCardType"]!.parentDimVal, d, form);
-                  }}
-                  onClose={() => {
-                    setSelectedCardTypeName(null);
-                    setSelectedProbeCard(null);
-                    setDrills((prev) => { const n = { ...prev }; delete n["probeCardType"]; return n; });
-                  }}
-                  onBarClick={
-                    drills["probeCardType"]!.subDim === "probeCard"
-                      ? (key) => setSelectedProbeCard(key)
-                      : undefined
-                  }
-                  selectedKey={drills["probeCardType"]!.subDim === "probeCard" ? selectedProbeCard : null}
-                />
-              )}
+              <ChartDrillSplit
+                hint="点击类型 → 钻取卡ID → 点选卡查看 DUT"
+                chart={
+                  aggCardType ? (
+                    <DarkChart
+                      option={cardTypeOption}
+                      height={Math.max(180, (aggCardType.groups?.length ?? 0) * 22 + 60)}
+                      onEvents={{
+                        click: (params: unknown) => {
+                          const { name } = params as { name: string };
+                          setSelectedCardTypeName(name);
+                          setSelectedProbeCard(null);
+                          fetchDrill("probeCardType", name, "probeCard", form);
+                        },
+                      }}
+                    />
+                  ) : null
+                }
+                drill={
+                  drills["probeCardType"] != null ? (
+                    <DrillDownPanel
+                      layout="side"
+                      title={`${drills["probeCardType"]!.parentDimVal} · 下钻：按 ${drills["probeCardType"]!.subDim}`}
+                      groups={drills["probeCardType"]!.groups}
+                      loading={drills["probeCardType"]!.loading}
+                      error={drills["probeCardType"]!.error}
+                      activeSubDim={drills["probeCardType"]!.subDim}
+                      subDimOptions={DRILL_FROM_CARDTYPE}
+                      onSubDimChange={(d) => {
+                        if (d !== "probeCard") setSelectedProbeCard(null);
+                        fetchDrill("probeCardType", drills["probeCardType"]!.parentDimVal, d, form);
+                      }}
+                      onClose={() => {
+                        setSelectedCardTypeName(null);
+                        setSelectedProbeCard(null);
+                        setDrills((prev) => { const n = { ...prev }; delete n["probeCardType"]; return n; });
+                      }}
+                      onBarClick={
+                        drills["probeCardType"]!.subDim === "probeCard"
+                          ? (key) => setSelectedProbeCard(key)
+                          : undefined
+                      }
+                      selectedKey={drills["probeCardType"]!.subDim === "probeCard" ? selectedProbeCard : null}
+                    />
+                  ) : null
+                }
+              />
             </div>
           ),
           chDut: (
@@ -956,41 +957,43 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
                 padding: 16,
               }}
             >
-              {aggLot && (
-                <ReactECharts
-                  option={lotOption}
-                  style={{
-                    height: Math.max(180, (aggLot.groups?.length ?? 0) * 22 + 60),
-                    width: "100%",
-                  }}
-                  opts={{ renderer: "canvas" }}
-                  notMerge
-                  lazyUpdate
-                  onEvents={{
-                    click: (params: { name: string }) => {
-                      setSelectedLotId(params.name);
-                      fetchDrill("lotId", params.name, "probeCardType", form);
-                    },
-                  }}
-                />
-              )}
-              {drills["lotId"] != null && (
-                <DrillDownPanel
-                  title={`${drills["lotId"]!.parentDimVal} · 下钻：按 ${drills["lotId"]!.subDim}`}
-                  groups={drills["lotId"]!.groups}
-                  loading={drills["lotId"]!.loading}
-                  error={drills["lotId"]!.error}
-                  activeSubDim={drills["lotId"]!.subDim}
-                  subDimOptions={DRILL_FROM_LOT}
-                  onSubDimChange={(d) =>
-                    fetchDrill("lotId", drills["lotId"]!.parentDimVal, d, form)
-                  }
-                  onClose={() => {
-                    setSelectedLotId(null);
-                    setDrills((prev) => { const n = { ...prev }; delete n["lotId"]; return n; });
-                  }}
-                />
-              )}
+              <ChartDrillSplit
+                chart={
+                  aggLot ? (
+                    <DarkChart
+                      option={lotOption}
+                      height={Math.max(180, (aggLot.groups?.length ?? 0) * 22 + 60)}
+                      onEvents={{
+                        click: (params: unknown) => {
+                          const { name } = params as { name: string };
+                          setSelectedLotId(name);
+                          fetchDrill("lotId", name, "probeCardType", form);
+                        },
+                      }}
+                    />
+                  ) : null
+                }
+                drill={
+                  drills["lotId"] != null ? (
+                    <DrillDownPanel
+                      layout="side"
+                      title={`${drills["lotId"]!.parentDimVal} · 下钻：按 ${drills["lotId"]!.subDim}`}
+                      groups={drills["lotId"]!.groups}
+                      loading={drills["lotId"]!.loading}
+                      error={drills["lotId"]!.error}
+                      activeSubDim={drills["lotId"]!.subDim}
+                      subDimOptions={DRILL_FROM_LOT}
+                      onSubDimChange={(d) =>
+                        fetchDrill("lotId", drills["lotId"]!.parentDimVal, d, form)
+                      }
+                      onClose={() => {
+                        setSelectedLotId(null);
+                        setDrills((prev) => { const n = { ...prev }; delete n["lotId"]; return n; });
+                      }}
+                    />
+                  ) : null
+                }
+              />
             </div>
           ),
           chFreeDim: (

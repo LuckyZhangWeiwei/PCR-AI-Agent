@@ -32,6 +32,14 @@ import {
 } from "../theme/chartTheme";
 import { datetimeLocalToIso } from "../utils/datetimeLocal";
 import {
+  collectGoodBinNumbersFromJbRow,
+  collectGoodBinNumbersFromJbRows,
+  findJbListRowForDetailClick,
+  goodBinNumbersFromDetailRow,
+  JB_DETAIL_GOOD_BINS,
+  JB_DETAIL_LIST_INDEX,
+} from "../utils/infGoodBins";
+import {
   buildTree,
   computeYieldPct,
   dateShortcutLast7Days,
@@ -155,6 +163,7 @@ const JB_REPORT_SECTION_ORDER = [
   "chartsGrid",
   "tree",
   "detail",
+  "infDut",
 ] as const;
 
 const JB_KPI_BLOCK_ORDER = ["jbWafer", "jbYieldPct", "jbWorstType", "jbTopBin"] as const;
@@ -312,33 +321,126 @@ function infcontrolTreeYieldExtra(
   );
 }
 
-type InfCtx = {
+type InfCtxData = {
   device: string;
   lot: string;
   slot: number;
   passIds: number[];
   cardId?: string;
   focusBin?: string;
-} | null;
+  goodBinNumbers: Set<number>;
+  /** 明细表行索引（与 detailRows 顺序一致）；钻取打开时为 undefined */
+  detailRowIndex?: number;
+};
+
+type InfCtx = InfCtxData | null;
+
+/** DrillDownPanel 条形 click 传的是 y 轴文案（如 `Slot 5` 或 `LOT NF12615.1X · Slot 20 · Bin 4`）。 */
+function parseSlotFromDrillBarLabel(clickedKey: string): number | null {
+  const t = clickedKey.trim();
+  const m = /\bslot\s*(\d+)/i.exec(t);
+  if (m) return parseInt(m[1], 10);
+  const n = parseInt(t, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseLotFromDrillBarLabel(clickedKey: string): string | null {
+  const m = /\bLOT\s+([^\s·]+)/i.exec(clickedKey.trim());
+  return m ? m[1].trim() : null;
+}
+
+/** 从 BIN 下钻到 slot 时按 lot+slot 聚合，条形上显示 LOT。 */
+function drillSubDimKeysForFetch(parentDimKey: string, subDim: string): string[] {
+  const parts = subDim.split(",").map((s) => s.trim()).filter(Boolean);
+  if (parentDimKey === "bin" && parts.length === 1 && parts[0] === "slot") {
+    return jbAggregateGroupBy("lot", "slot").split(",");
+  }
+  return jbAggregateGroupBy(...parts).split(",");
+}
+
+function normalizeBinToken(raw: string): string {
+  return raw.replace(/^bin\s*/i, "").trim();
+}
+
+function rowMatchesBinFilter(row: InfcontrolLayerBinV3Row, binToken: string | undefined): boolean {
+  if (!binToken) return true;
+  for (const c of row.bins ?? []) {
+    if (String(c.n) === binToken && (c.value ?? 0) > 0 && !c.isGoodBin) return true;
+  }
+  return false;
+}
+
+/** 筛选未填 device/lot 时，从本次查询已返回的明细行反查（与不良 BIN 下钻一致）。 */
+function resolveDeviceLotFromListRows(
+  rows: InfcontrolLayerBinV3Row[] | undefined,
+  slot: number,
+  binFilter?: string
+): Pick<InfCtxData, "device" | "lot" | "passIds" | "cardId"> | null {
+  if (!rows?.length) return null;
+  const binToken = binFilter ? normalizeBinToken(binFilter) : undefined;
+  for (const r of rows) {
+    if (Number(r.SLOT) !== slot) continue;
+    if (!rowMatchesBinFilter(r, binToken)) continue;
+    const device = String(r.DEVICE ?? "").trim();
+    const lot = String(r.LOT ?? "").trim();
+    if (!device || !lot) continue;
+    const passIds =
+      r.PASSID !== undefined && r.PASSID !== null && Number.isFinite(Number(r.PASSID))
+        ? [Number(r.PASSID)]
+        : [1, 3, 5];
+    const cardId = String(r.CARDID ?? "").trim() || undefined;
+    return { device, lot, passIds, cardId };
+  }
+  return null;
+}
 
 function resolveInfCtxFromDrill(
   parentDimKey: string,
   parentDimVal: string,
   subDim: string,
   clickedKey: string,
-  form: FormState
-): InfCtx {
+  form: FormState,
+  listRows?: InfcontrolLayerBinV3Row[]
+): InfCtxData | null {
   if (subDim !== "slot") return null;
-  const slot = parseInt(clickedKey, 10);
-  if (!Number.isFinite(slot)) return null;
+  const slot = parseSlotFromDrillBarLabel(clickedKey);
+  if (slot === null) return null;
 
-  const device = parentDimKey === "device" ? parentDimVal : form.device;
-  const lot    = parentDimKey === "lot"    ? parentDimVal : form.lot;
-  if (!device || !lot) return null;
+  let device =
+    parentDimKey === "device" ? parentDimVal.trim() : form.device.trim();
+  let lot =
+    parentDimKey === "lot"
+      ? parentDimVal.trim()
+      : parseLotFromDrillBarLabel(clickedKey) || form.lot.trim();
+  let passIds = form.passId ? [Number(form.passId)] : [1, 3, 5];
+  let cardId = form.cardId.trim() || undefined;
 
-  const passIds = form.passId ? [Number(form.passId)] : [1, 3, 5];
-  const cardId  = form.cardId || undefined;
-  return { device, lot, slot, passIds, cardId };
+  if (!device || !lot) {
+    const binFilter = parentDimKey === "bin" ? parentDimVal : undefined;
+    const fromList = resolveDeviceLotFromListRows(listRows, slot, binFilter);
+    if (!fromList) return null;
+    device = fromList.device;
+    lot = fromList.lot;
+    passIds = fromList.passIds;
+    if (!cardId && fromList.cardId) cardId = fromList.cardId;
+  }
+
+  const focusBin =
+    parentDimKey === "bin" && parentDimVal
+      ? /^bin/i.test(parentDimVal)
+        ? parentDimVal.toLowerCase()
+        : `bin${normalizeBinToken(parentDimVal)}`
+      : undefined;
+
+  const goodBinNumbers = collectGoodBinNumbersFromJbRows(
+    listRows,
+    device,
+    lot,
+    slot,
+    passIds
+  );
+
+  return { device, lot, slot, passIds, cardId, focusBin, goodBinNumbers };
 }
 
 export function InfcontrolReport({ apiBase, listLimits }: Props) {
@@ -403,9 +505,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       subDim: string,
       currentForm: FormState
     ) => {
-      const subDimKeys = jbAggregateGroupBy(
-        ...subDim.split(",").map((s) => s.trim()).filter(Boolean),
-      ).split(",");
+      const subDimKeys = drillSubDimKeysForFetch(parentDimKey, subDim);
 
       // ── Tab cache: reuse already-fetched results for the same bar + tab ──────
       const cached = drillCacheRef.current[parentDimKey];
@@ -910,9 +1010,12 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
 
   const detailRows = useMemo(() => {
     if (!list?.rows?.length) return [];
-    return (list.rows as InfcontrolLayerBinV3Row[]).map((r) => {
+    return (list.rows as InfcontrolLayerBinV3Row[]).map((r, index) => {
       const yp = computeYieldPct([r]);
+      const goodBins = collectGoodBinNumbersFromJbRow(r);
       return {
+        [JB_DETAIL_LIST_INDEX]: index,
+        [JB_DETAIL_GOOD_BINS]: [...goodBins],
         TESTEND:       r.TESTEND ?? "",
         DEVICE:        r.DEVICE ?? "",
         LOT:           r.LOT ?? "",
@@ -928,6 +1031,23 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
   const chips = useMemo(() => activeChips(form, listLimits), [form, listLimits]);
   const hasData = !!(list || aggBin || aggCardType);
   const noTestEndFilter = !form.testEndFrom && !form.testEndTo;
+
+  const listRowsForInf = list?.rows as InfcontrolLayerBinV3Row[] | undefined;
+
+  const openInfFromDrill = useCallback(
+    (d: DrillState, clickedKey: string) => {
+      const ctx = resolveInfCtxFromDrill(
+        d.parentDimKey,
+        d.parentDimVal,
+        d.subDim,
+        clickedKey,
+        form,
+        listRowsForInf
+      );
+      if (ctx) setInfCtx(ctx);
+    },
+    [form, listRowsForInf]
+  );
 
   const jbReportSections = useMemo(() => {
     if (!hasData) return {};
@@ -1029,11 +1149,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
               onSubDimChange={(d) =>
                 fetchDrill("lot", drills["lot"]!.parentDimVal, d, form)
               }
-              onBarClick={(key) => {
-                const d = drills["lot"]!;
-                const ctx = resolveInfCtxFromDrill(d.parentDimKey, d.parentDimVal, d.subDim, key, form);
-                if (ctx) setInfCtx(ctx);
-              }}
+              onBarClick={(key) => openInfFromDrill(drills["lot"]!, key)}
               onClose={() => {
                 setSelectedLotLabel(null);
                 setDrills((prev) => { const n = { ...prev }; delete n["lot"]; return n; });
@@ -1099,11 +1215,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                   onSubDimChange={(d) =>
                     fetchDrill("device", drills["device"]!.parentDimVal, d, form)
                   }
-                  onBarClick={(key) => {
-                    const d = drills["device"]!;
-                    const ctx = resolveInfCtxFromDrill(d.parentDimKey, d.parentDimVal, d.subDim, key, form);
-                    if (ctx) setInfCtx(ctx);
-                  }}
+                  onBarClick={(key) => openInfFromDrill(drills["device"]!, key)}
                   onClose={() => {
                     setSelectedDevice(null);
                     setDrills((prev) => { const n = { ...prev }; delete n["device"]; return n; });
@@ -1154,11 +1266,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                   onSubDimChange={(d) =>
                     fetchDrill("bin", drills["bin"]!.parentDimVal, d, form)
                   }
-                  onBarClick={(key) => {
-                    const d = drills["bin"]!;
-                    const ctx = resolveInfCtxFromDrill(d.parentDimKey, d.parentDimVal, d.subDim, key, form);
-                    if (ctx) setInfCtx(ctx);
-                  }}
+                  onBarClick={(key) => openInfFromDrill(drills["bin"]!, key)}
                   onClose={() => {
                     setSelectedBin(null);
                     setDrills((prev) => { const n = { ...prev }; delete n["bin"]; return n; });
@@ -1215,11 +1323,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                   onSubDimChange={(d) =>
                     fetchDrill("probeCardType", drills["probeCardType"]!.parentDimVal, d, form)
                   }
-                  onBarClick={(key) => {
-                    const d = drills["probeCardType"]!;
-                    const ctx = resolveInfCtxFromDrill(d.parentDimKey, d.parentDimVal, d.subDim, key, form);
-                    if (ctx) setInfCtx(ctx);
-                  }}
+                  onBarClick={(key) => openInfFromDrill(drills["probeCardType"]!, key)}
                   onClose={() => {
                     setSelectedCardType(null);
                     setDrills((prev) => { const n = { ...prev }; delete n["probeCardType"]; return n; });
@@ -1263,9 +1367,29 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                   lazyUpdate
                   onEvents={{
                     click: (params: { name: string }) => {
-                      const slotNum = params.name.replace(/^Slot /, "");
+                      const slotNum = params.name.replace(/^Slot /i, "").trim();
                       setSelectedSlot(params.name);
                       fetchDrill("slot", slotNum, "bin", form);
+                      const slotN = parseSlotFromDrillBarLabel(params.name);
+                      const dev = form.device.trim();
+                      const lot = form.lot.trim();
+                      if (slotN !== null && dev && lot) {
+                        const passIds = form.passId ? [Number(form.passId)] : [1, 3, 5];
+                        setInfCtx({
+                          device: dev,
+                          lot,
+                          slot: slotN,
+                          passIds,
+                          cardId: form.cardId || undefined,
+                          goodBinNumbers: collectGoodBinNumbersFromJbRows(
+                            listRowsForInf,
+                            dev,
+                            lot,
+                            slotN,
+                            passIds
+                          ),
+                        });
+                      }
                     },
                   }}
                 />
@@ -1283,11 +1407,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                   onSubDimChange={(d) =>
                     fetchDrill("slot", drills["slot"]!.parentDimVal, d, form)
                   }
-                  onBarClick={(key) => {
-                    const d = drills["slot"]!;
-                    const ctx = resolveInfCtxFromDrill(d.parentDimKey, d.parentDimVal, d.subDim, key, form);
-                    if (ctx) setInfCtx(ctx);
-                  }}
+                  onBarClick={(key) => openInfFromDrill(drills["slot"]!, key)}
                   onClose={() => {
                     setSelectedSlot(null);
                     setDrills((prev) => { const n = { ...prev }; delete n["slot"]; return n; });
@@ -1409,19 +1529,66 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
             <DataTable
               rows={detailRows}
               maxHeight={400}
+              selectedRowIndex={infCtx?.detailRowIndex ?? null}
+              omitKeys={[JB_DETAIL_LIST_INDEX, JB_DETAIL_GOOD_BINS]}
+              columnOrder={[
+                "TESTEND",
+                "DEVICE",
+                "LOT",
+                "SLOT",
+                "PROBECARDTYPE",
+                "CARDID",
+                "PASSID",
+                "Yield%",
+              ]}
               onRowClick={(row) => {
                 const device = String(row["DEVICE"] ?? "").trim();
                 const lot    = String(row["LOT"]    ?? "").trim();
                 const slot   = parseInt(String(row["SLOT"]   ?? ""), 10);
                 const passId = parseInt(String(row["PASSID"] ?? ""), 10);
                 const cardId = String(row["CARDID"] ?? "").trim() || undefined;
+                const testEnd = String(row["TESTEND"] ?? "").trim() || undefined;
                 if (device && lot && Number.isFinite(slot)) {
+                  const passIds = Number.isFinite(passId) ? [passId] : [1, 3, 5];
+                  const goodFromDetail = goodBinNumbersFromDetailRow(row);
+                  const listIdx = Number(row[JB_DETAIL_LIST_INDEX]);
+                  const jbRowByIndex =
+                    Number.isInteger(listIdx) &&
+                    listIdx >= 0 &&
+                    listRowsForInf &&
+                    listIdx < listRowsForInf.length
+                      ? listRowsForInf[listIdx]
+                      : undefined;
+                  const jbRow =
+                    jbRowByIndex ??
+                    findJbListRowForDetailClick(listRowsForInf, {
+                      device,
+                      lot,
+                      slot,
+                      passId: Number.isFinite(passId) ? passId : undefined,
+                      cardId,
+                      testEnd,
+                    });
+                  const goodBinNumbers =
+                    goodFromDetail ??
+                    (jbRow
+                      ? collectGoodBinNumbersFromJbRow(jbRow)
+                      : collectGoodBinNumbersFromJbRows(
+                          listRowsForInf,
+                          device,
+                          lot,
+                          slot,
+                          passIds
+                        ));
+                  const detailRowIndex = Number.isInteger(listIdx) ? listIdx : undefined;
                   setInfCtx({
                     device,
                     lot,
                     slot,
-                    passIds: Number.isFinite(passId) ? [passId] : [1, 3, 5],
+                    passIds,
                     cardId,
+                    goodBinNumbers,
+                    detailRowIndex,
                   });
                 }
               }}
@@ -1430,12 +1597,28 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         </div>
       ) : null;
 
+    const infDutSection =
+      infCtx != null ? (
+        <InfDutDistPanel
+          device={infCtx.device}
+          lot={infCtx.lot}
+          slot={infCtx.slot}
+          passIds={infCtx.passIds}
+          cardId={infCtx.cardId}
+          focusBin={infCtx.focusBin}
+          goodBinNumbers={infCtx.goodBinNumbers}
+          apiBase={apiBase}
+          onClose={() => setInfCtx(null)}
+        />
+      ) : null;
+
     return {
       kpi: kpiSection,
       lotYield: lotYieldSection,
       chartsGrid: chartsGridSection,
       tree: treeSection,
       detail: detailSection,
+      infDut: infDutSection,
     };
   }, [
     hasData,
@@ -1467,6 +1650,10 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     detailRows,
     showDetail,
     layoutEpoch,
+    openInfFromDrill,
+    listRowsForInf,
+    infCtx,
+    apiBase,
   ]);
 
   return (
@@ -1629,18 +1816,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
           defaultOrder={JB_REPORT_SECTION_ORDER}
           sections={jbReportSections}
           layoutEpoch={layoutEpoch}
-        />
-      )}
-      {infCtx && (
-        <InfDutDistPanel
-          device={infCtx.device}
-          lot={infCtx.lot}
-          slot={infCtx.slot}
-          passIds={infCtx.passIds}
-          cardId={infCtx.cardId}
-          focusBin={infCtx.focusBin}
-          apiBase={apiBase}
-          onClose={() => setInfCtx(null)}
         />
       )}
     </div>

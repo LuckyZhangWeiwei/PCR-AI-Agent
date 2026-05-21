@@ -41,6 +41,15 @@
   cursor: pointer;
 }
 
+.data-table tr.clickable.selected td {
+  background: rgba(88, 166, 255, 0.1);
+  color: var(--text, #e6edf3);
+}
+
+.data-table tr.clickable.selected:hover td {
+  background: rgba(88, 166, 255, 0.14);
+}
+
 .data-table-empty {
   margin: 0;
   color: var(--muted);

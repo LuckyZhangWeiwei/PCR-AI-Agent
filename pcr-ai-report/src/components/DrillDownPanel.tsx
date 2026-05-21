@@ -2,10 +2,10 @@ import type { EChartsOption } from "echarts";
 import { DarkChart } from "./DarkChart";
 import { formatChartDayLabel } from "../utils/datetimeLocal";
 import {
-  baseChartOption,
   chartAccent,
   chartAxisColor,
-  chartTextColor,
+  horizontalBarCategoryAxisLabel,
+  horizontalBarChartBase,
 } from "../theme/chartTheme";
 import type { AggregateGroup } from "../api/types";
 
@@ -26,6 +26,8 @@ type Props = {
   onBarClick?: (key: string) => void;
   /** Highlight this key as selected (deepened color) */
   selectedKey?: string | null;
+  /** Side-by-side with parent chart (right column) vs stacked below */
+  layout?: "below" | "side";
 };
 
 const COL_PANEL = chartAccent;
@@ -66,6 +68,7 @@ export function DrillDownPanel({
   onClose,
   onBarClick,
   selectedKey,
+  layout = "below",
 }: Props) {
   const sorted = [...groups].sort((a, b) => a.count - b.count).slice(-10);
 
@@ -75,7 +78,7 @@ export function DrillDownPanel({
   });
 
   const option: EChartsOption = {
-    ...baseChartOption(),
+    ...horizontalBarChartBase(),
     xAxis: {
       type: "value",
       axisLabel: { color: chartAxisColor, fontSize: 11 },
@@ -84,7 +87,7 @@ export function DrillDownPanel({
     yAxis: {
       type: "category",
       data: labels,
-      axisLabel: { color: chartTextColor, fontSize: 11, interval: 0 },
+      axisLabel: { ...horizontalBarCategoryAxisLabel, interval: 0 },
     },
     series: [
       {
@@ -113,12 +116,13 @@ export function DrillDownPanel({
 
   return (
     <div
+      className={layout === "side" ? "chart-drill-panel chart-drill-panel--side" : undefined}
       style={{
         border: "1px solid #388bfd",
         borderRadius: 8,
         background: "#0d1929",
         padding: 12,
-        marginTop: 8,
+        marginTop: layout === "side" ? 0 : 8,
       }}
     >
       <div

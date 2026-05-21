@@ -31,3 +31,31 @@ export function baseChartOption(): Record<string, unknown> {
     },
   };
 }
+
+/** 横向排名条图：窄列网格里须截断 y 轴类目，否则条形区被挤没只剩「标签+数值」像表格 */
+export function horizontalBarChartBase(): Record<string, unknown> {
+  const base = baseChartOption();
+  return {
+    ...base,
+    grid: {
+      left: 8,
+      right: 52,
+      top: 12,
+      bottom: 12,
+      containLabel: true,
+    },
+    tooltip: {
+      ...(base.tooltip as Record<string, unknown>),
+      trigger: "axis",
+      axisPointer: { type: "shadow" },
+    },
+  };
+}
+
+export const horizontalBarCategoryAxisLabel = {
+  color: chartTextColor,
+  fontSize: 11,
+  width: 96,
+  overflow: "truncate" as const,
+  ellipsis: "...",
+};

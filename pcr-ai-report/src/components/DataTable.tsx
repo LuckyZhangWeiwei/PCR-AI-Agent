@@ -9,6 +9,8 @@ type Props = {
   maxHeight?: number;
   /** Called when user clicks a row. Receives the full row object. */
   onRowClick?: (row: Record<string, unknown>) => void;
+  /** Highlight row at this index (0-based, matches `rows` order). */
+  selectedRowIndex?: number | null;
 };
 
 /** omitKeys 与行内键名大小写均可匹配 */
@@ -95,6 +97,7 @@ export function DataTable({
   omitKeys,
   maxHeight = 420,
   onRowClick,
+  selectedRowIndex = null,
 }: Props) {
   if (rows.length === 0) {
     return <p className="data-table-empty">No rows.</p>;
@@ -115,10 +118,19 @@ export function DataTable({
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, i) => (
+          {rows.map((row, i) => {
+            const selected = selectedRowIndex != null && selectedRowIndex === i;
+            const rowClass = [
+              onRowClick ? "clickable" : "",
+              selected ? "selected" : "",
+            ]
+              .filter(Boolean)
+              .join(" ");
+            return (
             <tr
               key={i}
-              className={onRowClick ? "clickable" : undefined}
+              className={rowClass || undefined}
+              aria-selected={selected || undefined}
               onClick={onRowClick ? () => onRowClick(row) : undefined}
             >
               {columns.map((c) => (
@@ -130,7 +142,8 @@ export function DataTable({
                 </td>
               ))}
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>

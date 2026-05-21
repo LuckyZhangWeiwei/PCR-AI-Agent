@@ -1155,3 +1155,59 @@ button.chip:hover {
     grid-template-columns: 1fr;
   }
 }
+
+.inf-dut-dist-panel-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.inf-dut-dist-panel-dismiss {
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+.inf-dut-dist-panel .chart-card {
+  overflow: visible;
+}
+
+/* Chart + drill-down side-by-side (Yield / JB ranking blocks) */
+.chart-drill-hint {
+  font-size: 11px;
+  color: #6e7681;
+  margin-bottom: 8px;
+}
+
+.chart-drill-row {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.chart-drill-main,
+.chart-drill-side {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.chart-drill-panel--side {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+/* Drill open → chart tile spans full grid row for side-by-side room */
+.report-reorder-group--chartgrid .report-reorder-item:has(.chart-drill-row:not(.chart-drill-row--solo)) {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 900px) {
+  .chart-drill-row:not(.chart-drill-row--solo) {
+    flex-direction: column;
+  }
+}

@@ -425,6 +425,9 @@ function DraggableReportBlocksInner({
       if (over && active.id !== over.id) {
         moveActiveIdOver(String(active.id), String(over.id));
       }
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new Event("resize"));
+      });
     },
     [moveActiveIdOver],
   );
@@ -467,7 +470,6 @@ function DraggableReportBlocksInner({
                   <span className="report-reorder-drag-title">{activeLabel}</span>
                 </div>
               </div>
-              <div className="report-reorder-body">{sec[String(activeId)]}</div>
             </div>
           ) : null}
         </DragOverlay>
@@ -488,6 +490,7 @@ const TOP_SECTION_LABELS: Record<string, string> = {
   chartsGrid: "图表矩阵",
   tree: "分组汇总",
   detail: "明细表",
+  infDut: "INF · DUT 分布（仅不良 bin）",
 };
 
 type TopSectionsProps = {

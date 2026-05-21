@@ -11,6 +11,7 @@ import {
   buildSiteBinByLotDummyData,
   infPathMatchesSiteBinByLotDummy,
   SITE_BIN_BY_LOT_DUMMY_CANONICAL_INF_PATH,
+  siteBinByLotDummyPathAllowed,
   tryResolveSiteBinByLotDummy,
 } from "../src/lib/outputSiteBinByLotDummy.js";
 
@@ -94,6 +95,33 @@ describe("site-bin-bylot dummy", () => {
     );
     assert.ok(data);
     assert.equal(data.passes[0].bins[0].bin, "bin2");
+  });
+
+  test("siteBinByLotDummyPathAllowed with INFCONTROL_LAYER_BINS_DUMMY accepts buildInfPath", () => {
+    const origNode = process.env.NODE_ENV;
+    const origJb = process.env.INFCONTROL_LAYER_BINS_DUMMY;
+    const origSite = process.env.SITE_BIN_BY_LOT_DUMMY;
+    try {
+      process.env.NODE_ENV = "development";
+      process.env.INFCONTROL_LAYER_BINS_DUMMY = "true";
+      delete process.env.SITE_BIN_BY_LOT_DUMMY;
+      assert.equal(
+        siteBinByLotDummyPathAllowed("/data/INF/WB10N57U/NF12615.1X/r_1-5"),
+        true
+      );
+      assert.equal(
+        tryResolveSiteBinByLotDummy("/data/INF/WB10N57U/NF12615.1X/r_1-5", [1])
+          ?.passes[0]?.passId,
+        1
+      );
+    } finally {
+      if (origNode === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = origNode;
+      if (origJb === undefined) delete process.env.INFCONTROL_LAYER_BINS_DUMMY;
+      else process.env.INFCONTROL_LAYER_BINS_DUMMY = origJb;
+      if (origSite === undefined) delete process.env.SITE_BIN_BY_LOT_DUMMY;
+      else process.env.SITE_BIN_BY_LOT_DUMMY = origSite;
+    }
   });
 });
 

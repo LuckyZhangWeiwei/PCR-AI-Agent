@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import ReactECharts from "echarts-for-react";
 import type { EChartsOption } from "echarts";
 
@@ -9,15 +10,31 @@ type Props = {
 };
 
 export function DarkChart({ option, height = 360, className, onEvents }: Props) {
+  const chartRef = useRef<ReactECharts>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      chartRef.current?.getEchartsInstance()?.resize();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   return (
-    <ReactECharts
-      className={className}
-      option={option}
-      style={{ height, width: "100%" }}
-      opts={{ renderer: "canvas" }}
-      notMerge
-      lazyUpdate
-      onEvents={onEvents}
-    />
+    <div ref={wrapRef} style={{ height, width: "100%" }}>
+      <ReactECharts
+        ref={chartRef}
+        className={className}
+        option={option}
+        style={{ height: "100%", width: "100%" }}
+        opts={{ renderer: "canvas" }}
+        notMerge
+        lazyUpdate
+        onEvents={onEvents}
+      />
+    </div>
   );
 }
