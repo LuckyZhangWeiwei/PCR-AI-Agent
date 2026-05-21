@@ -6,7 +6,7 @@ import { SITE_BIN_BY_LOT_PATH } from "../api/paths";
 import type { SiteBinByLotResponse, SiteBinPass } from "../api/types";
 import { DarkChart } from "./DarkChart";
 import { buildInfPath } from "../utils/buildInfPath";
-import { goodBinNumbersKey, isGoodBinLabel } from "../utils/infGoodBins";
+import { filterSiteBinPassBadOnly, goodBinNumbersKey, normalizeGoodBinSet, isGoodBinLabel } from "../utils/infGoodBins";
 import {
   baseChartOption,
   chartAxisColor,
@@ -36,10 +36,7 @@ function filterPassBadBinsOnly(
   pass: SiteBinPass,
   goodBinNumbers: ReadonlySet<number> | undefined
 ): SiteBinPass {
-  const good =
-    goodBinNumbers?.size ? goodBinNumbers : new Set<number>([1]);
-  const bins = pass.bins.filter((b) => !isGoodBinLabel(b.bin, good));
-  return { ...pass, bins };
+  return filterSiteBinPassBadOnly(pass, goodBinNumbers);
 }
 
 function dutSeriesDieCount(value: unknown): number {
@@ -295,8 +292,8 @@ function DutDistPassChart({
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const seriesList = useMemo(() => extractDutSeriesList(pass), [pass]);
   const option = useMemo(
-    () => buildDutChartOption(pass, focusBin),
-    [pass, focusBin]
+    () => buildDutChartOption(pass, focusBin, goodBinNumbers),
+    [pass, focusBin, goodBinNumbers]
   );
 
   const applyHighlight = useCallback((idx: number | null) => {
@@ -391,10 +388,13 @@ function DutDistPassChart({
 
 function buildDutChartOption(
   pass: SiteBinPass,
-  focusBin: string | undefined
+  focusBin: string | undefined,
+  goodBinNumbers: ReadonlySet<number> | undefined
 ): EChartsOption {
-  const bins = pass.bins.map((b) => b.bin);
-  const seriesList = extractDutSeriesList(pass);
+  const good = normalizeGoodBinSet(goodBinNumbers);
+  const badBinEntries = pass.bins.filter((b) => !isGoodBinLabel(b.bin, good));
+  const bins = badBinEntries.map((b) => b.bin);
+  const seriesList = extractDutSeriesList({ ...pass, bins: badBinEntries });
   const xLabelBottom = bins.length > 8 ? 34 : 20;
   const gridTop = 32;
 
@@ -406,7 +406,7 @@ function buildDutChartOption(
     barCategoryGap: "35%",
     itemStyle: { color: item.color },
     data: bins.map((bin) => {
-      const binEntry = pass.bins.find((b) => b.bin === bin);
+      const binEntry = badBinEntries.find((b) => b.bin === bin);
       const dutEntry = binEntry?.duts.find(
         (d) => String(d.dut) === item.dutKey
       );

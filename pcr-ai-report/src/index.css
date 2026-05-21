@@ -610,6 +610,7 @@ button.chip:hover {
 }
 
 .query-panel-actions-buttons .query-panel-submit,
+.query-panel-actions-buttons .query-panel-clear,
 .query-panel-actions-buttons .report-layout-reset-btn {
   flex: 0 0 auto;
   min-height: 38px;

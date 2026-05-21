@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useRef, useState, type Dispatch, type MutableRefObject, type ReactNode, type SetStateAction } from "react";
 import ReactECharts from "echarts-for-react";
 import { apiGetJson } from "../api/client";
 import { INFCONTROL_AGGREGATE_PATH, INFCONTROL_COMBINED_PATH } from "../api/paths";
@@ -39,6 +39,7 @@ import { datetimeLocalToIso } from "../utils/datetimeLocal";
 import {
   collectGoodBinNumbersFromJbRow,
   collectGoodBinNumbersFromJbRows,
+  goodBinNumbersFromDetailRow,
   JB_DETAIL_GOOD_BINS,
   JB_DETAIL_LIST_INDEX,
 } from "../utils/infGoodBins";
@@ -257,6 +258,155 @@ function drillFromTree(
     .sort((a, b) => b.count - a.count);
 }
 
+const JB_DRILL_KEY_SEP = "|";
+
+function rowMatchesJbDrillParent(
+  row: InfcontrolLayerBinV3Row,
+  parentDimKey: string,
+  parentDimVal: string
+): boolean {
+  const val = parentDimVal.trim();
+  switch (parentDimKey) {
+    case "device":
+      return String(row.DEVICE ?? "").trim() === val;
+    case "lot":
+      return String(row.LOT ?? "").trim() === val;
+    case "cardId":
+      return String(row.CARDID ?? "").trim() === val;
+    case "probeCardType": {
+      const cardId = String(row.CARDID ?? "").trim();
+      if (!cardId) return false;
+      const dash = cardId.indexOf("-");
+      const prefix = (dash > 0 ? cardId.slice(0, dash) : cardId).toLowerCase();
+      return prefix === val.toLowerCase();
+    }
+    case "bin":
+      return true;
+    default:
+      return true;
+  }
+}
+
+function jbRowDimValue(row: InfcontrolLayerBinV3Row, dim: string): string | undefined {
+  switch (dim) {
+    case "device":
+      return String(row.DEVICE ?? "").trim() || undefined;
+    case "lot":
+      return String(row.LOT ?? "").trim() || undefined;
+    case "slot":
+      return row.SLOT !== undefined && row.SLOT !== null ? String(row.SLOT) : undefined;
+    case "passId":
+      return row.PASSID !== undefined && row.PASSID !== null
+        ? String(row.PASSID)
+        : undefined;
+    case "cardId":
+      return String(row.CARDID ?? "").trim() || undefined;
+    case "probeCardType": {
+      const pct = row.PROBECARDTYPE;
+      if (pct !== undefined && pct !== null && String(pct).trim()) {
+        return String(pct).trim();
+      }
+      const cardId = String(row.CARDID ?? "").trim();
+      if (!cardId) return undefined;
+      const dash = cardId.indexOf("-");
+      return dash > 0 ? cardId.slice(0, dash) : cardId;
+    }
+    default:
+      return undefined;
+  }
+}
+
+/** 查询区已填 Lot 时，用已加载明细行做 slot/pass 下钻（避免 aggregate Top-N 漏组） */
+function drillFromJbListRows(
+  rows: InfcontrolLayerBinV3Row[],
+  parentDimKey: string,
+  parentDimVal: string,
+  subDimKeys: string[]
+): AggregateGroup[] {
+  const binFilter = parentDimKey === "bin" ? normalizeBinToken(parentDimVal) : undefined;
+  const sums = new Map<string, number>();
+  const partsMap = new Map<string, Record<string, string>>();
+
+  for (const row of rows) {
+    if (!rowMatchesJbDrillParent(row, parentDimKey, parentDimVal)) continue;
+    const bins = row.bins;
+    if (!Array.isArray(bins)) continue;
+
+    for (const cell of bins) {
+      if (cell.isGoodBin === true) continue;
+      const binN = String(cell.n ?? "");
+      if (!binN) continue;
+      if (binFilter && binN !== binFilter) continue;
+      const v = cell.value ?? 0;
+      if (!Number.isFinite(v) || v <= 0) continue;
+
+      const parts: Record<string, string> = {};
+      let valid = true;
+      for (const k of subDimKeys) {
+        if (k === "bin") {
+          parts.bin = binN;
+        } else {
+          const dv = jbRowDimValue(row, k);
+          if (dv === undefined) {
+            valid = false;
+            break;
+          }
+          parts[k] = dv;
+        }
+      }
+      if (!valid) continue;
+
+      const key = subDimKeys.map((k) => parts[k] ?? "").join(JB_DRILL_KEY_SEP);
+      sums.set(key, (sums.get(key) ?? 0) + v);
+      if (!partsMap.has(key)) partsMap.set(key, parts);
+    }
+  }
+
+  return [...sums.entries()]
+    .map(([key, count]) => ({ key, count, parts: partsMap.get(key)! }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 50);
+}
+
+function parseSlotFromDrillClick(
+  clickedKey: string,
+  groups: AggregateGroup[]
+): number | null {
+  const g = groups.find((x) => x.key === clickedKey);
+  if (g?.parts.slot != null && String(g.parts.slot).trim() !== "") {
+    const n = parseInt(String(g.parts.slot), 10);
+    if (Number.isFinite(n)) return n;
+  }
+  return parseSlotFromDrillBarLabel(clickedKey);
+}
+
+function storeDrillTab(
+  parentDimKey: string,
+  parentDimVal: string,
+  subDim: string,
+  groups: AggregateGroup[],
+  drillCacheRef: MutableRefObject<
+    Record<string, { val: string; tabs: Record<string, AggregateGroup[]> }>
+  >,
+  setDrills: Dispatch<SetStateAction<Record<string, DrillState>>>
+): void {
+  if (!drillCacheRef.current[parentDimKey] || drillCacheRef.current[parentDimKey].val !== parentDimVal) {
+    drillCacheRef.current[parentDimKey] = { val: parentDimVal, tabs: {} };
+  }
+  drillCacheRef.current[parentDimKey].tabs[subDim] = groups;
+  setDrills((prev) => ({
+    ...prev,
+    [parentDimKey]: {
+      parentDimKey,
+      parentDimVal,
+      subDim,
+      groups,
+      loading: false,
+      error: null,
+    },
+  }));
+}
+
 function lotYields(
   rows: InfcontrolLayerBinV3Row[]
 ): Array<{ lot: string; passId: string; slot: string; device: string; label: string; yieldPct: number }> {
@@ -425,6 +575,8 @@ type InfCtxForSlotOpts = {
   detailRowIndex?: number;
   binFilter?: string;
   anchor: InfDutAnchor;
+  /** 明细行等附加良品 bin（如当前行 PASSBIN） */
+  extraGoodBinNumbers?: ReadonlySet<number>;
 };
 
 /** 按 slot 组装 INF DUT 上下文：明细行用 opts.lot，图表钻取用查询区 Lot。 */
@@ -456,6 +608,17 @@ function buildInfCtxForSlot(
     if (!cardId && fromList.cardId) cardId = fromList.cardId;
   }
 
+  const goodBinNumbers = collectGoodBinNumbersFromJbRows(
+    listRows,
+    device,
+    lot,
+    slot,
+    passIds
+  );
+  if (opts.extraGoodBinNumbers) {
+    for (const n of opts.extraGoodBinNumbers) goodBinNumbers.add(n);
+  }
+
   return {
     device,
     lot,
@@ -463,13 +626,7 @@ function buildInfCtxForSlot(
     passIds,
     cardId,
     focusBin: opts.focusBin,
-    goodBinNumbers: collectGoodBinNumbersFromJbRows(
-      listRows,
-      device,
-      lot,
-      slot,
-      passIds
-    ),
+    goodBinNumbers,
     detailRowIndex: opts.detailRowIndex,
     anchor: opts.anchor,
   };
@@ -539,11 +696,12 @@ function resolveInfCtxFromDrill(
   clickedKey: string,
   form: FormState,
   listRows: InfcontrolLayerBinV3Row[] | undefined,
-  anchor: InfDutAnchor
+  anchor: InfDutAnchor,
+  drillGroups: AggregateGroup[]
 ): InfCtxData | null {
   if (!queryLotRequired(form)) return null;
   if (subDim !== "slot") return null;
-  const slot = parseSlotFromDrillBarLabel(clickedKey);
+  const slot = parseSlotFromDrillClick(clickedKey, drillGroups);
   if (slot === null) return null;
 
   const binFilter = parentDimKey === "bin" ? parentDimVal : undefined;
@@ -615,6 +773,29 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     else setForm((f) => ({ ...f, [key]: "" } as FormState));
   }, []);
 
+  const clearAll = useCallback(() => {
+    setForm(initialForm);
+    setList(null);
+    setAggBin(null);
+    setAggCardType(null);
+    setAggSlot(null);
+    setAggTree(null);
+    setAggDevice(null);
+    setAggFree(null);
+    setDrills({});
+    drillCacheRef.current = {};
+    setSelectedLotLabel(null);
+    setSelectedBin(null);
+    setSelectedCardType(null);
+    setSelectedSlot(null);
+    setSelectedDevice(null);
+    setInfCtx(null);
+    setErrorList(null);
+    setErrorAgg(null);
+    setLoadingList(false);
+    setLoadingAgg(false);
+  }, []);
+
   const applyDateShortcut = useCallback((fn: () => [string, string]) => {
     const [from, to] = fn();
     setForm((f) => ({ ...f, testEndFrom: from, testEndTo: to }));
@@ -628,6 +809,8 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       currentForm: FormState
     ) => {
       const subDimKeys = drillSubDimKeysForFetch(parentDimKey, subDim);
+      const listRows = (list?.rows ?? []) as InfcontrolLayerBinV3Row[];
+      const queryLot = currentForm.lot.trim();
 
       // ── Tab cache: reuse already-fetched results for the same bar + tab ──────
       const cached = drillCacheRef.current[parentDimKey];
@@ -637,6 +820,31 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
           [parentDimKey]: { parentDimKey, parentDimVal, subDim, groups: cached.tabs[subDim], loading: false, error: null },
         }));
         return;
+      }
+
+      // ── 查询区已填 Lot：用明细行聚合 slot/pass（与当前 Lot 一致，避免 aggregate 空结果）──
+      if (
+        queryLot &&
+        listRows.length > 0 &&
+        subDimKeys.some((k) => k === "slot" || k === "passId")
+      ) {
+        const fromList = drillFromJbListRows(
+          listRows,
+          parentDimKey,
+          parentDimVal,
+          subDimKeys
+        );
+        if (fromList.length > 0) {
+          storeDrillTab(
+            parentDimKey,
+            parentDimVal,
+            subDim,
+            fromList,
+            drillCacheRef,
+            setDrills
+          );
+          return;
+        }
       }
 
       // ── In-memory path: derive from cached aggTree (no Oracle call) ──────────
@@ -727,6 +935,16 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
           // bin is an UNPIVOT virtual column — filter groups to the clicked bin value.
           groups = groups.filter((g) => g.parts.bin === parentDimVal);
         }
+
+        if (groups.length === 0 && listRows.length > 0) {
+          groups = drillFromJbListRows(
+            listRows,
+            parentDimKey,
+            parentDimVal,
+            subDimKeys
+          );
+        }
+
         setDrills((prev) => {
           const d = prev[parentDimKey];
           if (!d || d.parentDimVal !== parentDimVal) return prev;
@@ -743,7 +961,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         });
       }
     },
-    [apiBase, aggTree]
+    [apiBase, aggTree, list?.rows]
   );
 
   const fetchFreeAgg = useCallback(
@@ -1188,7 +1406,8 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         clickedKey,
         form,
         listRowsForInf,
-        infDutAnchorFromDrill(d)
+        infDutAnchorFromDrill(d),
+        d.groups
       );
       if (ctx) setInfCtx(ctx);
     },
@@ -1739,6 +1958,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                     cardId,
                     detailRowIndex: Number.isInteger(listIdx) ? listIdx : undefined,
                     anchor: { source: "detail" },
+                    extraGoodBinNumbers: goodBinNumbersFromDetailRow(row),
                   });
                   if (ctx) setInfCtx(ctx);
                 }
@@ -1920,6 +2140,14 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
               onClick={query}
             >
               {loadingList || loadingAgg ? "查询中…" : "查询"}
+            </button>
+            <button
+              type="button"
+              className="btn ghost query-panel-clear"
+              disabled={loadingList || loadingAgg}
+              onClick={clearAll}
+            >
+              清空
             </button>
             {hasData ? (
               <ReportLayoutResetButton onReset={resetReportLayout} />

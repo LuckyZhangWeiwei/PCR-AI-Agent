@@ -1,6 +1,7 @@
 import type { InfcontrolLayerBinV3Row } from "../api/types";
+import type { SiteBinPass } from "../api/types";
 
-const HARD_GOOD_BIN = 1;
+export const HARD_GOOD_BIN = 1;
 
 /** 明细表行内嵌索引，用于点击时取 `list.rows` 同一行（勿展示为列） */
 export const JB_DETAIL_LIST_INDEX = "__jbListIndex";
@@ -174,4 +175,25 @@ export function isGoodBinLabel(
   const n = parseBinLabelNumber(bin);
   if (n === null) return false;
   return goodBinNumbers.has(n);
+}
+
+/** 至少含 BIN1；合并 JB 推导的良品集合 */
+export function normalizeGoodBinSet(
+  goodBinNumbers: ReadonlySet<number> | undefined
+): Set<number> {
+  const good = new Set<number>([HARD_GOOD_BIN]);
+  if (goodBinNumbers?.size) {
+    for (const n of goodBinNumbers) good.add(n);
+  }
+  return good;
+}
+
+/** site-bin-bylot pass：去掉良品 bin（DUT 图 X 轴仅展示不良 bin） */
+export function filterSiteBinPassBadOnly(
+  pass: SiteBinPass,
+  goodBinNumbers: ReadonlySet<number> | undefined
+): SiteBinPass {
+  const good = normalizeGoodBinSet(goodBinNumbers);
+  const bins = pass.bins.filter((b) => !isGoodBinLabel(b.bin, good));
+  return { ...pass, bins };
 }

@@ -243,6 +243,29 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     }
   }, []);
 
+  const clearAll = useCallback(() => {
+    setForm(initialForm);
+    setList(null);
+    setAggTime(null);
+    setAggCardType(null);
+    setAggLot(null);
+    setAggDevice(null);
+    setAggTree(null);
+    setAggFree(null);
+    setDrills({});
+    setFreeDimSelectedProbeCard(null);
+    setSelectedProbeCard(null);
+    setSelectedCardTypeName(null);
+    setSelectedLotId(null);
+    setSelectedDevice(null);
+    setDutList(null);
+    setLoadingDut(false);
+    setErrorList(null);
+    setErrorAgg(null);
+    setLoadingList(false);
+    setLoadingAgg(false);
+  }, []);
+
   const applyDateShortcut = useCallback((fn: () => [string, string]) => {
     const [from, to] = fn();
     setForm((f) => ({ ...f, timestampFrom: from, timestampTo: to }));
@@ -1463,6 +1486,14 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
               onClick={query}
             >
               {loadingList || loadingAgg ? "查询中…" : "查询"}
+            </button>
+            <button
+              type="button"
+              className="btn ghost query-panel-clear"
+              disabled={loadingList || loadingAgg}
+              onClick={clearAll}
+            >
+              清空
             </button>
             {hasData ? (
               <ReportLayoutResetButton onReset={resetReportLayout} />
