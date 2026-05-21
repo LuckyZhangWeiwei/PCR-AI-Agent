@@ -642,10 +642,35 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
   }, [dutTally]);
 
   const dutDistributionFooter = useCallback(
-    (cardId: string, chartVariant: "default" | "compact" = "default") => (
+    (
+      cardId: string,
+      chartVariant: "default" | "compact" = "default",
+      onClose?: () => void
+    ) => (
       <>
-        <div className="chart-drill-panel-footer-title">
-          DUT# 分布 · {cardId}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 8,
+            gap: 8,
+            flexWrap: "wrap",
+          }}
+        >
+          <span style={{ fontSize: 12, color: "#58a6ff", fontWeight: 600 }}>
+            {onClose ? `↳ DUT# 分布 · ${cardId}` : `DUT# 分布 · ${cardId}`}
+          </span>
+          {onClose ? (
+            <button
+              type="button"
+              className="chip"
+              style={{ color: "#ff7b72", borderColor: "rgba(248,81,73,0.3)" }}
+              onClick={onClose}
+            >
+              ✕ 关闭
+            </button>
+          ) : null}
         </div>
         {loadingDut ? (
           <div style={{ color: "#8b949e", fontSize: 12, padding: "8px 0" }}>
@@ -681,7 +706,15 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     if (freeDim !== "probeCard" && drills.freeDim?.subDim !== "probeCard") {
       return null;
     }
-    return dutDistributionFooter(freeDimSelectedProbeCard, "compact");
+    const onClose =
+      freeDim === "probeCard"
+        ? () => setFreeDimSelectedProbeCard(null)
+        : undefined;
+    return dutDistributionFooter(
+      freeDimSelectedProbeCard,
+      "compact",
+      onClose
+    );
   }, [freeDimSelectedProbeCard, freeDim, drills.freeDim, dutDistributionFooter]);
 
   const lotOption = useMemo((): EChartsOption => {
@@ -1205,32 +1238,35 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
                   }
                 />
               ) : freeDim === "probeCard" ? (
-                <>
-                  <div style={{ fontSize: 11, color: "#6e7681", marginBottom: 8 }}>
-                    点击探针卡查看 DUT# 分布
-                  </div>
-                  {aggFree && (
-                    <DarkChart
-                      option={freeOption}
-                      height={rankBarChartHeight(freeSortedGroups.length, 10, "compact")}
-                      onEvents={freeDimChartEvents}
-                    />
-                  )}
-                  {freeDimDutFooter ? (
-                    <div
-                      className="chart-drill-panel chart-drill-panel--inline-dut"
-                      style={{
-                        border: "1px solid #388bfd",
-                        borderRadius: 8,
-                        background: "#0d1929",
-                        padding: 12,
-                        marginTop: 12,
-                      }}
-                    >
-                      {freeDimDutFooter}
-                    </div>
-                  ) : null}
-                </>
+                <ChartDrillSplit
+                  hint="点击探针卡 → 右侧查看 DUT# 分布"
+                  chart={
+                    aggFree ? (
+                      <DarkChart
+                        option={freeOption}
+                        height={rankBarChartHeight(freeSortedGroups.length, 10, "compact")}
+                        onEvents={freeDimChartEvents}
+                      />
+                    ) : null
+                  }
+                  drill={
+                    freeDimSelectedProbeCard ? (
+                      <div
+                        className="chart-drill-panel chart-drill-panel--side"
+                        style={{
+                          border: "1px solid #388bfd",
+                          borderRadius: 8,
+                          background: "#0d1929",
+                          padding: 12,
+                          height: "100%",
+                          boxSizing: "border-box",
+                        }}
+                      >
+                        {freeDimDutFooter}
+                      </div>
+                    ) : null
+                  }
+                />
               ) : (
                 aggFree && (
                   <DarkChart
