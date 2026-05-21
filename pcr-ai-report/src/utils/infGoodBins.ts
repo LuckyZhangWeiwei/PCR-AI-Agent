@@ -123,7 +123,7 @@ export function findJbListRowForDetailClick(
   return pool[0];
 }
 
-/** 多行合并良品 bin（钻取等场景）；明细表点击请用单行 `collectGoodBinNumbersFromJbRow`。 */
+/** 多行合并良品 bin（钻取、明细行 DUT 分布等）；合并同 lot+slot+pass 行，并补充同 lot 的 PASSBIN token。 */
 export function collectGoodBinNumbersFromJbRows(
   rows: InfcontrolLayerBinV3Row[] | undefined,
   device: string,
@@ -144,6 +144,15 @@ export function collectGoodBinNumbersFromJbRows(
       continue;
     }
     for (const n of collectGoodBinNumbersFromJbRow(r)) good.add(n);
+  }
+
+  // PASSBIN 按 lot/device 通常一致；当前 slot 行若缺 PASSBIN，从同 lot 其它行补齐（如 bin55）
+  for (const r of rows) {
+    if (String(r.DEVICE ?? "").trim() !== device) continue;
+    if (String(r.LOT ?? "").trim() !== lot) continue;
+    for (const n of parsePassBinHyphenGoodBins(passBinFromJbRow(r))) {
+      good.add(n);
+    }
   }
 
   return good;

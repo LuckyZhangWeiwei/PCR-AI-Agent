@@ -1,15 +1,22 @@
 import { useEffect, useRef } from "react";
 import ReactECharts from "echarts-for-react";
-import type { EChartsOption } from "echarts";
+import type { ECharts, EChartsOption } from "echarts";
 
 type Props = {
   option: EChartsOption;
   height?: number | string;
   className?: string;
   onEvents?: Record<string, (params: unknown) => void>;
+  onChartReady?: (chart: ECharts) => void;
 };
 
-export function DarkChart({ option, height = 360, className, onEvents }: Props) {
+export function DarkChart({
+  option,
+  height = 360,
+  className,
+  onEvents,
+  onChartReady,
+}: Props) {
   const chartRef = useRef<ReactECharts>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -34,6 +41,7 @@ export function DarkChart({ option, height = 360, className, onEvents }: Props) 
         notMerge
         lazyUpdate
         onEvents={onEvents}
+        onChartReady={(inst) => onChartReady?.(inst)}
       />
     </div>
   );

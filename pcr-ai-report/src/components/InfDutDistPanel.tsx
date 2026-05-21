@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ECharts } from "echarts";
 import type { EChartsOption } from "echarts";
 import { apiGetJson } from "../api/client";
 import { SITE_BIN_BY_LOT_PATH } from "../api/paths";
@@ -9,7 +10,6 @@ import { goodBinNumbersKey, isGoodBinLabel } from "../utils/infGoodBins";
 import {
   baseChartOption,
   chartAxisColor,
-  chartTextColor,
 } from "../theme/chartTheme";
 
 type Props = {
@@ -51,6 +51,46 @@ function dutSeriesDieCount(value: unknown): number {
   return 0;
 }
 
+/** DUT 条目较多时用多列，避免单列过高在 confine 下被裁切 */
+function dutDistTooltipColumns(itemCount: number): number {
+  if (itemCount <= 8) return 1;
+  if (itemCount <= 20) return 2;
+  if (itemCount <= 45) return 3;
+  return 4;
+}
+
+type DutTipRow = { html: string; seriesIndex: number };
+
+function formatDutDistTooltipHtml(header: string, rows: DutTipRow[]): string {
+  if (!rows.length) return header;
+  const cols = dutDistTooltipColumns(rows.length);
+  const cells = rows
+    .map(
+      (row) =>
+        `<div class="dut-tip-row" data-series-index="${row.seriesIndex}" style="white-space:nowrap;line-height:1.55;font-size:11px;display:flex;align-items:center;gap:5px;">${row.html}</div>`
+    )
+    .join("");
+  return [
+    `<div style="font-weight:600;margin-bottom:6px;font-size:12px;">${header}</div>`,
+    `<div style="display:grid;grid-template-columns:repeat(${cols},auto);column-gap:16px;row-gap:3px;max-height:min(340px,62vh);overflow-y:auto;overflow-x:hidden;">`,
+    cells,
+    `</div>`,
+  ].join("");
+}
+
+/** ECharts 默认 marker 约 10×10；略放大便于辨认 DUT 色块 */
+function enlargeDutTooltipMarker(marker: string | undefined): string {
+  if (!marker) return "";
+  return marker.replace(
+    /width:(\d+(?:\.\d+)?)px;height:(\d+(?:\.\d+)?)px/g,
+    (_m, w, h) => {
+      const nw = Math.min(14, Math.round(Number(w) * 1.25));
+      const nh = Math.min(14, Math.round(Number(h) * 1.25));
+      return `width:${nw}px;height:${nh}px`;
+    }
+  );
+}
+
 /** 悬浮层挂到 body 并限制在视口内，避免被报表区域 overflow 裁切 */
 function dutDistTooltip(): EChartsOption["tooltip"] {
   const base = baseChartOption().tooltip as Record<string, unknown> | undefined;
@@ -60,23 +100,26 @@ function dutDistTooltip(): EChartsOption["tooltip"] {
     axisPointer: { type: "shadow" },
     appendToBody: true,
     confine: true,
+    enterable: true,
+    extraCssText:
+      "max-width:min(580px,96vw);padding:10px 12px;line-height:1.5;",
     formatter(params: unknown) {
       const items = (Array.isArray(params) ? params : [params]) as {
         axisValue?: string;
         seriesName?: string;
+        seriesIndex?: number;
         marker?: string;
         value?: unknown;
       }[];
       if (!items.length) return "";
       const header = String(items[0]?.axisValue ?? "");
-      const lines = items
+      const rows = items
         .filter((p) => dutSeriesDieCount(p.value) !== 0)
-        .map(
-          (p) =>
-            `${p.marker ?? ""} ${p.seriesName ?? ""}: ${dutSeriesDieCount(p.value)}`
-        );
-      if (!lines.length) return header;
-      return `${header}<br/>${lines.join("<br/>")}`;
+        .map((p) => ({
+          seriesIndex: p.seriesIndex ?? 0,
+          html: `${enlargeDutTooltipMarker(p.marker)} ${p.seriesName ?? ""}: ${dutSeriesDieCount(p.value)}`,
+        }));
+      return formatDutDistTooltipHtml(header, rows);
     },
     position(
       point: number[],
@@ -98,11 +141,45 @@ function dutDistTooltip(): EChartsOption["tooltip"] {
   };
 }
 
-function buildDutChartOption(
-  pass: SiteBinPass,
-  focusBin: string | undefined
-): EChartsOption {
-  const bins = pass.bins.map((b) => b.bin);
+/** 保证绘图区高度（不含底部 HTML 图例） */
+function dutDistChartHeight(
+  binCount: number,
+  xLabelBottom = 20
+): number {
+  const gridTop = 32;
+  const minPlot = 128;
+  const byBins = binCount * 14 + gridTop + 36 + xLabelBottom;
+  return Math.max(gridTop + xLabelBottom + minPlot, byBins, 160);
+}
+
+/** 与 ECharts 默认色板一致，供柱图与底部 HTML 图例共用 */
+const DUT_DIST_PALETTE = [
+  "#5470c6",
+  "#91cc75",
+  "#fac858",
+  "#ee6666",
+  "#73c0de",
+  "#3ba272",
+  "#fc8452",
+  "#9a60b4",
+  "#ea7ccc",
+  "#58a6ff",
+  "#a371f7",
+  "#3fb950",
+  "#d29922",
+  "#f85149",
+  "#79c0ff",
+];
+
+type DutSeriesItem = {
+  seriesIndex: number;
+  seriesName: string;
+  label: string;
+  dutKey: string;
+  color: string;
+};
+
+function extractDutSeriesList(pass: SiteBinPass): DutSeriesItem[] {
   const dutSet = new Set<string>();
   for (const b of pass.bins) {
     for (const d of b.duts) dutSet.add(String(d.dut));
@@ -112,23 +189,227 @@ function buildDutChartOption(
     if (b === "single") return -1;
     return Number(a) - Number(b);
   });
+  return duts.map((dut, i) => {
+    const label = dut === "single" ? "Single" : `DUT ${dut}`;
+    return {
+      seriesIndex: i,
+      seriesName: label,
+      label,
+      dutKey: dut,
+      color: DUT_DIST_PALETTE[i % DUT_DIST_PALETTE.length]!,
+    };
+  });
+}
 
-  /** 底部图例约每行 8 项（plain + width 自动换行） */
-  const legendRows = Math.max(1, Math.ceil(duts.length / 8));
-  const legendArea = legendRows * 13 + 2;
+function DutDistHtmlLegend({
+  items,
+  activeIndex,
+  onEnter,
+  onLeave,
+}: {
+  items: DutSeriesItem[];
+  activeIndex: number | null;
+  onEnter: (index: number) => void;
+  onLeave: () => void;
+}) {
+  return (
+    <div className="dut-dist-html-legend" role="list" aria-label="DUT 图例">
+      {items.map((item) => (
+        <button
+          key={item.seriesName}
+          type="button"
+          role="listitem"
+          className={[
+            "dut-dist-html-legend-item",
+            activeIndex === item.seriesIndex
+              ? "dut-dist-html-legend-item--active"
+              : "",
+            activeIndex !== null && activeIndex !== item.seriesIndex
+              ? "dut-dist-html-legend-item--dim"
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          onMouseEnter={() => onEnter(item.seriesIndex)}
+          onMouseLeave={onLeave}
+        >
+          <span
+            className="dut-dist-html-legend-swatch"
+            style={{ backgroundColor: item.color }}
+            aria-hidden
+          />
+          <span>{item.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const DUT_SERIES_EMPHASIS = {
+  focus: "series" as const,
+  itemStyle: {
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.85)",
+    shadowBlur: 10,
+    shadowColor: "rgba(255,255,255,0.28)",
+  },
+};
+
+const DUT_SERIES_BLUR = {
+  itemStyle: { opacity: 0.16 },
+};
+
+function highlightDutSeries(chart: ECharts | null, seriesIndex: number): void {
+  if (!chart) return;
+  chart.dispatchAction({ type: "downplay" });
+  chart.dispatchAction({ type: "highlight", seriesIndex });
+}
+
+function downplayDutSeries(chart: ECharts | null): void {
+  chart?.dispatchAction({ type: "downplay" });
+  document
+    .querySelectorAll(".dut-tip-row--active")
+    .forEach((el) => el.classList.remove("dut-tip-row--active"));
+}
+
+function tooltipHovered(): boolean {
+  return [...document.querySelectorAll(".echarts-tooltip")].some((el) =>
+    el.matches(":hover")
+  );
+}
+
+function DutDistPassChart({
+  pass,
+  focusBin,
+  goodBinNumbers,
+  chartHeight,
+}: {
+  pass: SiteBinPass;
+  focusBin?: string;
+  goodBinNumbers?: ReadonlySet<number>;
+  chartHeight: number;
+}) {
+  const chartRef = useRef<ECharts | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const clearTimerRef = useRef<number | null>(null);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const seriesList = useMemo(() => extractDutSeriesList(pass), [pass]);
+  const option = useMemo(
+    () => buildDutChartOption(pass, focusBin),
+    [pass, focusBin]
+  );
+
+  const applyHighlight = useCallback((idx: number | null) => {
+    if (clearTimerRef.current != null) {
+      window.clearTimeout(clearTimerRef.current);
+      clearTimerRef.current = null;
+    }
+    setActiveIndex(idx);
+    if (idx == null) downplayDutSeries(chartRef.current);
+    else highlightDutSeries(chartRef.current, idx);
+  }, []);
+
+  const scheduleClearHighlight = useCallback(() => {
+    if (clearTimerRef.current != null) {
+      window.clearTimeout(clearTimerRef.current);
+    }
+    clearTimerRef.current = window.setTimeout(() => {
+      clearTimerRef.current = null;
+      if (tooltipHovered()) return;
+      if (wrapRef.current?.matches(":hover")) return;
+      applyHighlight(null);
+    }, 48);
+  }, [applyHighlight]);
+
+  useEffect(() => {
+    const onTipRowOver = (e: MouseEvent) => {
+      const row = (e.target as HTMLElement).closest<HTMLElement>(".dut-tip-row");
+      if (!row?.closest(".echarts-tooltip")) return;
+      const idx = row.dataset.seriesIndex;
+      if (idx == null || idx === "") return;
+      applyHighlight(Number(idx));
+      document
+        .querySelectorAll(".dut-tip-row--active")
+        .forEach((el) => el.classList.remove("dut-tip-row--active"));
+      row.classList.add("dut-tip-row--active");
+    };
+
+    const onTipRowOut = (e: MouseEvent) => {
+      const row = (e.target as HTMLElement).closest(".dut-tip-row");
+      if (!row) return;
+      const related = e.relatedTarget as HTMLElement | null;
+      if (related?.closest(".dut-tip-row")) return;
+      row.classList.remove("dut-tip-row--active");
+      scheduleClearHighlight();
+    };
+
+    document.addEventListener("mouseover", onTipRowOver);
+    document.addEventListener("mouseout", onTipRowOut);
+    return () => {
+      document.removeEventListener("mouseover", onTipRowOver);
+      document.removeEventListener("mouseout", onTipRowOut);
+      if (clearTimerRef.current != null) {
+        window.clearTimeout(clearTimerRef.current);
+      }
+    };
+  }, [applyHighlight, scheduleClearHighlight]);
+
+  const onEvents = useMemo(
+    () => ({
+      mouseover: (params: unknown) => {
+        const p = params as { componentType?: string; seriesIndex?: number };
+        if (p.componentType !== "series" || p.seriesIndex == null) return;
+        applyHighlight(p.seriesIndex);
+      },
+      globalout: () => {
+        scheduleClearHighlight();
+      },
+    }),
+    [applyHighlight, scheduleClearHighlight]
+  );
+
+  return (
+    <div ref={wrapRef} className="dut-dist-chart-block">
+      <DarkChart
+        key={`pass-${pass.passId}-good-${goodBinNumbersKey(goodBinNumbers)}`}
+        option={option}
+        height={chartHeight}
+        onEvents={onEvents}
+        onChartReady={(chart) => {
+          chartRef.current = chart;
+        }}
+      />
+      <DutDistHtmlLegend
+        items={seriesList}
+        activeIndex={activeIndex}
+        onEnter={applyHighlight}
+        onLeave={scheduleClearHighlight}
+      />
+    </div>
+  );
+}
+
+function buildDutChartOption(
+  pass: SiteBinPass,
+  focusBin: string | undefined
+): EChartsOption {
+  const bins = pass.bins.map((b) => b.bin);
+  const seriesList = extractDutSeriesList(pass);
   const xLabelBottom = bins.length > 8 ? 34 : 20;
-  /** 图例底边对齐 x 轴标签区上沿，整体贴近柱状图 */
-  const legendBottom = xLabelBottom;
+  const gridTop = 32;
 
-  const series: EChartsOption["series"] = duts.map((dut) => ({
-    name: dut === "single" ? "Single" : `DUT ${dut}`,
+  const series: EChartsOption["series"] = seriesList.map((item) => ({
+    name: item.seriesName,
     type: "bar",
     stack: "total",
     barMaxWidth: 16,
     barCategoryGap: "35%",
+    itemStyle: { color: item.color },
     data: bins.map((bin) => {
       const binEntry = pass.bins.find((b) => b.bin === bin);
-      const dutEntry = binEntry?.duts.find((d) => String(d.dut) === dut);
+      const dutEntry = binEntry?.duts.find(
+        (d) => String(d.dut) === item.dutKey
+      );
       const val = dutEntry?.dieCount ?? 0;
       const dimmed = focusBin !== undefined && bin !== focusBin;
       return {
@@ -136,16 +417,19 @@ function buildDutChartOption(
         itemStyle: dimmed ? { opacity: 0.3 } : undefined,
       };
     }),
-    emphasis: { focus: "series" },
+    emphasis: DUT_SERIES_EMPHASIS,
+    blur: DUT_SERIES_BLUR,
   }));
 
   return {
     ...baseChartOption(),
+    color: DUT_DIST_PALETTE,
+    stateAnimation: { duration: 200, easing: "cubicOut" },
     grid: {
-      left: 40,
-      right: 12,
-      top: 20,
-      bottom: legendBottom + legendArea,
+      left: 10,
+      right: 14,
+      top: gridTop,
+      bottom: xLabelBottom,
       containLabel: true,
     },
     xAxis: {
@@ -156,21 +440,18 @@ function buildDutChartOption(
     yAxis: {
       type: "value",
       name: "die count",
-      nameTextStyle: { color: chartAxisColor, fontSize: 9 },
-      axisLabel: { color: chartAxisColor, fontSize: 9 },
+      nameLocation: "end",
+      nameGap: 10,
+      nameTextStyle: { color: chartAxisColor, fontSize: 9, align: "left" },
+      axisLabel: {
+        color: chartAxisColor,
+        fontSize: 9,
+        margin: 10,
+        hideOverlap: false,
+      },
+      splitLine: { lineStyle: { color: "rgba(240,246,252,0.06)" } },
     },
-    legend: {
-      type: "plain",
-      orient: "horizontal",
-      bottom: legendBottom,
-      left: "center",
-      width: "92%",
-      padding: [0, 0, 0, 0],
-      textStyle: { color: chartTextColor, fontSize: 9 },
-      itemWidth: 8,
-      itemHeight: 6,
-      itemGap: 5,
-    },
+    legend: { show: false },
     tooltip: dutDistTooltip(),
     series,
   };
@@ -284,21 +565,13 @@ export function InfDutDistPanel({
                   此 pass 无不良 bin 数据（良品 bin 已隐藏）
                 </div>
               ) : (
-                <DarkChart
-                  key={`pass-${pass.passId}-good-${goodBinNumbersKey(goodBinNumbers)}`}
-                  option={buildDutChartOption(passBad, focusBin)}
-                  height={(() => {
-                    const dutN = new Set(
-                      passBad.bins.flatMap((b) =>
-                        b.duts.map((d) => String(d.dut))
-                      )
-                    ).size;
+                <DutDistPassChart
+                  pass={passBad}
+                  focusBin={focusBin}
+                  goodBinNumbers={goodBinNumbers}
+                  chartHeight={(() => {
                     const xLbl = passBad.bins.length > 8 ? 34 : 20;
-                    const legendH = Math.max(1, Math.ceil(dutN / 8)) * 13 + 2;
-                    return Math.max(
-                      150,
-                      passBad.bins.length * 14 + 52 + xLbl + legendH
-                    );
+                    return dutDistChartHeight(passBad.bins.length, xLbl);
                   })()}
                 />
               )}

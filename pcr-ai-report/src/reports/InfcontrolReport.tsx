@@ -34,8 +34,6 @@ import { datetimeLocalToIso } from "../utils/datetimeLocal";
 import {
   collectGoodBinNumbersFromJbRow,
   collectGoodBinNumbersFromJbRows,
-  findJbListRowForDetailClick,
-  goodBinNumbersFromDetailRow,
   JB_DETAIL_GOOD_BINS,
   JB_DETAIL_LIST_INDEX,
 } from "../utils/infGoodBins";
@@ -1547,39 +1545,16 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                 const slot   = parseInt(String(row["SLOT"]   ?? ""), 10);
                 const passId = parseInt(String(row["PASSID"] ?? ""), 10);
                 const cardId = String(row["CARDID"] ?? "").trim() || undefined;
-                const testEnd = String(row["TESTEND"] ?? "").trim() || undefined;
                 if (device && lot && Number.isFinite(slot)) {
                   const passIds = Number.isFinite(passId) ? [passId] : [1, 3, 5];
-                  const goodFromDetail = goodBinNumbersFromDetailRow(row);
                   const listIdx = Number(row[JB_DETAIL_LIST_INDEX]);
-                  const jbRowByIndex =
-                    Number.isInteger(listIdx) &&
-                    listIdx >= 0 &&
-                    listRowsForInf &&
-                    listIdx < listRowsForInf.length
-                      ? listRowsForInf[listIdx]
-                      : undefined;
-                  const jbRow =
-                    jbRowByIndex ??
-                    findJbListRowForDetailClick(listRowsForInf, {
-                      device,
-                      lot,
-                      slot,
-                      passId: Number.isFinite(passId) ? passId : undefined,
-                      cardId,
-                      testEnd,
-                    });
-                  const goodBinNumbers =
-                    goodFromDetail ??
-                    (jbRow
-                      ? collectGoodBinNumbersFromJbRow(jbRow)
-                      : collectGoodBinNumbersFromJbRows(
-                          listRowsForInf,
-                          device,
-                          lot,
-                          slot,
-                          passIds
-                        ));
+                  const goodBinNumbers = collectGoodBinNumbersFromJbRows(
+                    listRowsForInf,
+                    device,
+                    lot,
+                    slot,
+                    passIds
+                  );
                   const detailRowIndex = Number.isInteger(listIdx) ? listIdx : undefined;
                   setInfCtx({
                     device,

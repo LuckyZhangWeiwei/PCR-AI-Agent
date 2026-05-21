@@ -1196,6 +1196,73 @@ button.chip:hover {
   overflow: visible;
 }
 
+/* INF DUT 分布 tooltip 行 hover → 对应 series 高亮 */
+.dut-tip-row {
+  cursor: default;
+  padding: 1px 4px;
+  margin: -1px -4px;
+  border-radius: 3px;
+  transition: background 0.12s ease;
+}
+
+.dut-tip-row:hover,
+.dut-tip-row.dut-tip-row--active {
+  background: rgba(88, 166, 255, 0.2);
+}
+
+.dut-dist-chart-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dut-dist-html-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 10px;
+  padding: 0 4px 2px;
+}
+
+.dut-dist-html-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #e6edf3;
+  font-size: 9px;
+  line-height: 1.3;
+  cursor: default;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+
+.dut-dist-html-legend-item--dim {
+  opacity: 0.32;
+}
+
+.dut-dist-html-legend-item--active {
+  opacity: 1;
+  background: rgba(88, 166, 255, 0.14);
+}
+
+.dut-dist-html-legend-swatch {
+  flex-shrink: 0;
+  width: 11px;
+  height: 9px;
+  border-radius: 2px;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.dut-dist-html-legend-item--active .dut-dist-html-legend-swatch {
+  transform: scale(1.2);
+  box-shadow:
+    0 0 0 1.5px rgba(255, 255, 255, 0.9),
+    0 0 8px rgba(88, 166, 255, 0.55);
+}
+
 /* Chart + drill-down side-by-side (Yield / JB ranking blocks) */
 .chart-drill-hint {
   font-size: 11px;
