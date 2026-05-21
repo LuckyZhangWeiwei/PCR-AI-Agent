@@ -1,3 +1,4 @@
+import "./polyfillUtilIsDate.js";
 import fs from "node:fs";
 import path from "node:path";
 import oracledb, { type Connection, type Pool } from "oracledb";
