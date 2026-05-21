@@ -5,9 +5,9 @@
 import nodeUtil from "node:util";
 
 const util = nodeUtil as typeof nodeUtil & {
-  isDate?: (value: unknown) => boolean;
+  isDate?: (object: unknown) => object is Date;
 };
 
 if (typeof util.isDate !== "function") {
-  util.isDate = (value: unknown): boolean => value instanceof Date;
+  util.isDate = (value: unknown): value is Date => value instanceof Date;
 }
