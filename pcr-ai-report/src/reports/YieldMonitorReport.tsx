@@ -30,6 +30,8 @@ import {
   chartSplitLine,
   horizontalBarCategoryAxisLabel,
   horizontalBarChartBase,
+  rankBarChartHeight,
+  YIELD_TREND_CHART_HEIGHT,
 } from "../theme/chartTheme";
 import {
   allSettledWithConcurrency,
@@ -149,7 +151,7 @@ const YIELD_KPI_BLOCK_ORDER = [
   "kpiSelPc",
 ] as const;
 
-const YIELD_CHART_BLOCK_ORDER = ["chDevice", "chPcType", "chDut", "chLot", "chFreeDim"] as const;
+const YIELD_CHART_BLOCK_ORDER = ["chDevice", "chPcType", "chLot", "chFreeDim"] as const;
 
 // Sub-dimension options for drill-down panels
 const DRILL_FROM_DEVICE: { label: string; value: string }[] = [
@@ -577,6 +579,34 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     };
   }, [dutRows]);
 
+  /** Shown at bottom of ProbeCard Type drill panel after a card bar is clicked */
+  const probeCardDutFooter = useMemo(() => {
+    if (!selectedProbeCard) return null;
+    if (drills["probeCardType"]?.subDim !== "probeCard") return null;
+
+    return (
+      <>
+        <div className="chart-drill-panel-footer-title">
+          DUT# 分布 · {selectedProbeCard}
+        </div>
+        {loadingDut ? (
+          <div style={{ color: "#8b949e", fontSize: 12, padding: "8px 0" }}>
+            加载中…
+          </div>
+        ) : dutRows !== null && dutRows.length === 0 ? (
+          <div style={{ color: "#8b949e", fontSize: 12, padding: "4px 0" }}>
+            该探针卡暂无触发记录
+          </div>
+        ) : dutRows !== null && dutRows.length > 0 ? (
+          <DarkChart
+            option={dutOption}
+            height={rankBarChartHeight(tallyDutNumbers(dutRows).length, 10)}
+          />
+        ) : null}
+      </>
+    );
+  }, [selectedProbeCard, drills, loadingDut, dutRows, dutOption]);
+
   const lotOption = useMemo((): EChartsOption => {
     const sorted = [...(aggLot?.groups ?? [])]
       .sort((a, b) => a.count - b.count)
@@ -769,7 +799,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
             padding: 16,
           }}
         >
-          <DarkChart option={timeTrendOption} height={220} />
+          <DarkChart option={timeTrendOption} height={YIELD_TREND_CHART_HEIGHT} />
         </div>
       ) : null;
 
@@ -779,11 +809,11 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         defaultOrder={YIELD_CHART_BLOCK_ORDER}
         layoutEpoch={layoutEpoch}
         axis="grid"
+        fullRowIds={["chDevice", "chPcType", "chLot", "chFreeDim"]}
         groupClassName="report-reorder-group--chartgrid"
         labels={{
           chDevice: "Device 触发排名",
           chPcType: "ProbeCard Type 触发排名",
-          chDut: "DUT# 触发分布",
           chLot: "LOT 触发排名",
           chFreeDim: "自由维度聚合",
         }}
@@ -803,7 +833,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
                   aggDevice ? (
                     <DarkChart
                       option={deviceOption}
-                      height={Math.max(180, (aggDevice.groups?.length ?? 0) * 22 + 60)}
+                      height={rankBarChartHeight(aggDevice.groups?.length ?? 0)}
                       onEvents={{
                         click: (params: unknown) => {
                           const { name } = params as { name: string };
@@ -847,12 +877,12 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
               }}
             >
               <ChartDrillSplit
-                hint="点击类型 → 钻取卡ID → 点选卡查看 DUT"
+                hint="点击类型 → 钻取 ProbeCard → 点选具体卡，DUT# 分布显示在右侧面板底部"
                 chart={
                   aggCardType ? (
                     <DarkChart
                       option={cardTypeOption}
-                      height={Math.max(180, (aggCardType.groups?.length ?? 0) * 22 + 60)}
+                      height={rankBarChartHeight(aggCardType.groups?.length ?? 0, 10)}
                       onEvents={{
                         click: (params: unknown) => {
                           const { name } = params as { name: string };
@@ -889,63 +919,11 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
                           : undefined
                       }
                       selectedKey={drills["probeCardType"]!.subDim === "probeCard" ? selectedProbeCard : null}
+                      footer={probeCardDutFooter}
                     />
                   ) : null
                 }
               />
-            </div>
-          ),
-          chDut: (
-            <div
-              style={{
-                background: "#0d1117",
-                border: "1px solid rgba(240,246,252,0.1)",
-                borderRadius: 8,
-                padding: 16,
-              }}
-            >
-              {selectedProbeCard && (
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "#58a6ff",
-                    fontWeight: 600,
-                    marginBottom: 8,
-                  }}
-                >
-                  已选探针卡：{selectedProbeCard}
-                </div>
-              )}
-              {selectedProbeCard && loadingDut ? (
-                <div style={{ color: "#8b949e", fontSize: 12, padding: "12px 0" }}>
-                  加载中…
-                </div>
-              ) : selectedProbeCard && dutRows !== null ? (
-                dutRows.length === 0 ? (
-                  <div style={{ color: "#8b949e", fontSize: 12, padding: "12px 0" }}>
-                    该探针卡暂无触发记录
-                  </div>
-                ) : (
-                  <DarkChart
-                    option={dutOption}
-                    height={Math.max(180, tallyDutNumbers(dutRows).length * 22 + 60)}
-                  />
-                )
-              ) : (
-                <div
-                  style={{
-                    color: "#8b949e",
-                    fontSize: 12,
-                    padding: "32px 0",
-                    textAlign: "center",
-                    lineHeight: 1.8,
-                  }}
-                >
-                  ← 点击「ProbeCard Type」图表中的类型
-                  <br />
-                  展开后点击具体探针卡即可查看该卡的 DUT# 分布
-                </div>
-              )}
             </div>
           ),
           chLot: (
@@ -962,7 +940,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
                   aggLot ? (
                     <DarkChart
                       option={lotOption}
-                      height={Math.max(180, (aggLot.groups?.length ?? 0) * 22 + 60)}
+                      height={rankBarChartHeight(aggLot.groups?.length ?? 0, 10)}
                       onEvents={{
                         click: (params: unknown) => {
                           const { name } = params as { name: string };
@@ -1029,7 +1007,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
               {aggFree && (
                 <DarkChart
                   option={freeOption}
-                  height={Math.max(180, aggFree.groups.length * 22 + 60)}
+                  height={rankBarChartHeight(aggFree.groups.length, 10)}
                 />
               )}
             </div>
@@ -1124,8 +1102,9 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     selectedDevice,
     form,
     fetchDrill,
+    probeCardDutFooter,
+    loadingDut,
     dutRows,
-    dutOption,
     aggLot,
     lotOption,
     aggFree,

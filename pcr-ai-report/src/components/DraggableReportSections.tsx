@@ -46,6 +46,8 @@ export type DraggableReportBlocksProps = {
   layoutEpoch?: number;
   /** Show ✕ on each block (default true) */
   closable?: boolean;
+  /** Block ids that always span all grid columns (e.g. free-dimension chart) */
+  fullRowIds?: readonly string[];
 };
 
 export const YIELD_MONITOR_LAYOUT_STORAGE_KEYS = [
@@ -322,12 +324,14 @@ function SortableBlock({
   children,
   closable,
   onClose,
+  fullRow,
 }: {
   id: string;
   label: string;
   children: React.ReactNode;
   closable: boolean;
   onClose: () => void;
+  fullRow?: boolean;
 }) {
   const {
     attributes,
@@ -350,7 +354,12 @@ function SortableBlock({
     <div
       ref={setNodeRef}
       style={style}
-      className="report-reorder-item"
+      className={[
+        "report-reorder-item",
+        fullRow ? "report-reorder-item--full-row" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
     >
       <div className="report-reorder-item-head">
         <button
@@ -393,11 +402,13 @@ function DraggableReportBlocksInner({
   labels = {},
   layoutEpoch = 0,
   closable = true,
+  fullRowIds = [],
 }: DraggableReportBlocksProps & { sortAxis: DraggableSortAxis }) {
   const { displayOrder, moveActiveIdOver, sections: sec, closeBlock } =
     usePersistedBlockLayout(storageKey, defaultOrder, sections, layoutEpoch);
 
   const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null);
+  const fullRowSet = useMemo(() => new Set(fullRowIds), [fullRowIds]);
 
   const strategy = sortStrategyForAxis(sortAxis);
   const collisionDetection = useMemo(
@@ -455,6 +466,7 @@ function DraggableReportBlocksInner({
               id={id}
               label={labels[id] ?? id}
               closable={closable}
+              fullRow={fullRowSet.has(id)}
               onClose={() => closeBlock(id)}
             >
               {sec[id]}

@@ -39,9 +39,9 @@ export function horizontalBarChartBase(): Record<string, unknown> {
     ...base,
     grid: {
       left: 8,
-      right: 52,
-      top: 12,
-      bottom: 12,
+      right: 44,
+      top: 8,
+      bottom: 8,
       containLabel: true,
     },
     tooltip: {
@@ -59,3 +59,17 @@ export const horizontalBarCategoryAxisLabel = {
   overflow: "truncate" as const,
   ellipsis: "...",
 };
+
+/** Yield 排名条图高度（按可见条数，略紧凑） */
+export function rankBarChartHeight(rowCount: number, maxRows = 20): number {
+  const n = Math.min(Math.max(rowCount, 1), maxRows);
+  return Math.max(148, n * 18 + 40);
+}
+
+/** 下钻面板内条图 */
+export function drillBarChartHeight(rowCount: number, maxRows = 10): number {
+  const n = Math.min(Math.max(rowCount, 1), maxRows);
+  return Math.max(124, n * 20 + 36);
+}
+
+export const YIELD_TREND_CHART_HEIGHT = 180;

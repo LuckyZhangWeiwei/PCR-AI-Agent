@@ -1,9 +1,11 @@
 import type { EChartsOption } from "echarts";
+import type { ReactNode } from "react";
 import { DarkChart } from "./DarkChart";
 import { formatChartDayLabel } from "../utils/datetimeLocal";
 import {
   chartAccent,
   chartAxisColor,
+  drillBarChartHeight,
   horizontalBarCategoryAxisLabel,
   horizontalBarChartBase,
 } from "../theme/chartTheme";
@@ -28,6 +30,8 @@ type Props = {
   selectedKey?: string | null;
   /** Side-by-side with parent chart (right column) vs stacked below */
   layout?: "below" | "side";
+  /** Rendered at the bottom of this panel (e.g. DUT distribution after picking a probe card) */
+  footer?: ReactNode;
 };
 
 const COL_PANEL = chartAccent;
@@ -69,6 +73,7 @@ export function DrillDownPanel({
   onBarClick,
   selectedKey,
   layout = "below",
+  footer,
 }: Props) {
   const sorted = [...groups].sort((a, b) => a.count - b.count).slice(-10);
 
@@ -180,7 +185,7 @@ export function DrillDownPanel({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            height: 160,
+            height: 120,
             color: "#8b949e",
             fontSize: 12,
             background: "rgba(240,246,252,0.03)",
@@ -194,16 +199,25 @@ export function DrillDownPanel({
           暂无数据
         </div>
       ) : !error && groups.length > 0 ? (
-        <DarkChart
-          option={option}
-          height={Math.max(160, sorted.length * 28 + 60)}
-          onEvents={
-            onBarClick
-              ? { click: (p: unknown) => onBarClick((p as { name: string }).name) }
-              : undefined
-          }
-        />
+        <div className="chart-drill-panel-chart">
+          <DarkChart
+            option={option}
+            height={drillBarChartHeight(sorted.length)}
+            onEvents={
+              onBarClick
+                ? {
+                    click: (p: unknown) => {
+                      const idx = (p as { dataIndex?: number }).dataIndex;
+                      if (idx == null || idx < 0 || idx >= sorted.length) return;
+                      onBarClick(sorted[idx]!.key);
+                    },
+                  }
+                : undefined
+            }
+          />
+        </div>
       ) : null}
+      {footer ? <div className="chart-drill-panel-footer">{footer}</div> : null}
     </div>
   );
 }

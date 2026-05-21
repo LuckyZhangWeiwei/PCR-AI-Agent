@@ -1149,6 +1149,11 @@ button.chip:hover {
   grid-column: 1 / -1;
 }
 
+/* Free-dimension (or other flagged) block always full width */
+.report-reorder-group--chartgrid .report-reorder-item.report-reorder-item--full-row {
+  grid-column: 1 / -1;
+}
+
 /* Narrow screens: single column */
 @media (max-width: 768px) {
   .report-reorder-group.report-reorder-group--chartgrid {
@@ -1199,6 +1204,25 @@ button.chip:hover {
   flex-direction: column;
   height: 100%;
   box-sizing: border-box;
+}
+
+.chart-drill-panel-chart {
+  flex: 0 0 auto;
+  min-height: 0;
+}
+
+.chart-drill-panel-footer {
+  flex: 0 0 auto;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(56, 139, 253, 0.35);
+}
+
+.chart-drill-panel-footer-title {
+  font-size: 11px;
+  color: #58a6ff;
+  font-weight: 600;
+  margin-bottom: 8px;
 }
 
 /* Drill open → chart tile spans full grid row for side-by-side room */
