@@ -69,6 +69,9 @@ code {
   max-width: 1360px;
   margin: 0 auto;
   padding: 0 24px 64px;
+  width: 100%;
+  box-sizing: border-box;
+  overflow-x: clip;
 }
 
 /* ── Header ──────────────────────────────────────────────────────────── */
@@ -931,6 +934,8 @@ button.chip:hover {
   padding: 10px;
   border-radius: 10px;
   overflow: visible;
+  min-width: 0;
+  max-width: 100%;
   border: 1px solid rgba(240, 246, 252, 0.16);
   background: rgba(22, 27, 34, 0.45);
   box-sizing: border-box;
@@ -1062,12 +1067,14 @@ button.chip:hover {
 .report-reorder-body {
   margin: 0;
   padding: 0;
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* Inner strips (KPI / chart matrix): visibly groups small tiles under one big panel */
 .report-reorder-body > .report-reorder-group.report-reorder-group--kpis,
 .report-reorder-body > .report-reorder-group.report-reorder-group--chartgrid {
-  padding: 10px;
+  padding: 6px;
   border-radius: var(--radius-sm);
   border: 1px dashed rgba(88, 166, 255, 0.32);
   background: rgba(13, 17, 23, 0.55);
@@ -1078,7 +1085,20 @@ button.chip:hover {
 .report-reorder-group--chartgrid .report-reorder-item {
   border-color: rgba(240, 246, 252, 0.1);
   background: rgba(13, 17, 23, 0.35);
-  padding: 8px;
+  padding: 6px;
+}
+
+/* 排名/下钻图表内层容器（Yield / JB） */
+.report-chart-panel {
+  background: #0d1117;
+  border: 1px solid rgba(240, 246, 252, 0.1);
+  border-radius: 8px;
+  padding: 8px 10px 6px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 .report-reorder-group.report-reorder-group--kpis {
@@ -1158,6 +1178,8 @@ button.chip:hover {
 
 .report-reorder-group--chartgrid .report-reorder-item {
   min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 /* Last chart alone in its row → expand to full width */
@@ -1219,9 +1241,9 @@ button.chip:hover {
 .dut-dist-html-legend {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 4px 10px;
-  padding: 0 4px 2px;
+  padding: 0 10px 2px 10px;
 }
 
 .dut-dist-html-legend-item {
@@ -1264,21 +1286,43 @@ button.chip:hover {
 }
 
 /* Chart + drill-down side-by-side (Yield / JB ranking blocks) */
+.chart-drill-block {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
 .chart-drill-hint {
   font-size: 11px;
   color: #6e7681;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 .chart-drill-row {
-  display: flex;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
   align-items: stretch;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.chart-drill-row--open {
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
 }
 
 .chart-drill-main,
 .chart-drill-side {
-  flex: 1 1 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+.chart-drill-main > * {
+  width: 100%;
+  max-width: 100%;
   min-width: 0;
 }
 
@@ -1287,6 +1331,9 @@ button.chip:hover {
   flex-direction: column;
   height: 100%;
   box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 .chart-drill-panel-chart {
@@ -1296,8 +1343,8 @@ button.chip:hover {
 
 .chart-drill-panel-footer {
   flex: 0 0 auto;
-  margin-top: 12px;
-  padding-top: 12px;
+  margin-top: 8px;
+  padding-top: 8px;
   border-top: 1px solid rgba(56, 139, 253, 0.35);
 }
 
@@ -1308,13 +1355,8 @@ button.chip:hover {
   margin-bottom: 8px;
 }
 
-/* Drill open → chart tile spans full grid row for side-by-side room */
-.report-reorder-group--chartgrid .report-reorder-item:has(.chart-drill-row:not(.chart-drill-row--solo)) {
-  grid-column: 1 / -1;
-}
-
 @media (max-width: 900px) {
-  .chart-drill-row:not(.chart-drill-row--solo) {
-    flex-direction: column;
+  .chart-drill-row--open {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

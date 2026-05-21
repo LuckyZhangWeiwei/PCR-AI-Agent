@@ -986,14 +986,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         }}
         sections={{
           chDevice: (
-            <div
-              style={{
-                background: "#0d1117",
-                border: "1px solid rgba(240,246,252,0.1)",
-                borderRadius: 8,
-                padding: 16,
-              }}
-            >
+            <div className="report-chart-panel">
               <ChartDrillSplit
                 hint="点击 Device → 钻取 LOT / Pass / Wafer 分布"
                 chart={
@@ -1035,14 +1028,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
             </div>
           ),
           chPcType: (
-            <div
-              style={{
-                background: "#0d1117",
-                border: "1px solid rgba(240,246,252,0.1)",
-                borderRadius: 8,
-                padding: 16,
-              }}
-            >
+            <div className="report-chart-panel">
               <ChartDrillSplit
                 hint="点击类型 → 钻取 ProbeCard → 点选具体卡，DUT# 分布显示在右侧面板底部"
                 chart={
@@ -1104,14 +1090,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
             </div>
           ),
           chLot: (
-            <div
-              style={{
-                background: "#0d1117",
-                border: "1px solid rgba(240,246,252,0.1)",
-                borderRadius: 8,
-                padding: 16,
-              }}
-            >
+            <div className="report-chart-panel">
               <ChartDrillSplit
                 chart={
                   aggLot ? (
@@ -1152,14 +1131,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
             </div>
           ),
           chFreeDim: (
-            <div
-              style={{
-                background: "#0d1117",
-                border: "1px solid rgba(240,246,252,0.1)",
-                borderRadius: 8,
-                padding: 16,
-              }}
-            >
+            <div className="report-chart-panel">
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
                 {FREE_DIMS.map((d) => (
                   <button

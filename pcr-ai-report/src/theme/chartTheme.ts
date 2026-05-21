@@ -60,14 +60,17 @@ export const horizontalBarCategoryAxisLabel = {
   ellipsis: "...",
 };
 
-/** Yield 排名条图高度（按可见条数） */
+export type BarChartHeightVariant = "default" | "medium" | "compact";
+
+/** 排名条图高度（按可见条数） */
 export function rankBarChartHeight(
   rowCount: number,
   maxRows = 20,
-  variant: "default" | "compact" = "default"
+  variant: BarChartHeightVariant = "default"
 ): number {
   const n = Math.min(Math.max(rowCount, 1), maxRows);
   if (variant === "compact") return Math.max(118, n * 15 + 30);
+  if (variant === "medium") return Math.max(138, n * 16.5 + 38);
   return Math.max(148, n * 18 + 40);
 }
 
@@ -75,12 +78,25 @@ export function rankBarChartHeight(
 export function drillBarChartHeight(
   rowCount: number,
   maxRows = 10,
-  variant: "default" | "compact" = "default"
+  variant: BarChartHeightVariant = "default"
 ): number {
   const n = Math.min(Math.max(rowCount, 1), maxRows);
   if (variant === "compact") return Math.max(108, n * 17 + 28);
+  if (variant === "medium") return Math.max(118, n * 18.5 + 32);
   return Math.max(124, n * 20 + 36);
 }
+
+/** JB Slot 趋势图固定高度（介于原 240 与紧凑 176 之间） */
+export const JB_SLOT_TREND_CHART_HEIGHT = 200;
+
+/** 纵向柱图（如 Slot 趋势）— 较紧的 grid */
+export const verticalBarChartGrid = {
+  left: 36,
+  right: 12,
+  top: 10,
+  bottom: 28,
+  containLabel: true,
+};
 
 export const YIELD_TREND_CHART_HEIGHT = 168;
 

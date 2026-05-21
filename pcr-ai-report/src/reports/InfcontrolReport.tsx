@@ -10,6 +10,7 @@ import type {
   InfcontrolLayerBinsV3Response,
   InfcontrolLayerBinV3Row,
 } from "../api/types";
+import { ChartDrillSplit } from "../components/ChartDrillSplit";
 import { CollapsibleQueryPanel } from "../components/CollapsibleQueryPanel";
 import { DarkChart } from "../components/DarkChart";
 import { DataTable } from "../components/DataTable";
@@ -25,10 +26,13 @@ import { InfDutDistPanel } from "../components/InfDutDistPanel";
 import { KpiCard } from "../components/KpiCard";
 import { TreeTable } from "../components/TreeTable";
 import {
-  baseChartOption,
   chartAxisColor,
   chartSplitLine,
-  chartTextColor,
+  horizontalBarCategoryAxisLabel,
+  horizontalBarChartBase,
+  JB_SLOT_TREND_CHART_HEIGHT,
+  rankBarChartHeight,
+  verticalBarChartGrid,
 } from "../theme/chartTheme";
 import { datetimeLocalToIso } from "../utils/datetimeLocal";
 import {
@@ -752,7 +756,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     // reverse: lowest yield ends up at top → reads low-to-high from top to bottom
     const data = lotYieldData.slice(0, 10).reverse();
     return {
-      ...baseChartOption(),
+      ...horizontalBarChartBase(),
       xAxis: {
         type: "value",
         max: 100,
@@ -762,7 +766,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       yAxis: {
         type: "category",
         data: data.map((d) => d.label),
-        axisLabel: { color: chartTextColor, fontSize: 11 },
+        axisLabel: { ...horizontalBarCategoryAxisLabel, interval: 0 },
       },
       series: [
         {
@@ -799,7 +803,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       .slice(-10);
     const COL = "#ff7b72", COL_B = "#ff5050", COL_D = "rgba(255,123,114,0.3)";
     return {
-      ...baseChartOption(),
+      ...horizontalBarChartBase(),
       xAxis: {
         type: "value",
         axisLabel: { color: chartAxisColor },
@@ -808,7 +812,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       yAxis: {
         type: "category",
         data: sorted.map((g) => `Bin ${g.parts.bin ?? g.key}`),
-        axisLabel: { color: chartTextColor, fontSize: 11 },
+        axisLabel: { ...horizontalBarCategoryAxisLabel, interval: 0 },
       },
       series: [
         {
@@ -846,7 +850,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     const sorted = [...typeBad.entries()].sort((a, b) => a[1] - b[1]).slice(-10);
     const COL = "#e6b450", COL_B = "#ffd070", COL_D = "rgba(230,180,80,0.3)";
     return {
-      ...baseChartOption(),
+      ...horizontalBarChartBase(),
       xAxis: {
         type: "value",
         axisLabel: { color: chartAxisColor },
@@ -855,7 +859,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       yAxis: {
         type: "category",
         data: sorted.map(([t]) => t),
-        axisLabel: { color: chartTextColor, fontSize: 11 },
+        axisLabel: { ...horizontalBarCategoryAxisLabel, interval: 0 },
       },
       series: [
         {
@@ -893,7 +897,8 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       .slice(0, 10);
     const COL = "#79c0ff", COL_B = "#4da6ff", COL_D = "rgba(121,192,255,0.3)";
     return {
-      ...baseChartOption(),
+      ...horizontalBarChartBase(),
+      grid: verticalBarChartGrid,
       xAxis: {
         type: "category",
         data: sorted.map(([s]) => `Slot ${s}`),
@@ -933,7 +938,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     const sorted = [...devBad.entries()].sort((a, b) => a[1] - b[1]).slice(-10);
     const COL = "#79c0ff", COL_B = "#58a6ff", COL_D = "rgba(121,192,255,0.2)";
     return {
-      ...baseChartOption(),
+      ...horizontalBarChartBase(),
       xAxis: {
         type: "value",
         axisLabel: { color: chartAxisColor },
@@ -942,7 +947,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       yAxis: {
         type: "category",
         data: sorted.map(([d]) => d),
-        axisLabel: { color: chartTextColor, fontSize: 11 },
+        axisLabel: { ...horizontalBarCategoryAxisLabel, interval: 0 },
       },
       series: [
         {
@@ -974,7 +979,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       .sort((a, b) => a.count - b.count)
       .slice(-10);
     return {
-      ...baseChartOption(),
+      ...horizontalBarChartBase(),
       xAxis: {
         type: "value",
         axisLabel: { color: chartAxisColor },
@@ -983,7 +988,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       yAxis: {
         type: "category",
         data: sorted.map((g) => formatGroupLabel(g.parts) || g.key),
-        axisLabel: { color: chartTextColor, fontSize: 10 },
+        axisLabel: { ...horizontalBarCategoryAxisLabel, interval: 0 },
       },
       series: [
         {
@@ -1104,56 +1109,59 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
 
     const lotYieldSection =
       lotYieldData.length > 0 ? (
-        <div
-          style={{
-            background: "#0d1117",
-            border: "1px solid rgba(240,246,252,0.1)",
-            borderRadius: 8,
-            padding: 16,
-          }}
-        >
-          <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 8 }}>
-            <span>绿≥95% · 黄80–95% · 红&lt;80%</span>
-            <span style={{ marginLeft: 8, fontSize: 11, color: "#6e7681" }}>
-              点击条形钻取
-            </span>
-          </div>
-          <ReactECharts
-            option={lotYieldOption}
-            style={{
-              height: Math.max(160, Math.min(lotYieldData.length, 10) * 26 + 40),
-              width: "100%",
-            }}
-            opts={{ renderer: "canvas" }}
-            notMerge
-            lazyUpdate
-            onEvents={{
-              click: (params: { name: string }) => {
-                const entry = lotYieldData.find((d) => d.label === params.name);
-                if (!entry) return;
-                setSelectedLotLabel(params.name);
-                fetchDrill("lot", entry.lot, "cardId", form);
-              },
-            }}
+        <div className="report-chart-panel">
+          <ChartDrillSplit
+            hint={
+              <>
+                <span>绿≥95% · 黄80–95% · 红&lt;80%</span>
+                <span style={{ marginLeft: 8, fontSize: 11, color: "#6e7681" }}>
+                  点击条形钻取
+                </span>
+              </>
+            }
+            chart={
+              <ReactECharts
+                option={lotYieldOption}
+                style={{
+                  height: rankBarChartHeight(lotYieldData.length, 10, "medium"),
+                  width: "100%",
+                }}
+                opts={{ renderer: "canvas" }}
+                notMerge
+                lazyUpdate
+                onEvents={{
+                  click: (params: { name: string }) => {
+                    const entry = lotYieldData.find((d) => d.label === params.name);
+                    if (!entry) return;
+                    setSelectedLotLabel(params.name);
+                    fetchDrill("lot", entry.lot, "cardId", form);
+                  },
+                }}
+              />
+            }
+            drill={
+              drills["lot"] != null ? (
+                <DrillDownPanel
+                  chartSize="medium"
+                  layout="side"
+                  title={`LOT: ${drills["lot"]!.parentDimVal} · 下钻：按 ${drills["lot"]!.subDim}`}
+                  groups={drills["lot"]!.groups}
+                  loading={drills["lot"]!.loading}
+                  error={drills["lot"]!.error}
+                  activeSubDim={drills["lot"]!.subDim}
+                  subDimOptions={DRILL_FROM_LOT}
+                  onSubDimChange={(d) =>
+                    fetchDrill("lot", drills["lot"]!.parentDimVal, d, form)
+                  }
+                  onBarClick={(key) => openInfFromDrill(drills["lot"]!, key)}
+                  onClose={() => {
+                    setSelectedLotLabel(null);
+                    setDrills((prev) => { const n = { ...prev }; delete n["lot"]; return n; });
+                  }}
+                />
+              ) : null
+            }
           />
-          {drills["lot"] != null && (
-            <DrillDownPanel
-              title={`LOT: ${drills["lot"]!.parentDimVal} · 下钻：按 ${drills["lot"]!.subDim}`}
-              groups={drills["lot"]!.groups}
-              loading={drills["lot"]!.loading}
-              error={drills["lot"]!.error}
-              activeSubDim={drills["lot"]!.subDim}
-              subDimOptions={DRILL_FROM_LOT}
-              onSubDimChange={(d) =>
-                fetchDrill("lot", drills["lot"]!.parentDimVal, d, form)
-              }
-              onBarClick={(key) => openInfFromDrill(drills["lot"]!, key)}
-              onClose={() => {
-                setSelectedLotLabel(null);
-                setDrills((prev) => { const n = { ...prev }; delete n["lot"]; return n; });
-              }}
-            />
-          )}
         </div>
       ) : null;
 
@@ -1163,6 +1171,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         defaultOrder={JB_CHART_BLOCK_ORDER}
         layoutEpoch={layoutEpoch}
         axis="grid"
+        fullRowIds={["jbDevice", "jbBin", "jbPcType", "jbSlot", "jbFreeDim"]}
         groupClassName="report-reorder-group--chartgrid"
         labels={{
           jbDevice: "Device 不良分析",
@@ -1173,257 +1182,251 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         }}
         sections={{
           jbDevice: (
-            <div
-              style={{
-                background: "#0d1117",
-                border: "1px solid rgba(240,246,252,0.1)",
-                borderRadius: 8,
-                padding: 16,
-              }}
-            >
-              <div style={{ fontSize: 11, color: "#6e7681", marginBottom: 8 }}>
-                点击 Device 钻取
-              </div>
-              {aggDevice && (
-                <ReactECharts
-                  option={deviceOption}
-                  style={{
-                    height: Math.max(180, (aggDevice.groups?.length ?? 0) * 22 + 60),
-                    width: "100%",
-                  }}
-                  opts={{ renderer: "canvas" }}
-                  notMerge
-                  lazyUpdate
-                  onEvents={{
-                    click: (params: { name: string }) => {
-                      setSelectedDevice(params.name);
-                      fetchDrill("device", params.name, "lot", form);
-                    },
-                  }}
-                />
-              )}
-              {drills["device"] != null && (
-                <DrillDownPanel
-                  title={`Device: ${drills["device"]!.parentDimVal} · 下钻：按 ${drills["device"]!.subDim}`}
-                  groups={drills["device"]!.groups}
-                  loading={drills["device"]!.loading}
-                  error={drills["device"]!.error}
-                  activeSubDim={drills["device"]!.subDim}
-                  subDimOptions={DRILL_FROM_DEVICE_JB}
-                  onSubDimChange={(d) =>
-                    fetchDrill("device", drills["device"]!.parentDimVal, d, form)
-                  }
-                  onBarClick={(key) => openInfFromDrill(drills["device"]!, key)}
-                  onClose={() => {
-                    setSelectedDevice(null);
-                    setDrills((prev) => { const n = { ...prev }; delete n["device"]; return n; });
-                  }}
-                />
-              )}
+            <div className="report-chart-panel">
+              <ChartDrillSplit
+                hint="点击 Device 钻取"
+                chart={
+                  aggDevice ? (
+                    <ReactECharts
+                      option={deviceOption}
+                      style={{
+                        height: rankBarChartHeight(aggDevice.groups?.length ?? 0, 10, "medium"),
+                        width: "100%",
+                      }}
+                      opts={{ renderer: "canvas" }}
+                      notMerge
+                      lazyUpdate
+                      onEvents={{
+                        click: (params: { name: string }) => {
+                          setSelectedDevice(params.name);
+                          fetchDrill("device", params.name, "lot", form);
+                        },
+                      }}
+                    />
+                  ) : null
+                }
+                drill={
+                  drills["device"] != null ? (
+                    <DrillDownPanel
+                      chartSize="medium"
+                      layout="side"
+                      title={`Device: ${drills["device"]!.parentDimVal} · 下钻：按 ${drills["device"]!.subDim}`}
+                      groups={drills["device"]!.groups}
+                      loading={drills["device"]!.loading}
+                      error={drills["device"]!.error}
+                      activeSubDim={drills["device"]!.subDim}
+                      subDimOptions={DRILL_FROM_DEVICE_JB}
+                      onSubDimChange={(d) =>
+                        fetchDrill("device", drills["device"]!.parentDimVal, d, form)
+                      }
+                      onBarClick={(key) => openInfFromDrill(drills["device"]!, key)}
+                      onClose={() => {
+                        setSelectedDevice(null);
+                        setDrills((prev) => { const n = { ...prev }; delete n["device"]; return n; });
+                      }}
+                    />
+                  ) : null
+                }
+              />
             </div>
           ),
           jbBin: (
-            <div
-              style={{
-                background: "#0d1117",
-                border: "1px solid rgba(240,246,252,0.1)",
-                borderRadius: 8,
-                padding: 16,
-              }}
-            >
-              <div style={{ fontSize: 11, color: "#6e7681", marginBottom: 8 }}>
-                点击钻取
-              </div>
-              {aggBin && (
-                <ReactECharts
-                  option={binRankOption}
-                  style={{
-                    height: Math.max(180, (aggBin.groups?.length ?? 0) * 22 + 60),
-                    width: "100%",
-                  }}
-                  opts={{ renderer: "canvas" }}
-                  notMerge
-                  lazyUpdate
-                  onEvents={{
-                    click: (params: { name: string }) => {
-                      const bin = params.name.replace(/^Bin /, "");
-                      setSelectedBin(bin);
-                      fetchDrill("bin", bin, "cardId", form);
-                    },
-                  }}
-                />
-              )}
-              {drills["bin"] != null && (
-                <DrillDownPanel
-                  title={`Bin ${drills["bin"]!.parentDimVal} · 下钻：按 ${drills["bin"]!.subDim}`}
-                  groups={drills["bin"]!.groups}
-                  loading={drills["bin"]!.loading}
-                  error={drills["bin"]!.error}
-                  activeSubDim={drills["bin"]!.subDim}
-                  subDimOptions={DRILL_FROM_BIN}
-                  onSubDimChange={(d) =>
-                    fetchDrill("bin", drills["bin"]!.parentDimVal, d, form)
-                  }
-                  onBarClick={(key) => openInfFromDrill(drills["bin"]!, key)}
-                  onClose={() => {
-                    setSelectedBin(null);
-                    setDrills((prev) => { const n = { ...prev }; delete n["bin"]; return n; });
-                  }}
-                />
-              )}
+            <div className="report-chart-panel">
+              <ChartDrillSplit
+                hint="点击钻取"
+                chart={
+                  aggBin ? (
+                    <ReactECharts
+                      option={binRankOption}
+                      style={{
+                        height: rankBarChartHeight(aggBin.groups?.length ?? 0, 10, "medium"),
+                        width: "100%",
+                      }}
+                      opts={{ renderer: "canvas" }}
+                      notMerge
+                      lazyUpdate
+                      onEvents={{
+                        click: (params: { name: string }) => {
+                          const bin = params.name.replace(/^Bin /, "");
+                          setSelectedBin(bin);
+                          fetchDrill("bin", bin, "cardId", form);
+                        },
+                      }}
+                    />
+                  ) : null
+                }
+                drill={
+                  drills["bin"] != null ? (
+                    <DrillDownPanel
+                      chartSize="medium"
+                      layout="side"
+                      title={`Bin ${drills["bin"]!.parentDimVal} · 下钻：按 ${drills["bin"]!.subDim}`}
+                      groups={drills["bin"]!.groups}
+                      loading={drills["bin"]!.loading}
+                      error={drills["bin"]!.error}
+                      activeSubDim={drills["bin"]!.subDim}
+                      subDimOptions={DRILL_FROM_BIN}
+                      onSubDimChange={(d) =>
+                        fetchDrill("bin", drills["bin"]!.parentDimVal, d, form)
+                      }
+                      onBarClick={(key) => openInfFromDrill(drills["bin"]!, key)}
+                      onClose={() => {
+                        setSelectedBin(null);
+                        setDrills((prev) => { const n = { ...prev }; delete n["bin"]; return n; });
+                      }}
+                    />
+                  ) : null
+                }
+              />
             </div>
           ),
           jbPcType: (
-            <div
-              style={{
-                background: "#0d1117",
-                border: "1px solid rgba(240,246,252,0.1)",
-                borderRadius: 8,
-                padding: 16,
-              }}
-            >
-              <div style={{ fontSize: 11, color: "#6e7681", marginBottom: 8 }}>
-                点击类型 → 钻取具体 CardId
-              </div>
-              {aggCardType && (
-                <ReactECharts
-                  option={cardTypeOption}
-                  style={{
-                    height: Math.max(
-                      180,
-                      new Map(
-                        aggCardType.groups?.map((g) => [g.parts.probeCardType, 1]) ?? []
-                      ).size *
-                        22 +
-                        60
-                    ),
-                    width: "100%",
-                  }}
-                  opts={{ renderer: "canvas" }}
-                  notMerge
-                  lazyUpdate
-                  onEvents={{
-                    click: (params: { name: string }) => {
-                      setSelectedCardType(params.name);
-                      fetchDrill("probeCardType", params.name, "cardId", form);
-                    },
-                  }}
-                />
-              )}
-              {drills["probeCardType"] != null && (
-                <DrillDownPanel
-                  title={`Type: ${drills["probeCardType"]!.parentDimVal} · 下钻：按 ${drills["probeCardType"]!.subDim}`}
-                  groups={drills["probeCardType"]!.groups}
-                  loading={drills["probeCardType"]!.loading}
-                  error={drills["probeCardType"]!.error}
-                  activeSubDim={drills["probeCardType"]!.subDim}
-                  subDimOptions={DRILL_FROM_CARDTYPE}
-                  onSubDimChange={(d) =>
-                    fetchDrill("probeCardType", drills["probeCardType"]!.parentDimVal, d, form)
-                  }
-                  onBarClick={(key) => openInfFromDrill(drills["probeCardType"]!, key)}
-                  onClose={() => {
-                    setSelectedCardType(null);
-                    setDrills((prev) => { const n = { ...prev }; delete n["probeCardType"]; return n; });
-                  }}
-                />
-              )}
-              {drills["cardId"] != null && (
-                <DrillDownPanel
-                  title={`CardId: ${drills["cardId"]!.parentDimVal} · 下钻：按 ${drills["cardId"]!.subDim}`}
-                  groups={drills["cardId"]!.groups}
-                  loading={drills["cardId"]!.loading}
-                  error={drills["cardId"]!.error}
-                  activeSubDim={drills["cardId"]!.subDim}
-                  subDimOptions={DRILL_FROM_CARD}
-                  onSubDimChange={(d) =>
-                    fetchDrill("cardId", drills["cardId"]!.parentDimVal, d, form)
-                  }
-                  onClose={() => setDrills((prev) => { const n = { ...prev }; delete n["cardId"]; return n; })}
-                />
-              )}
+            <div className="report-chart-panel">
+              <ChartDrillSplit
+                hint="点击类型 → 钻取具体 CardId"
+                chart={
+                  aggCardType ? (
+                    <ReactECharts
+                      option={cardTypeOption}
+                      style={{
+                        height: rankBarChartHeight(
+                          new Map(
+                            aggCardType.groups?.map((g) => [g.parts.probeCardType, 1]) ?? []
+                          ).size,
+                          10,
+                          "medium"
+                        ),
+                        width: "100%",
+                      }}
+                      opts={{ renderer: "canvas" }}
+                      notMerge
+                      lazyUpdate
+                      onEvents={{
+                        click: (params: { name: string }) => {
+                          setSelectedCardType(params.name);
+                          fetchDrill("probeCardType", params.name, "cardId", form);
+                        },
+                      }}
+                    />
+                  ) : null
+                }
+                drill={
+                  drills["probeCardType"] != null || drills["cardId"] != null ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, height: "100%" }}>
+                      {drills["probeCardType"] != null ? (
+                        <DrillDownPanel
+                          chartSize="medium"
+                          layout="side"
+                          title={`Type: ${drills["probeCardType"]!.parentDimVal} · 下钻：按 ${drills["probeCardType"]!.subDim}`}
+                          groups={drills["probeCardType"]!.groups}
+                          loading={drills["probeCardType"]!.loading}
+                          error={drills["probeCardType"]!.error}
+                          activeSubDim={drills["probeCardType"]!.subDim}
+                          subDimOptions={DRILL_FROM_CARDTYPE}
+                          onSubDimChange={(d) =>
+                            fetchDrill("probeCardType", drills["probeCardType"]!.parentDimVal, d, form)
+                          }
+                          onBarClick={(key) => openInfFromDrill(drills["probeCardType"]!, key)}
+                          onClose={() => {
+                            setSelectedCardType(null);
+                            setDrills((prev) => { const n = { ...prev }; delete n["probeCardType"]; return n; });
+                          }}
+                        />
+                      ) : null}
+                      {drills["cardId"] != null ? (
+                        <DrillDownPanel
+                          chartSize="medium"
+                          layout="side"
+                          title={`CardId: ${drills["cardId"]!.parentDimVal} · 下钻：按 ${drills["cardId"]!.subDim}`}
+                          groups={drills["cardId"]!.groups}
+                          loading={drills["cardId"]!.loading}
+                          error={drills["cardId"]!.error}
+                          activeSubDim={drills["cardId"]!.subDim}
+                          subDimOptions={DRILL_FROM_CARD}
+                          onSubDimChange={(d) =>
+                            fetchDrill("cardId", drills["cardId"]!.parentDimVal, d, form)
+                          }
+                          onClose={() => setDrills((prev) => { const n = { ...prev }; delete n["cardId"]; return n; })}
+                        />
+                      ) : null}
+                    </div>
+                  ) : null
+                }
+              />
             </div>
           ),
           jbSlot: (
-            <div
-              style={{
-                background: "#0d1117",
-                border: "1px solid rgba(240,246,252,0.1)",
-                borderRadius: 8,
-                padding: 16,
-              }}
-            >
-              <div style={{ fontSize: 11, color: "#6e7681", marginBottom: 8 }}>
-                点击 Slot 钻取
-              </div>
-              {aggSlot && (aggSlot.groups?.length ?? 0) > 0 ? (
-                <ReactECharts
-                  option={slotOption}
-                  style={{ height: 240, width: "100%" }}
-                  opts={{ renderer: "canvas" }}
-                  notMerge
-                  lazyUpdate
-                  onEvents={{
-                    click: (params: { name: string }) => {
-                      const slotNum = params.name.replace(/^Slot /i, "").trim();
-                      setSelectedSlot(params.name);
-                      fetchDrill("slot", slotNum, "bin", form);
-                      const slotN = parseSlotFromDrillBarLabel(params.name);
-                      const dev = form.device.trim();
-                      const lot = form.lot.trim();
-                      if (slotN !== null && dev && lot) {
-                        const passIds = form.passId ? [Number(form.passId)] : [1, 3, 5];
-                        setInfCtx({
-                          device: dev,
-                          lot,
-                          slot: slotN,
-                          passIds,
-                          cardId: form.cardId || undefined,
-                          goodBinNumbers: collectGoodBinNumbersFromJbRows(
-                            listRowsForInf,
-                            dev,
-                            lot,
-                            slotN,
-                            passIds
-                          ),
-                        });
+            <div className="report-chart-panel">
+              <ChartDrillSplit
+                hint="点击 Slot 钻取"
+                chart={
+                  aggSlot && (aggSlot.groups?.length ?? 0) > 0 ? (
+                    <ReactECharts
+                      option={slotOption}
+                      style={{ height: JB_SLOT_TREND_CHART_HEIGHT, width: "100%" }}
+                      opts={{ renderer: "canvas" }}
+                      notMerge
+                      lazyUpdate
+                      onEvents={{
+                        click: (params: { name: string }) => {
+                          const slotNum = params.name.replace(/^Slot /i, "").trim();
+                          setSelectedSlot(params.name);
+                          fetchDrill("slot", slotNum, "bin", form);
+                          const slotN = parseSlotFromDrillBarLabel(params.name);
+                          const dev = form.device.trim();
+                          const lot = form.lot.trim();
+                          if (slotN !== null && dev && lot) {
+                            const passIds = form.passId ? [Number(form.passId)] : [1, 3, 5];
+                            setInfCtx({
+                              device: dev,
+                              lot,
+                              slot: slotN,
+                              passIds,
+                              cardId: form.cardId || undefined,
+                              goodBinNumbers: collectGoodBinNumbersFromJbRows(
+                                listRowsForInf,
+                                dev,
+                                lot,
+                                slotN,
+                                passIds
+                              ),
+                            });
+                          }
+                        },
+                      }}
+                    />
+                  ) : aggSlot ? (
+                    <p className="muted small">当前筛选下无 Slot 聚合数据</p>
+                  ) : null
+                }
+                drill={
+                  drills["slot"] != null ? (
+                    <DrillDownPanel
+                      chartSize="medium"
+                      layout="side"
+                      title={`Slot ${drills["slot"]!.parentDimVal} · 下钻：按 ${drills["slot"]!.subDim}`}
+                      groups={drills["slot"]!.groups}
+                      loading={drills["slot"]!.loading}
+                      error={drills["slot"]!.error}
+                      activeSubDim={drills["slot"]!.subDim}
+                      subDimOptions={DRILL_FROM_SLOT}
+                      onSubDimChange={(d) =>
+                        fetchDrill("slot", drills["slot"]!.parentDimVal, d, form)
                       }
-                    },
-                  }}
-                />
-              ) : aggSlot ? (
-                <p className="muted small">当前筛选下无 Slot 聚合数据</p>
-              ) : null}
-              {drills["slot"] != null && (
-                <DrillDownPanel
-                  title={`Slot ${drills["slot"]!.parentDimVal} · 下钻：按 ${drills["slot"]!.subDim}`}
-                  groups={drills["slot"]!.groups}
-                  loading={drills["slot"]!.loading}
-                  error={drills["slot"]!.error}
-                  activeSubDim={drills["slot"]!.subDim}
-                  subDimOptions={DRILL_FROM_SLOT}
-                  onSubDimChange={(d) =>
-                    fetchDrill("slot", drills["slot"]!.parentDimVal, d, form)
-                  }
-                  onBarClick={(key) => openInfFromDrill(drills["slot"]!, key)}
-                  onClose={() => {
-                    setSelectedSlot(null);
-                    setDrills((prev) => { const n = { ...prev }; delete n["slot"]; return n; });
-                  }}
-                />
-              )}
+                      onBarClick={(key) => openInfFromDrill(drills["slot"]!, key)}
+                      onClose={() => {
+                        setSelectedSlot(null);
+                        setDrills((prev) => { const n = { ...prev }; delete n["slot"]; return n; });
+                      }}
+                    />
+                  ) : null
+                }
+              />
             </div>
           ),
           jbFreeDim: (
-            <div
-              style={{
-                background: "#0d1117",
-                border: "1px solid rgba(240,246,252,0.1)",
-                borderRadius: 8,
-                padding: 16,
-              }}
-            >
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+            <div className="report-chart-panel">
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
                 {FREE_DIMS.map((d) => (
                   <button
                     key={d.value}
@@ -1447,7 +1450,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
               {aggFree && (
                 <DarkChart
                   option={freeOption}
-                  height={Math.max(180, (aggFree.groups?.length ?? 0) * 22 + 60)}
+                  height={rankBarChartHeight(aggFree.groups?.length ?? 0, 10, "medium")}
                 />
               )}
             </div>

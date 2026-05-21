@@ -8,6 +8,7 @@ import {
   drillBarChartHeight,
   horizontalBarCategoryAxisLabel,
   horizontalBarChartBase,
+  type BarChartHeightVariant,
 } from "../theme/chartTheme";
 import type { AggregateGroup } from "../api/types";
 
@@ -34,6 +35,8 @@ type Props = {
   footer?: ReactNode;
   /** Slightly shorter bar chart (e.g. free-dimension drill column) */
   compact?: boolean;
+  /** Bar height tier; `compact` prop overrides this when true */
+  chartSize?: BarChartHeightVariant;
 };
 
 const COL_PANEL = chartAccent;
@@ -77,7 +80,9 @@ export function DrillDownPanel({
   layout = "below",
   footer,
   compact = false,
+  chartSize = "default",
 }: Props) {
+  const barHeightVariant: BarChartHeightVariant = compact ? "compact" : chartSize;
   const sorted = [...groups].sort((a, b) => a.count - b.count).slice(-10);
 
   const labels = sorted.map((g) => {
@@ -129,8 +134,12 @@ export function DrillDownPanel({
         border: "1px solid #388bfd",
         borderRadius: 8,
         background: "#0d1929",
-        padding: 12,
+        padding: layout === "side" ? 8 : 12,
         marginTop: layout === "side" ? 0 : 8,
+        minWidth: 0,
+        maxWidth: "100%",
+        overflowX: "clip",
+        boxSizing: "border-box",
       }}
     >
       <div
@@ -138,7 +147,7 @@ export function DrillDownPanel({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          marginBottom: 8,
+          marginBottom: layout === "side" ? 6 : 8,
           gap: 8,
           flexWrap: "wrap",
         }}
@@ -188,7 +197,8 @@ export function DrillDownPanel({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            height: compact ? 96 : 120,
+            height:
+              barHeightVariant === "compact" ? 96 : barHeightVariant === "medium" ? 108 : 120,
             color: "#8b949e",
             fontSize: 12,
             background: "rgba(240,246,252,0.03)",
@@ -205,7 +215,7 @@ export function DrillDownPanel({
         <div className="chart-drill-panel-chart">
           <DarkChart
             option={option}
-            height={drillBarChartHeight(sorted.length, 10, compact ? "compact" : "default")}
+            height={drillBarChartHeight(sorted.length, 10, barHeightVariant)}
             onEvents={
               onBarClick
                 ? {
