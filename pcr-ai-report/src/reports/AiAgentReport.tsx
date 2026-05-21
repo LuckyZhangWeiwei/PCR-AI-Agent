@@ -372,7 +372,9 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
                       {msg.text}
                     </ReactMarkdown>
                   ) : (
-                    msg.streaming ? "…" : ""
+                    msg.streaming
+                      ? <span className="ai-status-hint">{statusHint || "正在思考…"}</span>
+                      : ""
                   )}
                   {msg.streaming && <span className="ai-cursor" />}
                 </div>

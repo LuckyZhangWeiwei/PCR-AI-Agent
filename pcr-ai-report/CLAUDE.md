@@ -220,6 +220,13 @@ src/
    - 图表生成规则：AI **不主动**调用 `generate_chart`，只在结论末尾提示用户是否需要图表，等确认后再生成。  
    - 格式限制：禁止 Markdown 图片语法 `![...](url)`。
 
+## 13. 近期变更纪要（2026-05-21，交接备忘）
+
+1. **AI Agent 流式体验改进**：
+   - 空 AI 气泡（`streaming: true && text === ""`）不再显示 `"…"`，改为渲染 **`statusHint`**（灰色斜体 `.ai-status-hint`），默认文字 `"正在思考…"`。后端在以下时机发 `status` 事件：`"正在压缩历史对话…"` / `"正在准备系统信息…"` / `"正在执行工具 xxx…"` / `"正在分析工具结果…"`。用户可在气泡内看到当前阶段，不再面对空白 pending。
+   - 修改文件：**`AiAgentReport.tsx`**（`msg.text ? <ReactMarkdown> : msg.streaming ? <span className="ai-status-hint">` 替换原先的 `"…"`）；**`AiAgentReport.css`**（新增 `.ai-status-hint { color: #6a8aaa; font-style: italic; font-size: 0.9em }`）。
+2. **历史上下文延长**：后端 `agentHistory.ts` 的阈值均已上调（见 `../pcr-ai-api/CLAUDE.md` §11 条目 9），前端无需改动。
+
 ---
 
 ## 12. 与 API 联调速查

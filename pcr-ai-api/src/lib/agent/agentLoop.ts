@@ -62,7 +62,7 @@ function createDeepSeekFilter(
   let callIdx = 0;
   let cleanText = "";
 
-  const LOOKAHEAD = 30; // chars to keep as lookahead before flushing
+  const LOOKAHEAD = 12; // chars to keep as lookahead before flushing (≥8 to detect <｜tool▁ start)
 
   function flushPending(force = false): void {
     if (inToken) return;
@@ -201,6 +201,7 @@ export async function runAgentLoop(
   if (needsSummarization(sessionId)) {
     const old = popOldMessagesForSummarization(sessionId);
     if (old.length > 0) {
+      emit({ type: "status", message: "正在压缩历史对话…" });
       const existing = getSummary(sessionId);
       // Prepend any prior summary text so it is folded in cumulatively.
       const toSummarize: ChatMessage[] = existing
@@ -211,6 +212,7 @@ export async function runAgentLoop(
     }
   }
 
+  emit({ type: "status", message: "正在准备系统信息…" });
   // Fetch manifest with a 5-second cap so a slow/unavailable Oracle DB
   // never blocks the agent loop (returns undefined → prompt uses fallback text).
   const manifest = await Promise.race([
@@ -350,7 +352,8 @@ export async function runAgentLoop(
       emit({ type: "done" });
       return;
     }
-    // Continue to next round with tool results in history
+    // Continue to next round — let user know LLM is processing tool results
+    emit({ type: "status", message: "正在分析工具结果…" });
   }
 
   emit({ type: "error", message: `已达到最大推理轮数（${MAX_ROUNDS}轮），请精简问题后重试` });

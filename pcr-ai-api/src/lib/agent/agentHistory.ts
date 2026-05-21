@@ -20,12 +20,12 @@ interface Session {
 
 const sessions = new Map<string, Session>();
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
-const MAX_MESSAGES = 60; // hard safety cap (summarization keeps this low in practice)
+const MAX_MESSAGES = 80; // hard safety cap
 
 /** Threshold at which summarization should be triggered */
-export const SUMMARIZE_THRESHOLD = 20;
+export const SUMMARIZE_THRESHOLD = 40;
 /** Number of recent messages to keep verbatim after summarization */
-export const KEEP_RECENT = 10;
+export const KEEP_RECENT = 20;
 
 /**
  * Trim history to MAX_MESSAGES while never splitting a tool-call group.

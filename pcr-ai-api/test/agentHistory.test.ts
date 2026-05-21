@@ -45,12 +45,12 @@ describe("agentHistory", () => {
   it("trims oldest messages when MAX_MESSAGES exceeded", () => {
     const sid = "sess-trim";
     clearHistory(sid);
-    for (let i = 0; i < 65; i++) {
+    for (let i = 0; i < 85; i++) {
       appendMessages(sid, { role: "user", content: `msg-${i}` });
     }
     const h = getHistory(sid);
-    assert.ok(h.length <= 60, `Expected ≤60 messages, got ${h.length}`);
+    assert.ok(h.length <= 80, `Expected ≤80 messages, got ${h.length}`);
     // Most recent message should be preserved
-    assert.equal(h[h.length - 1].content, "msg-64");
+    assert.equal(h[h.length - 1].content, "msg-84");
   });
 });

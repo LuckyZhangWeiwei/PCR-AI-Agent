@@ -219,6 +219,12 @@
   animation: blink 1s step-start infinite;
 }
 
+.ai-status-hint {
+  color: #6a8aaa;
+  font-style: italic;
+  font-size: 0.9em;
+}
+
 @keyframes blink {
   50% { opacity: 0; }
 }
