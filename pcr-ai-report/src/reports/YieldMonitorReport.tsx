@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiGetJson } from "../api/client";
 import { API_PREFIX, YIELD_AGGREGATE_PATH } from "../api/paths";
 import type {
@@ -38,6 +38,7 @@ import {
   allSettledWithConcurrency,
   REPORT_ORACLE_FANOUT_CONCURRENCY,
 } from "../utils/asyncConcurrency";
+import { drillFromTree, storeDrillTab } from "../utils/drillAggregate";
 import { datetimeLocalToIso, formatAggregateDimLabel, formatChartDayLabel } from "../utils/datetimeLocal";
 import {
   buildTree,
@@ -188,6 +189,140 @@ type DrillState = {
   error: string | null;
 };
 
+// Dimensions in aggTree (device→lotId→probeCardType→probeCard).
+const YIELD_TREE_DRILL_DIMS = new Set([
+  "device",
+  "lotId",
+  "probeCardType",
+  "probeCard",
+]);
+
+const YIELD_DRILL_KEY_SEP = "\x00";
+
+function rowMatchesYieldDrillParent(
+  row: YieldMonitorV3Row,
+  parentDimKey: string,
+  parentDimVal: string
+): boolean {
+  const val = parentDimVal.trim();
+  switch (parentDimKey) {
+    case "device":
+      return String(row.DEVICE ?? "").trim() === val;
+    case "lotId":
+      return String(row.LOTID ?? "").trim() === val;
+    case "probeCard":
+      return String(row.PROBECARD ?? "").trim() === val;
+    case "probeCardType": {
+      const typeLower = val.toLowerCase();
+      const pct = row.PROBECARDTYPE;
+      if (pct !== undefined && pct !== null && String(pct).trim()) {
+        return String(pct).trim().toLowerCase() === typeLower;
+      }
+      const card = String(row.PROBECARD ?? "").trim();
+      if (!card) return false;
+      const dash = card.indexOf("-");
+      const prefix = (dash > 0 ? card.slice(0, dash) : card).toLowerCase();
+      return prefix === typeLower;
+    }
+    default:
+      return true;
+  }
+}
+
+function yieldRowDimValue(row: YieldMonitorV3Row, dim: string): string | undefined {
+  switch (dim) {
+    case "device":
+      return String(row.DEVICE ?? "").trim() || undefined;
+    case "lotId":
+      return String(row.LOTID ?? "").trim() || undefined;
+    case "wafer":
+      return String(row.WAFER ?? "").trim() || undefined;
+    case "hostname":
+      return String(row.HOSTNAME ?? "").trim() || undefined;
+    case "pass":
+      return row.PASS !== undefined && row.PASS !== null
+        ? String(row.PASS)
+        : undefined;
+    case "probeCard":
+      return String(row.PROBECARD ?? "").trim() || undefined;
+    case "probeCardType": {
+      const pct = row.PROBECARDTYPE;
+      if (pct !== undefined && pct !== null && String(pct).trim()) {
+        return String(pct).trim();
+      }
+      const card = String(row.PROBECARD ?? "").trim();
+      if (!card) return undefined;
+      const dash = card.indexOf("-");
+      return dash > 0 ? card.slice(0, dash) : card;
+    }
+    case "timeDay": {
+      if (!row.TIME_STAMP) return undefined;
+      const t = new Date(row.TIME_STAMP).getTime();
+      if (Number.isNaN(t)) return undefined;
+      const d0 = new Date(t);
+      d0.setUTCHours(0, 0, 0, 0);
+      return d0.toISOString().replace("T", " ").slice(0, 19);
+    }
+    default:
+      return undefined;
+  }
+}
+
+/** Roll up loaded list rows for drill tabs (pass/wafer/timeDay etc.). */
+function drillFromYieldListRows(
+  rows: YieldMonitorV3Row[],
+  parentDimKey: string,
+  parentDimVal: string,
+  subDim: string,
+  top = 50
+): AggregateGroup[] {
+  const subDimKeys = subDim
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const sums = new Map<string, number>();
+  const partsMap = new Map<string, Record<string, string>>();
+
+  for (const row of rows) {
+    if (!rowMatchesYieldDrillParent(row, parentDimKey, parentDimVal)) continue;
+    const parts: Record<string, string> = {};
+    let valid = true;
+    for (const k of subDimKeys) {
+      const dv = yieldRowDimValue(row, k);
+      if (dv === undefined) {
+        valid = false;
+        break;
+      }
+      parts[k] = dv;
+    }
+    if (!valid) continue;
+    const key = subDimKeys.map((k) => parts[k]).join(YIELD_DRILL_KEY_SEP);
+    sums.set(key, (sums.get(key) ?? 0) + 1);
+    if (!partsMap.has(key)) partsMap.set(key, parts);
+  }
+
+  return [...sums.entries()]
+    .map(([key, count]) => ({ key, count, parts: partsMap.get(key)! }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, top);
+}
+
+function filterYieldDrillGroupsForProbeCardType(
+  groups: AggregateGroup[],
+  filterDim: string,
+  filterVal: string,
+  subDim: string
+): AggregateGroup[] {
+  if (filterDim !== "probeCardType" || subDim !== "probeCard") return groups;
+  const typeLower = filterVal.trim().toLowerCase();
+  return groups.filter((g) => {
+    const card = (g.parts.probeCard ?? g.key).trim();
+    const dash = card.indexOf("-");
+    const prefix = (dash > 0 ? card.slice(0, dash) : card).toLowerCase();
+    return prefix === typeLower;
+  });
+}
+
 export function YieldMonitorReport({ apiBase, listLimits }: Props) {
   const [form, setForm] = useState<FormState>(initialForm);
   const [list, setList] = useState<YieldMonitorV3Response | null>(null);
@@ -209,6 +344,9 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
   const [errorAgg, setErrorAgg] = useState<string | null>(null);
 
   const [drills, setDrills] = useState<Record<string, DrillState>>({});
+  const drillCacheRef = useRef<
+    Record<string, { val: string; tabs: Record<string, AggregateGroup[]> }>
+  >({});
   const [showTree,   setShowTree]   = useState(false);
   const [showDetail, setShowDetail] = useState(false);
   // The probeCard the user selected by clicking a bar inside the drill panel
@@ -253,6 +391,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     setAggTree(null);
     setAggFree(null);
     setDrills({});
+    drillCacheRef.current = {};
     setFreeDimSelectedProbeCard(null);
     setSelectedProbeCard(null);
     setSelectedCardTypeName(null);
@@ -279,6 +418,78 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       subDim: string,
       currentForm: FormState
     ) => {
+      const subDimKeys = subDim
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const listRows = (list?.rows ?? []) as YieldMonitorV3Row[];
+
+      const cached = drillCacheRef.current[drillStateKey];
+      if (cached?.val === filterVal && subDim in cached.tabs) {
+        setDrills((prev) => ({
+          ...prev,
+          [drillStateKey]: {
+            parentDimKey: filterDim,
+            parentDimVal: filterVal,
+            subDim,
+            groups: cached.tabs[subDim],
+            loading: false,
+            error: null,
+          },
+        }));
+        return;
+      }
+
+      if (
+        aggTree?.groups != null &&
+        YIELD_TREE_DRILL_DIMS.has(filterDim) &&
+        subDimKeys.every((k) => YIELD_TREE_DRILL_DIMS.has(k))
+      ) {
+        let groups = drillFromTree(
+          aggTree.groups,
+          filterDim,
+          filterVal,
+          subDimKeys
+        );
+        groups = filterYieldDrillGroupsForProbeCardType(
+          groups,
+          filterDim,
+          filterVal,
+          subDim
+        );
+        if (groups.length > 0) {
+          storeDrillTab(
+            drillStateKey,
+            filterVal,
+            subDim,
+            groups,
+            drillCacheRef,
+            setDrills
+          );
+          return;
+        }
+      }
+
+      if (listRows.length > 0) {
+        const fromList = drillFromYieldListRows(
+          listRows,
+          filterDim,
+          filterVal,
+          subDim
+        );
+        if (fromList.length > 0) {
+          storeDrillTab(
+            drillStateKey,
+            filterVal,
+            subDim,
+            fromList,
+            drillCacheRef,
+            setDrills
+          );
+          return;
+        }
+      }
+
       setDrills((prev) => ({
         ...prev,
         [drillStateKey]: {
@@ -291,12 +502,9 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         },
       }));
       try {
-        const extraParams: Record<string, string | number | undefined> = {
-          [filterDim]: filterVal,
-        };
         const params = {
           ...buildCoreParams(currentForm),
-          ...extraParams,
+          [filterDim]: filterVal,
           dimensions: subDim,
           groupTop: 50,
         };
@@ -305,19 +513,30 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
           YIELD_AGGREGATE_PATH,
           params
         );
-        let groups = res.groups;
-        if (filterDim === "probeCardType" && subDim === "probeCard") {
-          const typeLower = filterVal.trim().toLowerCase();
-          groups = groups.filter((g) => {
-            const card = (g.parts.probeCard ?? g.key).trim();
-            const dash = card.indexOf("-");
-            const prefix = (dash > 0 ? card.slice(0, dash) : card).toLowerCase();
-            return prefix === typeLower;
-          });
+        let groups = filterYieldDrillGroupsForProbeCardType(
+          res.groups,
+          filterDim,
+          filterVal,
+          subDim
+        );
+        if (groups.length === 0 && listRows.length > 0) {
+          groups = drillFromYieldListRows(
+            listRows,
+            filterDim,
+            filterVal,
+            subDim
+          );
         }
         setDrills((prev) => {
           const d = prev[drillStateKey];
           if (!d || d.parentDimVal !== filterVal) return prev;
+          if (
+            !drillCacheRef.current[drillStateKey] ||
+            drillCacheRef.current[drillStateKey].val !== filterVal
+          ) {
+            drillCacheRef.current[drillStateKey] = { val: filterVal, tabs: {} };
+          }
+          drillCacheRef.current[drillStateKey].tabs[subDim] = groups;
           return { ...prev, [drillStateKey]: { ...d, groups, loading: false } };
         });
       } catch (e) {
@@ -335,7 +554,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         });
       }
     },
-    [apiBase]
+    [apiBase, aggTree, list?.rows]
   );
 
   const fetchFreeAgg = useCallback(
@@ -360,6 +579,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     setErrorList(null);
     setErrorAgg(null);
     setDrills({});
+    drillCacheRef.current = {};
     setFreeDimSelectedProbeCard(null);
     setSelectedProbeCard(null);
     setSelectedCardTypeName(null);
@@ -484,6 +704,19 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       setDutList(null);
       return;
     }
+    const card = dutProbeCardTarget.trim();
+    const fromMain = (list?.rows ?? []).filter(
+      (r) => String(r.PROBECARD ?? "").trim() === card
+    );
+    if (fromMain.length > 0 && list) {
+      setDutList({
+        ...list,
+        rows: fromMain,
+        count: fromMain.length,
+      });
+      setLoadingDut(false);
+      return;
+    }
     let cancelled = false;
     setLoadingDut(true);
     setDutList(null);
@@ -504,7 +737,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [dutProbeCardTarget, apiBase, form, listLimits]);
+  }, [dutProbeCardTarget, apiBase, form, listLimits, list]);
 
   // ── KPI derivations ──────────────────────────────────────────────────────
 

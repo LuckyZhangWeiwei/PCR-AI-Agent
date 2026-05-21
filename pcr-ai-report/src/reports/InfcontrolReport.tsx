@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type Dispatch, type MutableRefObject, type ReactNode, type SetStateAction } from "react";
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import ReactECharts from "echarts-for-react";
 import { apiGetJson } from "../api/client";
 import { INFCONTROL_AGGREGATE_PATH, INFCONTROL_COMBINED_PATH } from "../api/paths";
@@ -36,6 +36,7 @@ import {
   verticalBarChartGrid,
 } from "../theme/chartTheme";
 import { datetimeLocalToIso } from "../utils/datetimeLocal";
+import { drillFromTree, storeDrillTab } from "../utils/drillAggregate";
 import {
   collectGoodBinNumbersFromJbRow,
   collectGoodBinNumbersFromJbRows,
@@ -231,33 +232,6 @@ type DrillState = {
 // can be served from the cached aggTree without hitting Oracle.
 const TREE_DRILL_DIMS = new Set(["device", "lot", "probeCardType", "cardId", "bin"]);
 
-function drillFromTree(
-  treeGroups: AggregateGroup[],
-  filterKey: string,
-  filterVal: string,
-  subDimKeys: string[],
-): AggregateGroup[] {
-  const sums = new Map<string, number>();
-  const partsMap = new Map<string, Record<string, string>>();
-  for (const g of treeGroups) {
-    if (g.parts[filterKey] !== filterVal) continue;
-    const subParts: Record<string, string> = {};
-    let valid = true;
-    for (const k of subDimKeys) {
-      const v = g.parts[k];
-      if (v === undefined) { valid = false; break; }
-      subParts[k] = v;
-    }
-    if (!valid) continue;
-    const key = subDimKeys.map((k) => subParts[k]).join("\x00");
-    sums.set(key, (sums.get(key) ?? 0) + g.count);
-    if (!partsMap.has(key)) partsMap.set(key, subParts);
-  }
-  return [...sums.entries()]
-    .map(([key, count]) => ({ key, count, parts: partsMap.get(key)! }))
-    .sort((a, b) => b.count - a.count);
-}
-
 const JB_DRILL_KEY_SEP = "|";
 
 function rowMatchesJbDrillParent(
@@ -378,33 +352,6 @@ function parseSlotFromDrillClick(
     if (Number.isFinite(n)) return n;
   }
   return parseSlotFromDrillBarLabel(clickedKey);
-}
-
-function storeDrillTab(
-  parentDimKey: string,
-  parentDimVal: string,
-  subDim: string,
-  groups: AggregateGroup[],
-  drillCacheRef: MutableRefObject<
-    Record<string, { val: string; tabs: Record<string, AggregateGroup[]> }>
-  >,
-  setDrills: Dispatch<SetStateAction<Record<string, DrillState>>>
-): void {
-  if (!drillCacheRef.current[parentDimKey] || drillCacheRef.current[parentDimKey].val !== parentDimVal) {
-    drillCacheRef.current[parentDimKey] = { val: parentDimVal, tabs: {} };
-  }
-  drillCacheRef.current[parentDimKey].tabs[subDim] = groups;
-  setDrills((prev) => ({
-    ...prev,
-    [parentDimKey]: {
-      parentDimKey,
-      parentDimVal,
-      subDim,
-      groups,
-      loading: false,
-      error: null,
-    },
-  }));
 }
 
 function lotYields(
@@ -810,7 +757,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     ) => {
       const subDimKeys = drillSubDimKeysForFetch(parentDimKey, subDim);
       const listRows = (list?.rows ?? []) as InfcontrolLayerBinV3Row[];
-      const queryLot = currentForm.lot.trim();
 
       // ── Tab cache: reuse already-fetched results for the same bar + tab ──────
       const cached = drillCacheRef.current[parentDimKey];
@@ -822,12 +768,27 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         return;
       }
 
-      // ── 查询区已填 Lot：用明细行聚合 slot/pass（与当前 Lot 一致，避免 aggregate 空结果）──
+      // ── In-memory path: derive from cached aggTree (no Oracle call) ──────────
+      // Works when both the filter key and all child dim keys are dimensions
+      // present in the aggTree parts: device / lot / probeCardType / cardId / bin.
+      // Falls back to Oracle when slot or passId appear, or when the requested
+      // value is absent from the cached rows.
+      const treeGroups = aggTree?.groups;
       if (
-        queryLot &&
-        listRows.length > 0 &&
-        subDimKeys.some((k) => k === "slot" || k === "passId")
+        treeGroups != null &&
+        TREE_DRILL_DIMS.has(parentDimKey) &&
+        subDimKeys.every((k) => TREE_DRILL_DIMS.has(k))
       ) {
+        const groups = drillFromTree(treeGroups, parentDimKey, parentDimVal, subDimKeys);
+        if (groups.length > 0) {
+          storeDrillTab(parentDimKey, parentDimVal, subDim, groups, drillCacheRef, setDrills);
+          return;
+        }
+        // Zero results → value not in cached rows → fall through below.
+      }
+
+      // ── In-memory path: derive from cached list rows (no Oracle call) ─────────
+      if (listRows.length > 0) {
         const fromList = drillFromJbListRows(
           listRows,
           parentDimKey,
@@ -845,31 +806,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
           );
           return;
         }
-      }
-
-      // ── In-memory path: derive from cached aggTree (no Oracle call) ──────────
-      // Works when both the filter key and all child dim keys are dimensions
-      // present in the aggTree parts: device / lot / probeCardType / cardId / bin.
-      // Falls back to Oracle when slot or passId appear, or when the requested
-      // value is absent from the cached rows.
-      const treeGroups = aggTree?.groups;
-      if (
-        treeGroups != null &&
-        TREE_DRILL_DIMS.has(parentDimKey) &&
-        subDimKeys.every((k) => TREE_DRILL_DIMS.has(k))
-      ) {
-        const groups = drillFromTree(treeGroups, parentDimKey, parentDimVal, subDimKeys);
-        if (groups.length > 0) {
-          if (!drillCacheRef.current[parentDimKey] || drillCacheRef.current[parentDimKey].val !== parentDimVal)
-            drillCacheRef.current[parentDimKey] = { val: parentDimVal, tabs: {} };
-          drillCacheRef.current[parentDimKey].tabs[subDim] = groups;
-          setDrills((prev) => ({
-            ...prev,
-            [parentDimKey]: { parentDimKey, parentDimVal, subDim, groups, loading: false, error: null },
-          }));
-          return;
-        }
-        // Zero results → value not in cached rows → fall through to Oracle below.
       }
 
       // ── Oracle fallback ───────────────────────────────────────────────────────
