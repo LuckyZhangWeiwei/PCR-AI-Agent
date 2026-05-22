@@ -523,15 +523,6 @@ export async function runAgentLoop(
       return;
     }
 
-    if (awaitingSummary) {
-      emit({
-        type: "error",
-        message:
-          "模型在总结阶段仍尝试调用工具。请点「重试」，或拆成更单一的问题（例如只查 Yield 或只查 JB）。",
-      });
-      return;
-    }
-
     // Record assistant turn with tool_calls
     const assistantToolCalls: ToolCall[] = toolCalls.map((tc) => ({
       id: tc.id || `call_${round}_${tc.index}`,
