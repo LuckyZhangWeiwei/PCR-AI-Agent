@@ -27,9 +27,13 @@ export type AgentSseEvent =
   | { type: "error"; message: string };
 const TOOL_RESULT_MAX_HISTORY = 3000;
 
-// ─── DeepSeek embedded-call filter ──────────────────────────────────────────
+// ─── DeepSeek / reasoning stream filter ─────────────────────────────────────
 // DeepSeek V3 via SiliconFlow sometimes puts its native function-call tokens
 // directly in the content stream rather than in the structured tool_calls field.
+// Reasoning models may also embed , <redacted_reasoning>, or
+// <think> … </…> inside content (should use reasoning_content, but not always).
+// SiliconFlow / DeepSeek may also emit DSML-style tool markup in content:
+//   <｜DSML｜tool_calls> … <｜DSML｜invoke name="…"> … </｜DSML｜tool_calls>
 // The tokens use both ASCII | and fullwidth ｜ (U+FF5C) and ▁ (U+2581).
 //   <｜tool▁sep｜>     — separates function name from args
 //   <｜tool▁call▁end｜> — ends a single call
@@ -38,9 +42,24 @@ const TOOL_RESULT_MAX_HISTORY = 3000;
 // and recovers CollectedToolCall objects for normal execution.
 
 const DS_START_RE = /(?:function)?<[|｜]tool[_▁]/;
+const DSML_START_RE = /<[|｜]DSML[|｜]/;
+const DSML_CALLS_END_RE = /<\/[|｜]DSML[|｜]tool_calls>/;
+const DSML_INVOKE_RE = /<[|｜]DSML[|｜]invoke\s+name="([^"]+)"/i;
+const DSML_PARAM_RE =
+  /<[|｜]DSML[|｜]parameter\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/[|｜]DSML[|｜]parameter>/gi;
 const DS_SEP_RE = /<[|｜]tool[_▁]sep[|｜]>/;
 const DS_CALL_END_RE = /<[|｜]tool[_▁]call[_▁]end[|｜]>/;
 const DS_CALLS_END_RE = /<[|｜]tool[_▁]calls[_▁]end[|｜]>/g;
+const REASONING_OPEN_RE =
+  /<(think|redacted_reasoning|redacted_thinking)\b[^>]*>/i;
+const REASONING_CLOSE_RE =
+  /<\/(think|redacted_reasoning|redacted_thinking)\s*>/i;
+/** Keep tail while inside reasoning so a split closing tag is not lost. */
+const REASONING_CLOSE_LOOKAHEAD = 32;
+/** Drop a trailing partial reasoning / DSML open at stream end. */
+const REASONING_PARTIAL_OPEN_TAIL_RE =
+  /<(?:\/)?(?:think|redacted_reasoning|redacted_thinking)\b[^>]*$/i;
+const DSML_PARTIAL_OPEN_TAIL_RE = /<[|｜]DSML[|｜][^>]*$/i;
 
 interface FilteredEmitter {
   /** Feed a raw text delta from the LLM stream. */
@@ -55,13 +74,15 @@ function createDeepSeekFilter(
   outerEmit: (event: AgentSseEvent) => void
 ): FilteredEmitter {
   let pending = "";      // text awaiting token-detection scan
-  let inToken = false;   // currently inside a <｜tool...｜> block
+  let inToken = false;   // inside embedded tool / DSML markup
+  let tokenKind: "deepseek" | "dsml" = "deepseek";
+  let inReasoning = false;
   let tokenBuf = "";     // accumulates token content while inToken
   const calls: CollectedToolCall[] = [];
   let callIdx = 0;
   let cleanText = "";
 
-  const LOOKAHEAD = 12; // chars to keep as lookahead before flushing (≥8 to detect <｜tool▁ start)
+  const LOOKAHEAD = 32; // ≥ "<｜DSML｜tool_calls>" prefix
 
   function flushPending(force = false): void {
     if (inToken) return;
@@ -71,6 +92,44 @@ function createDeepSeekFilter(
       cleanText += safe;
       outerEmit({ type: "text", delta: safe });
       pending = pending.slice(safeLen);
+    }
+  }
+
+  function tryExtractFromDsmlBuf(): void {
+    const endMatch = DSML_CALLS_END_RE.exec(tokenBuf);
+    if (!endMatch) return;
+
+    const block = tokenBuf.slice(0, endMatch.index);
+    tokenBuf = tokenBuf.slice(endMatch.index + endMatch[0].length);
+
+    const invokeMatch = DSML_INVOKE_RE.exec(block);
+    if (invokeMatch) {
+      const fnName = invokeMatch[1];
+      const args: Record<string, string> = {};
+      let pm: RegExpExecArray | null;
+      DSML_PARAM_RE.lastIndex = 0;
+      while ((pm = DSML_PARAM_RE.exec(block)) !== null) {
+        args[pm[1]] = pm[2].trim();
+      }
+      calls.push({
+        index: callIdx,
+        id: `dsml_embedded_${callIdx}`,
+        name: fnName,
+        args: JSON.stringify(args),
+      });
+      callIdx++;
+    }
+
+    tokenBuf = tokenBuf.trim();
+    if (DSML_START_RE.test(tokenBuf.slice(0, 24))) {
+      tryExtractFromDsmlBuf();
+    } else if (!tokenBuf) {
+      inToken = false;
+    } else {
+      inToken = false;
+      pending = tokenBuf;
+      tokenBuf = "";
+      scanForTokens();
     }
   }
 
@@ -115,42 +174,105 @@ function createDeepSeekFilter(
   }
 
   function scanForTokens(): void {
-    const match = DS_START_RE.exec(pending);
-    if (!match) {
+    if (inReasoning) {
+      const closeMatch = REASONING_CLOSE_RE.exec(pending);
+      if (closeMatch) {
+        pending = pending.slice(closeMatch.index + closeMatch[0].length);
+        inReasoning = false;
+        scanForTokens();
+        return;
+      }
+      if (pending.length > REASONING_CLOSE_LOOKAHEAD) {
+        pending = pending.slice(-REASONING_CLOSE_LOOKAHEAD);
+      }
+      return;
+    }
+
+    if (inToken) return;
+
+    const reasoningMatch = REASONING_OPEN_RE.exec(pending);
+    const dsmlMatch = DSML_START_RE.exec(pending);
+    const dsToolMatch = DS_START_RE.exec(pending);
+
+    let matchIndex = -1;
+    let matchKind: "reasoning" | "tool" | null = null;
+    if (reasoningMatch) {
+      matchIndex = reasoningMatch.index;
+      matchKind = "reasoning";
+    }
+    if (dsmlMatch && (matchKind === null || dsmlMatch.index < matchIndex)) {
+      matchIndex = dsmlMatch.index;
+      matchKind = "tool";
+      tokenKind = "dsml";
+    }
+    if (
+      dsToolMatch &&
+      (matchKind === null || dsToolMatch.index < matchIndex)
+    ) {
+      matchIndex = dsToolMatch.index;
+      matchKind = "tool";
+      tokenKind = "deepseek";
+    }
+
+    if (matchKind === null) {
       flushPending();
       return;
     }
-    // Emit everything before the token
-    if (match.index > 0) {
-      const before = pending.slice(0, match.index);
+
+    if (matchIndex > 0) {
+      const before = pending.slice(0, matchIndex);
       cleanText += before;
       outerEmit({ type: "text", delta: before });
+      pending = pending.slice(matchIndex);
     }
+
+    if (matchKind === "reasoning") {
+      const openMatch = REASONING_OPEN_RE.exec(pending);
+      if (!openMatch) {
+        flushPending();
+        return;
+      }
+      pending = pending.slice(openMatch[0].length);
+      inReasoning = true;
+      scanForTokens();
+      return;
+    }
+
     inToken = true;
-    tokenBuf = pending.slice(match.index);
+    tokenBuf = pending;
     pending = "";
-    tryExtractFromTokenBuf();
+    if (tokenKind === "dsml") tryExtractFromDsmlBuf();
+    else tryExtractFromTokenBuf();
   }
 
   return {
     push(delta: string): void {
       if (inToken) {
         tokenBuf += delta;
-        tryExtractFromTokenBuf();
+        if (tokenKind === "dsml") tryExtractFromDsmlBuf();
+        else tryExtractFromTokenBuf();
       } else {
         pending += delta;
         scanForTokens();
       }
     },
     finalize(): CollectedToolCall[] {
+      if (inReasoning) {
+        pending = "";
+        inReasoning = false;
+      }
       // Stream ended inside a partial DeepSeek tool token — recover as plain text.
       if (inToken) {
-        if (tokenBuf) {
+        if (tokenKind === "deepseek" && tokenBuf) {
           pending = tokenBuf;
-          tokenBuf = "";
         }
+        tokenBuf = "";
         inToken = false;
+        tokenKind = "deepseek";
       }
+      pending = pending
+        .replace(REASONING_PARTIAL_OPEN_TAIL_RE, "")
+        .replace(DSML_PARTIAL_OPEN_TAIL_RE, "");
       flushPending(true);
       return calls;
     },
@@ -194,6 +316,17 @@ async function summarizeHistory(
     // Summarization is best-effort; failure is non-fatal.
   }
   return summary.trim();
+}
+
+/** Test helper: run stream deltas through the same UI filter as runAgentLoop. */
+export function filterAgentStreamTextForUi(deltas: string[]): string {
+  const parts: string[] = [];
+  const filter = createDeepSeekFilter((event) => {
+    if (event.type === "text") parts.push(event.delta);
+  });
+  for (const delta of deltas) filter.push(delta);
+  filter.finalize();
+  return parts.join("");
 }
 
 /** True when the last history turn is tool output awaiting a text summary. */

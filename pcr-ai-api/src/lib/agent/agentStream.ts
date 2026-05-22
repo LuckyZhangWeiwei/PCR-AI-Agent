@@ -24,13 +24,14 @@ interface RawToolCallDelta {
 
 const DEFAULT_STREAM_TIMEOUT_MS = 150_000;
 
-function getStreamTimeoutMs(): number {
-  const raw = process.env.AGENT_STREAM_TIMEOUT_MS?.trim();
-  if (!raw) return DEFAULT_STREAM_TIMEOUT_MS;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed > 0
-    ? parsed
-    : DEFAULT_STREAM_TIMEOUT_MS;
+function getStreamTimeoutMs(config: AgentConfig): number {
+  if (Number.isFinite(config.streamTimeoutMs) && config.streamTimeoutMs > 0) {
+    return config.streamTimeoutMs;
+  }
+  if (Number.isFinite(config.streamTimeoutSec) && config.streamTimeoutSec > 0) {
+    return config.streamTimeoutSec * 1000;
+  }
+  return DEFAULT_STREAM_TIMEOUT_MS;
 }
 
 function accumulateToolCalls(
@@ -61,7 +62,7 @@ export function streamSiliconFlow(
   onChunk: (chunk: StreamChunk) => void
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const timeoutMs = getStreamTimeoutMs();
+    const timeoutMs = getStreamTimeoutMs(config);
     const body = JSON.stringify({
       ...request,
       stream: true,
@@ -164,9 +165,15 @@ export function streamSiliconFlow(
           const choice = p.choices?.[0];
           if (!choice) continue;
 
-          const content = choice.delta?.content;
-          if (typeof content === "string" && content.length > 0) {
-            onChunk({ type: "delta", text: content });
+          const delta = choice.delta as {
+            content?: string;
+            reasoning_content?: string;
+            tool_calls?: RawToolCallDelta[];
+          } | undefined;
+
+          // Reasoning belongs in reasoning_content; never forward to UI text stream.
+          if (typeof delta?.content === "string" && delta.content.length > 0) {
+            onChunk({ type: "delta", text: delta.content });
           }
 
           const toolCallDeltas = choice.delta?.tool_calls;

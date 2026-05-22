@@ -78,24 +78,28 @@ interface SseEvent {
   question?: string;
 }
 
-/** 略大于后端 AGENT_STREAM_TIMEOUT_MS 默认 150s，避免客户端先断 */
-const AGENT_CHAT_CLIENT_TIMEOUT_MS = 180_000;
+function formatAgentErrorMessage(
+  message: string,
+  isClientTimeout: boolean,
+  clientTimeoutSec: number,
+  streamTimeoutSecDefault: number
+): string {
+  if (isClientTimeout) {
+    return `请求超时（约 ${clientTimeoutSec} 秒）。可点击「重试」继续，或缩小查询范围后重新提问。`;
+  }
+  if (/request timeout after/i.test(message)) {
+    const msMatch = message.match(/(\d+)\s*ms/i);
+    const sec = msMatch
+      ? Math.round(Number(msMatch[1]) / 1000)
+      : streamTimeoutSecDefault;
+    return `请求超时（约 ${sec} 秒）。可点击「重试」从上次进度继续，或缩小查询范围后重新提问。`;
+  }
+  return message;
+}
 
 function isRetryableAgentError(message: string): boolean {
   const lower = message.toLowerCase();
   return lower.includes("timeout") || message.includes("超时");
-}
-
-function formatAgentErrorMessage(message: string, isClientTimeout: boolean): string {
-  if (isClientTimeout) {
-    return `请求超时（约 ${Math.round(AGENT_CHAT_CLIENT_TIMEOUT_MS / 1000)} 秒）。可点击「重试」继续，或缩小查询范围后重新提问。`;
-  }
-  if (/request timeout after/i.test(message)) {
-    const msMatch = message.match(/(\d+)\s*ms/i);
-    const sec = msMatch ? Math.round(Number(msMatch[1]) / 1000) : 150;
-    return `请求超时（约 ${sec} 秒）。可点击「重试」从上次进度继续，或缩小查询范围后重新提问。`;
-  }
-  return message;
 }
 
 function parseSseLine(line: string, onEvent: (event: SseEvent) => void): void {
@@ -228,7 +232,12 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
           ...prev,
           {
             kind: "error",
-            message: formatAgentErrorMessage(event.message ?? "未知错误", false),
+            message: formatAgentErrorMessage(
+              event.message ?? "未知错误",
+              false,
+              agentConfig.clientTimeoutSec,
+              agentConfig.streamTimeoutSec
+            ),
             retryable: isRetryableAgentError(event.message ?? ""),
           },
         ]);
@@ -251,7 +260,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
         if (event.message) setStatusHint(event.message);
         break;
     }
-  }, []);
+  }, [agentConfig.clientTimeoutSec, agentConfig.streamTimeoutSec]);
 
   const submitAgentRequest = useCallback(
     async (options: { text?: string; retry?: boolean }) => {
@@ -263,9 +272,10 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
       const controller = new AbortController();
       abortRef.current = controller;
       const generation = chatGenerationRef.current;
+      const clientTimeoutMs = agentConfig.clientTimeoutSec * 1000;
       const timeoutId = setTimeout(
         () => controller.abort(),
-        AGENT_CHAT_CLIENT_TIMEOUT_MS
+        clientTimeoutMs
       );
 
       setLoading(true);
@@ -359,7 +369,12 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
           (err.name === "TimeoutError" || err.name === "AbortError");
         const rawMessage = err instanceof Error ? err.message : String(err);
         const message = isTimeout
-          ? formatAgentErrorMessage(rawMessage, true)
+          ? formatAgentErrorMessage(
+              rawMessage,
+              true,
+              agentConfig.clientTimeoutSec,
+              agentConfig.streamTimeoutSec
+            )
           : rawMessage;
         setMessages((prev) => {
           const copy = [...prev];

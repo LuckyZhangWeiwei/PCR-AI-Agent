@@ -9,6 +9,12 @@ import {
   AGENT_MAX_ROUNDS_DEFAULT,
   AGENT_MAX_ROUNDS_MAX,
   AGENT_MAX_ROUNDS_MIN,
+  AGENT_STREAM_TIMEOUT_SEC_DEFAULT,
+  AGENT_STREAM_TIMEOUT_SEC_MAX,
+  AGENT_STREAM_TIMEOUT_SEC_MIN,
+  AGENT_CLIENT_TIMEOUT_SEC_DEFAULT,
+  AGENT_CLIENT_TIMEOUT_SEC_MAX,
+  AGENT_CLIENT_TIMEOUT_BUFFER_SEC,
 } from "./hooks/usePersistedAgentConfig.js";
 import { AiAgentReport } from "./reports/AiAgentReport";
 import { InfcontrolReport } from "./reports/InfcontrolReport";
@@ -248,6 +254,46 @@ export default function App() {
               <p className="field-hint">
                 Agent 连续调用工具的上限；跨表分析、INF 下钻等复杂问题可适当提高（默认{" "}
                 {AGENT_MAX_ROUNDS_DEFAULT}）。
+              </p>
+              <label>
+                <span>
+                  流式 idle 超时（秒，{AGENT_STREAM_TIMEOUT_SEC_MIN}–
+                  {AGENT_STREAM_TIMEOUT_SEC_MAX}）
+                </span>
+                <input
+                  type="number"
+                  min={AGENT_STREAM_TIMEOUT_SEC_MIN}
+                  max={AGENT_STREAM_TIMEOUT_SEC_MAX}
+                  value={agentConfig.streamTimeoutSec}
+                  onChange={(e) =>
+                    updateAgentConfig({ streamTimeoutSec: Number(e.target.value) })
+                  }
+                />
+              </label>
+              <p className="field-hint">
+                后端等待 LLM 流式输出的 idle 上限；有 SSE 字节会重置计时（默认{" "}
+                {AGENT_STREAM_TIMEOUT_SEC_DEFAULT}）。
+              </p>
+              <label>
+                <span>
+                  客户端总超时（秒，至少流式 + {AGENT_CLIENT_TIMEOUT_BUFFER_SEC}，最大{" "}
+                  {AGENT_CLIENT_TIMEOUT_SEC_MAX}）
+                </span>
+                <input
+                  type="number"
+                  min={
+                    agentConfig.streamTimeoutSec + AGENT_CLIENT_TIMEOUT_BUFFER_SEC
+                  }
+                  max={AGENT_CLIENT_TIMEOUT_SEC_MAX}
+                  value={agentConfig.clientTimeoutSec}
+                  onChange={(e) =>
+                    updateAgentConfig({ clientTimeoutSec: Number(e.target.value) })
+                  }
+                />
+              </label>
+              <p className="field-hint">
+                浏览器整次聊天请求的最长等待，应略大于流式 idle 超时（默认{" "}
+                {AGENT_CLIENT_TIMEOUT_SEC_DEFAULT}）。
               </p>
               <div className="api-panel-actions">
                 <button type="button" className="btn ghost" onClick={resetAgentConfig}>

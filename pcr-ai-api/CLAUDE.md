@@ -238,6 +238,11 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
    - **超时**：**`agentStream.ts`** **`DEFAULT_STREAM_TIMEOUT_MS`** **270s → 150s**（**idle** 超时，有 SSE 字节则重置）。生产若 `.env` 写死 **`AGENT_STREAM_TIMEOUT_MS=270000`** 须改 **150000** 或删除。
    - **前端**：**`AiAgentReport.tsx`** 客户端整请求 **180s**（略大于后端）；**`vite.config.ts`** dev 代理 **180s**；超时文案按秒显示。
    - **New Chat**：**`chatGenerationRef`** 丢弃旧 SSE；**`newSession`** 立即 **`setLoading(false)`** + **`abort()`**；stale **`finally`** 在 **`abortRef === null`** 时兜底，避免「发送 / 处理中」卡住。详见 **`../pcr-ai-report/CLAUDE.md` §16**。
+14. **流式 UI 泄漏过滤 — think / redacted_thinking / DSML（2026-05-22）**：
+   - **现象**：正文流出现 **think**、**`<think>`**、**`<｜DSML｜tool_calls>…`**（SiliconFlow 未走结构化 **`tool_calls`** 时）。
+   - **`agentLoop.ts` `createDeepSeekFilter`**：剥离推理标签；DSML 块结束为 **`</｜DSML｜tool_calls>`**（勿写成尾部多一个 **`｜`**）；尽量解析 DSML **`invoke`** 为嵌入式工具调用。
+   - **`agentStream.ts`**：仅转发 **`delta.content`**，忽略 **`reasoning_content`**。
+   - **测试**：**`test/agentLoop.test.ts`**（**`filterAgentStreamTextForUi`**）。
 
 ---
 
@@ -250,8 +255,9 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 - **报表 AI Agent 路由**：前端 **`AiAgentReport`** 调 **`POST /api/v4/agent/chat`**，后端读取请求体 **`agentConfig.apiKey`**，否则回退 **`AGENT_API_KEY`** / **`SILICONFLOW_API_KEY`** 环境变量；没有 key 会返回 **400 CONFIG_ERROR**。此路由不使用 `siliconflowChat.ts` 的硬编码 key。
 - **AI Agent 轮数**：**`agentConfig.maxRounds`**（前端 Settings，默认 5）→ 服务端 **`AGENT_MAX_ROUNDS`** 回退；**`agentLoop.ts`** ReAct 上限。
 - **AI Agent 超时重试**：请求体 **`retry: true`** 从 session 历史续跑（不重复 user 消息）；前端 timeout 错误显示 **↻ 重试**。
-- **AI Agent 超时**：**`AGENT_STREAM_TIMEOUT_MS`** 控制 `agentStream.ts` 上游流式 **idle** 超时（**每收到 SSE 字节重置计时**），默认 **150000ms**；全程无字节则触发。超时时 SSE **`{ type: "error", message: "Request timeout after ...ms" }`**。前端客户端整请求超时 **180s**（略大于后端）；Vite dev 代理与之对齐。
+- **AI Agent 超时**：**`agentConfig.streamTimeoutSec`**（前端 Settings，默认 **150s**）→ **`agentStream.ts`** idle 超时；未传时回退 **`AGENT_STREAM_TIMEOUT_MS`** env。前端 **`clientTimeoutSec`**（默认 **180s**）仅浏览器整请求 Abort，不发给后端逻辑。超时时 SSE **`{ type: "error", message: "Request timeout after ...ms" }`**。
 - **AI Agent 工具后总结轮（2026-05-22）**：**`historyAwaitingToolSummary`** 为真时（history 末条 **`tool`**，含 **retry 续跑**），**`agentLoop`** 以 **`tool_choice: "none"`** 调 SiliconFlow，并注入 **`SUMMARIZE_NUDGE`**。勿改回工具轮也带 **`tool_choice: "auto"`**，否则易复现「工具有 JSON、无中文结论」。详见 **§11 条目 11**。
+- **AI Agent 流式泄漏过滤（2026-05-22）**：**`createDeepSeekFilter`** 剥离 **think / redacted_thinking / DSML** 标记，见 **§11 条目 14**。
 - **TLS**：见 **`SILICONFLOW_TLS_INSECURE`**、**`SILICONFLOW_TLS_STRICT`**、**`NODE_EXTRA_CA_CERTS`**（**`.env.example`**）。**禁止 npm 包 `undici`**（见 **`.cursor/rules/no-undici.mdc`**）：严格校验用 Node 内置 **`fetch`**；跳过证书链用 **`node:https`** + **`rejectUnauthorized: false`**（仅硅基流动出站）。
 - **构建守卫**：**`npm run build`** = **`tsc`** + **`scripts/verify-dist-no-undici.mjs`**（`dist/lib/siliconflowChat.js` 不得 `import 'undici'`）。发布时在 **`pcr-ai-api`** 目录 **`npm ci`** 再 **`npm run build`**，勿只复制旧 **`dist/`**。
 - **Node 版本**：声明 **`>=18.12.1`**；**全局 `fetch` / `AbortSignal.timeout`** 依赖 Node 18。生产例：**v18.12.1** 可用。

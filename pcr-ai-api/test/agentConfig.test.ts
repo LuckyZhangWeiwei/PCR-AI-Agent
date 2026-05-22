@@ -16,6 +16,32 @@ describe("resolveAgentConfig", () => {
     assert.equal(cfg.apiBase, "https://custom.api/v1"); // trailing slash stripped
     assert.equal(cfg.model, "my-model");
     assert.equal(cfg.maxRounds, 5);
+    assert.equal(cfg.streamTimeoutSec, 150);
+    assert.equal(cfg.streamTimeoutMs, 150_000);
+  });
+
+  it("clamps streamTimeoutSec from override", async () => {
+    const { resolveAgentConfig } = await import(
+      "../src/lib/agent/agentConfig.js"
+    );
+    assert.equal(resolveAgentConfig({ streamTimeoutSec: 10 }).streamTimeoutSec, 30);
+    assert.equal(resolveAgentConfig({ streamTimeoutSec: 999 }).streamTimeoutSec, 600);
+    assert.equal(resolveAgentConfig({ streamTimeoutSec: 200 }).streamTimeoutSec, 200);
+  });
+
+  it("reads AGENT_STREAM_TIMEOUT_MS from env when override omitted", async () => {
+    const saved = process.env.AGENT_STREAM_TIMEOUT_MS;
+    process.env.AGENT_STREAM_TIMEOUT_MS = "240000";
+    try {
+      const { resolveAgentConfig } = await import(
+        "../src/lib/agent/agentConfig.js"
+      );
+      assert.equal(resolveAgentConfig({}).streamTimeoutSec, 240);
+      assert.equal(resolveAgentConfig({}).streamTimeoutMs, 240_000);
+    } finally {
+      if (saved !== undefined) process.env.AGENT_STREAM_TIMEOUT_MS = saved;
+      else delete process.env.AGENT_STREAM_TIMEOUT_MS;
+    }
   });
 
   it("clamps maxRounds from override", async () => {

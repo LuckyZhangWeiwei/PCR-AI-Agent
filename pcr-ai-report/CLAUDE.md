@@ -191,7 +191,7 @@ src/
 ## 11. 近期变更纪要（2026-05-16，交接备忘）
 
 1. **AI 助手链路**：`AiAgentReport` 发送 **`POST ${apiBase}/api/v4/agent/chat`**，请求体含 **`message`**、**`sessionId`**、**`agentConfig`**；响应为 SSE，每行 **`data: {type,...}`**。不要再按旧 **`GET /siliconflow/chat`** 排查聊天页。
-2. **AI 助手配置**：设置页 **AI Agent 配置** 保存到 `localStorage` 键 **`pcr-ai-report.agent.v1`**；字段含 **`apiKey` / `apiBase` / `model` / `maxRounds`**（默认 5，范围 1–20），随 **`agentConfig`** 发给后端。若 key 为空，后端需配置 **`AGENT_API_KEY`** / **`SILICONFLOW_API_KEY`**，否则返回 **400 CONFIG_ERROR**。
+2. **AI 助手配置**：设置页 **AI Agent 配置** 保存到 `localStorage` 键 **`pcr-ai-report.agent.v1`**；字段含 **`apiKey` / `apiBase` / `model` / `maxRounds` / `streamTimeoutSec` / `clientTimeoutSec`**（流式 idle 默认 **150s**，客户端总超时默认 **180s**），随 **`agentConfig`** 发给后端（客户端超时仅前端使用）。若 key 为空，后端需配置 **`AGENT_API_KEY`** / **`SILICONFLOW_API_KEY`**，否则返回 **400 CONFIG_ERROR**。
 3. **后端修复备忘**：2026-05-16 已修复 “输入后无反应” 的 SSE 断开判断问题（`req.close` → `res.close`）并加 **`AGENT_STREAM_TIMEOUT_MS`**；详见 **`../pcr-ai-api/CLAUDE.md` §6 / §11 / §12.1**。
 4. **品牌/布局旧纪要**：标题、`@dnd-kit` 三层拖拽、API 目录移入设置页、图表标签格式化、明细默认/最多条数等 2026-05-15 规则仍有效。
 5. **未做**：`TableRowsReport` 查询区与拖拽布局未与 Yield/JB 完全统一（表浏览仍保留页内 `limit` 输入）。
@@ -245,6 +245,17 @@ src/
 1. **New Chat 不再卡住「处理中」**：**`AiAgentReport.tsx`** 增加 **`chatGenerationRef`**；进行中点 **New Chat** 时先 **`setLoading(false)`** / 清 **`statusHint`**，再 **`abort()`** 并 **`abortRef = null`**。旧请求的 SSE / **`finally`** 通过 generation 或 **`abortRef === null`** 兜底，不再把发送按钮留在「处理中」。
 2. **超时 150s**：后端 **`AGENT_STREAM_TIMEOUT_MS`** 默认 **150s**（idle）；前端整请求 **180s**；**`vite.config.ts`** 代理 **180s**。超时提示改为「约 N 秒」。
 3. **验证**：发一条长问题 → 处理中点 **New Chat** → 按钮应恢复「发送」、底部无处理提示；输入后可正常发新消息。
+
+## 17. 近期变更纪要（2026-05-22，Settings 可配超时）
+
+1. **Settings → 超时**：**`usePersistedAgentConfig.ts`** 新增 **`streamTimeoutSec`**（默认 **150**，30–600）与 **`clientTimeoutSec`**（默认 **180**，至少流式 + 30s）；**`App.tsx`** 数字输入；**`streamTimeoutSec`** 随 **`agentConfig`** 下发，**`agentStream.ts`** 按请求使用；**`AiAgentReport`** 用 **`clientTimeoutSec`** 作浏览器 Abort 上限。
+2. **服务端回退**：未传 **`streamTimeoutSec`** 时仍读 **`AGENT_STREAM_TIMEOUT_MS`** env（毫秒）。
+
+## 18. 近期变更纪要（2026-05-22，流式泄漏过滤）
+
+1. **现象**：气泡偶发 **think**、**`redacted_thinking`**、整段 **DSML** 工具 XML（INF 下钻前常见）。
+2. **修复在后端**：**`../pcr-ai-api/src/lib/agent/agentLoop.ts`** **`createDeepSeekFilter`**；前端 SSE 形状不变，**API 部署后即生效**。
+3. **勿改 DSML 结束正则**：闭合标签为 **`</｜DSML｜tool_calls>`**（`>` 前无第三个 **`｜`**）。
 
 ---
 

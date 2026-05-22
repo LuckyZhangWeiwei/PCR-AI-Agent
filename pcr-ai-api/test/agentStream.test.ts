@@ -34,17 +34,19 @@ test("streamSiliconFlow emits an error when the upstream request never responds"
   });
 
   const chunks: StreamChunk[] = [];
+  const { resolveAgentConfig } = await import("../src/lib/agent/agentConfig.js");
+  const config = resolveAgentConfig({
+    apiKey: "sk-test",
+    apiBase: "https://api.siliconflow.cn/v1",
+    model: "test-model",
+  });
   const result = await Promise.race([
     streamSiliconFlow(
       {
         model: "test-model",
         messages: [{ role: "user", content: "hi" }],
       },
-      {
-        apiKey: "sk-test",
-        apiBase: "https://api.siliconflow.cn/v1",
-        model: "test-model",
-      },
+      config,
       (chunk) => chunks.push(chunk)
     ).then(() => "resolved"),
     new Promise<"timed-out">((resolve) =>
@@ -95,17 +97,19 @@ test("streamSiliconFlow emits an error when the upstream response stalls after h
   });
 
   const chunks: StreamChunk[] = [];
+  const { resolveAgentConfig } = await import("../src/lib/agent/agentConfig.js");
+  const config = resolveAgentConfig({
+    apiKey: "sk-test",
+    apiBase: "https://api.siliconflow.cn/v1",
+    model: "test-model",
+  });
   const result = await Promise.race([
     streamSiliconFlow(
       {
         model: "test-model",
         messages: [{ role: "user", content: "hi" }],
       },
-      {
-        apiKey: "sk-test",
-        apiBase: "https://api.siliconflow.cn/v1",
-        model: "test-model",
-      },
+      config,
       (chunk) => chunks.push(chunk)
     ).then(() => "resolved"),
     new Promise<"timed-out">((resolve) =>
