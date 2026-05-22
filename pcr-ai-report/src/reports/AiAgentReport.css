@@ -353,6 +353,17 @@
   background: #1f4a7a;
 }
 
+.ai-agent-send--retry {
+  background: #3a2020;
+  border-color: #7a3333;
+  color: #ffb0b0;
+}
+
+.ai-agent-send--retry:hover:not(:disabled) {
+  background: #4a2828;
+  color: #ffd0d0;
+}
+
 .ai-agent-send:disabled {
   opacity: 0.4;
   cursor: not-allowed;

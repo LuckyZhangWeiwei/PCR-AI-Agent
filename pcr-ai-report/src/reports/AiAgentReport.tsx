@@ -107,6 +107,14 @@ function parseSseLine(line: string, onEvent: (event: SseEvent) => void): void {
   }
 }
 
+function findLastUserText(msgs: ChatMessage[]): string | undefined {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i];
+    if (m.kind === "user") return m.text;
+  }
+  return undefined;
+}
+
 interface Props {
   apiBase: string;
   agentConfig: AgentConfig;
@@ -134,6 +142,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
   const messagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const atBottomRef = useRef(true);
+  const abortRef = useRef<AbortController | null>(null);
 
   const handleMessagesScroll = () => {
     const el = messagesRef.current;
@@ -244,8 +253,16 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
   const submitAgentRequest = useCallback(
     async (options: { text?: string; retry?: boolean }) => {
       const { text, retry = false } = options;
-      if (loading) return;
-      if (!retry && !text?.trim()) return;
+      const userText = (retry ? text ?? findLastUserText(messages) : text)?.trim();
+      if (!userText) return;
+
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+      const timeoutId = setTimeout(
+        () => controller.abort(),
+        AGENT_CHAT_CLIENT_TIMEOUT_MS
+      );
 
       setLoading(true);
       setStatusHint(retry ? "正在重试…" : "正在连接服务器…");
@@ -266,15 +283,10 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
       } else {
         setMessages((prev) => [
           ...prev,
-          { kind: "user", text: text! },
+          { kind: "user", text: userText },
           { kind: "ai", text: "", streaming: true },
         ]);
       }
-
-      const abort =
-        typeof AbortSignal.timeout === "function"
-          ? AbortSignal.timeout(AGENT_CHAT_CLIENT_TIMEOUT_MS)
-          : undefined;
 
       try {
         const response = await fetch(`${apiBase}/api/v4/agent/chat`, {
@@ -282,10 +294,10 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(
             retry
-              ? { retry: true, sessionId, agentConfig }
-              : { message: text, sessionId, agentConfig }
+              ? { retry: true, message: userText, sessionId, agentConfig }
+              : { message: userText, sessionId, agentConfig }
           ),
-          signal: abort,
+          signal: controller.signal,
         });
 
         if (!response.ok || !response.body) {
@@ -298,7 +310,9 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
             copy[copy.length - 1] = {
               kind: "error",
               message: errMessage,
-              retryable: isRetryableAgentError(errMessage),
+              retryable:
+                isRetryableAgentError(errMessage) ||
+                /message is required/i.test(errMessage),
             };
             return copy;
           });
@@ -330,6 +344,8 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
           throw readerErr;
         }
       } catch (err) {
+        if (abortRef.current !== controller) return;
+
         const isTimeout =
           err instanceof DOMException &&
           (err.name === "TimeoutError" || err.name === "AbortError");
@@ -356,6 +372,10 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
           return copy;
         });
       } finally {
+        clearTimeout(timeoutId);
+        if (abortRef.current !== controller) return;
+
+        abortRef.current = null;
         setLoading(false);
         setStatusHint("");
         setMessages((prev) =>
@@ -365,7 +385,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
         );
       }
     },
-    [loading, sessionId, agentConfig, apiBase, handleSseEvent]
+    [messages, sessionId, agentConfig, apiBase, handleSseEvent]
   );
 
   const sendMessage = useCallback(async () => {
@@ -379,10 +399,23 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
     await submitAgentRequest({ retry: true });
   }, [submitAgentRequest]);
 
+  const lastMsg = messages[messages.length - 1];
+  const canRetryFromError =
+    lastMsg?.kind === "error" &&
+    lastMsg.retryable === true &&
+    Boolean(findLastUserText(messages));
+  const showRetrySubmit = canRetryFromError && !input.trim();
+
+  const handleSubmit = () => {
+    if (showRetrySubmit) void retryLastRequest();
+    else void sendMessage();
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      void sendMessage();
+      if (showRetrySubmit) void retryLastRequest();
+      else void sendMessage();
     }
   };
 
@@ -494,7 +527,6 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
                     type="button"
                     className="ai-error-retry"
                     onClick={() => void retryLastRequest()}
-                    disabled={loading}
                   >
                     ↻ 重试
                   </button>
@@ -528,18 +560,32 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="输入问题，Enter 发送，Shift+Enter 换行…"
+          placeholder={
+            showRetrySubmit
+              ? "可直接点「重试」继续，无需重新输入…"
+              : "输入问题，Enter 发送，Shift+Enter 换行…"
+          }
           rows={2}
-          disabled={loading}
+          disabled={loading && !showRetrySubmit}
         />
         <button
           type="button"
-          className="ai-agent-send"
-          onClick={() => void sendMessage()}
-          disabled={loading || !input.trim()}
-          title={loading ? "AI 正在处理中，请稍候" : undefined}
+          className={`ai-agent-send${showRetrySubmit ? " ai-agent-send--retry" : ""}`}
+          onClick={handleSubmit}
+          disabled={!input.trim() && !showRetrySubmit}
+          title={
+            showRetrySubmit
+              ? "从上次进度继续，无需重新输入"
+              : loading
+                ? "AI 正在处理中，请稍候"
+                : undefined
+          }
         >
-          {loading ? "处理中" : "发送"}
+          {loading && !showRetrySubmit
+            ? "处理中"
+            : showRetrySubmit
+              ? "重试"
+              : "发送"}
         </button>
       </div>
     </div>
