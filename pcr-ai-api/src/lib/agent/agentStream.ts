@@ -22,7 +22,7 @@ interface RawToolCallDelta {
   function?: { name?: string; arguments?: string };
 }
 
-const DEFAULT_STREAM_TIMEOUT_MS = 270_000;
+const DEFAULT_STREAM_TIMEOUT_MS = 150_000;
 
 function getStreamTimeoutMs(): number {
   const raw = process.env.AGENT_STREAM_TIMEOUT_MS?.trim();

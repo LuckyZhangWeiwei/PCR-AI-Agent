@@ -240,6 +240,12 @@ src/
 4. **与 §13（2026-05-21）关系**：§13 的 statusHint / LOOKAHEAD 改善 pending 显示与流式粒度，**不解决**工具后第二轮不写结论；两者叠加后体验最佳。
 5. **验证**：问「8037 probecard 测试情况」或「最近 7 天 WA03P02G 触发次数」— 工具返回后应持续流出中文总结；若仍失败，看 SSE **`error`** 文案是否为新加的「模型未返回分析结论」类提示。
 
+## 16. 近期变更纪要（2026-05-22，New Chat + 超时 150s）
+
+1. **New Chat 不再卡住「处理中」**：**`AiAgentReport.tsx`** 增加 **`chatGenerationRef`**；进行中点 **New Chat** 时先 **`setLoading(false)`** / 清 **`statusHint`**，再 **`abort()`** 并 **`abortRef = null`**。旧请求的 SSE / **`finally`** 通过 generation 或 **`abortRef === null`** 兜底，不再把发送按钮留在「处理中」。
+2. **超时 150s**：后端 **`AGENT_STREAM_TIMEOUT_MS`** 默认 **150s**（idle）；前端整请求 **180s**；**`vite.config.ts`** 代理 **180s**。超时提示改为「约 N 秒」。
+3. **验证**：发一条长问题 → 处理中点 **New Chat** → 按钮应恢复「发送」、底部无处理提示；输入后可正常发新消息。
+
 ---
 
 ## 12. 与 API 联调速查

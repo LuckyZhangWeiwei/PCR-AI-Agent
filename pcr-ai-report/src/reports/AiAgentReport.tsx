@@ -78,8 +78,8 @@ interface SseEvent {
   question?: string;
 }
 
-/** 略大于后端 AGENT_STREAM_TIMEOUT_MS 默认 270s，避免客户端先断 */
-const AGENT_CHAT_CLIENT_TIMEOUT_MS = 300_000;
+/** 略大于后端 AGENT_STREAM_TIMEOUT_MS 默认 150s，避免客户端先断 */
+const AGENT_CHAT_CLIENT_TIMEOUT_MS = 180_000;
 
 function isRetryableAgentError(message: string): boolean {
   const lower = message.toLowerCase();
@@ -88,11 +88,11 @@ function isRetryableAgentError(message: string): boolean {
 
 function formatAgentErrorMessage(message: string, isClientTimeout: boolean): string {
   if (isClientTimeout) {
-    return `请求超时（${Math.round(AGENT_CHAT_CLIENT_TIMEOUT_MS / 60_000)} 分钟）。可点击「重试」继续，或缩小查询范围后重新提问。`;
+    return `请求超时（约 ${Math.round(AGENT_CHAT_CLIENT_TIMEOUT_MS / 1000)} 秒）。可点击「重试」继续，或缩小查询范围后重新提问。`;
   }
   if (/request timeout after/i.test(message)) {
     const msMatch = message.match(/(\d+)\s*ms/i);
-    const sec = msMatch ? Math.round(Number(msMatch[1]) / 1000) : 270;
+    const sec = msMatch ? Math.round(Number(msMatch[1]) / 1000) : 150;
     return `请求超时（约 ${sec} 秒）。可点击「重试」从上次进度继续，或缩小查询范围后重新提问。`;
   }
   return message;
@@ -143,6 +143,8 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const atBottomRef = useRef(true);
   const abortRef = useRef<AbortController | null>(null);
+  /** Bumped on New Chat so in-flight SSE cannot mutate the fresh session. */
+  const chatGenerationRef = useRef(0);
 
   const handleMessagesScroll = () => {
     const el = messagesRef.current;
@@ -159,7 +161,8 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
-  const handleSseEvent = useCallback((event: SseEvent) => {
+  const handleSseEvent = useCallback((event: SseEvent, generation: number) => {
+    if (generation !== chatGenerationRef.current) return;
     switch (event.type) {
       case "text":
         setMessages((prev) => {
@@ -259,6 +262,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
+      const generation = chatGenerationRef.current;
       const timeoutId = setTimeout(
         () => controller.abort(),
         AGENT_CHAT_CLIENT_TIMEOUT_MS
@@ -301,6 +305,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
         });
 
         if (!response.ok || !response.body) {
+          if (generation !== chatGenerationRef.current) return;
           const errBody = await response
             .json()
             .catch(() => ({ message: "请求失败" })) as { message?: string };
@@ -331,12 +336,14 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
             const lines = buf.split("\n");
             buf = lines.pop() ?? "";
             for (const line of lines) {
-              parseSseLine(line, handleSseEvent);
+              if (generation !== chatGenerationRef.current) break;
+              parseSseLine(line, (ev) => handleSseEvent(ev, generation));
             }
           }
+          if (generation !== chatGenerationRef.current) return;
           if (buf.trim()) {
             for (const line of buf.split("\n")) {
-              parseSseLine(line, handleSseEvent);
+              parseSseLine(line, (ev) => handleSseEvent(ev, generation));
             }
           }
         } catch (readerErr) {
@@ -344,6 +351,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
           throw readerErr;
         }
       } catch (err) {
+        if (generation !== chatGenerationRef.current) return;
         if (abortRef.current !== controller) return;
 
         const isTimeout =
@@ -373,7 +381,17 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
         });
       } finally {
         clearTimeout(timeoutId);
-        if (abortRef.current !== controller) return;
+        const stale =
+          generation !== chatGenerationRef.current ||
+          abortRef.current !== controller;
+        if (stale) {
+          // New Chat clears abortRef — ensure send button / hint don't stay stuck.
+          if (abortRef.current === null) {
+            setLoading(false);
+            setStatusHint("");
+          }
+          return;
+        }
 
         abortRef.current = null;
         setLoading(false);
@@ -420,6 +438,11 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
   };
 
   const newSession = () => {
+    chatGenerationRef.current += 1;
+    setLoading(false);
+    setStatusHint("");
+    abortRef.current?.abort();
+    abortRef.current = null;
     setSessionId(genId());
     setMessages([WELCOME]);
     setInput("");

@@ -116,7 +116,7 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 | HTTP 路由 | `src/routes/api.ts`（`apiRouter`；v3/v4 层控与产量列表+聚合、`manifest`、**`GET …/siliconflow/chat`**、**`GET …/inf-analysis/site-bin-bylot`** 等） |
 | **INF wafer pass × bin × probe DUT** | **`GET /api/v1/inf-analysis/site-bin-bylot`**（亦挂载 `/api/v3`、`/api/v4`）：**`src/routes/infAnalysisRoutes.ts`** → **`outputSiteBinByLot.ts`** / **`outputSiteBinByLotDummy.ts`**（Dummy 时固定路径走 **`docs/site-bin-bylot-dummy-r_1-1.passes.json`**）→ 否则 **`output_site_bin_bylot.pl --json`**（Perl 内 **`PASS_TYPE='TEST'`** 过滤，与 JB **`PASSTYPE=TEST`** 对齐；跳过 INTERRUPT pass）。Dummy 开关：**`SITE_BIN_BY_LOT_DUMMY`** 或 **`INFCONTROL_LAYER_BINS_DUMMY`**（`dist`/production 恒关）。测试 **`test/outputSiteBinByLot.test.ts`**。集成设计 **[`../docs/SITE_BIN_BY_LOT_INTEGRATION.md`](../docs/SITE_BIN_BY_LOT_INTEGRATION.md)**。 |
 | 硅基流动（旧直连 Chat Completions） | **`src/lib/siliconflowChat.ts`**（`callSiliconflowChat`）；路由见 **`api.ts`** **`GET /siliconflow/chat`**；**不依赖 npm 包 `undici`**（严格 TLS 用全局 **`fetch`**，宽松 TLS 用 **`node:https`**） |
-| AI Agent（报表聊天页） | **`src/routes/agent.ts`** 挂在 **`POST /api/v4/agent/chat`**，SSE 输出；请求体 **`agentConfig.maxRounds`**（1–20，默认 5；服务端回退 **`AGENT_MAX_ROUNDS`**）；**`retry: true`** 时 **`runAgentLoop(..., { resume: true })`** 从 session 续跑、不重复追加 user 消息。系统提示 **`agentPrompt.ts`**；核心 loop **`agentLoop.ts`**（**工具结果回传后**见 **`historyAwaitingToolSummary`** → **`tool_choice: "none"`** 强制中文总结，见 §11 条目 11）；流式上游 **`agentStream.ts`**（**idle 超时**：有 SSE 字节则重置 **`AGENT_STREAM_TIMEOUT_MS`** 计时，默认 **270000ms**）。SSE 断开须监听 **`res.close`**，勿用 **`req.close`**。 |
+| AI Agent（报表聊天页） | **`src/routes/agent.ts`** 挂在 **`POST /api/v4/agent/chat`**，SSE 输出；请求体 **`agentConfig.maxRounds`**（1–20，默认 5；服务端回退 **`AGENT_MAX_ROUNDS`**）；**`retry: true`** 时 **`runAgentLoop(..., { resume: true })`** 从 session 续跑、不重复追加 user 消息。系统提示 **`agentPrompt.ts`**；核心 loop **`agentLoop.ts`**（**工具结果回传后**见 **`historyAwaitingToolSummary`** → **`tool_choice: "none"`** 强制中文总结，见 §11 条目 11）；流式上游 **`agentStream.ts`**（**idle 超时**：有 SSE 字节则重置 **`AGENT_STREAM_TIMEOUT_MS`** 计时，默认 **150000ms**）。SSE 断开须监听 **`res.close`**，勿用 **`req.close`**。 |
 | 浏览器 CORS | **`src/lib/corsConfig.ts`** → **`wideOpenCorsMiddleware`**；**`app.ts`** 中于 **`requestIdMiddleware`** 之后挂载；已移除 **`cors` npm 包** |
 | v4 聚合行上限（Dummy + Oracle） | **`src/lib/memoryAggregateOracleLimits.ts`**；路由 **`api.ts`** **`…/v4/aggregate`** |
 | Oracle 列名大写化（v4 聚合进 FromRows） | **`src/lib/dbRowKeyUpper.ts`** → **`normalizeDbRowKeysUpper`** |
@@ -234,6 +234,10 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
    - **现象**：JB **`get_filter_values`** 报 **`ORA-00904: "T2"."INFCONTROLID": invalid identifier`**；Agent 查 6045-13 等卡号时 JB 域失败。
    - **根因**：**`agentFilterValuesTool.ts`**、**`agentManifest.ts`** 误用 **`t1.ID = t2.INFCONTROLID`**；与列表/聚合一致应为 **`t1.KEYNUMBER = t2.KEYNUMBER`**（见 **`infcontrolLayerBinSql.ts`** / **`apiV3ListSql.ts`**）。
    - **改后**：Oracle JB 快照与 **`get_filter_values`**（`cardId` / `lot` / `testerId` / `probeCardType`）可正常执行。改 JOIN 时勿再引入 `INFCONTROLID`。
+13. **Agent 超时 150s + 前端 New Chat 重置（2026-05-22）**：
+   - **超时**：**`agentStream.ts`** **`DEFAULT_STREAM_TIMEOUT_MS`** **270s → 150s**（**idle** 超时，有 SSE 字节则重置）。生产若 `.env` 写死 **`AGENT_STREAM_TIMEOUT_MS=270000`** 须改 **150000** 或删除。
+   - **前端**：**`AiAgentReport.tsx`** 客户端整请求 **180s**（略大于后端）；**`vite.config.ts`** dev 代理 **180s**；超时文案按秒显示。
+   - **New Chat**：**`chatGenerationRef`** 丢弃旧 SSE；**`newSession`** 立即 **`setLoading(false)`** + **`abort()`**；stale **`finally`** 在 **`abortRef === null`** 时兜底，避免「发送 / 处理中」卡住。详见 **`../pcr-ai-report/CLAUDE.md` §16**。
 
 ---
 
@@ -246,7 +250,7 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 - **报表 AI Agent 路由**：前端 **`AiAgentReport`** 调 **`POST /api/v4/agent/chat`**，后端读取请求体 **`agentConfig.apiKey`**，否则回退 **`AGENT_API_KEY`** / **`SILICONFLOW_API_KEY`** 环境变量；没有 key 会返回 **400 CONFIG_ERROR**。此路由不使用 `siliconflowChat.ts` 的硬编码 key。
 - **AI Agent 轮数**：**`agentConfig.maxRounds`**（前端 Settings，默认 5）→ 服务端 **`AGENT_MAX_ROUNDS`** 回退；**`agentLoop.ts`** ReAct 上限。
 - **AI Agent 超时重试**：请求体 **`retry: true`** 从 session 历史续跑（不重复 user 消息）；前端 timeout 错误显示 **↻ 重试**。
-- **AI Agent 超时**：**`AGENT_STREAM_TIMEOUT_MS`** 控制 `agentStream.ts` 上游流式 **idle** 超时（**每收到 SSE 字节重置计时**），默认 **270000ms**；全程无字节则触发。超时时 SSE **`{ type: "error", message: "Request timeout after ...ms" }`**。前端客户端整请求超时 **300s**（略大于后端）。
+- **AI Agent 超时**：**`AGENT_STREAM_TIMEOUT_MS`** 控制 `agentStream.ts` 上游流式 **idle** 超时（**每收到 SSE 字节重置计时**），默认 **150000ms**；全程无字节则触发。超时时 SSE **`{ type: "error", message: "Request timeout after ...ms" }`**。前端客户端整请求超时 **180s**（略大于后端）；Vite dev 代理与之对齐。
 - **AI Agent 工具后总结轮（2026-05-22）**：**`historyAwaitingToolSummary`** 为真时（history 末条 **`tool`**，含 **retry 续跑**），**`agentLoop`** 以 **`tool_choice: "none"`** 调 SiliconFlow，并注入 **`SUMMARIZE_NUDGE`**。勿改回工具轮也带 **`tool_choice: "auto"`**，否则易复现「工具有 JSON、无中文结论」。详见 **§11 条目 11**。
 - **TLS**：见 **`SILICONFLOW_TLS_INSECURE`**、**`SILICONFLOW_TLS_STRICT`**、**`NODE_EXTRA_CA_CERTS`**（**`.env.example`**）。**禁止 npm 包 `undici`**（见 **`.cursor/rules/no-undici.mdc`**）：严格校验用 Node 内置 **`fetch`**；跳过证书链用 **`node:https`** + **`rejectUnauthorized: false`**（仅硅基流动出站）。
 - **构建守卫**：**`npm run build`** = **`tsc`** + **`scripts/verify-dist-no-undici.mjs`**（`dist/lib/siliconflowChat.js` 不得 `import 'undici'`）。发布时在 **`pcr-ai-api`** 目录 **`npm ci`** 再 **`npm run build`**，勿只复制旧 **`dist/`**。
