@@ -31,3 +31,4 @@
 - ✅ AI Agent 流式体验优化（LOOKAHEAD 12、status 事件补充、pending 气泡显示 statusHint） — 2026-05-21 完成
 - ✅ AI Agent 工具后强制总结（`tool_choice: "none"` 总结轮、idle 超时、DeepSeek filter flush） — 2026-05-22 完成
 - ✅ Code Review 修复：agentStream 双超时注册（删除 req.setTimeout）、测试去 env 副作用（streamTimeoutMs 直接注入）、总结轮 SUMMARIZE_NUDGE 改并入 system prompt（非标 trailing system 消息 → SiliconFlow 空响应） — 2026-05-22 完成
+- ✅ AI Agent MiniMax 2.5 tool_call 流式泄漏过滤：createDeepSeekFilter 扩展支持 `<minimax:tool_call>` 格式，过滤泄漏并解析为 CollectedToolCall 执行 — 2026-05-22 完成

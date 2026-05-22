@@ -2,6 +2,18 @@
 
 ---
 
+## 2026-05-22 — AI Agent MiniMax 2.5 tool_call 流式泄漏过滤
+
+**现象：** 使用 MiniMax 2.5 模型时，工具调用以 `<minimax:tool_call>…</minimax:tool_call>` XML 格式泄漏到聊天气泡，工具未被执行，后续也无分析输出。
+
+**完成内容：**
+- `pcr-ai-api/src/lib/agent/agentLoop.ts`：`createDeepSeekFilter` 扩展支持 MiniMax 格式：新增 `MINIMAX_START_RE`、`MINIMAX_END_RE`、`MINIMAX_INVOKE_RE`、`MINIMAX_PARAM_RE`、`MINIMAX_PARTIAL_OPEN_TAIL_RE` 常量；新增 `tryExtractFromMinimaxBuf()`（解析 `<invoke name>` + `<parameter name>`，生成 `CollectedToolCall`）；`scanForTokens` 加入 MiniMax 检测分支；`push` / `finalize` 接入 `"minimax"` tokenKind。
+- `pcr-ai-api/test/agentLoop.test.ts`：新增 2 个测试（完整块 / 跨 chunk 分割），108 tests，106 pass。
+
+**测试：** 108 个测试，106 pass，2 skip，0 失败。
+
+---
+
 ## 2026-05-22 — Code Review 修复：双超时 / 测试健壮性 / 总结轮非标消息
 
 **完成内容：**

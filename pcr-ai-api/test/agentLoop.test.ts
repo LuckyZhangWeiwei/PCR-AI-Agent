@@ -80,6 +80,32 @@ test("filterAgentStreamTextForUi strips redacted_reasoning blocks", () => {
   assert.equal(out, "OK。");
 });
 
+test("filterAgentStreamTextForUi strips MiniMax tool_call markup", () => {
+  const block = `<minimax:tool_call>
+<invoke name="aggregate_jb_bins">
+<parameter name="groupBy">lot</parameter>
+<parameter name="cardId">6095-01</parameter>
+<parameter name="groupTop">100</parameter>
+</invoke>
+</minimax:tool_call>`;
+  const out = filterAgentStreamTextForUi([
+    "该卡测试过大量 lot。让我重新查询，按 lot 维度统计：",
+    block,
+    "请稍候。",
+  ]);
+  assert.equal(out, "该卡测试过大量 lot。让我重新查询，按 lot 维度统计：请稍候。");
+});
+
+test("filterAgentStreamTextForUi strips split MiniMax tag across chunks", () => {
+  const out = filterAgentStreamTextForUi([
+    "查询中",
+    "<minimax:tool_c",
+    'all>\n<invoke name="aggregate_jb_bins">\n<parameter name="groupBy">lot</parameter>\n</invoke>\n</minimax:tool_call>',
+    "完成",
+  ]);
+  assert.equal(out, "查询中完成");
+});
+
 test("historyAwaitingToolSummary is true when last turn is tool output", () => {
   const history: ChatMessage[] = [
     { role: "user", content: "8037 probecard 测试情况" },

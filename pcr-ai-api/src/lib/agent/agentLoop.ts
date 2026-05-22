@@ -61,6 +61,15 @@ const REASONING_PARTIAL_OPEN_TAIL_RE =
   /<(?:\/)?(?:think|redacted_reasoning|redacted_thinking)\b[^>]*$/i;
 const DSML_PARTIAL_OPEN_TAIL_RE = /<[|｜]DSML[|｜][^>]*$/i;
 
+// MiniMax 2.5 embeds tool calls as <minimax:tool_call>…</minimax:tool_call>
+// in the content stream instead of using structured tool_calls.
+const MINIMAX_START_RE = /<minimax:tool_call\b/i;
+const MINIMAX_END_RE = /<\/minimax:tool_call>/i;
+const MINIMAX_INVOKE_RE = /<invoke\s+name="([^"]+)"/i;
+const MINIMAX_PARAM_RE =
+  /<parameter\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/parameter>/gi;
+const MINIMAX_PARTIAL_OPEN_TAIL_RE = /<(?:\/)?minimax:[^>]*$/i;
+
 interface FilteredEmitter {
   /** Feed a raw text delta from the LLM stream. */
   push(delta: string): void;
@@ -75,7 +84,7 @@ function createDeepSeekFilter(
 ): FilteredEmitter {
   let pending = "";      // text awaiting token-detection scan
   let inToken = false;   // inside embedded tool / DSML markup
-  let tokenKind: "deepseek" | "dsml" = "deepseek";
+  let tokenKind: "deepseek" | "dsml" | "minimax" = "deepseek";
   let inReasoning = false;
   let tokenBuf = "";     // accumulates token content while inToken
   const calls: CollectedToolCall[] = [];
@@ -125,6 +134,43 @@ function createDeepSeekFilter(
       tryExtractFromDsmlBuf();
     } else if (!tokenBuf) {
       inToken = false;
+    } else {
+      inToken = false;
+      pending = tokenBuf;
+      tokenBuf = "";
+      scanForTokens();
+    }
+  }
+
+  function tryExtractFromMinimaxBuf(): void {
+    const endMatch = MINIMAX_END_RE.exec(tokenBuf);
+    if (!endMatch) return; // block not complete yet
+
+    const block = tokenBuf.slice(0, endMatch.index);
+    tokenBuf = tokenBuf.slice(endMatch.index + endMatch[0].length).trim();
+
+    const invokeMatch = MINIMAX_INVOKE_RE.exec(block);
+    if (invokeMatch) {
+      const fnName = invokeMatch[1];
+      const args: Record<string, string> = {};
+      let pm: RegExpExecArray | null;
+      MINIMAX_PARAM_RE.lastIndex = 0;
+      while ((pm = MINIMAX_PARAM_RE.exec(block)) !== null) {
+        args[pm[1]] = pm[2].trim();
+      }
+      calls.push({
+        index: callIdx,
+        id: `minimax_embedded_${callIdx}`,
+        name: fnName,
+        args: JSON.stringify(args),
+      });
+      callIdx++;
+    }
+
+    if (!tokenBuf) {
+      inToken = false;
+    } else if (MINIMAX_START_RE.test(tokenBuf.slice(0, 24))) {
+      tryExtractFromMinimaxBuf();
     } else {
       inToken = false;
       pending = tokenBuf;
@@ -193,6 +239,7 @@ function createDeepSeekFilter(
     const reasoningMatch = REASONING_OPEN_RE.exec(pending);
     const dsmlMatch = DSML_START_RE.exec(pending);
     const dsToolMatch = DS_START_RE.exec(pending);
+    const minimaxMatch = MINIMAX_START_RE.exec(pending);
 
     let matchIndex = -1;
     let matchKind: "reasoning" | "tool" | null = null;
@@ -212,6 +259,11 @@ function createDeepSeekFilter(
       matchIndex = dsToolMatch.index;
       matchKind = "tool";
       tokenKind = "deepseek";
+    }
+    if (minimaxMatch && (matchKind === null || minimaxMatch.index < matchIndex)) {
+      matchIndex = minimaxMatch.index;
+      matchKind = "tool";
+      tokenKind = "minimax";
     }
 
     if (matchKind === null) {
@@ -242,6 +294,7 @@ function createDeepSeekFilter(
     tokenBuf = pending;
     pending = "";
     if (tokenKind === "dsml") tryExtractFromDsmlBuf();
+    else if (tokenKind === "minimax") tryExtractFromMinimaxBuf();
     else tryExtractFromTokenBuf();
   }
 
@@ -250,6 +303,7 @@ function createDeepSeekFilter(
       if (inToken) {
         tokenBuf += delta;
         if (tokenKind === "dsml") tryExtractFromDsmlBuf();
+        else if (tokenKind === "minimax") tryExtractFromMinimaxBuf();
         else tryExtractFromTokenBuf();
       } else {
         pending += delta;
@@ -261,7 +315,8 @@ function createDeepSeekFilter(
         pending = "";
         inReasoning = false;
       }
-      // Stream ended inside a partial DeepSeek tool token — recover as plain text.
+      // Stream ended mid-token: recover DeepSeek native tokens as plain text;
+      // drop DSML/MiniMax markup (it's not meaningful as raw text).
       if (inToken) {
         if (tokenKind === "deepseek" && tokenBuf) {
           pending = tokenBuf;
@@ -272,7 +327,8 @@ function createDeepSeekFilter(
       }
       pending = pending
         .replace(REASONING_PARTIAL_OPEN_TAIL_RE, "")
-        .replace(DSML_PARTIAL_OPEN_TAIL_RE, "");
+        .replace(DSML_PARTIAL_OPEN_TAIL_RE, "")
+        .replace(MINIMAX_PARTIAL_OPEN_TAIL_RE, "");
       flushPending(true);
       return calls;
     },
