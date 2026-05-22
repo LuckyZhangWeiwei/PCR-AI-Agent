@@ -7,7 +7,7 @@ use Data::Dumper;
 require Referencedie;
 use INFAnalysis;
 
-# 从 INF wafer map 统计：每一片 wafer 的每个测试 pass（可多个 PASS_ID），
+# 从 INF wafer map 统计：每一片 wafer 的每个测试 pass（PASS_TYPE=TEST，可多个 PASS_ID），
 # 各 bin 测试结果由 probe card 上哪个 DUT（iTestSiteLast）测得、各 DUT 上 die 颗数。
 # 用法: perl output_site_bin_bylot.pl <inf_path> <pass_id> [pass_id ...]
 #       pass 可用逗号分隔: perl ... inf 1,3,5
@@ -30,7 +30,7 @@ else {
     exit 1;
 }
 
-# 输入 INF 路径与 pass 列表（标量/数组引用/多个标量均可），仅处理匹配的 SmWaferPass
+# 输入 INF 路径与 pass 列表（标量/数组引用/多个标量均可），仅处理 PASS_TYPE=TEST 且 PASS_ID 匹配的 SmWaferPass
 # 返回: { pass_id => { bin_code => { dut => die_count } } }
 sub summarize_bin_by_dut {
     my $inf_path = shift;
@@ -51,6 +51,9 @@ sub summarize_bin_by_dut {
     foreach my $SmWaferPass (@SmWaferPass) {
         my $pass = $SmWaferPass->key('PASS_ID');
         next unless exists $pass_ok{$pass};
+
+        my $pass_type = $SmWaferPass->key('PASS_TYPE');
+        next unless defined $pass_type && $pass_type eq 'TEST';
 
         my @rowdata_pass_bin;
         my @rowdata_pass_site;

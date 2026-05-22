@@ -25,7 +25,6 @@ export type AgentSseEvent =
   | { type: "clarification"; question: string }
   | { type: "done" }
   | { type: "error"; message: string };
-const MAX_ROUNDS = 5;
 const TOOL_RESULT_MAX_HISTORY = 3000;
 
 // ─── DeepSeek embedded-call filter ──────────────────────────────────────────
@@ -193,9 +192,12 @@ export async function runAgentLoop(
   message: string,
   sessionId: string,
   agentConfig: AgentConfig,
-  emit: (event: AgentSseEvent) => void
+  emit: (event: AgentSseEvent) => void,
+  options?: { resume?: boolean }
 ): Promise<void> {
-  appendMessages(sessionId, { role: "user", content: message });
+  if (!options?.resume) {
+    appendMessages(sessionId, { role: "user", content: message });
+  }
 
   // If the history is getting long, compress older turns into a rolling summary.
   if (needsSummarization(sessionId)) {
@@ -220,7 +222,8 @@ export async function runAgentLoop(
     new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 5000)),
   ]).catch(() => undefined);
 
-  for (let round = 0; round < MAX_ROUNDS; round++) {
+  const maxRounds = agentConfig.maxRounds;
+  for (let round = 0; round < maxRounds; round++) {
     const history = getHistory(sessionId);
     const summary = getSummary(sessionId);
     const messages: ChatMessage[] = [
@@ -356,5 +359,8 @@ export async function runAgentLoop(
     emit({ type: "status", message: "正在分析工具结果…" });
   }
 
-  emit({ type: "error", message: `已达到最大推理轮数（${MAX_ROUNDS}轮），请精简问题后重试` });
+  emit({
+    type: "error",
+    message: `已达到最大推理轮数（${maxRounds}轮），请精简问题后重试，或在设置中提高「最大推理轮数」`,
+  });
 }

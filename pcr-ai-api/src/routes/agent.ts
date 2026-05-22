@@ -10,17 +10,24 @@ agentRouter.post("/chat", async (req, res) => {
     message?: unknown;
     sessionId?: unknown;
     agentConfig?: Partial<AgentConfig>;
+    retry?: unknown;
   };
 
+  const retry = body.retry === true;
   const message =
     typeof body.message === "string" ? body.message.trim() : "";
   const sessionId =
     typeof body.sessionId === "string" ? body.sessionId.trim() : "";
 
-  if (!message) {
+  if (!retry && !message) {
     return res
       .status(400)
       .json({ error: "VALIDATION_ERROR", message: "message is required" });
+  }
+  if (retry && !sessionId) {
+    return res
+      .status(400)
+      .json({ error: "VALIDATION_ERROR", message: "sessionId is required" });
   }
   if (!sessionId) {
     return res
@@ -56,7 +63,10 @@ agentRouter.post("/chat", async (req, res) => {
     closed = true;
   });
 
-  writeEvent({ type: "status", message: "已连接，正在分析…" });
+  writeEvent({
+    type: "status",
+    message: retry ? "正在从上次进度继续…" : "已连接，正在分析…",
+  });
 
   const heartbeatMs = 15_000;
   const heartbeat = setInterval(() => {
@@ -68,7 +78,7 @@ agentRouter.post("/chat", async (req, res) => {
   try {
     await runAgentLoop(message, sessionId, config, (event) => {
       writeEvent(event);
-    });
+    }, { resume: retry });
   } catch (err) {
     if (!closed) {
       writeEvent({

@@ -191,7 +191,7 @@ src/
 ## 11. 近期变更纪要（2026-05-16，交接备忘）
 
 1. **AI 助手链路**：`AiAgentReport` 发送 **`POST ${apiBase}/api/v4/agent/chat`**，请求体含 **`message`**、**`sessionId`**、**`agentConfig`**；响应为 SSE，每行 **`data: {type,...}`**。不要再按旧 **`GET /siliconflow/chat`** 排查聊天页。
-2. **AI 助手配置**：设置页 **AI Agent 配置** 保存到 `localStorage` 键 **`pcr-ai-report.agent.v1`**；前端会把 key/base/model 随请求发给后端。若 key 为空，后端需配置 **`AGENT_API_KEY`** / **`SILICONFLOW_API_KEY`**，否则返回 **400 CONFIG_ERROR**。
+2. **AI 助手配置**：设置页 **AI Agent 配置** 保存到 `localStorage` 键 **`pcr-ai-report.agent.v1`**；字段含 **`apiKey` / `apiBase` / `model` / `maxRounds`**（默认 5，范围 1–20），随 **`agentConfig`** 发给后端。若 key 为空，后端需配置 **`AGENT_API_KEY`** / **`SILICONFLOW_API_KEY`**，否则返回 **400 CONFIG_ERROR**。
 3. **后端修复备忘**：2026-05-16 已修复 “输入后无反应” 的 SSE 断开判断问题（`req.close` → `res.close`）并加 **`AGENT_STREAM_TIMEOUT_MS`**；详见 **`../pcr-ai-api/CLAUDE.md` §6 / §11 / §12.1**。
 4. **品牌/布局旧纪要**：标题、`@dnd-kit` 三层拖拽、API 目录移入设置页、图表标签格式化、明细默认/最多条数等 2026-05-15 规则仍有效。
 5. **未做**：`TableRowsReport` 查询区与拖拽布局未与 Yield/JB 完全统一（表浏览仍保留页内 `limit` 输入）。
@@ -226,6 +226,11 @@ src/
    - 空 AI 气泡（`streaming: true && text === ""`）不再显示 `"…"`，改为渲染 **`statusHint`**（灰色斜体 `.ai-status-hint`），默认文字 `"正在思考…"`。后端在以下时机发 `status` 事件：`"正在压缩历史对话…"` / `"正在准备系统信息…"` / `"正在执行工具 xxx…"` / `"正在分析工具结果…"`。用户可在气泡内看到当前阶段，不再面对空白 pending。
    - 修改文件：**`AiAgentReport.tsx`**（`msg.text ? <ReactMarkdown> : msg.streaming ? <span className="ai-status-hint">` 替换原先的 `"…"`）；**`AiAgentReport.css`**（新增 `.ai-status-hint { color: #6a8aaa; font-style: italic; font-size: 0.9em }`）。
 2. **历史上下文延长**：后端 `agentHistory.ts` 的阈值均已上调（见 `../pcr-ai-api/CLAUDE.md` §11 条目 9），前端无需改动。
+
+## 14. 近期变更纪要（2026-05-22，交接备忘）
+
+1. **Settings → 最大推理轮数**：**`usePersistedAgentConfig.ts`** 新增 **`maxRounds`**（默认 **5**，**1–20**）；**`App.tsx`** 数字输入；随 **`POST /api/v4/agent/chat`** 的 **`agentConfig`** 下发。复杂跨表/INF 分析可在 Settings 调高。
+2. **超时重试**：**`AiAgentReport.tsx`** 对 timeout 类错误（SSE **`Request timeout after …ms`** 或客户端 **AbortSignal.timeout**）显示 **↻ 重试**；点击发 **`{ retry: true, sessionId, agentConfig }`**，保留已展示的工具结果与部分 AI 文字，从后端 session 续跑。样式 **`.ai-error-retry`**（**`AiAgentReport.css`**）。
 
 ---
 

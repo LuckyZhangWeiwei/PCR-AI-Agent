@@ -34,6 +34,8 @@
 | `infPath` | 是 | API **服务器本机**上的 INF 绝对路径；别名 `inf_path` |
 | `passId` | 是 | 一个或多个 INF `PASS_ID`；可 `passId=1&passId=2` 或 `passId=1,2`；别名 `pass_id` |
 
+Perl 脚本 **`output_site_bin_bylot.pl`** 在匹配 `PASS_ID` 后还会过滤 **`PASS_TYPE='TEST'`**（跳过 INTERRUPT 等非 TEST pass，与 JB **`PASSTYPE=TEST`** 语义一致）。
+
 **sort 与 passId（与 JB 一致）：**
 
 | 用户说法 | `passId` |

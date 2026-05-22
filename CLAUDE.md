@@ -13,7 +13,7 @@ This is a two-package monorepo (no shared workspace tooling — each package has
 
 > **Deep API context:** [`pcr-ai-api/CLAUDE.md`](pcr-ai-api/CLAUDE.md) — Dummy/Oracle, v3/v4 aggregate, `MEMORY_AGG_ORACLE_MAX_ROWS`, SiliconFlow, CORS, Oracle driver pinning.  
 > **Deep report context:** [`pcr-ai-report/CLAUDE.md`](pcr-ai-report/CLAUDE.md) — draggable layout, localStorage keys, query panel, chart labels, tab/settings shell. Read the relevant package doc before editing that package.  
-> **INF site-bin-bylot（API 已实现，报表 `InfDutDistPanel` 已接入）：** [`docs/SITE_BIN_BY_LOT_INTEGRATION.md`](docs/SITE_BIN_BY_LOT_INTEGRATION.md) — `infPath` 由 device+lot+slot 拼接、下钻后调 API、Agent 工具与 prompt 附录。
+> **INF site-bin-bylot（API 已实现，报表 `InfDutDistPanel` 已接入）：** [`docs/SITE_BIN_BY_LOT_INTEGRATION.md`](docs/SITE_BIN_BY_LOT_INTEGRATION.md) — `infPath` 由 device+lot+slot 拼接、下钻后调 API、Perl **`PASS_TYPE=TEST`** 过滤、Agent 工具与 prompt 附录。
 
 ---
 
@@ -82,7 +82,7 @@ Set `YIELD_MONITOR_TRIGGERS_DUMMY=true` or `INFCONTROL_LAYER_BINS_DUMMY=true` in
 - **`App.tsx`** — shell: title **NXP ATTJ WaferTest Dashboard**, tabs (Yield / JB / AI / 表浏览 / **⚙ 设置**), API base + health probe in settings; **`OverviewReport embedded`** for API catalog (no longer a top-level tab).
 - **`api/client.ts`** — `apiGetJson<T>()` wraps `fetch`, normalizes the base URL, serializes query params, and throws on non-2xx with a structured error message.
 - **`api/paths.ts`** — single constant `API_PREFIX = "/api/v4"` shared by all report components.
-- **`reports/`** — `YieldMonitorReport`, `InfcontrolReport` (both use **`DraggableReportSections`** + nested **`DraggableReportBlocks`** for KPI/chart grids, **`.query-panel`**, layout reset); `AiAgentReport`, `TableRowsReport`, `OverviewReport` (settings only when `embedded`).
+- **`reports/`** — `YieldMonitorReport`, `InfcontrolReport` (both use **`DraggableReportSections`** + nested **`DraggableReportBlocks`** for KPI/chart grids, **`.query-panel`**, layout reset); `AiAgentReport` (**Settings** 可配 **`maxRounds`**，timeout 错误可 **↻ 重试**), `TableRowsReport`, `OverviewReport` (settings only when `embedded`).
 - **`components/DraggableReportSections.tsx`** — `@dnd-kit` reorder/close/hide + **`localStorage`**; **`createPointerMidpointCollision`** for tall blocks; see the "可拖拽布局" section in `pcr-ai-report/CLAUDE.md`.
 - **`components/ChartDrillSplit.tsx`** — CSS grid `1fr 1fr` wrapper: left = main chart, right = drill panel spanning full grid row; `overflow:hidden` prevents page-widening on first click.
 - **`components/InfDutDistPanel.tsx`** — stacked bar of bin×DUT per pass for a JB STAR lot/slot; calls `GET /inf-analysis/site-bin-bylot`; filters to good bins by default using `infGoodBins.ts`.

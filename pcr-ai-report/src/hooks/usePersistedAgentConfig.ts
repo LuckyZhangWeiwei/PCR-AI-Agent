@@ -5,15 +5,30 @@ export interface AgentConfig {
   apiKey: string;
   apiBase: string;
   model: string;
+  maxRounds: number;
 }
 
 const STORAGE_KEY = "pcr-ai-report.agent.v1";
+
+export const AGENT_MAX_ROUNDS_DEFAULT = 5;
+export const AGENT_MAX_ROUNDS_MIN = 1;
+export const AGENT_MAX_ROUNDS_MAX = 20;
 
 const DEFAULTS: AgentConfig = {
   apiKey: "",
   apiBase: "https://api.siliconflow.cn/v1",
   model: "deepseek-ai/DeepSeek-V3",
+  maxRounds: AGENT_MAX_ROUNDS_DEFAULT,
 };
+
+function clampMaxRounds(n: unknown): number {
+  const parsed = typeof n === "number" ? n : Number(n);
+  if (!Number.isFinite(parsed)) return AGENT_MAX_ROUNDS_DEFAULT;
+  return Math.min(
+    Math.max(Math.round(parsed), AGENT_MAX_ROUNDS_MIN),
+    AGENT_MAX_ROUNDS_MAX
+  );
+}
 
 function load(): AgentConfig {
   try {
@@ -28,6 +43,7 @@ function load(): AgentConfig {
           : DEFAULTS.apiBase,
       model:
         typeof p.model === "string" && p.model ? p.model : DEFAULTS.model,
+      maxRounds: clampMaxRounds(p.maxRounds),
     };
   } catch {
     return { ...DEFAULTS };

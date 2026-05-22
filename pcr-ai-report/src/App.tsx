@@ -4,7 +4,12 @@ import { API_PREFIX } from "./api/paths";
 import { ReportListLimitsSettings } from "./components/ReportListLimitsSettings";
 import { usePersistedApiBase } from "./hooks/usePersistedApiBase";
 import { usePersistedReportLimits } from "./hooks/usePersistedReportLimits";
-import { usePersistedAgentConfig } from "./hooks/usePersistedAgentConfig.js";
+import {
+  usePersistedAgentConfig,
+  AGENT_MAX_ROUNDS_DEFAULT,
+  AGENT_MAX_ROUNDS_MAX,
+  AGENT_MAX_ROUNDS_MIN,
+} from "./hooks/usePersistedAgentConfig.js";
 import { AiAgentReport } from "./reports/AiAgentReport";
 import { InfcontrolReport } from "./reports/InfcontrolReport";
 import { OverviewReport } from "./reports/OverviewReport";
@@ -228,6 +233,22 @@ export default function App() {
                 <span>模型</span>
                 <input type="text" value={agentConfig.model} onChange={(e) => updateAgentConfig({ model: e.target.value })} />
               </label>
+              <label>
+                <span>最大推理轮数（{AGENT_MAX_ROUNDS_MIN}–{AGENT_MAX_ROUNDS_MAX}）</span>
+                <input
+                  type="number"
+                  min={AGENT_MAX_ROUNDS_MIN}
+                  max={AGENT_MAX_ROUNDS_MAX}
+                  value={agentConfig.maxRounds}
+                  onChange={(e) =>
+                    updateAgentConfig({ maxRounds: Number(e.target.value) })
+                  }
+                />
+              </label>
+              <p className="field-hint">
+                Agent 连续调用工具的上限；跨表分析、INF 下钻等复杂问题可适当提高（默认{" "}
+                {AGENT_MAX_ROUNDS_DEFAULT}）。
+              </p>
               <div className="api-panel-actions">
                 <button type="button" className="btn ghost" onClick={resetAgentConfig}>
                   恢复默认

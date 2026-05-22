@@ -53,6 +53,7 @@ interface ChartMessage {
 interface ErrorMessage {
   kind: "error";
   message: string;
+  retryable?: boolean;
 }
 interface ClarificationMessage {
   kind: "clarification";
@@ -79,6 +80,23 @@ interface SseEvent {
 
 /** 略大于后端 AGENT_STREAM_TIMEOUT_MS 默认 270s，避免客户端先断 */
 const AGENT_CHAT_CLIENT_TIMEOUT_MS = 300_000;
+
+function isRetryableAgentError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return lower.includes("timeout") || message.includes("超时");
+}
+
+function formatAgentErrorMessage(message: string, isClientTimeout: boolean): string {
+  if (isClientTimeout) {
+    return `请求超时（${Math.round(AGENT_CHAT_CLIENT_TIMEOUT_MS / 60_000)} 分钟）。可点击「重试」继续，或缩小查询范围后重新提问。`;
+  }
+  if (/request timeout after/i.test(message)) {
+    const msMatch = message.match(/(\d+)\s*ms/i);
+    const sec = msMatch ? Math.round(Number(msMatch[1]) / 1000) : 270;
+    return `请求超时（约 ${sec} 秒）。可点击「重试」从上次进度继续，或缩小查询范围后重新提问。`;
+  }
+  return message;
+}
 
 function parseSseLine(line: string, onEvent: (event: SseEvent) => void): void {
   if (!line.startsWith("data: ")) return;
@@ -196,7 +214,11 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
       case "error":
         setMessages((prev) => [
           ...prev,
-          { kind: "error", message: event.message ?? "未知错误" },
+          {
+            kind: "error",
+            message: formatAgentErrorMessage(event.message ?? "未知错误", false),
+            retryable: isRetryableAgentError(event.message ?? ""),
+          },
         ]);
         break;
       case "clarification": {
@@ -219,98 +241,143 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
     }
   }, []);
 
+  const submitAgentRequest = useCallback(
+    async (options: { text?: string; retry?: boolean }) => {
+      const { text, retry = false } = options;
+      if (loading) return;
+      if (!retry && !text?.trim()) return;
+
+      setLoading(true);
+      setStatusHint(retry ? "正在重试…" : "正在连接服务器…");
+
+      if (retry) {
+        setMessages((prev) => {
+          const copy = [...prev];
+          const last = copy[copy.length - 1];
+          if (last?.kind === "error") copy.pop();
+          const tail = copy[copy.length - 1];
+          if (tail?.kind === "ai" && tail.text === "" && !tail.streaming) {
+            copy[copy.length - 1] = { ...tail, streaming: true };
+          } else {
+            copy.push({ kind: "ai", text: "", streaming: true });
+          }
+          return copy;
+        });
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          { kind: "user", text: text! },
+          { kind: "ai", text: "", streaming: true },
+        ]);
+      }
+
+      const abort =
+        typeof AbortSignal.timeout === "function"
+          ? AbortSignal.timeout(AGENT_CHAT_CLIENT_TIMEOUT_MS)
+          : undefined;
+
+      try {
+        const response = await fetch(`${apiBase}/api/v4/agent/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            retry
+              ? { retry: true, sessionId, agentConfig }
+              : { message: text, sessionId, agentConfig }
+          ),
+          signal: abort,
+        });
+
+        if (!response.ok || !response.body) {
+          const errBody = await response
+            .json()
+            .catch(() => ({ message: "请求失败" })) as { message?: string };
+          const errMessage = errBody.message ?? `HTTP ${response.status}`;
+          setMessages((prev) => {
+            const copy = [...prev];
+            copy[copy.length - 1] = {
+              kind: "error",
+              message: errMessage,
+              retryable: isRetryableAgentError(errMessage),
+            };
+            return copy;
+          });
+          return;
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            const lines = buf.split("\n");
+            buf = lines.pop() ?? "";
+            for (const line of lines) {
+              parseSseLine(line, handleSseEvent);
+            }
+          }
+          if (buf.trim()) {
+            for (const line of buf.split("\n")) {
+              parseSseLine(line, handleSseEvent);
+            }
+          }
+        } catch (readerErr) {
+          reader.cancel().catch(() => undefined);
+          throw readerErr;
+        }
+      } catch (err) {
+        const isTimeout =
+          err instanceof DOMException &&
+          (err.name === "TimeoutError" || err.name === "AbortError");
+        const rawMessage = err instanceof Error ? err.message : String(err);
+        const message = isTimeout
+          ? formatAgentErrorMessage(rawMessage, true)
+          : rawMessage;
+        setMessages((prev) => {
+          const copy = [...prev];
+          const last = copy[copy.length - 1];
+          if (last && (last.kind === "ai" || last.kind === "error")) {
+            copy[copy.length - 1] = {
+              kind: "error",
+              message,
+              retryable: isTimeout || isRetryableAgentError(rawMessage),
+            };
+          } else {
+            copy.push({
+              kind: "error",
+              message,
+              retryable: isTimeout || isRetryableAgentError(rawMessage),
+            });
+          }
+          return copy;
+        });
+      } finally {
+        setLoading(false);
+        setStatusHint("");
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.kind === "ai" && m.streaming ? { ...m, streaming: false } : m
+          )
+        );
+      }
+    },
+    [loading, sessionId, agentConfig, apiBase, handleSseEvent]
+  );
+
   const sendMessage = useCallback(async () => {
     const text = input.trim();
     if (!text || loading) return;
-
     setInput("");
-    setLoading(true);
-    setStatusHint("正在连接服务器…");
-    setMessages((prev) => [
-      ...prev,
-      { kind: "user", text },
-      { kind: "ai", text: "", streaming: true },
-    ]);
+    await submitAgentRequest({ text });
+  }, [input, loading, submitAgentRequest]);
 
-    const abort =
-      typeof AbortSignal.timeout === "function"
-        ? AbortSignal.timeout(AGENT_CHAT_CLIENT_TIMEOUT_MS)
-        : undefined;
-
-    try {
-      const response = await fetch(`${apiBase}/api/v4/agent/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, sessionId, agentConfig }),
-        signal: abort,
-      });
-
-      if (!response.ok || !response.body) {
-        const errBody = await response
-          .json()
-          .catch(() => ({ message: "请求失败" })) as { message?: string };
-        setMessages((prev) => {
-          const copy = [...prev];
-          copy[copy.length - 1] = {
-            kind: "error",
-            message: errBody.message ?? `HTTP ${response.status}`,
-          };
-          return copy;
-        });
-        return;
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buf += decoder.decode(value, { stream: true });
-          const lines = buf.split("\n");
-          buf = lines.pop() ?? "";
-          for (const line of lines) {
-            parseSseLine(line, handleSseEvent);
-          }
-        }
-        if (buf.trim()) {
-          for (const line of buf.split("\n")) {
-            parseSseLine(line, handleSseEvent);
-          }
-        }
-      } catch (readerErr) {
-        reader.cancel().catch(() => undefined);
-        throw readerErr;
-      }
-    } catch (err) {
-      const isTimeout =
-        err instanceof DOMException &&
-        (err.name === "TimeoutError" || err.name === "AbortError");
-      const message = isTimeout
-        ? `请求超时（${Math.round(AGENT_CHAT_CLIENT_TIMEOUT_MS / 60_000)} 分钟）。可缩小时间范围后重试，或检查 API / 硅基流动是否可达。`
-        : err instanceof Error
-          ? err.message
-          : String(err);
-      setMessages((prev) => {
-        const copy = [...prev];
-        const last = copy[copy.length - 1];
-        if (last && (last.kind === "ai" || last.kind === "error")) {
-          copy[copy.length - 1] = { kind: "error", message };
-        }
-        return copy;
-      });
-    } finally {
-      setLoading(false);
-      setStatusHint("");
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.kind === "ai" && m.streaming ? { ...m, streaming: false } : m
-        )
-      );
-    }
-  }, [input, loading, sessionId, agentConfig, apiBase, handleSseEvent]);
+  const retryLastRequest = useCallback(async () => {
+    await submitAgentRequest({ retry: true });
+  }, [submitAgentRequest]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -421,7 +488,17 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
           if (msg.kind === "error") {
             return (
               <div key={i} className="ai-msg ai-msg--error">
-                ⚠ {msg.message}
+                <div className="ai-error-text">⚠ {msg.message}</div>
+                {msg.retryable ? (
+                  <button
+                    type="button"
+                    className="ai-error-retry"
+                    onClick={() => void retryLastRequest()}
+                    disabled={loading}
+                  >
+                    ↻ 重试
+                  </button>
+                ) : null}
               </div>
             );
           }

@@ -10,7 +10,7 @@ const SCRIPT_NAME = "output_site_bin_bylot.pl";
 
 /** 写入响应 meta，说明本接口业务含义（交接 / 前端展示用）。 */
 export const SITE_BIN_BY_LOT_SUMMARY =
-  "Per wafer test pass (one or more PASS_ID in INF): for each bin result on the map, which probe-card DUT (test site) produced that bin and how many die at that bin×DUT. Data from INF layers iBinCodeLast + iTestSiteLast via output_site_bin_bylot.pl.";
+  "Per wafer test pass (one or more PASS_ID in INF, PASS_TYPE=TEST only): for each bin result on the map, which probe-card DUT (test site) produced that bin and how many die at that bin×DUT. Data from INF layers iBinCodeLast + iTestSiteLast via output_site_bin_bylot.pl.";
 
 export class OutputSiteBinByLotValidationError extends Error {
   readonly statusCode = 400;

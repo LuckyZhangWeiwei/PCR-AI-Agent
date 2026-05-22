@@ -275,6 +275,9 @@
 }
 
 .ai-msg--error {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
   color: #e05555;
   font-size: 13px;
   padding: 6px 10px;
@@ -282,6 +285,30 @@
   border: 1px solid #5a2222;
   border-radius: 6px;
   max-width: 90%;
+}
+
+.ai-error-text {
+  line-height: 1.4;
+}
+
+.ai-error-retry {
+  padding: 4px 12px;
+  background: #3a2020;
+  border: 1px solid #7a3333;
+  color: #ffb0b0;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.ai-error-retry:hover:not(:disabled) {
+  background: #4a2828;
+  color: #ffd0d0;
+}
+
+.ai-error-retry:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .ai-agent-input-area {

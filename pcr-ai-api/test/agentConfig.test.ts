@@ -15,6 +15,30 @@ describe("resolveAgentConfig", () => {
     assert.equal(cfg.apiKey, "sk-test");
     assert.equal(cfg.apiBase, "https://custom.api/v1"); // trailing slash stripped
     assert.equal(cfg.model, "my-model");
+    assert.equal(cfg.maxRounds, 5);
+  });
+
+  it("clamps maxRounds from override", async () => {
+    const { resolveAgentConfig } = await import(
+      "../src/lib/agent/agentConfig.js"
+    );
+    assert.equal(resolveAgentConfig({ maxRounds: 0 }).maxRounds, 1);
+    assert.equal(resolveAgentConfig({ maxRounds: 99 }).maxRounds, 20);
+    assert.equal(resolveAgentConfig({ maxRounds: 8 }).maxRounds, 8);
+  });
+
+  it("reads AGENT_MAX_ROUNDS from env when override omitted", async () => {
+    const saved = process.env.AGENT_MAX_ROUNDS;
+    process.env.AGENT_MAX_ROUNDS = "12";
+    try {
+      const { resolveAgentConfig } = await import(
+        "../src/lib/agent/agentConfig.js"
+      );
+      assert.equal(resolveAgentConfig({}).maxRounds, 12);
+    } finally {
+      if (saved !== undefined) process.env.AGENT_MAX_ROUNDS = saved;
+      else delete process.env.AGENT_MAX_ROUNDS;
+    }
   });
 
   it("strips trailing slash from apiBase", async () => {
