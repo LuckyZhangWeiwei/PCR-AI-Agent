@@ -199,7 +199,7 @@ async function oracleJb(
   }
 
   const where = conditions.join(" AND ");
-  const fromClause = `FROM INFCONTROL t1 JOIN INFLAYERBINLIST t2 ON t1.ID = t2.INFCONTROLID WHERE ${where}`;
+  const fromClause = `FROM INFCONTROL t1 JOIN INFLAYERBINLIST t2 ON t1.KEYNUMBER = t2.KEYNUMBER WHERE ${where}`;
 
   let sql: string;
   if (field === "probeCardType") {

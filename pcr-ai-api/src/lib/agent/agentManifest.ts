@@ -140,7 +140,7 @@ async function fetchJbDomain(): Promise<DataManifest["jb"]> {
   const timeRangeSql = `
     SELECT MIN(t2.TESTEND) AS ts_min, MAX(t2.TESTEND) AS ts_max
     FROM INFCONTROL t1
-    JOIN INFLAYERBINLIST t2 ON t1.ID = t2.INFCONTROLID
+    JOIN INFLAYERBINLIST t2 ON t1.KEYNUMBER = t2.KEYNUMBER
     WHERE UPPER(TRIM(t2.PASSTYPE)) IN ('TEST', 'INTERRUPT')
       AND UPPER(TRIM(t2.LAYERNAME)) <> 'ABANDONED'
       AND NOT REGEXP_LIKE(t1.LOT, '^(kk|gg|c)', 'i')
@@ -148,7 +148,7 @@ async function fetchJbDomain(): Promise<DataManifest["jb"]> {
   const topDeviceSql = `
     SELECT t1.DEVICE, COUNT(*) AS cnt
     FROM INFCONTROL t1
-    JOIN INFLAYERBINLIST t2 ON t1.ID = t2.INFCONTROLID
+    JOIN INFLAYERBINLIST t2 ON t1.KEYNUMBER = t2.KEYNUMBER
     WHERE UPPER(TRIM(t2.PASSTYPE)) IN ('TEST', 'INTERRUPT')
       AND UPPER(TRIM(t2.LAYERNAME)) <> 'ABANDONED'
       AND NOT REGEXP_LIKE(t1.LOT, '^(kk|gg|c)', 'i')

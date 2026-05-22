@@ -230,6 +230,10 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
    - **测试**：**`test/agentLoop.test.ts`**（`historyAwaitingToolSummary`）；改 loop/stream/filter 时跑 **`npm test`**。
    - **质量 trade-off**：第 1 轮仍可一次调多个工具；仅**紧接工具结果后的那一轮**禁止再调工具。若模型第 1 轮少调了工具，需用户追问或拆问；复杂跨域问题可在 prompt 侧要求第 1 轮一次调齐。
    - **前端**：**`AiAgentReport`** 无改动；**↻ 重试** 在工具 JSON 已在 session 时可直接进入总结轮。
+12. **Agent JB JOIN 修正 — `get_filter_values` / manifest（2026-05-22）**：
+   - **现象**：JB **`get_filter_values`** 报 **`ORA-00904: "T2"."INFCONTROLID": invalid identifier`**；Agent 查 6045-13 等卡号时 JB 域失败。
+   - **根因**：**`agentFilterValuesTool.ts`**、**`agentManifest.ts`** 误用 **`t1.ID = t2.INFCONTROLID`**；与列表/聚合一致应为 **`t1.KEYNUMBER = t2.KEYNUMBER`**（见 **`infcontrolLayerBinSql.ts`** / **`apiV3ListSql.ts`**）。
+   - **改后**：Oracle JB 快照与 **`get_filter_values`**（`cardId` / `lot` / `testerId` / `probeCardType`）可正常执行。改 JOIN 时勿再引入 `INFCONTROLID`。
 
 ---
 
