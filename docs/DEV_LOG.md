@@ -2,6 +2,18 @@
 
 ---
 
+## 2026-05-22 — AI Agent 工具后强制总结（有数据无输出 / 超时）
+
+**现象：** 工具（如 `aggregate_yield_triggers`）JSON 已在 UI 展示，但第二轮 LLM 无中文结论，270s 或前端 5min 超时；与 2026-05-21 流式 UX 改动无关。
+
+**完成内容：**
+- `pcr-ai-api/src/lib/agent/agentLoop.ts`：`historyAwaitingToolSummary`；工具后总结轮 `tool_choice: "none"` + `SUMMARIZE_NUDGE`；DeepSeek filter `finalize()` flush；tool 消息补 `name`；空总结/总结轮再调工具 → 明确 error。
+- `pcr-ai-api/src/lib/agent/agentStream.ts`：idle 超时（有 SSE 字节则重置 `AGENT_STREAM_TIMEOUT_MS`）。
+- `pcr-ai-api/test/agentLoop.test.ts`：回归 `historyAwaitingToolSummary`。
+- 交接：**`pcr-ai-api/CLAUDE.md` §6/§9/§11 条目 11/§12.1**、**`pcr-ai-report/CLAUDE.md` §15**、根 **`CLAUDE.md`**。
+
+**测试：** `npm test`（含 `agentLoop.test.ts`）。
+
 ## 2026-05-22 — AI Agent 可配置轮数、超时重试、INF PASS_TYPE 过滤
 
 **完成内容：**

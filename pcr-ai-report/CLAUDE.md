@@ -232,6 +232,14 @@ src/
 1. **Settings → 最大推理轮数**：**`usePersistedAgentConfig.ts`** 新增 **`maxRounds`**（默认 **5**，**1–20**）；**`App.tsx`** 数字输入；随 **`POST /api/v4/agent/chat`** 的 **`agentConfig`** 下发。复杂跨表/INF 分析可在 Settings 调高。
 2. **超时重试**：**`AiAgentReport.tsx`** 对 timeout 类错误（SSE **`Request timeout after …ms`** 或客户端 **AbortSignal.timeout**）显示 **↻ 重试**；点击发 **`{ retry: true, sessionId, agentConfig }`**，保留已展示的工具结果与部分 AI 文字，从后端 session 续跑。样式 **`.ai-error-retry`**（**`AiAgentReport.css`**）。
 
+## 15. 近期变更纪要（2026-05-22，工具后总结 — 后端修复，前端无 diff）
+
+1. **现象（用户侧）**：工具块已展开且含 JSON（如 **`totalRowsMatching`**），但 AI 气泡长时间停在 **「正在分析工具结果…」**，最终 270s 或 5min 超时；**↻ 重试** 在修复前也常无字。
+2. **修复位置**：**`../pcr-ai-api/src/lib/agent/agentLoop.ts`**、**`agentStream.ts`**（详见 **`../pcr-ai-api/CLAUDE.md` §11 条目 11、§12.1**）。
+3. **本包无需改代码**：SSE 事件形状不变（仍 **`text` / `status` / `tool_*` / `done` / `error`**）。部署 API **`npm run build` + pm2 reload** 后，现有 **`AiAgentReport`** 即可受益。
+4. **与 §13（2026-05-21）关系**：§13 的 statusHint / LOOKAHEAD 改善 pending 显示与流式粒度，**不解决**工具后第二轮不写结论；两者叠加后体验最佳。
+5. **验证**：问「8037 probecard 测试情况」或「最近 7 天 WA03P02G 触发次数」— 工具返回后应持续流出中文总结；若仍失败，看 SSE **`error`** 文案是否为新加的「模型未返回分析结论」类提示。
+
 ---
 
 ## 12. 与 API 联调速查

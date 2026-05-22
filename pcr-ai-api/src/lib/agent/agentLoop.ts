@@ -143,6 +143,14 @@ function createDeepSeekFilter(
       }
     },
     finalize(): CollectedToolCall[] {
+      // Stream ended inside a partial DeepSeek tool token — recover as plain text.
+      if (inToken) {
+        if (tokenBuf) {
+          pending = tokenBuf;
+          tokenBuf = "";
+        }
+        inToken = false;
+      }
       flushPending(true);
       return calls;
     },
@@ -187,6 +195,14 @@ async function summarizeHistory(
   }
   return summary.trim();
 }
+
+/** True when the last history turn is tool output awaiting a text summary. */
+export function historyAwaitingToolSummary(history: ChatMessage[]): boolean {
+  return history.length > 0 && history[history.length - 1].role === "tool";
+}
+
+const SUMMARIZE_NUDGE =
+  "【指令】工具查询已完成，结果已在上方 tool 消息中。请立即用中文给出分析结论与关键数字，禁止再调用任何工具。";
 
 export async function runAgentLoop(
   message: string,
@@ -234,13 +250,29 @@ export async function runAgentLoop(
       ...history,
     ];
 
+    const awaitingSummary = historyAwaitingToolSummary(history);
     const dsFilter = createDeepSeekFilter(emit);
     const toolCalls: CollectedToolCall[] = [];
     let finishReason = "stop";
     let streamError: string | undefined;
 
+    const llmMessages: ChatMessage[] = awaitingSummary
+      ? [...messages, { role: "system", content: SUMMARIZE_NUDGE }]
+      : messages;
+
     await streamSiliconFlow(
-      { model: agentConfig.model, messages, tools: TOOL_SCHEMAS as unknown as unknown[], tool_choice: "auto" },
+      awaitingSummary
+        ? {
+            model: agentConfig.model,
+            messages: llmMessages,
+            tool_choice: "none",
+          }
+        : {
+            model: agentConfig.model,
+            messages: llmMessages,
+            tools: TOOL_SCHEMAS as unknown as unknown[],
+            tool_choice: "auto",
+          },
       agentConfig,
       (chunk) => {
         switch (chunk.type) {
@@ -281,8 +313,25 @@ export async function runAgentLoop(
     }
 
     if (finishReason !== "tool_calls" || toolCalls.length === 0) {
+      if (awaitingSummary && !textBuffer.trim()) {
+        emit({
+          type: "error",
+          message:
+            "模型未返回分析结论（工具数据已在上方）。请点「重试」，或缩小查询范围后重新提问。",
+        });
+        return;
+      }
       appendMessages(sessionId, { role: "assistant", content: textBuffer });
       emit({ type: "done" });
+      return;
+    }
+
+    if (awaitingSummary) {
+      emit({
+        type: "error",
+        message:
+          "模型在总结阶段仍尝试调用工具。请点「重试」，或拆成更单一的问题（例如只查 Yield 或只查 JB）。",
+      });
       return;
     }
 
@@ -294,7 +343,7 @@ export async function runAgentLoop(
     }));
     appendMessages(sessionId, {
       role: "assistant",
-      content: null,
+      content: textBuffer || null,
       tool_calls: assistantToolCalls,
     });
 
@@ -346,6 +395,7 @@ export async function runAgentLoop(
       appendMessages(sessionId, {
         role: "tool",
         tool_call_id: callId,
+        name: tc.name,
         content: historyContent,
       });
     }

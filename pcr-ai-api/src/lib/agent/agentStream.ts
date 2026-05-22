@@ -99,6 +99,16 @@ export function streamSiliconFlow(
       }
     };
 
+    const timeoutMessage = `Request timeout after ${timeoutMs}ms`;
+    const handleTimeout = () => {
+      if (settled) return;
+      settled = true;
+      clearRequestTimeout();
+      onChunk({ type: "error", message: timeoutMessage });
+      req.destroy(new Error(timeoutMessage));
+      resolve();
+    };
+
     const req = https.request(options, (res) => {
       if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
         let errBody = "";
@@ -120,6 +130,10 @@ export function streamSiliconFlow(
       let finishReason = "stop";
 
       res.on("data", (chunk: Buffer) => {
+        // Idle timeout: reset while bytes keep flowing (avoids dying mid-stream).
+        clearRequestTimeout();
+        timeoutId = setTimeout(handleTimeout, timeoutMs);
+
         buffer += chunk.toString("utf8");
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
@@ -191,16 +205,6 @@ export function streamSiliconFlow(
       clearRequestTimeout();
       reject(err);
     });
-
-    const timeoutMessage = `Request timeout after ${timeoutMs}ms`;
-    const handleTimeout = () => {
-      if (settled) return;
-      settled = true;
-      clearRequestTimeout();
-      onChunk({ type: "error", message: timeoutMessage });
-      req.destroy(new Error(timeoutMessage));
-      resolve();
-    };
 
     timeoutId = setTimeout(handleTimeout, timeoutMs);
     req.setTimeout(timeoutMs, handleTimeout);
