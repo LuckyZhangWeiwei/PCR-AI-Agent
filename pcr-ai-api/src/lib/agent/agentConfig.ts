@@ -52,6 +52,14 @@ function resolveStreamTimeout(
       streamTimeoutMs: streamTimeoutSec * 1000,
     };
   }
+  // Raw ms override (e.g. tests passing streamTimeoutMs: 20 directly)
+  if (override?.streamTimeoutMs !== undefined) {
+    const ms = override.streamTimeoutMs;
+    return {
+      streamTimeoutSec: Math.ceil(ms / 1000),
+      streamTimeoutMs: ms,
+    };
+  }
   const envMs = readEnvStreamTimeoutMs();
   if (envMs !== undefined) {
     return {

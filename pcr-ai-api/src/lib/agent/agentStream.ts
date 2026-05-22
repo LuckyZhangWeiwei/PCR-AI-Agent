@@ -214,7 +214,6 @@ export function streamSiliconFlow(
     });
 
     timeoutId = setTimeout(handleTimeout, timeoutMs);
-    req.setTimeout(timeoutMs, handleTimeout);
 
     req.write(body);
     req.end();

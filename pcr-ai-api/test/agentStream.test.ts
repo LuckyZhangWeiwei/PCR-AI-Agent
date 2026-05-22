@@ -6,8 +6,6 @@ import { streamSiliconFlow, type StreamChunk } from "../src/lib/agent/agentStrea
 
 test("streamSiliconFlow emits an error when the upstream request never responds", async (t) => {
   const originalRequest = https.request;
-  const originalTimeout = process.env.AGENT_STREAM_TIMEOUT_MS;
-  process.env.AGENT_STREAM_TIMEOUT_MS = "20";
 
   const fakeReq = new EventEmitter() as EventEmitter & {
     setTimeout: (ms: number, cb: () => void) => typeof fakeReq;
@@ -26,11 +24,6 @@ test("streamSiliconFlow emits an error when the upstream request never responds"
 
   t.after(() => {
     (https as typeof https & { request: unknown }).request = originalRequest;
-    if (originalTimeout === undefined) {
-      delete process.env.AGENT_STREAM_TIMEOUT_MS;
-    } else {
-      process.env.AGENT_STREAM_TIMEOUT_MS = originalTimeout;
-    }
   });
 
   const chunks: StreamChunk[] = [];
@@ -39,6 +32,7 @@ test("streamSiliconFlow emits an error when the upstream request never responds"
     apiKey: "sk-test",
     apiBase: "https://api.siliconflow.cn/v1",
     model: "test-model",
+    streamTimeoutMs: 20,
   });
   const result = await Promise.race([
     streamSiliconFlow(
@@ -62,8 +56,6 @@ test("streamSiliconFlow emits an error when the upstream request never responds"
 
 test("streamSiliconFlow emits an error when the upstream response stalls after headers", async (t) => {
   const originalRequest = https.request;
-  const originalTimeout = process.env.AGENT_STREAM_TIMEOUT_MS;
-  process.env.AGENT_STREAM_TIMEOUT_MS = "20";
 
   const fakeReq = new EventEmitter() as EventEmitter & {
     setTimeout: (ms: number, cb: () => void) => typeof fakeReq;
@@ -89,11 +81,6 @@ test("streamSiliconFlow emits an error when the upstream response stalls after h
 
   t.after(() => {
     (https as typeof https & { request: unknown }).request = originalRequest;
-    if (originalTimeout === undefined) {
-      delete process.env.AGENT_STREAM_TIMEOUT_MS;
-    } else {
-      process.env.AGENT_STREAM_TIMEOUT_MS = originalTimeout;
-    }
   });
 
   const chunks: StreamChunk[] = [];
@@ -102,6 +89,7 @@ test("streamSiliconFlow emits an error when the upstream response stalls after h
     apiKey: "sk-test",
     apiBase: "https://api.siliconflow.cn/v1",
     model: "test-model",
+    streamTimeoutMs: 20,
   });
   const result = await Promise.race([
     streamSiliconFlow(

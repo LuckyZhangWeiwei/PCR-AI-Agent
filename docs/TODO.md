@@ -4,15 +4,15 @@
 
 | 优先级 | 任务 | 备注 |
 |--------|------|------|
-| 1 | AI Agent 生产部署验证 | 确认 `AGENT_API_KEY` / `SILICONFLOW_API_KEY`、`AGENT_STREAM_TIMEOUT_MS`、PM2 重启后聊天页可用 |
-| 2 | INF DUT 面板 Agent 工具接入 | `query_inf_site_bin_by_dut` prompt 附录接入 Agent；见 `docs/SITE_BIN_BY_LOT_INTEGRATION.md` |
-| 3 | 服务器部署新版本 | `npm run pack:dist` → scp dist.tar → `tar xf`；更新 API `pm2:reload` |
+| 1 | 服务器部署新版本 | `npm run build + pm2:reload`（API）；`npm run pack:dist` → scp + tar xf（前端） |
+| 2 | AI Agent 生产部署验证 | 确认 `AGENT_API_KEY`、`AGENT_STREAM_TIMEOUT_MS`（默认 150s）、PM2 重启后聊天可用；验证工具结果后能正常输出中文结论 |
+| 3 | INF DUT 面板 Agent 工具接入 | `query_inf_site_bin_by_dut` 接入 agentPrompt + agentToolHandlers；见 `docs/SITE_BIN_BY_LOT_INTEGRATION.md` |
 
 ## 待办
 
-- [ ] AI Agent 生产部署验证：确认 `AGENT_API_KEY` / `SILICONFLOW_API_KEY`、`AGENT_STREAM_TIMEOUT_MS`、PM2 重启后聊天页可用
+- [ ] 服务器部署：API `npm run build + pm2:reload`；前端 `npm run pack:dist` → scp dist.tar → nginx web root
+- [ ] AI Agent 生产部署验证：确认 `AGENT_API_KEY` / `SILICONFLOW_API_KEY`、PM2 重启后聊天页可用；验证工具调用后能正常输出分析结论（已修复总结轮非标消息结构 + 双超时注册）
 - [ ] INF DUT 面板 Agent 工具：`query_inf_site_bin_by_dut` 接入 agentPrompt + agentToolHandlers（设计见 `docs/SITE_BIN_BY_LOT_INTEGRATION.md`）
-- [ ] 服务器部署：运行 `npm run pack:dist`，scp + tar xf 到 nginx web root；API `pm2:reload`
 
 ## 已完成
 
@@ -30,3 +30,4 @@
 - ✅ AI Agent 历史上下文延长（SUMMARIZE_THRESHOLD 40、KEEP_RECENT 20、MAX_MESSAGES 80） — 2026-05-21 完成
 - ✅ AI Agent 流式体验优化（LOOKAHEAD 12、status 事件补充、pending 气泡显示 statusHint） — 2026-05-21 完成
 - ✅ AI Agent 工具后强制总结（`tool_choice: "none"` 总结轮、idle 超时、DeepSeek filter flush） — 2026-05-22 完成
+- ✅ Code Review 修复：agentStream 双超时注册（删除 req.setTimeout）、测试去 env 副作用（streamTimeoutMs 直接注入）、总结轮 SUMMARIZE_NUDGE 改并入 system prompt（非标 trailing system 消息 → SiliconFlow 空响应） — 2026-05-22 完成

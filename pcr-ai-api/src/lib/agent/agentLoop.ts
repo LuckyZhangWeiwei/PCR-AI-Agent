@@ -375,34 +375,42 @@ export async function runAgentLoop(
   for (let round = 0; round < maxRounds; round++) {
     const history = getHistory(sessionId);
     const summary = getSummary(sessionId);
+    const awaitingSummary = historyAwaitingToolSummary(history);
+
+    // Inject nudge into the system prompt for the summary round — avoid a
+    // trailing system message after tool turns, which is non-standard and can
+    // cause empty responses on some providers (SiliconFlow/DeepSeek).
+    const systemContent = awaitingSummary
+      ? `${buildSystemPrompt(manifest)}\n\n${SUMMARIZE_NUDGE}`
+      : buildSystemPrompt(manifest);
+
     const messages: ChatMessage[] = [
-      { role: "system", content: buildSystemPrompt(manifest) },
+      { role: "system", content: systemContent },
       ...(summary
         ? [{ role: "system" as const, content: `【历史对话摘要】\n${summary}` }]
         : []),
       ...history,
     ];
 
-    const awaitingSummary = historyAwaitingToolSummary(history);
     const dsFilter = createDeepSeekFilter(emit);
     const toolCalls: CollectedToolCall[] = [];
     let finishReason = "stop";
     let streamError: string | undefined;
 
-    const llmMessages: ChatMessage[] = awaitingSummary
-      ? [...messages, { role: "system", content: SUMMARIZE_NUDGE }]
-      : messages;
+    if (awaitingSummary) {
+      emit({ type: "status", message: "正在生成分析结论…" });
+    }
 
     await streamSiliconFlow(
       awaitingSummary
         ? {
+            // No tools in summary round — model cannot call them, no tool_choice needed.
             model: agentConfig.model,
-            messages: llmMessages,
-            tool_choice: "none",
+            messages,
           }
         : {
             model: agentConfig.model,
-            messages: llmMessages,
+            messages,
             tools: TOOL_SCHEMAS as unknown as unknown[],
             tool_choice: "auto",
           },
