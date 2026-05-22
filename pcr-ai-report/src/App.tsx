@@ -142,7 +142,7 @@ export default function App() {
       <div className="tab-panel" hidden={tab !== "infcontrol"}>
         <InfcontrolReport apiBase={apiBase} listLimits={listLimits} />
       </div>
-      <div className="tab-panel" hidden={tab !== "ai"}>
+      <div className="tab-panel tab-panel--agent" hidden={tab !== "ai"}>
         <AiAgentReport apiBase={apiBase} agentConfig={agentConfig} />
       </div>
       <div className="tab-panel" hidden={tab !== "table"}>

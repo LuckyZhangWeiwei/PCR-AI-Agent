@@ -74,6 +74,17 @@ code {
   overflow-x: clip;
 }
 
+/* AI Agent tab: fill grid row 3; page scroll stays off, chat scrolls inside .ai-agent-messages */
+.app-shell > .tab-panel--agent {
+  min-height: 0;
+}
+
+.app-shell > .tab-panel--agent:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 /* ── Header ──────────────────────────────────────────────────────────── */
 .app-header {
   padding: 14px 0 12px;

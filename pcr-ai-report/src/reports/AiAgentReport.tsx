@@ -5,6 +5,14 @@ import { DarkChart } from "../components/DarkChart.js";
 import type { EChartsOption } from "echarts";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { sanitizeAgentMarkdownForDisplay } from "../utils/sanitizeAgentMarkdown.js";
+const AGENT_MARKDOWN_COMPONENTS = {
+  img: ({ alt }: { alt?: string }) => (
+    <span className="ai-img-placeholder">[{alt}]</span>
+  ),
+  del: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+  s: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+};
 
 function RobotAvatar() {
   return (
@@ -500,14 +508,10 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
                 <div className="ai-msg-bubble ai-msg-bubble--md">
                   {msg.text ? (
                     <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        img: ({ alt }) => (
-                          <span className="ai-img-placeholder">[{alt}]</span>
-                        ),
-                      }}
+                      remarkPlugins={[[remarkGfm, { singleTilde: false }]]}
+                      components={AGENT_MARKDOWN_COMPONENTS}
                     >
-                      {msg.text}
+                      {sanitizeAgentMarkdownForDisplay(msg.text)}
                     </ReactMarkdown>
                   ) : (
                     msg.streaming

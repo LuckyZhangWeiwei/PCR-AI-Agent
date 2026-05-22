@@ -2,6 +2,21 @@
 
 ---
 
+## 2026-05-22 — AI Agent 聊天气泡横线（~~）与页面双滚动条
+
+**现象：** 模型用 **`~~…~~`** 标「未展示/截断」时，GFM 渲染成删除线横线；消息变多后**页面最外层**出现纵向滚动条（应只在消息区滚动）。
+
+**完成内容（仅 `pcr-ai-report`）：**
+- **`utils/sanitizeAgentMarkdown.ts`**：展示前去掉 **`~~…~~`** 包裹。
+- **`AiAgentReport.tsx`**：**`remarkGfm({ singleTilde: false })`**；**`del`/`s`** 组件不画删除线。
+- **`AiAgentReport.css`**：去掉 **`calc(100vh - 180px)`**，**`flex: 1; min-height: 0; overflow: hidden`**；**`.ai-agent-messages`** 加 **`min-height: 0`**。
+- **`index.css` + `App.tsx`**：AI Tab 使用 **`tab-panel--agent`** 占满 grid 第三行。
+- 交接：**`pcr-ai-report/CLAUDE.md` §19**、根 **`CLAUDE.md`**。
+
+**部署：** 前端 rebuild / 重启 dev（无 API 变更）。
+
+---
+
 ## 2026-05-22 — AI Agent Settings 可配超时 + 流式泄漏过滤（think / DSML）
 
 **现象：** 聊天气泡偶发 **think**、**`redacted_thinking`**、**`<｜DSML｜tool_calls>`** 等内部标记；复杂 INF 下钻需更长 idle 超时。

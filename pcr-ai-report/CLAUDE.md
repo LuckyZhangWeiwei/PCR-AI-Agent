@@ -191,7 +191,7 @@ src/
 ## 11. 近期变更纪要（2026-05-16，交接备忘）
 
 1. **AI 助手链路**：`AiAgentReport` 发送 **`POST ${apiBase}/api/v4/agent/chat`**，请求体含 **`message`**、**`sessionId`**、**`agentConfig`**；响应为 SSE，每行 **`data: {type,...}`**。不要再按旧 **`GET /siliconflow/chat`** 排查聊天页。
-2. **AI 助手配置**：设置页 **AI Agent 配置** 保存到 `localStorage` 键 **`pcr-ai-report.agent.v1`**；字段含 **`apiKey` / `apiBase` / `model` / `maxRounds` / `streamTimeoutSec` / `clientTimeoutSec`**（流式 idle 默认 **150s**，客户端总超时默认 **180s**），随 **`agentConfig`** 发给后端（客户端超时仅前端使用）。若 key 为空，后端需配置 **`AGENT_API_KEY`** / **`SILICONFLOW_API_KEY`**，否则返回 **400 CONFIG_ERROR**。
+2. **AI 助手配置**：设置页 **AI Agent 配置** 保存到 `localStorage` 键 **`pcr-ai-report.agent.v1`**；字段含 **`apiKey` / `apiBase` / `model` / `maxRounds` / `streamTimeoutSec` / `clientTimeoutSec`**（流式 idle 默认 **150s**，客户端总超时默认 **180s**），随 **`agentConfig`** 发给后端（客户端超时仅前端使用）。聊天气泡 Markdown 经 **`sanitizeAgentMarkdownForDisplay`** 去掉误用 **`~~…~~`**（见 §19）。布局：**`tab-panel--agent`** + 消息区单滚动（见 §19）。若 key 为空，后端需配置 **`AGENT_API_KEY`** / **`SILICONFLOW_API_KEY`**，否则返回 **400 CONFIG_ERROR**。
 3. **后端修复备忘**：2026-05-16 已修复 “输入后无反应” 的 SSE 断开判断问题（`req.close` → `res.close`）并加 **`AGENT_STREAM_TIMEOUT_MS`**；详见 **`../pcr-ai-api/CLAUDE.md` §6 / §11 / §12.1**。
 4. **品牌/布局旧纪要**：标题、`@dnd-kit` 三层拖拽、API 目录移入设置页、图表标签格式化、明细默认/最多条数等 2026-05-15 规则仍有效。
 5. **未做**：`TableRowsReport` 查询区与拖拽布局未与 Yield/JB 完全统一（表浏览仍保留页内 `limit` 输入）。
@@ -256,6 +256,12 @@ src/
 1. **现象**：气泡偶发 **think**、**`redacted_thinking`**、整段 **DSML** 工具 XML（INF 下钻前常见）。
 2. **修复在后端**：**`../pcr-ai-api/src/lib/agent/agentLoop.ts`** **`createDeepSeekFilter`**；前端 SSE 形状不变，**API 部署后即生效**。
 3. **勿改 DSML 结束正则**：闭合标签为 **`</｜DSML｜tool_calls>`**（`>` 前无第三个 **`｜`**）。
+
+## 19. 近期变更纪要（2026-05-22，Markdown 横线 + 单滚动条）
+
+1. **`~~…~~` 横线**：模型误用 GFM 删除线 → **`sanitizeAgentMarkdownForDisplay`** + **`remarkGfm` `singleTilde: false`** + CSS **`del/s`** 无删除线。
+2. **最外层滚动条**：**`.ai-agent-report`** 原 **`calc(100vh - 180px)`** 撑破布局 → 改为填满 **`tab-panel--agent`**（**`index.css`**），仅 **`.ai-agent-messages`** 内 **`overflow-y: auto`**。
+3. **验证**：长对话后页面本身不纵向滚动；消息区可滚；含「未全部展示」类句子无横线。
 
 ---
 

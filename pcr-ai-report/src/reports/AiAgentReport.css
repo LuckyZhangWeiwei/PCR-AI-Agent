@@ -1,9 +1,11 @@
-/* AI Agent Report */
+/* AI Agent Report — fill tab-panel grid row; scroll only inside .ai-agent-messages */
 .ai-agent-report {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 180px);
-  min-height: 320px;
+  flex: 1;
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
 }
 
 .ai-agent-toolbar {
@@ -38,7 +40,9 @@
 
 .ai-agent-messages {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 6px 10px;
   display: flex;
   flex-direction: column;
@@ -145,6 +149,11 @@
 }
 .ai-msg-bubble--md strong { color: #e8e8e8; }
 .ai-msg-bubble--md em { color: #bbb; }
+/* GFM ~~…~~ or ~…~ must not show as strikethrough in agent replies */
+.ai-msg-bubble--md del,
+.ai-msg-bubble--md s {
+  text-decoration: none;
+}
 .ai-msg-bubble--md code {
   background: #2a2a3a;
   border: 1px solid #444;
