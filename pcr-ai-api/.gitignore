@@ -5,3 +5,6 @@ node_modules/
 .DS_Store
 dist/
 dist.tar
+
+# Agent feedback data (runtime-generated, may contain user questions)
+data/feedback.json
