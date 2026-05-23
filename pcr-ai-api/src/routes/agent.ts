@@ -4,8 +4,16 @@ import { Router } from "express";
 import { resolveAgentConfig, type AgentConfig } from "../lib/agent/agentConfig.js";
 import { runAgentLoop, type AgentSseEvent } from "../lib/agent/agentLoop.js";
 import { saveFeedback, type FeedbackRecord } from "../lib/agent/agentFeedback.js";
+import { sendAgentError } from "../lib/agentResponse.js";
 
 export const agentRouter = Router();
+
+const VALID_CATEGORIES = new Set([
+  "回答不准确",
+  "数据有误",
+  "回答不完整",
+  "其他",
+]);
 
 agentRouter.post("/chat", async (req, res) => {
   const body = req.body as {
@@ -94,13 +102,6 @@ agentRouter.post("/chat", async (req, res) => {
   }
 });
 
-const VALID_CATEGORIES = new Set([
-  "回答不准确",
-  "数据有误",
-  "回答不完整",
-  "其他",
-]);
-
 agentRouter.post("/feedback", async (req, res) => {
   const body = req.body as {
     sessionId?: unknown;
@@ -111,41 +112,32 @@ agentRouter.post("/feedback", async (req, res) => {
     comment?: unknown;
   };
 
-  const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
-  const question = typeof body.question === "string" ? body.question.trim() : "";
-  const answer = typeof body.answer === "string" ? body.answer.trim() : "";
+  const sessionId = (typeof body.sessionId === "string" ? body.sessionId.trim() : "").slice(0, 64);
+  const question = (typeof body.question === "string" ? body.question.trim() : "").slice(0, 500);
+  const answer = (typeof body.answer === "string" ? body.answer.trim() : "").slice(0, 1500);
   const kind = body.kind;
 
   if (!sessionId || !question || !answer) {
-    return res.status(400).json({
-      error: "VALIDATION_ERROR",
-      message: "sessionId, question, and answer are required",
-    });
+    return sendAgentError(res, 400, "VALIDATION_ERROR", "sessionId, question, and answer are required");
   }
   if (kind !== "good" && kind !== "bad") {
-    return res.status(400).json({
-      error: "VALIDATION_ERROR",
-      message: 'kind must be "good" or "bad"',
-    });
+    return sendAgentError(res, 400, "VALIDATION_ERROR", 'kind must be "good" or "bad"');
   }
 
   const category =
     typeof body.category === "string" ? body.category.trim() : undefined;
   const comment =
-    typeof body.comment === "string" ? body.comment.trim() || undefined : undefined;
+    typeof body.comment === "string" ? body.comment.trim().slice(0, 1000) || undefined : undefined;
 
   if (kind === "bad" && (!category || !VALID_CATEGORIES.has(category))) {
-    return res.status(400).json({
-      error: "VALIDATION_ERROR",
-      message: `category must be one of: ${[...VALID_CATEGORIES].join(", ")}`,
-    });
+    return sendAgentError(res, 400, "VALIDATION_ERROR", `category must be one of: ${[...VALID_CATEGORIES].join(", ")}`);
   }
 
   const record: FeedbackRecord = {
     id: randomUUID(),
     kind,
     question,
-    answer: answer.slice(0, 1500),
+    answer,
     category,
     comment,
     timestamp: new Date().toISOString(),
@@ -157,6 +149,6 @@ agentRouter.post("/feedback", async (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     console.error("[feedback] Failed to save:", err);
-    return res.status(500).json({ error: "INTERNAL_ERROR", message: "Failed to save feedback" });
+    return sendAgentError(res, 500, "INTERNAL_ERROR", "Failed to save feedback");
   }
 });

@@ -126,6 +126,8 @@ test("POST /api/v4/agent/feedback", async (t) => {
       }),
     });
     assert.equal(res.status, 400);
+    const body400a = await res.json() as { code: string };
+    assert.equal(body400a.code, "VALIDATION_ERROR");
   });
 
   await t.test("returns 400 when bad feedback missing category", async () => {
@@ -140,5 +142,7 @@ test("POST /api/v4/agent/feedback", async (t) => {
       }),
     });
     assert.equal(res.status, 400);
+    const body400b = await res.json() as { code: string };
+    assert.equal(body400b.code, "VALIDATION_ERROR");
   });
 });
