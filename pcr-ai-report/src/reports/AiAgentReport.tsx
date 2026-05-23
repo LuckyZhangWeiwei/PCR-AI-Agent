@@ -47,6 +47,7 @@ interface AiMessage {
   kind: "ai";
   text: string;
   streaming: boolean;
+  hasToolContext?: boolean;
 }
 interface ToolMessage {
   kind: "tool";
@@ -187,7 +188,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
             };
           } else {
             // second round: last message is a tool result, create new ai bubble
-            copy.push({ kind: "ai", text: event.delta ?? "", streaming: true });
+            copy.push({ kind: "ai", text: event.delta ?? "", streaming: true, hasToolContext: true });
           }
           return copy;
         });
