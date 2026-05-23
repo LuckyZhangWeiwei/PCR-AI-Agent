@@ -60,3 +60,85 @@ test("POST /api/v4/agent/chat writes SSE errors after the request body closes", 
   assert.match(body, /"type":"error"/);
   assert.match(body, /Request timeout after 20ms/);
 });
+
+// ── POST /api/v4/agent/feedback ──────────────────────────────────────────────
+test("POST /api/v4/agent/feedback", async (t) => {
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  const tmpFeedbackDir = await mkdtemp(join(tmpdir(), "pcr-feedback-route-"));
+  process.env["PCR_FEEDBACK_DIR"] = tmpFeedbackDir;
+
+  const feedbackApp = createApp();
+  const feedbackServer = feedbackApp.listen(0);
+  await new Promise<void>((resolve) => feedbackServer.once("listening", resolve));
+  const feedbackAddr = feedbackServer.address() as import("node:net").AddressInfo;
+  const feedbackBase = `http://127.0.0.1:${feedbackAddr.port}`;
+
+  t.after(async () => {
+    feedbackServer.close();
+    await rm(tmpFeedbackDir, { recursive: true, force: true });
+    delete process.env["PCR_FEEDBACK_DIR"];
+  });
+
+  await t.test("returns 200 for good feedback", async () => {
+    const res = await fetch(`${feedbackBase}/api/v4/agent/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: "sess-test",
+        question: "WA03P02G 触发次数",
+        answer: "最近 7 天触发 12 次",
+        kind: "good",
+      }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json() as { ok: boolean };
+    assert.equal(body.ok, true);
+  });
+
+  await t.test("returns 200 for bad feedback with category", async () => {
+    const res = await fetch(`${feedbackBase}/api/v4/agent/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: "sess-test",
+        question: "WA03P02G 触发次数",
+        answer: "最近 7 天触发 12 次",
+        kind: "bad",
+        category: "数据有误",
+        comment: "数据时段不对",
+      }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json() as { ok: boolean };
+    assert.equal(body.ok, true);
+  });
+
+  await t.test("returns 400 when kind is missing", async () => {
+    const res = await fetch(`${feedbackBase}/api/v4/agent/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: "sess-test",
+        question: "q",
+        answer: "a",
+      }),
+    });
+    assert.equal(res.status, 400);
+  });
+
+  await t.test("returns 400 when bad feedback missing category", async () => {
+    const res = await fetch(`${feedbackBase}/api/v4/agent/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: "sess-test",
+        question: "q",
+        answer: "a",
+        kind: "bad",
+      }),
+    });
+    assert.equal(res.status, 400);
+  });
+});
