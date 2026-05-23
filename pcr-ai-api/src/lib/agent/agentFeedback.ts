@@ -23,11 +23,17 @@ async function readAll(filePath: string): Promise<FeedbackRecord[]> {
   try {
     const raw = await readFile(filePath, "utf-8");
     return JSON.parse(raw) as FeedbackRecord[];
-  } catch {
-    return [];
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    console.error("[feedback] readAll: could not parse feedback file:", err);
+    throw err;
   }
 }
 
+/**
+ * Appends a feedback record to the JSON file at filePath.
+ * Not safe for concurrent writes — adequate for low-frequency user feedback.
+ */
 export async function saveFeedback(
   record: FeedbackRecord,
   filePath = defaultFeedbackFile()
@@ -47,6 +53,7 @@ function tokenize(text: string): Set<string> {
   );
 }
 
+// Uses max(|A|,|B|) as denominator (not union) so short queries match longer stored questions.
 function jaccard(a: Set<string>, b: Set<string>): number {
   let intersection = 0;
   for (const t of a) if (b.has(t)) intersection++;
