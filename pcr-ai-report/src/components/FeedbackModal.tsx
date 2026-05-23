@@ -39,7 +39,7 @@ export function FeedbackModal({
     setSubmitting(true);
     setError("");
     try {
-      await fetch(`${apiBase}/api/v4/agent/feedback`, {
+      const res = await fetch(`${apiBase}/api/v4/agent/feedback`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -51,6 +51,7 @@ export function FeedbackModal({
           comment: comment.trim() || undefined,
         }),
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       onSubmit();
     } catch {
       setError("提交失败，请重试");
@@ -70,6 +71,7 @@ export function FeedbackModal({
           <button
             type="button"
             className="feedback-modal-close"
+            aria-label="关闭反馈"
             onClick={onClose}
           >
             ✕
@@ -99,6 +101,7 @@ export function FeedbackModal({
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             rows={3}
+            maxLength={1000}
             placeholder="描述具体问题…"
           />
         </div>
