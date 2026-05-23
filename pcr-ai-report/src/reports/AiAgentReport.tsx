@@ -1,5 +1,6 @@
 import "./AiAgentReport.css";
 import { useState, useRef, useEffect, useCallback } from "react";
+import { FeedbackModal } from "../components/FeedbackModal.js";
 import type { AgentConfig } from "../hooks/usePersistedAgentConfig.js";
 import { DarkChart } from "../components/DarkChart.js";
 import type { EChartsOption } from "echarts";
@@ -152,6 +153,12 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
   const [sessionId, setSessionId] = useState(genId);
   const [loading, setLoading] = useState(false);
   const [statusHint, setStatusHint] = useState("");
+  const [feedbackState, setFeedbackState] = useState<Record<number, "good" | "bad">>({});
+  const [feedbackModal, setFeedbackModal] = useState<{
+    msgIndex: number;
+    question: string;
+    answer: string;
+  } | null>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const atBottomRef = useRef(true);
@@ -470,6 +477,8 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
     setSessionId(genId());
     setMessages([WELCOME]);
     setInput("");
+    setFeedbackState({});
+    setFeedbackModal(null);
     inputRef.current?.focus();
   };
 
@@ -481,6 +490,32 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
       return copy;
     });
   };
+
+  async function handleGoodFeedback(idx: number, msg: AiMessage) {
+    const question = findLastUserText(messages.slice(0, idx));
+    if (!question) return;
+    setFeedbackState((prev) => ({ ...prev, [idx]: "good" }));
+    try {
+      await fetch(`${apiBase}/api/v4/agent/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId,
+          question,
+          answer: msg.text.slice(0, 1500),
+          kind: "good",
+        }),
+      });
+    } catch {
+      // non-critical: feedback failure must not surface to user
+    }
+  }
+
+  function handleOpenBadFeedback(idx: number, msg: AiMessage) {
+    const question = findLastUserText(messages.slice(0, idx));
+    if (!question) return;
+    setFeedbackModal({ msgIndex: idx, question, answer: msg.text });
+  }
 
   return (
     <div className="ai-agent-report">
@@ -532,6 +567,32 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
                   >
                     ✓ 确认执行
                   </button>
+                )}
+                {!msg.streaming && msg.hasToolContext && findLastUserText(messages.slice(0, i)) !== undefined && (
+                  <div className="ai-feedback-bar">
+                    {feedbackState[i] !== undefined ? (
+                      <span className="ai-feedback-thanks">感谢反馈</span>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="ai-feedback-btn"
+                          onClick={() => void handleGoodFeedback(i, msg)}
+                          title="这条回答有用"
+                        >
+                          👍
+                        </button>
+                        <button
+                          type="button"
+                          className="ai-feedback-btn"
+                          onClick={() => handleOpenBadFeedback(i, msg)}
+                          title="这条回答有问题"
+                        >
+                          👎
+                        </button>
+                      </>
+                    )}
+                  </div>
                 )}
               </div>
             );
@@ -631,6 +692,22 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
               : "发送"}
         </button>
       </div>
+      {feedbackModal && (
+        <FeedbackModal
+          apiBase={apiBase}
+          sessionId={sessionId}
+          question={feedbackModal.question}
+          answer={feedbackModal.answer}
+          onSubmit={() => {
+            setFeedbackState((prev) => ({
+              ...prev,
+              [feedbackModal.msgIndex]: "bad",
+            }));
+            setFeedbackModal(null);
+          }}
+          onClose={() => setFeedbackModal(null)}
+        />
+      )}
     </div>
   );
 }
