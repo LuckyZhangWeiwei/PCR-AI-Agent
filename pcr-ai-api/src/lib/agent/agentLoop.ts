@@ -15,6 +15,7 @@ import { runTool, type ChartSentinel, type ClarificationSentinel } from "./agent
 import { buildSystemPrompt } from "./agentPrompt.js";
 import { fetchOrCacheManifest } from "./agentManifest.js";
 import { streamSiliconFlow, type CollectedToolCall } from "./agentStream.js";
+import { buildFeedbackInjection } from "./agentFeedback.js";
 
 export type AgentSseEvent =
   | { type: "text"; delta: string }
@@ -400,6 +401,9 @@ export async function runAgentLoop(
   emit: (event: AgentSseEvent) => void,
   options?: { resume?: boolean }
 ): Promise<void> {
+  // Fetch relevant feedback examples once per session start (non-blocking on failure).
+  const feedbackInjection = await buildFeedbackInjection(message).catch(() => "");
+
   if (!options?.resume) {
     appendMessages(sessionId, { role: "user", content: message });
   }
@@ -436,9 +440,10 @@ export async function runAgentLoop(
     // Inject nudge into the system prompt for the summary round — avoid a
     // trailing system message after tool turns, which is non-standard and can
     // cause empty responses on some providers (SiliconFlow/DeepSeek).
+    const basePrompt = buildSystemPrompt(manifest) + feedbackInjection;
     const systemContent = awaitingSummary
-      ? `${buildSystemPrompt(manifest)}\n\n${SUMMARIZE_NUDGE}`
-      : buildSystemPrompt(manifest);
+      ? `${basePrompt}\n\n${SUMMARIZE_NUDGE}`
+      : basePrompt;
 
     const messages: ChatMessage[] = [
       { role: "system", content: systemContent },
