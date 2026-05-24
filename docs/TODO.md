@@ -13,6 +13,12 @@
 - [ ] 服务器部署：API `npm run build + pm2:reload`；前端 `npm run pack:dist` → scp dist.tar → nginx web root
 - [ ] AI Agent 生产部署验证：确认 `AGENT_API_KEY` / `SILICONFLOW_API_KEY`、PM2 重启后聊天页可用；验证工具调用后能正常输出分析结论（已修复总结轮非标消息结构 + 双超时注册）
 - [ ] INF DUT 面板 Agent 工具：`query_inf_site_bin_by_dut` 接入 agentPrompt + agentToolHandlers（设计见 `docs/SITE_BIN_BY_LOT_INTEGRATION.md`）
+- [ ] Phase 1：YM 报表顶部新增探针卡报警排名图（`ProbeCardRankPanel.tsx`）
+- [ ] Phase 2：JB 报表顶部新增坏 Bin 分布总览（`BinDistributionPanel.tsx`）+ lot 树表加"主要坏 bin"列
+- [ ] Phase 2b：YM↔JB 跨报表跳转链接
+- [ ] Phase 3：新 API `GET /inf-analysis/lot-dut-bin-agg`（读取 `/data/INF/{DEVICE}/{LOT}/` 下最多 25 个 INF 文件汇总）+ 前端 `LotDutBinPanel.tsx`
+- [ ] 报表重构：识别并提取 YM/JB 相同维度分析为共用组件（精简重复）
+- [ ] 报表重构：所有 chart 加 drilldown 视觉标志——不可下钻时 hover 显示红色禁止圈（`cursor: not-allowed`）
 
 ## 已完成
 

@@ -41,7 +41,20 @@
       "Bash(cd /d/AI/PCR-AI-Agent/pcr-ai-report && cat package.json | grep dnd-kit)",
       "Read(//d/d/AI/PCR-AI-Agent/pcr-ai-report/**)",
       "Skill(commit-with-docs)",
-      "Skill(commit-with-docs:*)"
+      "Skill(commit-with-docs:*)",
+      "Bash(npm test *)",
+      "Bash(node -e ' *)",
+      "Bash(grep -q \"^[0-9]\\\\+\\\\.\\\\.[0-9]\\\\+$\" \"C:/Users/zhang/AppData/Local/Temp/claude/d--AI-PCR-AI-Agent/791faaa0-87d5-40a8-b16f-aeb55673adb4/tasks/b7qlrxsse.output\")",
+      "Bash(if [ ! -d \"d:/AI/PCR-AI-Agent/docs/superpowers/specs\" ]; then mkdir -p \"d:/AI/PCR-AI-Agent/docs/superpowers/specs\"; fi && ls \"d:/AI/PCR-AI-Agent/docs/superpowers/specs\")",
+      "Bash(node --input-type=module)",
+      "Bash(npx tsx -e ' *)",
+      "Bash(npx tsx *)",
+      "Bash(git -C D:/AI/PCR-AI-Agent show 7cd0a07:pcr-ai-api/src/routes/agent.ts)",
+      "Bash(not exist *)",
+      "Bash(git checkout *)"
+    ],
+    "additionalDirectories": [
+      "d:\\AI\\PCR-AI-Agent\\docs\\superpowers\\specs"
     ]
   }
 }

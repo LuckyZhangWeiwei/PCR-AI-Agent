@@ -2,6 +2,17 @@
 
 ---
 
+## 2026-05-24 — 规划：INF 文件聚合路径 + 报表重构 UX 原则
+
+**完成内容：**
+- 确定 lot 级 DUT×Bin 聚合数据源路径规则：`/data/INF/{DEVICE大写}/{LOT大写}/`，最多 25 个 INF 文本文件；device 级路径 `/data/INF/{DEVICE大写}/` 文件量大，不轻易触发
+- 明确报表重构三项 UX 原则：① YM↔JB 跨报表跳转链接；② 相同维度分析逻辑抽共用组件（精简重复）；③ Drilldown 可用性视觉标志——不可下钻的 chart hover 时显示红色禁止圈（`cursor: not-allowed`）
+- 以上规则已记录至项目记忆（`memory/project_report_ux_dut_bin_plan.md`）
+
+**测试：** 无代码变更，无测试运行。
+
+---
+
 ## 2026-05-22 — AI Agent 允许总结轮继续调工具（多步推理）
 
 **现象：** MiniMax 2.5 对复杂查询（如"top15 lot device yield"）在工具结果返回后仍需追加调用第二个工具（`aggregate_jb_bins` → `query_jb_bins`），触发"模型在总结阶段仍尝试调用工具"错误，无法得到最终结论。
