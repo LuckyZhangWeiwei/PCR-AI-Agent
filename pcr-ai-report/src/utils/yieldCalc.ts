@@ -7,9 +7,18 @@ import type { InfcontrolLayerBinV3Row } from "../api/types";
 
 type BinCell = { n: number; value: number; isGoodBin: boolean };
 
-function badDieFromJbListRow(
-  row: { bins?: BinCell[]; GROSSDIE?: number; grossDie?: number } & InfcontrolLayerBinV3Row
-): number {
+type JbYieldRow = {
+  bins?: BinCell[];
+  GROSSDIE?: number;
+  grossDie?: number;
+  PASSTYPE?: string;
+} & InfcontrolLayerBinV3Row;
+
+function isInterruptRow(row: JbYieldRow): boolean {
+  return String(row.PASSTYPE ?? "").trim().toUpperCase() === "INTERRUPT";
+}
+
+function badDieFromJbListRow(row: JbYieldRow): number {
   const good = collectGoodBinNumbersFromJbRow(row as InfcontrolLayerBinV3Row);
   let bad = 0;
   if (!Array.isArray(row.bins)) return 0;
@@ -28,15 +37,18 @@ function grossDieFromRow(row: { GROSSDIE?: number; grossDie?: number }): number 
   return Number.isFinite(g) && g > 0 ? g : 0;
 }
 
-/**
- * JB 列表行良率（与 API `jbYieldCalc` 一致）：
- * GROSSDIE 取组内 MAX；坏 die 仅在 GROSSDIE 等于该 max 的行上累加；BIN1 为良品。
- */
-export function computeYieldPct(
-  rows: Array<
-    { bins?: BinCell[]; GROSSDIE?: number; grossDie?: number } & InfcontrolLayerBinV3Row
-  >
-): number | null {
+function segmentYieldPct(rows: JbYieldRow[]): number | null {
+  let gross = 0;
+  let bad = 0;
+  for (const row of rows) {
+    gross += grossDieFromRow(row);
+    bad += badDieFromJbListRow(row);
+  }
+  if (gross <= 0) return null;
+  return ((gross - bad) / gross) * 100;
+}
+
+function computeNoInterruptYieldPct(rows: JbYieldRow[]): number | null {
   if (!rows.length) return null;
   let grossDie = 0;
   for (const row of rows) grossDie = Math.max(grossDie, grossDieFromRow(row));
@@ -47,6 +59,45 @@ export function computeYieldPct(
     badDie += badDieFromJbListRow(row);
   }
   return ((grossDie - badDie) / grossDie) * 100;
+}
+
+/**
+ * JB 良率（与 API `jbYieldCalc` 一致）：有 INTERRUPT 时按上半/下半段规则合并。
+ */
+export function computeYieldPct(rows: JbYieldRow[]): number | null {
+  if (!rows.length) return null;
+
+  const interruptRows = rows.filter(isInterruptRow);
+  const completionRows = rows.filter((r) => !isInterruptRow(r));
+
+  if (interruptRows.length === 0) {
+    return computeNoInterruptYieldPct(rows);
+  }
+
+  if (completionRows.length === 0) {
+    return segmentYieldPct(interruptRows);
+  }
+
+  let grossUp = 0;
+  let badUp = 0;
+  for (const row of interruptRows) {
+    grossUp += grossDieFromRow(row);
+    badUp += badDieFromJbListRow(row);
+  }
+  const goodUp = Math.max(0, grossUp - badUp);
+  if (goodUp === 0) {
+    return segmentYieldPct(completionRows);
+  }
+
+  let grossDown = 0;
+  let badDown = 0;
+  for (const row of completionRows) {
+    grossDown += grossDieFromRow(row);
+    badDown += badDieFromJbListRow(row);
+  }
+  const gross = grossUp + grossDown;
+  const good = goodUp + Math.max(0, grossDown - badDown);
+  return gross > 0 ? (good / gross) * 100 : null;
 }
 
 /** Color based on yield%: ≥95 green, 80-95 yellow/orange, <80 red. */

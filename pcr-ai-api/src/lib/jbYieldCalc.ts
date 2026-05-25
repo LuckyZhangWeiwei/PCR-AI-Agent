@@ -1,7 +1,9 @@
 /**
- * JB STAR 良率：与报表 `infGoodBins` / Agent prompt 一致。
- * - 同一 slot 多行（多 pass / passNum / INTERRUPT+TEST）时 **GROSSDIE 取 MAX**，不累加。
- * - 坏 die 按行累加；良品 = BIN1 + PASSBIN `-` 分段 + bins[].isGoodBin。
+ * JB STAR 良率：与报表 `infGoodBins` 一致。
+ * - 无中断：同 slot 多行在 MAX(GROSSDIE) 满片行上累加坏 die。
+ * - 有中断：上半段 = INTERRUPT 行；下半段 = 非 INTERRUPT（通常为 TEST 续测完成）。
+ *   - 上半段 good=0 → 正片良率仅下半段；
+ *   - 上半段 good>0 → (good_上+good_下)/(total_上+total_下)。
  */
 
 import { parsePassBinHyphenGoodBins } from "./passBinSemantics.js";
@@ -65,6 +67,12 @@ function grossDieFromRow(row: Record<string, unknown>): number {
   return Number.isFinite(g) && g > 0 ? g : 0;
 }
 
+export function isInterruptPasstype(row: Record<string, unknown>): boolean {
+  return (
+    String(row.PASSTYPE ?? row.passtype ?? "").trim().toUpperCase() === "INTERRUPT"
+  );
+}
+
 export type JbYieldMetrics = {
   grossDie: number;
   badDie: number;
@@ -72,15 +80,25 @@ export type JbYieldMetrics = {
   yieldPct: number | null;
 };
 
-/**
- * 多行（同 slot 的全部层测 / passNum 行）良率。
- * - **GROSSDIE** 取组内 **MAX**（完整片数，如 4848），不对多行求和。
- * - **坏 die** 仅在 **GROSSDIE 等于该 MAX** 的行上累加（同一完整片上的多 pass / passNum）；
- *   较低 GROSSDIE 的 INTERRUPT 行（如 4732）不计入，避免把中断片当最终良率。
- */
-export function computeJbYieldMetrics(
-  rows: Record<string, unknown>[]
-): JbYieldMetrics {
+function metricsFromTotals(grossDie: number, badDie: number): JbYieldMetrics {
+  const goodDie = Math.max(0, grossDie - badDie);
+  const yieldPct = grossDie > 0 ? (goodDie / grossDie) * 100 : null;
+  return { grossDie, badDie, goodDie, yieldPct };
+}
+
+/** 一段（多行）的 total / bad / good 相加。 */
+export function segmentMetrics(rows: Record<string, unknown>[]): JbYieldMetrics {
+  let grossDie = 0;
+  let badDie = 0;
+  for (const row of rows) {
+    grossDie += grossDieFromRow(row);
+    badDie += badDieFromJbRow(row);
+  }
+  return metricsFromTotals(grossDie, badDie);
+}
+
+/** 无 INTERRUPT：GROSSDIE 取 MAX，坏 die 仅在满片行累加。 */
+function computeNoInterruptYield(rows: Record<string, unknown>[]): JbYieldMetrics {
   if (!rows.length) {
     return { grossDie: 0, badDie: 0, goodDie: 0, yieldPct: null };
   }
@@ -94,8 +112,43 @@ export function computeJbYieldMetrics(
   const pool = rows.filter((r) => grossDieFromRow(r) === grossDie);
   let badDie = 0;
   for (const row of pool) badDie += badDieFromJbRow(row);
-  const goodDie = Math.max(0, grossDie - badDie);
-  const yieldPct = (goodDie / grossDie) * 100;
+  return metricsFromTotals(grossDie, badDie);
+}
+
+/**
+ * 同 slot 良率：有 INTERRUPT 时按上半段/下半段规则；否则走无中断逻辑。
+ */
+export function computeJbYieldMetrics(
+  rows: Record<string, unknown>[]
+): JbYieldMetrics {
+  if (!rows.length) {
+    return { grossDie: 0, badDie: 0, goodDie: 0, yieldPct: null };
+  }
+
+  const interruptRows = rows.filter(isInterruptPasstype);
+  const completionRows = rows.filter((r) => !isInterruptPasstype(r));
+
+  if (interruptRows.length === 0) {
+    return computeNoInterruptYield(rows);
+  }
+
+  const firstHalf = segmentMetrics(interruptRows);
+
+  if (completionRows.length === 0) {
+    return firstHalf;
+  }
+
+  const secondHalf = segmentMetrics(completionRows);
+
+  /** 上半段无良品 → 不参与正片，仅用下半段（如 slot21：116/0 + 4732/4487） */
+  if (firstHalf.goodDie === 0) {
+    return secondHalf;
+  }
+
+  const grossDie = firstHalf.grossDie + secondHalf.grossDie;
+  const goodDie = firstHalf.goodDie + secondHalf.goodDie;
+  const badDie = grossDie - goodDie;
+  const yieldPct = grossDie > 0 ? (goodDie / grossDie) * 100 : null;
   return { grossDie, badDie, goodDie, yieldPct };
 }
 
@@ -105,16 +158,13 @@ export type SlotYieldSummaryEntry = {
   badDie: number;
   goodDie: number;
   yieldPct: number | null;
-  /** 组内是否含 INTERRUPT 行 */
   hasInterrupt: boolean;
-  /** 参与汇总的明细行数 */
   rowCount: number;
 };
 
 const SLOT_YIELD_GUIDE =
-  "slotYieldSummary 按 SLOT 汇总：grossDie=MAX(GROSSDIE)；badDie=仅 GROSSDIE 等于该 max 的各行坏 bin 之和（同片完整测试上的多 passNum）；较低 GROSSDIE 的 INTERRUPT 行不计入。勿对 GROSSDIE 求和。列表 limit 截断会导致缺行、良率偏低。";
+  "slotYieldSummary：无中断时 grossDie=MAX(GROSSDIE) 行累加坏 die。有中断时上半段=INTERRUPT、下半段=非 INTERRUPT；若上半段 good=0 则良率仅下半段，否则 (good_上+good_下)/(total_上+total_下)。";
 
-/** 按 slot 升序汇总良率（用于 lot 级 wafer 列表）。 */
 export function buildSlotYieldSummary(
   rows: Record<string, unknown>[]
 ): SlotYieldSummaryEntry[] {
@@ -129,9 +179,7 @@ export function buildSlotYieldSummary(
   for (const slot of [...bySlot.keys()].sort((a, b) => a - b)) {
     const slotRows = bySlot.get(slot)!;
     const m = computeJbYieldMetrics(slotRows);
-    const hasInterrupt = slotRows.some(
-      (r) => String(r.PASSTYPE ?? r.passtype ?? "").trim().toUpperCase() === "INTERRUPT"
-    );
+    const hasInterrupt = slotRows.some(isInterruptPasstype);
     out.push({
       slot,
       grossDie: m.grossDie,

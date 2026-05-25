@@ -226,7 +226,7 @@ JB STAR 中的 \`passId\` 字段代表测试层次（温度分选阶段），用
 | INTERRUPT | 测试中途中断，数据截止至中断点 |
 
 - **passId 不变，passNum 会递增**（1→2→3…），每次中断产生一条新记录
-- 计算该层良率 / 坏 bin 数量时，须将同一 passId 下**所有 passNum（含 INTERRUPT）的坏 bin 全部累加**
+- **slot 正片良率（\`slotYieldSummary\` / 报表 Yield%）**：上半段 = \`INTERRUPT\` 行，下半段 = 非 INTERRUPT（续测完成）。若上半段 **good=0** 则正片良率**仅下半段**；若上半段 **good>0** 则 **(good_上+good_下)/(total_上+total_下)**
 - 查询 API 已自动包含 INTERRUPT 记录，无需额外参数；\`LAYERNAME=Abandoned\` 的记录已自动排除
 
 ### 跨域字段对应关系（Yield Monitor vs JB STAR）

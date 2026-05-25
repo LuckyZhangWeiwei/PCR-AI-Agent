@@ -7,18 +7,8 @@ import {
 } from "../src/lib/jbYieldCalc.js";
 
 describe("jbYieldCalc", () => {
-  it("uses MAX GROSSDIE across rows, not sum", () => {
+  it("no interrupt: uses MAX GROSSDIE pool only", () => {
     const rows = [
-      {
-        GROSSDIE: 4732,
-        PASSTYPE: "INTERRUPT",
-        PASSBIN: "1",
-        bins: [
-          { n: 1, value: 4500, isGoodBin: true },
-          { n: 5, value: 100, isGoodBin: false },
-          { n: 10, value: 110, isGoodBin: false },
-        ],
-      },
       {
         GROSSDIE: 4848,
         PASSTYPE: "TEST",
@@ -34,6 +24,59 @@ describe("jbYieldCalc", () => {
     assert.equal(m.grossDie, 4848);
     assert.equal(m.badDie, 90 + 96);
     assert.ok(m.yieldPct !== null && Math.abs(m.yieldPct - 96.16) < 0.05);
+  });
+
+  it("interrupt first half good=0: yield is second half only (slot 21 pattern)", () => {
+    const rows = [
+      {
+        GROSSDIE: 116,
+        PASSTYPE: "INTERRUPT",
+        PASSBIN: "1",
+        bins: [{ n: 5, value: 116, isGoodBin: false }],
+      },
+      {
+        GROSSDIE: 4732,
+        PASSTYPE: "TEST",
+        PASSBIN: "1",
+        bins: [
+          { n: 1, value: 4487, isGoodBin: true },
+          { n: 5, value: 245, isGoodBin: false },
+        ],
+      },
+    ];
+    const m = computeJbYieldMetrics(rows);
+    assert.equal(m.grossDie, 4732);
+    assert.equal(m.goodDie, 4487);
+    assert.equal(m.badDie, 245);
+    assert.ok(m.yieldPct !== null && Math.abs(m.yieldPct - 94.82) < 0.05);
+  });
+
+  it("interrupt first half good>0: merges good and gross across halves", () => {
+    const rows = [
+      {
+        GROSSDIE: 100,
+        PASSTYPE: "INTERRUPT",
+        PASSBIN: "1",
+        bins: [
+          { n: 1, value: 80, isGoodBin: true },
+          { n: 5, value: 10, isGoodBin: false },
+        ],
+      },
+      {
+        GROSSDIE: 200,
+        PASSTYPE: "TEST",
+        PASSBIN: "1",
+        bins: [
+          { n: 1, value: 170, isGoodBin: true },
+          { n: 5, value: 20, isGoodBin: false },
+        ],
+      },
+    ];
+    const m = computeJbYieldMetrics(rows);
+    assert.equal(m.grossDie, 300);
+    assert.equal(m.goodDie, 270);
+    assert.equal(m.badDie, 30);
+    assert.ok(m.yieldPct !== null && Math.abs(m.yieldPct - 90) < 0.1);
   });
 
   it("BIN1 counts as good even when PASSBIN omits 1", () => {
