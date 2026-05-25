@@ -14,6 +14,8 @@
 
 **测试：** `npm test`（含 `jbYieldCalc.test.ts`）。
 
+**后续（同分支）：** `f448422` 用 passId+passNum/TESTEND 识别续测；`agentJbBinFormat` 单测确认 `yieldPct:0` 写入 JSON。交接见 `HANDOFF_JB_INTERRUPT_YIELD.md` §5 0% 清单。
+
 ---
 
 ## 2026-05-24 — 规划：INF 文件聚合路径 + 报表重构 UX 原则

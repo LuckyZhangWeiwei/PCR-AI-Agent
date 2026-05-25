@@ -91,6 +91,19 @@ npx tsx scripts/print-slot-breakdown.ts NF12773.1H 20-25
 - 中断前半 good=0 → 正片=后半（slot 21 模式）
 - 中断前半 good>0 → 上下合并
 - `buildSlotYieldSummary` 含 `interruptHalf` / `completionHalf` / 顶层正片
+- PASSNUM 递增 / 同 PASSNUM 多行按 TESTEND（NF12773 Slot 22 模式）
+
+`pcr-ai-api/test/agentJbBinFormat.test.ts`：
+
+- `wrapJbQueryResultForAgent` 序列化后 JSON 含 **`"yieldPct":0`**（前半 good=0 时仍输出 `interruptHalf`，非省略）
+
+### 良率 0% 是否输出（给 Claude Code 核对清单）
+
+| 层 | 结论 |
+| --- | --- |
+| **API** | `metricsFromTotals`：`grossDie>0` 且 `goodDie=0` → **`yieldPct: 0`**（非 null） |
+| **slotYieldSummary** | `hasInterrupt:true` 时 **`interruptHalf` / `completionHalf` 必存在**，0% 段不删字段 |
+| **Agent 正文** | 靠 `agentPrompt` 硬规则写 **0%**；模型漏写属 prompt 遵守问题，不是 API 缺数 |
 
 ---
 
@@ -120,20 +133,27 @@ npx tsx scripts/print-slot-breakdown.ts NF12773.1H 22
 
 ## 8. 待办 / 可选后续
 
-- [ ] 报表 JB 视图：slot 有中断时在 UI 展示半片三行（复用 `computeJbYieldBreakdown` 或抽共享包）。
-- [ ] `agentJbBinFormat.test.ts`：断言 `wrapJbQueryResultForAgent` 含 `interruptHalf` 的中断样例。
-- [ ] 若库内 INTERRUPT 漏标：与 DBA/测试确认 `PASSTYPE` 写入规则，勿改代码强行把 TEST 当 INTERRUPT。
+- [ ] 报表 JB 视图：slot 有中断时在 UI 展示半片三行（复用 `splitSlotIntoHalves` 或抽共享包）。
+- [x] `agentJbBinFormat.test.ts`：`interruptHalf.yieldPct === 0` 与 JSON `"yieldPct":0`。
+- [ ] 若库内 INTERRUPT 漏标：续测已用 **(slot, passId) + PASSNUM/TESTEND** 兜底，勿强行改 PASSTYPE。
 
 ---
 
-## 9. 改动文件清单（本交接对应 commit）
+## 9. 改动文件清单（分支 `feat/report-ux-dut-bin-agg`）
 
 | 文件 | 变更 |
 | --- | --- |
-| `pcr-ai-api/src/lib/jbYieldCalc.ts` | `computeJbYieldBreakdown`、`SlotYieldSummaryEntry` 半片字段 |
-| `pcr-ai-api/src/lib/agent/agentPrompt.ts` | 中断汇报顺序 + 0% 必输出 |
-| `pcr-ai-api/test/jbYieldCalc.test.ts` | 半片汇总测试 |
+| `pcr-ai-api/src/lib/jbYieldCalc.ts` | `splitPassGroupIntoHalves`（passId/passNum/TESTEND）、半片字段 |
+| `pcr-ai-api/src/lib/agent/agentPrompt.ts` | 中断判定 + 汇报顺序 + 0% 必写 |
+| `pcr-ai-api/src/lib/agent/agentJbBinFormat.ts` | `_slotYieldGuide` 随 `slotYieldSummaryFieldGuide()` |
+| `pcr-ai-report/src/utils/yieldCalc.ts` | 与 API 分段规则对齐 |
+| `pcr-ai-api/test/jbYieldCalc.test.ts` | 半片 / PASSNUM / 续测 TESTEND |
+| `pcr-ai-api/test/agentJbBinFormat.test.ts` | `yieldPct:0` JSON 回归 |
 | `pcr-ai-api/scripts/print-slot-breakdown.ts` | 诊断：整片/前半/后半 |
+| `pcr-ai-api/scripts/dump-slot-rows.ts` | 原始行 PASSID/PASSNUM/TESTEND |
+| `pcr-ai-api/scripts/scan-passnum.ts` | 扫描同 slot+passId 多行 |
 | `docs/HANDOFF_JB_INTERRUPT_YIELD.md` | 本文档 |
 
-**入口索引：** 在 `pcr-ai-api/CLAUDE.md` §2 必读表已增加本文件链接。
+**入口索引：** 根 `CLAUDE.md`、`pcr-ai-api/CLAUDE.md` §1d、`docs/DEV_LOG.md`（2026-05-25）。
+
+**最新部署：** `cd pcr-ai-api && npm run build && npm run pm2:reload`

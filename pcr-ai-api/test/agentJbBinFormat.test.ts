@@ -42,6 +42,41 @@ describe("agentJbBinFormat", () => {
     assert.deepEqual(out.distinctSlots, []);
   });
 
+  it("wrapJbQueryResultForAgent serializes interruptHalf yieldPct 0 in slotYieldSummary", () => {
+    const rows = [
+      {
+        SLOT: 21,
+        PASSID: 1,
+        PASSNUM: 1,
+        GROSSDIE: 116,
+        PASSTYPE: "INTERRUPT",
+        bins: [{ n: 5, value: 116, isGoodBin: false }],
+      },
+      {
+        SLOT: 21,
+        PASSID: 1,
+        PASSNUM: 2,
+        GROSSDIE: 4732,
+        PASSTYPE: "TEST",
+        bins: [
+          { n: 1, value: 4487, isGoodBin: true },
+          { n: 5, value: 245, isGoodBin: false },
+        ],
+      },
+    ] as Record<string, unknown>[];
+    const out = wrapJbQueryResultForAgent(rows);
+    const json = JSON.stringify(out);
+    assert.ok(json.includes('"yieldPct":0'), "JSON must include yieldPct 0 for zero-yield half");
+    const summary = out.slotYieldSummary as Array<{
+      slot: number;
+      interruptHalf?: { yieldPct: number | null; goodDie: number };
+    }>;
+    const s21 = summary.find((x) => x.slot === 21)!;
+    assert.equal(s21.interruptHalf!.goodDie, 0);
+    assert.equal(s21.interruptHalf!.yieldPct, 0);
+    assert.ok(String(out._slotYieldGuide).includes("0%"));
+  });
+
   it("wrapJbQueryResultForAgent computes distinctSlots sorted ascending", () => {
     const rows = [
       { SLOT: 3, bins: [] },
