@@ -212,7 +212,7 @@ export function DrillDownPanel({
           暂无数据
         </div>
       ) : !error && groups.length > 0 ? (
-        <div className={`chart-drill-panel-chart${onBarClick ? "" : " chart-no-drill"}`}>
+        <div className="chart-drill-panel-chart chart-no-drill">
           <DarkChart
             option={option}
             height={drillBarChartHeight(sorted.length, 10, barHeightVariant)}
