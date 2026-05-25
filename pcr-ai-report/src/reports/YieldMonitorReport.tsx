@@ -1497,10 +1497,12 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
                 />
               ) : (
                 aggFree && (
-                  <DarkChart
-                    option={freeOption}
-                    height={rankBarChartHeight(freeSortedGroups.length, 10, "compact")}
-                  />
+                  <div className="chart-no-drill">
+                    <DarkChart
+                      option={freeOption}
+                      height={rankBarChartHeight(freeSortedGroups.length, 10, "compact")}
+                    />
+                  </div>
                 )
               )}
             </div>
