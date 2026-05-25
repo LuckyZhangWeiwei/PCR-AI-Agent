@@ -1757,7 +1757,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
             </>
           ),
           jbFreeDim: (
-            <div className="report-chart-panel">
+            <div className="report-chart-panel chart-no-drill">
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
                 {FREE_DIMS.map((d) => (
                   <button

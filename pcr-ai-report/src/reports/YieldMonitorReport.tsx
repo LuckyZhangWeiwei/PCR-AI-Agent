@@ -1221,7 +1221,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
 
     const timeTrendSection =
       aggTime ? (
-        <div className="yield-trend-block">
+        <div className="yield-trend-block chart-no-drill">
           <DarkChart option={timeTrendOption} height={YIELD_TREND_CHART_HEIGHT} />
         </div>
       ) : null;
