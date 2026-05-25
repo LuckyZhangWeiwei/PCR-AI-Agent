@@ -941,10 +941,12 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
             有触发记录，但 TRIGGER_LABEL 中未解析到 dut#
           </div>
         ) : (
-          <DarkChart
-            option={dutOption}
-            height={rankBarChartHeight(dutTally.length, 10, chartVariant)}
-          />
+          <div className="chart-no-drill">
+            <DarkChart
+              option={dutOption}
+              height={rankBarChartHeight(dutTally.length, 10, chartVariant)}
+            />
+          </div>
         )}
       </>
     ),
