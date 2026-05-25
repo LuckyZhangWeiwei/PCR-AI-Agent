@@ -2,6 +2,20 @@
 
 ---
 
+## 2026-05-25 — Code Review 修复 + Agent 工程经验提示词
+
+**完成内容：**
+- `pcr-ai-report/src/utils/yieldCalc.ts`：`computeYieldPct` 中将 `goodUp === 0` 检查移至 `secondPct === null` guard 之前，消除与 API `jbYieldCalc.ts` 的边缘情况分歧（上半段 goodDie=0 且下半段 grossDie=0 时前端误返回 0% 而非 null）。
+- `pcr-ai-api/src/routes/infAnalysisRoutes.ts`：将 ~400 行单路由处理器拆分为三个独立 async 函数（`handleLotWithCardType` / `handleLotByDirectory` / `handleDeviceAgg`），嵌套层级从 5 层降至 2 层，功能不变。
+- `pcr-ai-api/src/lib/siteBinByLotWaferResolve.ts`：`resolveSiteBinWafersWithSkips` 文件可读性检查从串行 for-await 改为 `Promise.allSettled` 并行，device 聚合场景（~250 文件）性能提升。
+- `pcr-ai-api/scripts/`：删除 8 个 slot 良率排查诊断脚本（bug 已修复，脚本不再需要）。
+- `pcr-ai-api/src/lib/agent/agentPrompt.ts`：新增 `## 工程经验参考（诊断辅助）` 章节——DUT 报警模式/坏 bin 分布/温度层失效/INTERRUPT 含义 四张精炼参考表 + 联合诊断 3 步流程。
+- `docs/HANDOFF_CODE_REVIEW_2026_05_25.md`：本次修复交接文档。
+
+**测试：** 138 个测试，136 pass，2 skip，0 失败。
+
+---
+
 ## 2026-05-25 — JB 中断 slot 良率半片 + Agent 汇报顺序
 
 **完成内容：**

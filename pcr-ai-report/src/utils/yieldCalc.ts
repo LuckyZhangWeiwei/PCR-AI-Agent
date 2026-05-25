@@ -141,13 +141,10 @@ export function computeYieldPct(rows: JbYieldRow[]): number | null {
     return computeNoInterruptYieldPct(rows);
   }
 
-  const firstPct = segmentYieldPct(split.firstHalf);
-  if (!split.secondHalf.length) return firstPct;
+  if (!split.secondHalf.length) return segmentYieldPct(split.firstHalf);
 
-  const secondPct = segmentYieldPct(split.secondHalf);
-  if (firstPct === null) return secondPct;
-  if (secondPct === null) return firstPct;
-
+  // Mirror API jbYieldCalc.computeSegmentedWholeWafer:
+  // if firstHalf.goodDie === 0 → return secondHalf yield (may be null)
   let grossUp = 0;
   let badUp = 0;
   for (const row of split.firstHalf) {
@@ -155,9 +152,13 @@ export function computeYieldPct(rows: JbYieldRow[]): number | null {
     badUp += badDieFromJbListRow(row);
   }
   const goodUp = Math.max(0, grossUp - badUp);
-  if (goodUp === 0) {
-    return secondPct;
-  }
+
+  const secondPct = segmentYieldPct(split.secondHalf);
+  if (goodUp === 0) return secondPct;
+
+  const firstPct = segmentYieldPct(split.firstHalf);
+  if (firstPct === null) return secondPct;
+  if (secondPct === null) return firstPct;
 
   let grossDown = 0;
   let badDown = 0;

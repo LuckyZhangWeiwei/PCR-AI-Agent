@@ -490,14 +490,17 @@ export async function resolveSiteBinWafersWithSkips(
     );
   }
 
+  const accessResults = await Promise.allSettled(
+    fromJb.map((w) => fs.promises.access(w.infPath, fs.constants.R_OK).then(() => w))
+  );
   const wafers: SiteBinWaferRef[] = [];
   const skippedInfPaths: string[] = [];
-  for (const w of fromJb) {
-    try {
-      await fs.promises.access(w.infPath, fs.constants.R_OK);
-      wafers.push(w);
-    } catch {
-      skippedInfPaths.push(w.infPath);
+  for (let i = 0; i < accessResults.length; i++) {
+    const r = accessResults[i]!;
+    if (r.status === "fulfilled") {
+      wafers.push(r.value);
+    } else {
+      skippedInfPaths.push(fromJb[i]!.infPath);
     }
   }
 

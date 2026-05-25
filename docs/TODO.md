@@ -22,6 +22,8 @@
 
 ## 已完成
 
+- ✅ Code Review 修复：前后端 yieldCalc 边缘逻辑对齐、路由处理器拆分、并行文件访问、调试脚本清理 — 2026-05-25 完成
+- ✅ Agent Prompt 工程经验章节：DUT 报警/坏 bin/温度层/INTERRUPT 参考表 + 3 步诊断流程 — 2026-05-25 完成
 - ✅ pcr-ai-report 报告重建：YieldMonitorReport、InfcontrolReport（JB STAR）、AiAgentReport 占位、DraggableReportSections — 2026-05-13 完成
 - ✅ Device analysis、probeCardType filter、layout & UX fixes — 2026-05-13 完成
 - ✅ 全局文档拼写修正：JB START → JB STAR — 2026-05-15 完成
