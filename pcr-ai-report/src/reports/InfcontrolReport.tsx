@@ -359,7 +359,7 @@ function parseSlotFromDrillClick(
 
 function lotYields(
   rows: InfcontrolLayerBinV3Row[]
-): Array<{ lot: string; passId: string; slot: string; device: string; label: string; yieldPct: number }> {
+): Array<{ lot: string; passId: string; slot: string; meslot: string; device: string; label: string; yieldPct: number }> {
   const byKey = new Map<string, InfcontrolLayerBinV3Row[]>();
   for (const r of rows) {
     const lot    = r.LOT    ?? "—";
@@ -369,7 +369,7 @@ function lotYields(
     if (!byKey.has(key)) byKey.set(key, []);
     byKey.get(key)!.push(r);
   }
-  const result: Array<{ lot: string; passId: string; slot: string; device: string; label: string; yieldPct: number }> = [];
+  const result: Array<{ lot: string; passId: string; slot: string; meslot: string; device: string; label: string; yieldPct: number }> = [];
   for (const [key, keyRows] of byKey.entries()) {
     const yp = computeYieldPct(keyRows);
     if (yp === null) continue;
@@ -378,10 +378,9 @@ function lotYields(
     const device = r0.DEVICE ?? "";
     const passId = r0.PASSID !== undefined && r0.PASSID !== null ? String(r0.PASSID) : "";
     const slot   = r0.SLOT   !== undefined && r0.SLOT   !== null ? String(r0.SLOT)   : "";
-    let label = device ? `${device} · ${lot}` : lot;
-    if (passId) label += ` [P${passId}]`;
-    if (slot)   label += ` S${slot}`;
-    result.push({ lot, passId, slot, device, label, yieldPct: yp });
+    const meslot = r0.MESLOT ?? slot;
+    const label  = `${lot}__P${passId}__S${slot}`;
+    result.push({ lot, passId, slot, meslot, device, label, yieldPct: yp });
     void key;
   }
   return result.sort((a, b) => a.yieldPct - b.yieldPct);
@@ -1067,6 +1066,25 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     const data = lotYieldData.slice(0, 10).reverse();
     return {
       ...horizontalBarChartBase(),
+      tooltip: {
+        trigger: "axis",
+        axisPointer: { type: "shadow" },
+        backgroundColor: "#161b22",
+        borderColor: "#30363d",
+        textStyle: { color: "#e6edf3", fontSize: 12 },
+        formatter: (params: unknown) => {
+          const p = (params as Array<{ dataIndex: number }>)[0];
+          const d = data[p.dataIndex];
+          if (!d) return "";
+          return [
+            `LOT: <b>${d.lot}</b>`,
+            d.device ? `Device: ${d.device}` : null,
+            `Pass: P${d.passId}`,
+            `Wafer ID: ${d.meslot || "—"}`,
+            `Yield: <b style="color:${yieldColor(d.yieldPct)}">${d.yieldPct.toFixed(1)}%</b>`,
+          ].filter(Boolean).join("<br/>");
+        },
+      },
       xAxis: {
         type: "value",
         max: 100,
@@ -1082,7 +1100,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       },
       yAxis: {
         type: "category",
-        data: data.map((d) => d.label),
+        data: data.map((d) => d.lot),
         axisLabel: { ...horizontalBarCategoryAxisLabelFull, interval: 0 },
       },
       series: [
@@ -1483,10 +1501,10 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                 notMerge
                 lazyUpdate
                 onEvents={{
-                  click: (params: { name: string }) => {
-                    const entry = lotYieldData.find((d) => d.label === params.name);
+                  click: (params: { dataIndex: number }) => {
+                    const entry = lotYieldData.slice(0, 10).reverse()[params.dataIndex];
                     if (!entry) return;
-                    setSelectedLotLabel(params.name);
+                    setSelectedLotLabel(entry.label);
                     fetchDrill("lot", entry.lot, "cardId", form);
                   },
                 }}
