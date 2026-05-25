@@ -39,7 +39,7 @@ import {
   REPORT_ORACLE_FANOUT_CONCURRENCY,
 } from "../utils/asyncConcurrency";
 import { drillFromTree, storeDrillTab } from "../utils/drillAggregate";
-import { datetimeLocalToIso, formatAggregateDimLabel, formatChartDayLabel } from "../utils/datetimeLocal";
+import { datetimeLocalToIso, formatChartDayLabel } from "../utils/datetimeLocal";
 import {
   buildTree,
   dateShortcutLast7Days,
@@ -128,17 +128,6 @@ function activeChips(
   return chips;
 }
 
-const FREE_DIMS: { label: string; value: string }[] = [
-  { label: "按日", value: "timeDay" },
-  { label: "Device", value: "device" },
-  { label: "LotId", value: "lotId" },
-  { label: "ProbeCard", value: "probeCard" },
-  { label: "ProbeCardType", value: "probeCardType" },
-  { label: "Wafer", value: "wafer" },
-  { label: "Hostname", value: "hostname" },
-  { label: "Pass", value: "pass" },
-];
-
 const YIELD_REPORT_SECTION_ORDER = [
   "kpi",
   "timeTrend",
@@ -154,7 +143,7 @@ const YIELD_KPI_BLOCK_ORDER = [
   "kpiSelPc",
 ] as const;
 
-const YIELD_CHART_BLOCK_ORDER = ["chDevice", "chPcType", "chLot", "chFreeDim"] as const;
+const YIELD_CHART_BLOCK_ORDER = ["chPcType", "chDevice", "chLot"] as const;
 
 // Sub-dimension options for drill-down panels
 const DRILL_FROM_DEVICE: { label: string; value: string }[] = [
@@ -332,12 +321,6 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
   const [aggLot, setAggLot] = useState<YieldMonitorV3AggregateResponse | null>(null);
   const [aggDevice, setAggDevice] = useState<YieldMonitorV3AggregateResponse | null>(null);
   const [aggTree, setAggTree] = useState<YieldMonitorV3AggregateResponse | null>(null);
-  const [aggFree, setAggFree] = useState<YieldMonitorV3AggregateResponse | null>(null);
-  const [freeDim, setFreeDim] = useState("timeDay");
-  /** 自由维度块内选中的探针卡（与 chPcType 的 selectedProbeCard 独立） */
-  const [freeDimSelectedProbeCard, setFreeDimSelectedProbeCard] =
-    useState<string | null>(null);
-
   const [loadingList, setLoadingList] = useState(false);
   const [loadingAgg, setLoadingAgg] = useState(false);
   const [errorList, setErrorList] = useState<string | null>(null);
@@ -389,10 +372,8 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     setAggLot(null);
     setAggDevice(null);
     setAggTree(null);
-    setAggFree(null);
     setDrills({});
     drillCacheRef.current = {};
-    setFreeDimSelectedProbeCard(null);
     setSelectedProbeCard(null);
     setSelectedCardTypeName(null);
     setSelectedLotId(null);
@@ -557,22 +538,6 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     [apiBase, aggTree, list?.rows]
   );
 
-  const fetchFreeAgg = useCallback(
-    async (dim: string, currentForm: FormState) => {
-      try {
-        const res = await apiGetJson<YieldMonitorV3AggregateResponse>(
-          apiBase,
-          YIELD_AGGREGATE_PATH,
-          { ...buildCoreParams(currentForm), dimensions: dim, groupTop: 30 }
-        );
-        setAggFree(res);
-      } catch {
-        setAggFree(null);
-      }
-    },
-    [apiBase]
-  );
-
   const query = useCallback(async () => {
     setLoadingList(true);
     setLoadingAgg(true);
@@ -580,7 +545,6 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     setErrorAgg(null);
     setDrills({});
     drillCacheRef.current = {};
-    setFreeDimSelectedProbeCard(null);
     setSelectedProbeCard(null);
     setSelectedCardTypeName(null);
     setSelectedLotId(null);
@@ -658,46 +622,15 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       setErrorAgg("部分聚合请求失败，图表可能不完整");
     }
 
-    fetchFreeAgg(freeDim, form);
-  }, [apiBase, form, freeDim, fetchFreeAgg, listLimits]);
+  }, [apiBase, form, listLimits]);
 
-  const handleFreeDimChange = useCallback(
-    (dim: string) => {
-      setFreeDim(dim);
-      setFreeDimSelectedProbeCard(null);
-      setDrills((prev) => {
-        const next = { ...prev };
-        delete next.freeDim;
-        return next;
-      });
-      if (list || aggTime) fetchFreeAgg(dim, form);
-    },
-    [list, aggTime, form, fetchFreeAgg]
-  );
-
-  /** 当前应加载 DUT 分布的探针卡（PcType 下钻 vs 自由维度） */
+  /** 当前应加载 DUT 分布的探针卡 */
   const dutProbeCardTarget = useMemo(() => {
-    if (
-      freeDimSelectedProbeCard &&
-      (freeDim === "probeCard" ||
-        drills.freeDim?.subDim === "probeCard")
-    ) {
-      return freeDimSelectedProbeCard;
-    }
-    if (
-      selectedProbeCard &&
-      drills.probeCardType?.subDim === "probeCard"
-    ) {
+    if (selectedProbeCard && drills.probeCardType?.subDim === "probeCard") {
       return selectedProbeCard;
     }
     return null;
-  }, [
-    freeDimSelectedProbeCard,
-    freeDim,
-    drills.freeDim,
-    selectedProbeCard,
-    drills.probeCardType,
-  ]);
+  }, [selectedProbeCard, drills.probeCardType]);
 
   useEffect(() => {
     if (!dutProbeCardTarget) {
@@ -959,22 +892,6 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     return dutDistributionFooter(selectedProbeCard);
   }, [selectedProbeCard, drills.probeCardType, dutDistributionFooter]);
 
-  const freeDimDutFooter = useMemo(() => {
-    if (!freeDimSelectedProbeCard) return null;
-    if (freeDim !== "probeCard" && drills.freeDim?.subDim !== "probeCard") {
-      return null;
-    }
-    const onClose =
-      freeDim === "probeCard"
-        ? () => setFreeDimSelectedProbeCard(null)
-        : undefined;
-    return dutDistributionFooter(
-      freeDimSelectedProbeCard,
-      "compact",
-      onClose
-    );
-  }, [freeDimSelectedProbeCard, freeDim, drills.freeDim, dutDistributionFooter]);
-
   const lotOption = useMemo((): EChartsOption => {
     const sorted = [...(aggLot?.groups ?? [])]
       .sort((a, b) => a.count - b.count)
@@ -1055,100 +972,6 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       ],
     };
   }, [aggDevice, selectedDevice]);
-
-  const freeSortedGroups = useMemo(
-    () =>
-      [...(aggFree?.groups ?? [])]
-        .sort((a, b) => a.count - b.count)
-        .slice(-10),
-    [aggFree]
-  );
-
-  const freeOption = useMemo((): EChartsOption => {
-    const sorted = freeSortedGroups;
-    const clickable =
-      freeDim === "probeCardType" || freeDim === "probeCard";
-    /** 与 DrillDownPanel 下钻条一致：选中亮蓝、其余变淡 */
-    const COL = chartAccent;
-    const COL_B = "#2080ff";
-    const COL_D = "rgba(88,166,255,0.3)";
-    const freeDimHighlightKey =
-      freeDim === "probeCardType" && drills.freeDim
-        ? drills.freeDim.parentDimVal
-        : freeDim === "probeCard"
-          ? freeDimSelectedProbeCard
-          : null;
-    return {
-      ...horizontalBarChartBase(),
-      xAxis: {
-        type: "value",
-        axisLabel: { color: chartAxisColor },
-        splitLine: { lineStyle: { color: chartSplitLine } },
-      },
-      yAxis: {
-        type: "category",
-        data: sorted.map((g) =>
-          formatAggregateDimLabel(freeDim, g.parts[freeDim] ?? g.key),
-        ),
-        axisLabel: { ...horizontalBarCategoryAxisLabel, fontSize: 10 },
-      },
-      series: [
-        {
-          type: "bar",
-          cursor: clickable ? "pointer" : "default",
-          data: sorted.map((g) => {
-            const name = g.parts[freeDim] ?? g.key;
-            const isSel =
-              freeDimHighlightKey !== null && name === freeDimHighlightKey;
-            return {
-              value: g.count,
-              itemStyle: {
-                color: isSel
-                  ? COL_B
-                  : freeDimHighlightKey !== null
-                    ? COL_D
-                    : COL,
-                borderRadius: [0, 4, 4, 0] as unknown as number,
-              },
-            };
-          }),
-          label: {
-            show: true,
-            position: "right",
-            color: chartAxisColor,
-            fontSize: 10,
-          },
-          animationDuration: 600,
-        },
-      ],
-    };
-  }, [freeSortedGroups, freeDim, drills.freeDim, freeDimSelectedProbeCard]);
-
-  const freeDimChartEvents = useMemo((): Record<string, (p: unknown) => void> | undefined => {
-    if (freeDim === "probeCardType") {
-      return {
-        click: (p: unknown) => {
-          const idx = (p as { dataIndex?: number }).dataIndex;
-          if (idx == null || idx < 0 || idx >= freeSortedGroups.length) return;
-          const g = freeSortedGroups[idx]!;
-          const val = g.parts.probeCardType ?? g.key;
-          setFreeDimSelectedProbeCard(null);
-          fetchDrill("freeDim", "probeCardType", val, "probeCard", form);
-        },
-      };
-    }
-    if (freeDim === "probeCard") {
-      return {
-        click: (p: unknown) => {
-          const idx = (p as { dataIndex?: number }).dataIndex;
-          if (idx == null || idx < 0 || idx >= freeSortedGroups.length) return;
-          const g = freeSortedGroups[idx]!;
-          setFreeDimSelectedProbeCard(g.parts.probeCard ?? g.key);
-        },
-      };
-    }
-    return undefined;
-  }, [freeDim, freeSortedGroups, form, fetchDrill]);
 
   // ── Tree ─────────────────────────────────────────────────────────────────
 
@@ -1234,13 +1057,12 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         defaultOrder={YIELD_CHART_BLOCK_ORDER}
         layoutEpoch={layoutEpoch}
         axis="grid"
-        fullRowIds={["chDevice", "chPcType", "chLot", "chFreeDim"]}
+        fullRowIds={["chPcType", "chDevice", "chLot"]}
         groupClassName="report-reorder-group--chartgrid"
         labels={{
-          chDevice: "Device 触发排名",
           chPcType: "ProbeCard Type 触发排名",
+          chDevice: "Device 触发排名",
           chLot: "LOT 触发排名",
-          chFreeDim: "自由维度聚合",
         }}
         sections={{
           chDevice: (
@@ -1389,128 +1211,6 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
               />
             </div>
           ),
-          chFreeDim: (
-            <div className="report-chart-panel">
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-                {FREE_DIMS.map((d) => (
-                  <button
-                    key={d.value}
-                    type="button"
-                    className="chip"
-                    style={
-                      d.value === freeDim
-                        ? {
-                            background: "rgba(56,139,253,0.2)",
-                            borderColor: "#388bfd",
-                            color: "#58a6ff",
-                          }
-                        : undefined
-                    }
-                    onClick={() => handleFreeDimChange(d.value)}
-                  >
-                    {d.label}
-                  </button>
-                ))}
-              </div>
-              {freeDim === "probeCardType" ? (
-                <ChartDrillSplit
-                  hint="点击类型 → 钻取 ProbeCard → 点选具体卡，DUT# 分布显示在右侧面板底部"
-                  chart={
-                    aggFree ? (
-                      <DarkChart
-                        option={freeOption}
-                        height={rankBarChartHeight(freeSortedGroups.length, 10, "compact")}
-                        onEvents={freeDimChartEvents}
-                      />
-                    ) : null
-                  }
-                  drill={
-                    drills.freeDim != null ? (
-                      <DrillDownPanel
-                        compact
-                        layout="side"
-                        title={`${drills.freeDim.parentDimVal} · 下钻：按 ${drills.freeDim.subDim}`}
-                        groups={drills.freeDim.groups}
-                        loading={drills.freeDim.loading}
-                        error={drills.freeDim.error}
-                        activeSubDim={drills.freeDim.subDim}
-                        subDimOptions={DRILL_FROM_CARDTYPE}
-                        onSubDimChange={(d) => {
-                          if (d !== "probeCard") setFreeDimSelectedProbeCard(null);
-                          fetchDrill(
-                            "freeDim",
-                            drills.freeDim!.parentDimKey,
-                            drills.freeDim!.parentDimVal,
-                            d,
-                            form
-                          );
-                        }}
-                        onClose={() => {
-                          setFreeDimSelectedProbeCard(null);
-                          setDrills((prev) => {
-                            const n = { ...prev };
-                            delete n.freeDim;
-                            return n;
-                          });
-                        }}
-                        interactive={drills.freeDim.subDim === "probeCard"}
-                        onBarClick={
-                          drills.freeDim.subDim === "probeCard"
-                            ? (key) => setFreeDimSelectedProbeCard(key)
-                            : undefined
-                        }
-                        selectedKey={
-                          drills.freeDim.subDim === "probeCard"
-                            ? freeDimSelectedProbeCard
-                            : null
-                        }
-                        footer={freeDimDutFooter}
-                      />
-                    ) : null
-                  }
-                />
-              ) : freeDim === "probeCard" ? (
-                <ChartDrillSplit
-                  hint="点击探针卡 → 右侧查看 DUT# 分布"
-                  chart={
-                    aggFree ? (
-                      <DarkChart
-                        option={freeOption}
-                        height={rankBarChartHeight(freeSortedGroups.length, 10, "compact")}
-                        onEvents={freeDimChartEvents}
-                      />
-                    ) : null
-                  }
-                  drill={
-                    freeDimSelectedProbeCard ? (
-                      <div
-                        className="chart-drill-panel chart-drill-panel--side"
-                        style={{
-                          border: "1px solid #388bfd",
-                          borderRadius: 8,
-                          background: "#0d1929",
-                          padding: 12,
-                          height: "100%",
-                          boxSizing: "border-box",
-                        }}
-                      >
-                        {freeDimDutFooter}
-                      </div>
-                    ) : null
-                  }
-                />
-              ) : (
-                aggFree && (
-                  <div className="chart-no-drill">
-                    <DarkChart
-                      option={freeOption}
-                      height={rankBarChartHeight(freeSortedGroups.length, 10, "compact")}
-                    />
-                  </div>
-                )
-              )}
-            </div>
-          ),
         }}
       />
     );
@@ -1602,18 +1302,10 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     form,
     fetchDrill,
     probeCardDutFooter,
-    freeDimDutFooter,
-    freeDimChartEvents,
-    freeSortedGroups,
-    freeDimSelectedProbeCard,
     loadingDut,
     dutRows,
     aggLot,
     lotOption,
-    aggFree,
-    freeDim,
-    handleFreeDimChange,
-    freeOption,
     treeRoots,
     showTree,
     detailRows,
