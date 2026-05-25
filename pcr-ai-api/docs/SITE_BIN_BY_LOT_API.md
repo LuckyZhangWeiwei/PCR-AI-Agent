@@ -72,6 +72,8 @@ curl -s "http://10.192.130.89:30008/api/v1/inf-analysis/site-bin-bylot?device=WA
 
 跨该 device 下**所有 lot** 中、JB 命中且 INF 可读的 wafer，按同一 `passId` 累加。
 
+**默认时间窗（与层控 v3 一致）：** 未传任何 `testStart*` / `testEnd*` 时，JB 仅取 **UTC 最近一年** 内 `TESTEND` 的行（响应含 `testEndWindow`、`testEndWindowDefaultOneYear: true`）。全历史会命中上千片 wafer 并触发 `SITE_BIN_BY_LOT_MAX_WAFERS_DEVICE`（默认 100）。
+
 | `probeCardType` | 行为 |
 | --- | --- |
 | **不传**（推荐） | Oracle/Dummy 查 `device`+`passId` 下 TEST 行；若仅 **一种** 卡型则自动使用；**多种** 卡型 → **400**（须显式传 `probeCardType`） |

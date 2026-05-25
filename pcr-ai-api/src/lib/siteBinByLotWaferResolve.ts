@@ -8,6 +8,10 @@ import {
   OutputSiteBinByLotValidationError,
 } from "./outputSiteBinByLot.js";
 import { probeCardTypeLeadingSegment } from "./probeCardTypeLeadingSegment.js";
+import {
+  rowTestEndInWindow,
+  type SiteBinTestEndWindow,
+} from "./siteBinByLotTestEndWindow.js";
 import oracledb from "oracledb";
 import { withConnection } from "../oracle.js";
 
@@ -23,6 +27,8 @@ export type ResolveSiteBinWafersParams = {
   /** 省略时仅 device 聚合：由 Oracle/Dummy JB 推断唯一卡型 */
   probeCardType?: string;
   passIds: number[];
+  /** JB 路径必填：限制 TESTEND（device / lot+probeCardType） */
+  testEndWindow: SiteBinTestEndWindow;
 };
 
 const LOT_PREFIX_EXCLUDE_RE = /^(kk|gg|c)/i;
@@ -65,10 +71,17 @@ function dedupeWafers(wafers: SiteBinWaferRef[]): SiteBinWaferRef[] {
 }
 
 function rowMatchesDeviceLotPass(
-  row: { DEVICE: string; LOT: string; PASSTYPE: string; PASSID: number },
+  row: {
+    DEVICE: string;
+    LOT: string;
+    PASSTYPE: string;
+    PASSID: number;
+    TESTEND?: string;
+  },
   device: string,
   lot: string | undefined,
-  passIds: Set<number>
+  passIds: Set<number>,
+  testEndWindow: SiteBinTestEndWindow
 ): boolean {
   if (String(row.PASSTYPE).trim() !== "TEST") return false;
   if (String(row.DEVICE).trim().toUpperCase() !== device.trim().toUpperCase()) {
@@ -79,6 +92,7 @@ function rowMatchesDeviceLotPass(
   }
   if (lotExcluded(String(row.LOT))) return false;
   if (!passIds.has(Number(row.PASSID))) return false;
+  if (!rowTestEndInWindow(row.TESTEND, testEndWindow)) return false;
   return true;
 }
 
@@ -87,11 +101,22 @@ export function distinctProbeCardTypesFromDummy(params: {
   device: string;
   lot?: string;
   passIds: number[];
+  testEndWindow: SiteBinTestEndWindow;
 }): string[] {
   const passSet = new Set(params.passIds);
   const types = new Set<string>();
   for (const row of getInfcontrolLayerBinDummyRows()) {
-    if (!rowMatchesDeviceLotPass(row, params.device, params.lot, passSet)) continue;
+    if (
+      !rowMatchesDeviceLotPass(
+        row,
+        params.device,
+        params.lot,
+        passSet,
+        params.testEndWindow
+      )
+    ) {
+      continue;
+    }
     const pct = probeCardTypeLeadingSegment(row.CARDID);
     if (pct) types.add(pct.toUpperCase());
   }
@@ -102,9 +127,12 @@ async function distinctProbeCardTypesFromOracle(params: {
   device: string;
   lot?: string;
   passIds: number[];
+  testEndWindow: SiteBinTestEndWindow;
 }): Promise<string[]> {
-  const binds: Record<string, string | number> = {
+  const binds: Record<string, string | number | Date> = {
     device: params.device.trim(),
+    testend_lo: params.testEndWindow.lo,
+    testend_hi: params.testEndWindow.hi,
   };
   const passPlaceholders = params.passIds.map((_, i) => `:pass${i}`);
   for (let i = 0; i < params.passIds.length; i++) {
@@ -124,6 +152,8 @@ INNER JOIN INFLAYERBINLIST lb ON ic.KEYNUMBER = lb.KEYNUMBER
 WHERE UPPER(TRIM(ic.DEVICE)) = UPPER(:device)
   AND UPPER(TRIM(lb.PASSTYPE)) = 'TEST'
   AND lb.PASSID IN (${passPlaceholders.join(", ")})
+  AND lb.TESTEND >= :testend_lo
+  AND lb.TESTEND <= :testend_hi
   AND NOT REGEXP_LIKE(ic.LOT, '^(kk|gg|c)', 'i')
   AND NVL(REGEXP_SUBSTR(TRIM(lb.CARDID), '^[^-]+', 1, 1), '') IS NOT NULL
   ${lotClause}
@@ -151,10 +181,12 @@ async function inferProbeCardTypeForDeviceScope(
     ? await distinctProbeCardTypesFromOracle({
         device: params.device,
         passIds: params.passIds,
+        testEndWindow: params.testEndWindow,
       })
     : distinctProbeCardTypesFromDummy({
         device: params.device,
         passIds: params.passIds,
+        testEndWindow: params.testEndWindow,
       });
 
   if (types.length === 0) {
@@ -188,12 +220,23 @@ export function resolveSiteBinWafersFromDummy(params: {
   lot?: string;
   probeCardType: string;
   passIds: number[];
+  testEndWindow: SiteBinTestEndWindow;
 }): SiteBinWaferRef[] {
   const passSet = new Set(params.passIds);
   const wafers: SiteBinWaferRef[] = [];
 
   for (const row of getInfcontrolLayerBinDummyRows()) {
-    if (!rowMatchesDeviceLotPass(row, params.device, params.lot, passSet)) continue;
+    if (
+      !rowMatchesDeviceLotPass(
+        row,
+        params.device,
+        params.lot,
+        passSet,
+        params.testEndWindow
+      )
+    ) {
+      continue;
+    }
     if (!cardIdMatchesProbeCardType(row.CARDID, params.probeCardType)) continue;
 
     const lot = String(row.LOT).trim();
@@ -213,10 +256,13 @@ async function resolveSiteBinWafersFromOracle(params: {
   lot?: string;
   probeCardType: string;
   passIds: number[];
+  testEndWindow: SiteBinTestEndWindow;
 }): Promise<SiteBinWaferRef[]> {
-  const binds: Record<string, string | number> = {
+  const binds: Record<string, string | number | Date> = {
     device: params.device.trim(),
     probeCardType: params.probeCardType.trim(),
+    testend_lo: params.testEndWindow.lo,
+    testend_hi: params.testEndWindow.hi,
   };
   const passPlaceholders = params.passIds.map((_, i) => `:pass${i}`);
   for (let i = 0; i < params.passIds.length; i++) {
@@ -240,6 +286,8 @@ WHERE UPPER(TRIM(ic.DEVICE)) = UPPER(:device)
     OR UPPER(TRIM(lb.CARDID)) LIKE UPPER(:probeCardType) || '-%'
   )
   AND lb.PASSID IN (${passPlaceholders.join(", ")})
+  AND lb.TESTEND >= :testend_lo
+  AND lb.TESTEND <= :testend_hi
   AND NOT REGEXP_LIKE(ic.LOT, '^(kk|gg|c)', 'i')
   ${lotClause}
 ORDER BY ic.LOT, ic.SLOT
@@ -281,6 +329,7 @@ export async function resolveSiteBinWafersWithSkips(
     lot: params.lot,
     probeCardType,
     passIds: params.passIds,
+    testEndWindow: params.testEndWindow,
   };
 
   const fromJb = listApisForceOracleNoDummy()

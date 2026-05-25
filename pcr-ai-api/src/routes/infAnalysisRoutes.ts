@@ -23,6 +23,7 @@ import {
   tryResolveSiteBinByLotDummyForLotByDirectory,
 } from "../lib/outputSiteBinByLotDummy.js";
 import { reqId } from "../lib/routeHelpers.js";
+import { parseSiteBinByLotTestEndWindow } from "../lib/siteBinByLotTestEndWindow.js";
 import { validateProbeCardType } from "../lib/siteBinByLotWaferResolve.js";
 
 export const infAnalysisRouter = Router();
@@ -36,6 +37,15 @@ function firstQueryString(raw: unknown): string {
 function optionalProbeCardType(raw: string): string | undefined {
   const t = raw.trim();
   return t.length > 0 ? t : undefined;
+}
+
+function testEndWindowBody(
+  window: ReturnType<typeof parseSiteBinByLotTestEndWindow>
+): Record<string, unknown> {
+  return {
+    testEndWindow: window.applied,
+    ...(window.defaultOneYear ? { testEndWindowDefaultOneYear: true } : {}),
+  };
 }
 
 function jsonAggregateResponse(
@@ -61,7 +71,7 @@ function jsonAggregateResponse(
  * 单片（不变）：`?infPath=...&passId=1`
  * Lot 目录扫描（兼容）：`?device=...&lot=...&passId=1`
  * Lot + 卡型：`?device=...&lot=...&probeCardType=...&passId=1`
- * Device：`?device=...&passId=1`（无 lot；`probeCardType` 可选）
+ * Device：`?device=...&passId=1`（无 lot；`probeCardType` 可选；默认最近一年 TESTEND）
  */
 infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
   const infRaw = req.query.infPath ?? req.query.inf_path;
@@ -131,12 +141,25 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
           throw e;
         }
 
+        let testEndWindow;
+        try {
+          testEndWindow = parseSiteBinByLotTestEndWindow(
+            req.query as Record<string, unknown>
+          );
+        } catch (e) {
+          if (e instanceof OutputSiteBinByLotValidationError) {
+            return sendAgentError(res, 400, e.code, e.message);
+          }
+          throw e;
+        }
+
         try {
           const dummyLot = tryResolveSiteBinByLotDummyForLot(
             device,
             lot,
             probeCardType,
-            passIds
+            passIds,
+            testEndWindow
           );
           if (dummyLot !== null) {
             const {
@@ -157,6 +180,7 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
                 waferSlots,
                 passIds,
                 passes,
+                ...testEndWindowBody(testEndWindow),
                 ...(skippedInfPaths.length > 0 ? { skippedInfPaths } : {}),
               })
             );
@@ -166,7 +190,8 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
             device,
             lot,
             probeCardType,
-            passIds
+            passIds,
+            testEndWindow
           );
           return res.json(
             jsonAggregateResponse(req, SITE_BIN_BY_LOT_LOT_AGG_SUMMARY, "lot", {
@@ -178,6 +203,9 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
               waferSlots: result.waferSlots,
               passIds,
               passes: result.data.passes,
+              ...(result.testEndWindow
+                ? testEndWindowBody(result.testEndWindow)
+                : {}),
               ...(result.skippedInfPaths.length > 0
                 ? { skippedInfPaths: result.skippedInfPaths }
                 : {}),
@@ -246,10 +274,23 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
       }
     }
 
+    let testEndWindow;
+    try {
+      testEndWindow = parseSiteBinByLotTestEndWindow(
+        req.query as Record<string, unknown>
+      );
+    } catch (e) {
+      if (e instanceof OutputSiteBinByLotValidationError) {
+        return sendAgentError(res, 400, e.code, e.message);
+      }
+      throw e;
+    }
+
     try {
       const dummyDev = tryResolveSiteBinByLotDummyForDevice(
         device,
         passIds,
+        testEndWindow,
         probeCardTypeOpt
       );
       if (dummyDev !== null) {
@@ -276,6 +317,7 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
               waferLots,
               passIds,
               passes,
+              ...testEndWindowBody(testEndWindow),
               ...(skippedInfPaths.length > 0 ? { skippedInfPaths } : {}),
             }
           )
@@ -285,6 +327,7 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
       const result = await runOutputSiteBinByLotForDevice(
         device,
         passIds,
+        testEndWindow,
         probeCardTypeOpt
       );
       return res.json(
@@ -301,6 +344,9 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
             waferLots: result.waferLots,
             passIds,
             passes: result.data.passes,
+            ...(result.testEndWindow
+              ? testEndWindowBody(result.testEndWindow)
+              : {}),
             ...(result.skippedInfPaths.length > 0
               ? { skippedInfPaths: result.skippedInfPaths }
               : {}),

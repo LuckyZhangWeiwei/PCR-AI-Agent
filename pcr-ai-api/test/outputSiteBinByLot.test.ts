@@ -10,6 +10,7 @@ import {
 } from "../src/lib/outputSiteBinByLot.js";
 import { buildInfLotDir } from "../src/lib/buildInfPath.js";
 import { getInfcontrolLayerBinDummyRows } from "../src/lib/infcontrolLayerBinDummy.js";
+import { parseSiteBinByLotTestEndWindow } from "../src/lib/siteBinByLotTestEndWindow.js";
 import {
   cardIdMatchesProbeCardType,
   probeCardTypeFromCardId,
@@ -144,6 +145,7 @@ describe("site-bin-bylot dummy", () => {
 
   test("resolveSiteBinWafersFromDummy dedupes by lot+slot for probeCardType", () => {
     process.env.NODE_ENV = "test";
+    const testEndWindow = parseSiteBinByLotTestEndWindow({});
     const row = getInfcontrolLayerBinDummyRows().find(
       (r) => String(r.PASSTYPE).trim() === "TEST"
     );
@@ -155,6 +157,7 @@ describe("site-bin-bylot dummy", () => {
       lot: String(row!.LOT),
       probeCardType: pct!,
       passIds: [Number(row!.PASSID)],
+      testEndWindow,
     });
     assert.ok(wafers.length >= 1);
     assert.ok(wafers.some((w) => w.slot === Number(row!.SLOT)));
@@ -162,6 +165,7 @@ describe("site-bin-bylot dummy", () => {
 
   test("tryResolveSiteBinByLotDummyForLot merges JB wafers under NODE_ENV=test", () => {
     process.env.NODE_ENV = "test";
+    const testEndWindow = parseSiteBinByLotTestEndWindow({});
     const row = getInfcontrolLayerBinDummyRows().find(
       (r) => String(r.PASSTYPE).trim() === "TEST"
     );
@@ -170,13 +174,20 @@ describe("site-bin-bylot dummy", () => {
     const lot = String(row!.LOT);
     const pct = probeCardTypeFromCardId(row!.CARDID)!;
     const passId = Number(row!.PASSID);
-    const data = tryResolveSiteBinByLotDummyForLot(device, lot, pct, [passId]);
+    const data = tryResolveSiteBinByLotDummyForLot(
+      device,
+      lot,
+      pct,
+      [passId],
+      testEndWindow
+    );
     assert.ok(data);
     const expectedWafers = resolveSiteBinWafersFromDummy({
       device,
       lot,
       probeCardType: pct,
       passIds: [passId],
+      testEndWindow,
     });
     assert.equal(data.waferCount, expectedWafers.length);
     assert.equal(data.probeCardType, pct);

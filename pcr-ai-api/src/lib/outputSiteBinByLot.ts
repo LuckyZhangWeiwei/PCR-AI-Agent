@@ -9,6 +9,7 @@ import {
   resolveSiteBinWafersWithSkips,
   type SiteBinWaferRef,
 } from "./siteBinByLotWaferResolve.js";
+import type { SiteBinTestEndWindow } from "./siteBinByLotTestEndWindow.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -224,6 +225,7 @@ export type RunOutputSiteBinByLotAggregateResult = {
   lotDir?: string;
   /** 仅 JB/卡类型过滤路径返回 */
   probeCardType?: string;
+  testEndWindow?: SiteBinTestEndWindow;
   waferCount: number;
   waferSlots: number[];
   waferLots?: string[];
@@ -236,11 +238,19 @@ function assertWaferCountWithinLimit(
   count: number,
   max: number,
   envName: string,
-  scopeLabel: string
+  scopeLabel: string,
+  opts?: { jbTimeFiltered?: boolean }
 ): void {
   if (count > max) {
+    const hints: string[] = [];
+    if (opts?.jbTimeFiltered) {
+      hints.push(
+        "narrow with testEndFrom/testEndTo (omit all time params for default one-year TESTEND window)"
+      );
+    }
+    hints.push(`raise ${envName} on server (cap 500)`);
     throw new OutputSiteBinByLotValidationError(
-      `${scopeLabel} has ${count} wafer(s); maximum allowed is ${max} (${envName})`
+      `${scopeLabel} has ${count} wafer(s); maximum allowed is ${max} (${envName}). ${hints.join("; ")}.`
     );
   }
 }
@@ -318,7 +328,8 @@ export async function runOutputSiteBinByLotForLot(
   device: string,
   lot: string,
   probeCardType: string,
-  passIds: number[]
+  passIds: number[],
+  testEndWindow: SiteBinTestEndWindow
 ): Promise<RunOutputSiteBinByLotAggregateResult> {
   const { wafers, skippedInfPaths, probeCardType: pct } =
     await resolveSiteBinWafersWithSkips({
@@ -326,12 +337,14 @@ export async function runOutputSiteBinByLotForLot(
     lot,
     probeCardType,
     passIds,
+    testEndWindow,
   });
   assertWaferCountWithinLimit(
     wafers.length,
     getSiteBinByLotMaxWafers(),
     "SITE_BIN_BY_LOT_MAX_WAFERS",
-    "Lot"
+    "Lot",
+    { jbTimeFiltered: true }
   );
 
   const { data, stderrParts } = await runPerlForWafers(wafers, passIds);
@@ -345,6 +358,7 @@ export async function runOutputSiteBinByLotForLot(
     aggregateScope: "lot",
     lotDir: validateInfPath(buildInfLotDir(device, lot)),
     probeCardType: pct,
+    testEndWindow,
     waferCount: wafers.length,
     waferSlots: wafers.map((w) => w.slot),
     skippedInfPaths,
@@ -359,6 +373,7 @@ export async function runOutputSiteBinByLotForLot(
 export async function runOutputSiteBinByLotForDevice(
   device: string,
   passIds: number[],
+  testEndWindow: SiteBinTestEndWindow,
   probeCardType?: string
 ): Promise<RunOutputSiteBinByLotAggregateResult> {
   const { wafers, skippedInfPaths, probeCardType: pct } =
@@ -366,12 +381,14 @@ export async function runOutputSiteBinByLotForDevice(
     device,
     probeCardType,
     passIds,
+    testEndWindow,
   });
   assertWaferCountWithinLimit(
     wafers.length,
     getSiteBinByLotMaxWafersDevice(),
     "SITE_BIN_BY_LOT_MAX_WAFERS_DEVICE",
-    "Device"
+    "Device",
+    { jbTimeFiltered: true }
   );
 
   const { data, stderrParts } = await runPerlForWafers(wafers, passIds);
@@ -386,6 +403,7 @@ export async function runOutputSiteBinByLotForDevice(
     aggregateScope: "device",
     deviceDir: validateInfPath(buildInfDeviceDir(device)),
     probeCardType: pct,
+    testEndWindow,
     waferCount: wafers.length,
     waferSlots: wafers.map((w) => w.slot),
     waferLots: [...lotSet].sort((a, b) => a.localeCompare(b)),

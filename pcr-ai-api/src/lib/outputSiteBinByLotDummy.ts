@@ -13,6 +13,7 @@ import {
   distinctProbeCardTypesFromDummy,
   resolveSiteBinWafersFromDummy,
 } from "./siteBinByLotWaferResolve.js";
+import type { SiteBinTestEndWindow } from "./siteBinByLotTestEndWindow.js";
 import { OutputSiteBinByLotValidationError } from "./outputSiteBinByLot.js";
 
 /** Dummy 联调固定 INF 路径（与 `docs/site-bin-bylot-dummy-r_1-1.passes.json` 样本一致）。 */
@@ -152,6 +153,7 @@ function tryResolveSiteBinByLotDummyAggregate(params: {
   lot?: string;
   probeCardType: string;
   passIds: number[];
+  testEndWindow: SiteBinTestEndWindow;
   aggregateScope: "lot" | "device";
 }): SiteBinByLotDummyAggResult | null {
   if (!siteBinByLotUseDummy()) return null;
@@ -167,6 +169,7 @@ function tryResolveSiteBinByLotDummyAggregate(params: {
     lot: params.lot,
     probeCardType: params.probeCardType,
     passIds: params.passIds,
+    testEndWindow: params.testEndWindow,
   });
   if (wafers.length === 0) return null;
 
@@ -196,13 +199,15 @@ export function tryResolveSiteBinByLotDummyForLot(
   device: string,
   lot: string,
   probeCardType: string,
-  passIds: number[]
+  passIds: number[],
+  testEndWindow: SiteBinTestEndWindow
 ): SiteBinByLotDummyAggResult | null {
   return tryResolveSiteBinByLotDummyAggregate({
     device,
     lot,
     probeCardType,
     passIds,
+    testEndWindow,
     aggregateScope: "lot",
   });
 }
@@ -210,11 +215,16 @@ export function tryResolveSiteBinByLotDummyForLot(
 function resolveDummyDeviceProbeCardType(
   device: string,
   passIds: number[],
+  testEndWindow: SiteBinTestEndWindow,
   probeCardType?: string
 ): string | null {
   const explicit = probeCardType?.trim();
   if (explicit) return explicit;
-  const types = distinctProbeCardTypesFromDummy({ device, passIds });
+  const types = distinctProbeCardTypesFromDummy({
+    device,
+    passIds,
+    testEndWindow,
+  });
   if (types.length === 0) return null;
   if (types.length > 1) {
     throw new OutputSiteBinByLotValidationError(
@@ -227,12 +237,18 @@ function resolveDummyDeviceProbeCardType(
 export function tryResolveSiteBinByLotDummyForDevice(
   device: string,
   passIds: number[],
+  testEndWindow: SiteBinTestEndWindow,
   probeCardType?: string
 ): SiteBinByLotDummyAggResult | null {
   if (!siteBinByLotUseDummy()) return null;
   if (!siteBinByLotDummyPathAllowed(buildInfDeviceDir(device))) return null;
 
-  const resolved = resolveDummyDeviceProbeCardType(device, passIds, probeCardType);
+  const resolved = resolveDummyDeviceProbeCardType(
+    device,
+    passIds,
+    testEndWindow,
+    probeCardType
+  );
   if (!resolved) return null;
   const pct = resolved;
 
@@ -240,6 +256,7 @@ export function tryResolveSiteBinByLotDummyForDevice(
     device,
     probeCardType: pct,
     passIds,
+    testEndWindow,
     aggregateScope: "device",
   });
 }
