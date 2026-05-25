@@ -359,7 +359,7 @@ function parseSlotFromDrillClick(
 
 function lotYields(
   rows: InfcontrolLayerBinV3Row[]
-): Array<{ lot: string; passId: string; slot: string; meslot: string; device: string; label: string; yieldPct: number }> {
+): Array<{ lot: string; passId: string; slot: string; device: string; label: string; yieldPct: number }> {
   const byKey = new Map<string, InfcontrolLayerBinV3Row[]>();
   for (const r of rows) {
     const lot    = r.LOT    ?? "—";
@@ -369,7 +369,7 @@ function lotYields(
     if (!byKey.has(key)) byKey.set(key, []);
     byKey.get(key)!.push(r);
   }
-  const result: Array<{ lot: string; passId: string; slot: string; meslot: string; device: string; label: string; yieldPct: number }> = [];
+  const result: Array<{ lot: string; passId: string; slot: string; device: string; label: string; yieldPct: number }> = [];
   for (const [key, keyRows] of byKey.entries()) {
     const yp = computeYieldPct(keyRows);
     if (yp === null) continue;
@@ -378,9 +378,8 @@ function lotYields(
     const device = r0.DEVICE ?? "";
     const passId = r0.PASSID !== undefined && r0.PASSID !== null ? String(r0.PASSID) : "";
     const slot   = r0.SLOT   !== undefined && r0.SLOT   !== null ? String(r0.SLOT)   : "";
-    const meslot = r0.MESLOT ?? slot;
     const label  = `${lot}__P${passId}__S${slot}`;
-    result.push({ lot, passId, slot, meslot, device, label, yieldPct: yp });
+    result.push({ lot, passId, slot, device, label, yieldPct: yp });
     void key;
   }
   return result.sort((a, b) => a.yieldPct - b.yieldPct);
@@ -1080,7 +1079,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
             `LOT: <b>${d.lot}</b>`,
             d.device ? `Device: ${d.device}` : null,
             `Pass: P${d.passId}`,
-            `Wafer ID: ${d.meslot || "—"}`,
+            d.slot ? `Wafer ID: 1-${d.slot}` : null,
             `Yield: <b style="color:${yieldColor(d.yieldPct)}">${d.yieldPct.toFixed(1)}%</b>`,
           ].filter(Boolean).join("<br/>");
         },
