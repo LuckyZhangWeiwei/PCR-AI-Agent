@@ -34,7 +34,7 @@
 | --- | --- | --- |
 | **单片 wafer**（原有） | `infPath` + `passId` | 读**一个** INF 文件 |
 | **Lot 聚合** | `device` + `lot` + `passId`；可选 `probeCardType` | 见 §2.2 |
-| **Device 聚合**（新） | `device` + `probeCardType` + `passId`（**不要**传 `lot`） | 跨 lot 累加，见 §2.3 |
+| **Device 聚合** | `device` + `passId`（**不要**传 `lot`）；`probeCardType` 可选 | 跨 lot 累加，见 §2.3 |
 
 **不要**同时传 `infPath` 与 `device`。
 
@@ -68,15 +68,24 @@ curl -s "http://10.192.130.89:30008/api/v1/inf-analysis/site-bin-bylot?device=WA
 
 上限：`SITE_BIN_BY_LOT_MAX_WAFERS`（默认 **25** 片）。
 
-### 2.4 Device 聚合（`device` + `probeCardType`，无 `lot`）
+### 2.4 Device 聚合（`device` + `passId`，无 `lot`）
 
 跨该 device 下**所有 lot** 中、JB 命中且 INF 可读的 wafer，按同一 `passId` 累加。
 
+| `probeCardType` | 行为 |
+| --- | --- |
+| **不传**（推荐） | Oracle/Dummy 查 `device`+`passId` 下 TEST 行；若仅 **一种** 卡型则自动使用；**多种** 卡型 → **400**（须显式传 `probeCardType`） |
+| **传** | 只聚合该卡型对应 wafer |
+
 ```bash
+# 仅 device + pass（生产 Oracle 常用）
+curl -s "http://10.192.130.89:30008/api/v1/inf-analysis/site-bin-bylot?device=WA03P02G&passId=1"
+
+# 显式指定卡型（同一 device+pass 存在多种卡时）
 curl -s "http://10.192.130.89:30008/api/v1/inf-analysis/site-bin-bylot?device=WA03P02G&probeCardType=8037&passId=1"
 ```
 
-响应：`meta.aggregateScope: "device"`、`deviceDir`、`waferLots[]`、`probeCardType`、`waferCount`、`waferSlots`、`passes`。
+响应：`meta.aggregateScope: "device"`、`deviceDir`、`waferLots[]`、`probeCardType`（推断或传入）、`waferCount`、`waferSlots`、`passes`。
 
 上限：`SITE_BIN_BY_LOT_MAX_WAFERS_DEVICE`（默认 **100** 片）。
 
@@ -246,8 +255,8 @@ Vite 开发若走代理：base 用 `window.location.origin`，路径仍为 `/api
 # 单片缺 passId → 400
 curl -s "http://127.0.0.1:30008/api/v1/inf-analysis/site-bin-bylot?infPath=/tmp/x.inf"
 
-# Device 聚合缺 probeCardType → 400
-curl -s "http://127.0.0.1:30008/api/v1/inf-analysis/site-bin-bylot?device=WA03P02G&passId=1"
+# 缺 passId → 400
+curl -s "http://127.0.0.1:30008/api/v1/inf-analysis/site-bin-bylot?device=WA03P02G"
 ```
 
 ---

@@ -320,7 +320,8 @@ export async function runOutputSiteBinByLotForLot(
   probeCardType: string,
   passIds: number[]
 ): Promise<RunOutputSiteBinByLotAggregateResult> {
-  const { wafers, skippedInfPaths } = await resolveSiteBinWafersWithSkips({
+  const { wafers, skippedInfPaths, probeCardType: pct } =
+    await resolveSiteBinWafersWithSkips({
     device,
     lot,
     probeCardType,
@@ -343,7 +344,7 @@ export async function runOutputSiteBinByLotForLot(
   return {
     aggregateScope: "lot",
     lotDir: validateInfPath(buildInfLotDir(device, lot)),
-    probeCardType,
+    probeCardType: pct,
     waferCount: wafers.length,
     waferSlots: wafers.map((w) => w.slot),
     skippedInfPaths,
@@ -353,14 +354,15 @@ export async function runOutputSiteBinByLotForLot(
 }
 
 /**
- * Device 聚合：同 probeCardType + passId，跨 lot 累加。
+ * Device 聚合：仅需 device + passId；未传 probeCardType 时由 JB 推断唯一卡型（多种则 400）。
  */
 export async function runOutputSiteBinByLotForDevice(
   device: string,
-  probeCardType: string,
-  passIds: number[]
+  passIds: number[],
+  probeCardType?: string
 ): Promise<RunOutputSiteBinByLotAggregateResult> {
-  const { wafers, skippedInfPaths } = await resolveSiteBinWafersWithSkips({
+  const { wafers, skippedInfPaths, probeCardType: pct } =
+    await resolveSiteBinWafersWithSkips({
     device,
     probeCardType,
     passIds,
@@ -383,7 +385,7 @@ export async function runOutputSiteBinByLotForDevice(
   return {
     aggregateScope: "device",
     deviceDir: validateInfPath(buildInfDeviceDir(device)),
-    probeCardType,
+    probeCardType: pct,
     waferCount: wafers.length,
     waferSlots: wafers.map((w) => w.slot),
     waferLots: [...lotSet].sort((a, b) => a.localeCompare(b)),

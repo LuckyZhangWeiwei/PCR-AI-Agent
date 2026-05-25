@@ -748,7 +748,7 @@ export const apiManifest = {
       path: "/api/v1/inf-analysis/site-bin-bylot",
       method: "GET",
       purpose:
-        "Per wafer test pass (one or more PASS_ID): from on-disk INF wafer map(s), list which probe-card DUT produced each bin and die counts (PASS_TYPE=TEST). Single wafer: infPath. Lot aggregation: device+lot scans {INF_STORAGE_ROOT}/{DEVICE}/{LOT}/ for all r_1-{slot} files and sums dieCount per pass×bin×dut. Not Oracle JB—Perl output_site_bin_bylot.pl --json.",
+        "Per wafer test pass (one or more PASS_ID): from on-disk INF wafer map(s), list which probe-card DUT produced each bin and die counts (PASS_TYPE=TEST). Single wafer: infPath. Lot: device+lot+passId (optional probeCardType: JB filter or scan all r_1-{slot} under lot dir). Device: device+passId without lot (optional probeCardType; auto-infer single card type from JB). Sums dieCount per pass×bin×dut. Not Oracle JB—Perl output_site_bin_bylot.pl --json.",
       queryParameters: [
         {
           name: "infPath",
@@ -760,19 +760,19 @@ export const apiManifest = {
           name: "device",
           type: "string",
           optional: true,
-          note: "Aggregation: with probeCardType (+ lot for lot scope). Mutually exclusive with infPath.",
+          note: "Aggregation: with lot → lot scope; without lot → device scope. Mutually exclusive with infPath.",
         },
         {
           name: "lot",
           type: "string",
           optional: true,
-          note: "With device+probeCardType: lot scope; omit lot for device scope (all lots under device)",
+          note: "With device: lot scope; omit for device scope (all lots under device)",
         },
         {
           name: "probeCardType",
           type: "string",
           optional: true,
-          note: "Optional for lot+device: omit with lot → scan all r_1-{slot} under lot dir (legacy). With lot → JB-filtered wafers. Without lot → device-level aggregation (required).",
+          note: "Lot: omit → scan all r_1-{slot} under lot dir; with value → JB-filtered wafers. Device (no lot): omit → infer single card type from JB or 400 if multiple; with value → explicit filter.",
         },
         {
           name: "passId",
@@ -786,7 +786,7 @@ export const apiManifest = {
         infPath: "string (wafer mode only)",
         device: "string (aggregation)",
         lot: "string (lot scope)",
-        probeCardType: "string (aggregation, required with device)",
+        probeCardType: "string (aggregation; inferred on device scope when omitted)",
         lotDir: "string (lot scope)",
         deviceDir: "string (device scope)",
         waferCount: "number (aggregation)",
@@ -799,7 +799,7 @@ export const apiManifest = {
         stderr: "optional string",
       },
       example:
-        "/api/v1/inf-analysis/site-bin-bylot?infPath=/data/probe_logs/ps16_SMTPID/teststuffs/infanylist/r_1-1&passId=1; lot: ?device=WA03P02G&lot=NF12551.1N&probeCardType=8037&passId=1; device: ?device=WA03P02G&probeCardType=8037&passId=1",
+        "/api/v1/inf-analysis/site-bin-bylot?infPath=/data/probe_logs/ps16_SMTPID/teststuffs/infanylist/r_1-1&passId=1; lot: ?device=WA03P02G&lot=NF12551.1N&passId=1; device: ?device=WA03P02G&passId=1",
     },
     {
       path: "/api/v1/db/ping",

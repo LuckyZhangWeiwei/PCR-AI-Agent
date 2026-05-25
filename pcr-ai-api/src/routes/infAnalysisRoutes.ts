@@ -61,7 +61,7 @@ function jsonAggregateResponse(
  * 单片（不变）：`?infPath=...&passId=1`
  * Lot 目录扫描（兼容）：`?device=...&lot=...&passId=1`
  * Lot + 卡型：`?device=...&lot=...&probeCardType=...&passId=1`
- * Device + 卡型：`?device=...&probeCardType=...&passId=1`（无 lot）
+ * Device：`?device=...&passId=1`（无 lot；`probeCardType` 可选）
  */
 infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
   const infRaw = req.query.infPath ?? req.query.inf_path;
@@ -96,11 +96,6 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
       if (lotStr.length > 0 && !lotTrimmed) {
         throw new OutputSiteBinByLotValidationError(
           "Invalid empty query parameter: lot"
-        );
-      }
-      if (lotTrimmed.length === 0 && !probeCardTypeOpt) {
-        throw new OutputSiteBinByLotValidationError(
-          "Device-level aggregation requires probeCardType; lot-level directory scan requires device and lot"
         );
       }
     }
@@ -251,21 +246,11 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
       }
     }
 
-    let probeCardType: string;
-    try {
-      probeCardType = validateProbeCardType(probeCardTypeOpt ?? "");
-    } catch (e) {
-      if (e instanceof OutputSiteBinByLotValidationError) {
-        return sendAgentError(res, 400, e.code, e.message);
-      }
-      throw e;
-    }
-
     try {
       const dummyDev = tryResolveSiteBinByLotDummyForDevice(
         device,
-        probeCardType,
-        passIds
+        passIds,
+        probeCardTypeOpt
       );
       if (dummyDev !== null) {
         const {
@@ -299,8 +284,8 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
 
       const result = await runOutputSiteBinByLotForDevice(
         device,
-        probeCardType,
-        passIds
+        passIds,
+        probeCardTypeOpt
       );
       return res.json(
         jsonAggregateResponse(

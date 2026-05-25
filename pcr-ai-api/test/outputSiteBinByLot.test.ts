@@ -338,10 +338,10 @@ describe("GET /inf-analysis/site-bin-bylot route", () => {
     const addr = server.address() as import("node:net").AddressInfo;
     const base = `http://127.0.0.1:${addr.port}/api/v1`;
 
-    const rDeviceOnly = await fetch(
-      `${base}/inf-analysis/site-bin-bylot?device=X&passId=1`
+    const rNoPass = await fetch(
+      `${base}/inf-analysis/site-bin-bylot?device=X`
     );
-    assert.equal(rDeviceOnly.status, 400);
+    assert.equal(rNoPass.status, 400);
 
     const q = new URLSearchParams({
       device: String(row!.DEVICE),
@@ -363,13 +363,12 @@ describe("GET /inf-analysis/site-bin-bylot route", () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
-  test("200 device aggregation with dummy", async () => {
+  test("200 device aggregation with only device and passId", async () => {
     process.env.NODE_ENV = "test";
     const row = getInfcontrolLayerBinDummyRows().find(
       (r) => String(r.PASSTYPE).trim() === "TEST"
     );
     assert.ok(row);
-    const pct = probeCardTypeFromCardId(row!.CARDID)!;
 
     const { createApp } = await import("../src/app.js");
     const { createServer } = await import("node:http");
@@ -383,7 +382,6 @@ describe("GET /inf-analysis/site-bin-bylot route", () => {
     const base = `http://127.0.0.1:${addr.port}/api/v1`;
     const q = new URLSearchParams({
       device: String(row!.DEVICE),
-      probeCardType: pct,
       passId: String(row!.PASSID),
     });
 
@@ -395,7 +393,7 @@ describe("GET /inf-analysis/site-bin-bylot route", () => {
       waferLots?: string[];
     };
     assert.equal(body.meta.aggregateScope, "device");
-    assert.equal(body.probeCardType, pct);
+    assert.ok(body.probeCardType.length > 0);
     assert.ok(body.waferLots && body.waferLots.length >= 1);
 
     await new Promise<void>((resolve) => server.close(() => resolve()));

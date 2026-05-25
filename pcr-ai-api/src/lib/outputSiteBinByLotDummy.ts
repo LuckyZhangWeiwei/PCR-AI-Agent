@@ -9,7 +9,11 @@ import {
   type SiteBinByLotData,
   type SiteBinPass,
 } from "./outputSiteBinByLot.js";
-import { resolveSiteBinWafersFromDummy } from "./siteBinByLotWaferResolve.js";
+import {
+  distinctProbeCardTypesFromDummy,
+  resolveSiteBinWafersFromDummy,
+} from "./siteBinByLotWaferResolve.js";
+import { OutputSiteBinByLotValidationError } from "./outputSiteBinByLot.js";
 
 /** Dummy 联调固定 INF 路径（与 `docs/site-bin-bylot-dummy-r_1-1.passes.json` 样本一致）。 */
 export const SITE_BIN_BY_LOT_DUMMY_CANONICAL_INF_PATH =
@@ -203,14 +207,38 @@ export function tryResolveSiteBinByLotDummyForLot(
   });
 }
 
+function resolveDummyDeviceProbeCardType(
+  device: string,
+  passIds: number[],
+  probeCardType?: string
+): string | null {
+  const explicit = probeCardType?.trim();
+  if (explicit) return explicit;
+  const types = distinctProbeCardTypesFromDummy({ device, passIds });
+  if (types.length === 0) return null;
+  if (types.length > 1) {
+    throw new OutputSiteBinByLotValidationError(
+      `Multiple probe card types for device+passId: ${types.join(", ")}. Pass probeCardType to select one.`
+    );
+  }
+  return types[0]!;
+}
+
 export function tryResolveSiteBinByLotDummyForDevice(
   device: string,
-  probeCardType: string,
-  passIds: number[]
+  passIds: number[],
+  probeCardType?: string
 ): SiteBinByLotDummyAggResult | null {
+  if (!siteBinByLotUseDummy()) return null;
+  if (!siteBinByLotDummyPathAllowed(buildInfDeviceDir(device))) return null;
+
+  const resolved = resolveDummyDeviceProbeCardType(device, passIds, probeCardType);
+  if (!resolved) return null;
+  const pct = resolved;
+
   return tryResolveSiteBinByLotDummyAggregate({
     device,
-    probeCardType,
+    probeCardType: pct,
     passIds,
     aggregateScope: "device",
   });
