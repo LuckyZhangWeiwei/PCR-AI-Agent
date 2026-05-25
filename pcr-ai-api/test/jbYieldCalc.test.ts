@@ -105,4 +105,41 @@ describe("jbYieldCalc", () => {
     assert.equal(summary[0]!.badDie, 5);
     assert.equal(summary[1]!.badDie, 10);
   });
+
+  it("buildSlotYieldSummary exposes upper, lower, and whole wafer for interrupt", () => {
+    const rows = [
+      {
+        SLOT: 22,
+        GROSSDIE: 116,
+        PASSTYPE: "INTERRUPT",
+        PASSBIN: "1",
+        bins: [{ n: 5, value: 116, isGoodBin: false }],
+      },
+      {
+        SLOT: 22,
+        GROSSDIE: 2011,
+        PASSTYPE: "TEST",
+        PASSBIN: "1",
+        bins: [
+          { n: 1, value: 1908, isGoodBin: true },
+          { n: 5, value: 103, isGoodBin: false },
+        ],
+      },
+    ];
+    const summary = buildSlotYieldSummary(rows);
+    const s = summary.find((x) => x.slot === 22)!;
+    assert.equal(s.hasInterrupt, true);
+    assert.equal(s.interruptHalf!.grossDie, 116);
+    assert.equal(s.interruptHalf!.goodDie, 0);
+    assert.equal(s.interruptHalf!.yieldPct, 0);
+    assert.equal(s.completionHalf!.grossDie, 2011);
+    assert.equal(s.completionHalf!.goodDie, 1908);
+    assert.ok(
+      s.completionHalf!.yieldPct !== null &&
+        Math.abs(s.completionHalf!.yieldPct - 94.88) < 0.05
+    );
+    assert.equal(s.grossDie, 2011);
+    assert.equal(s.goodDie, 1908);
+    assert.ok(s.yieldPct !== null && Math.abs(s.yieldPct - 94.88) < 0.05);
+  });
 });

@@ -2,6 +2,20 @@
 
 ---
 
+## 2026-05-25 — JB 中断 slot 良率半片 + Agent 汇报顺序
+
+**完成内容：**
+- `jbYieldCalc.ts`：`slotYieldSummary` 增加 `interruptHalf` / `completionHalf`；`computeJbYieldBreakdown`；整片正片仍走 `computeJbYieldMetrics`（前半 good=0 → 仅后半）。
+- `agentPrompt.ts`：有中断时输出顺序 **整片正片 → 前半段 → 后半段**；良率 0% 也必须写出。
+- 诊断脚本 `scripts/print-slot-breakdown.ts`；单测 `jbYieldCalc.test.ts` 半片用例。
+- 交接文档 [`HANDOFF_JB_INTERRUPT_YIELD.md`](HANDOFF_JB_INTERRUPT_YIELD.md)，`pcr-ai-api/CLAUDE.md` §2 已索引。
+
+**部署：** `npm run build` + `pm2:reload` 后 Agent `query_jb_bins` 才带半片字段。
+
+**测试：** `npm test`（含 `jbYieldCalc.test.ts`）。
+
+---
+
 ## 2026-05-24 — 规划：INF 文件聚合路径 + 报表重构 UX 原则
 
 **完成内容：**

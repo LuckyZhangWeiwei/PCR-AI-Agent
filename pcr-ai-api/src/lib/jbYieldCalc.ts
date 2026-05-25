@@ -2,8 +2,8 @@
  * JB STAR 良率：与报表 `infGoodBins` 一致。
  * - 无中断：同 slot 多行在 MAX(GROSSDIE) 满片行上累加坏 die。
  * - 有中断：上半段 = INTERRUPT 行；下半段 = 非 INTERRUPT（通常为 TEST 续测完成）。
- *   - 上半段 good=0 → 正片良率仅下半段；
- *   - 上半段 good>0 → (good_上+good_下)/(total_上+total_下)。
+ *   - `interruptHalf` / `completionHalf` 始终分别计算并输出（上半段 yield 可为 0%）。
+ *   - 整片正片（顶层 grossDie/yieldPct）：上半段 good=0 → 仅下半段；上半段 good>0 → 上下半段合并。
  */
 
 import { parsePassBinHyphenGoodBins } from "./passBinSemantics.js";
@@ -154,16 +154,40 @@ export function computeJbYieldMetrics(
 
 export type SlotYieldSummaryEntry = {
   slot: number;
+  /** 整片正片良率（用于结论主数字） */
   grossDie: number;
   badDie: number;
   goodDie: number;
   yieldPct: number | null;
   hasInterrupt: boolean;
   rowCount: number;
+  /** 上半片（INTERRUPT），有中断时必有 */
+  interruptHalf?: JbYieldMetrics;
+  /** 下半片（续测完成，非 INTERRUPT），有中断且存在完成段时必有 */
+  completionHalf?: JbYieldMetrics;
 };
 
 const SLOT_YIELD_GUIDE =
-  "slotYieldSummary：无中断时 grossDie=MAX(GROSSDIE) 行累加坏 die。有中断时上半段=INTERRUPT、下半段=非 INTERRUPT；若上半段 good=0 则良率仅下半段，否则 (good_上+good_下)/(total_上+total_下)。";
+  "slotYieldSummary：无中断时仅顶层整片。hasInterrupt:true 时须写三项且顺序固定：①整片正片(顶层) ②interruptHalf(前半) ③completionHalf(后半)。任一段 yieldPct=0 或 goodDie=0 仍须输出该段 total/好/坏/0%，禁止因无良品省略。勿只报后半段。";
+
+/** 有 INTERRUPT 时拆出上半/下半；整片正片走 computeJbYieldMetrics。 */
+export function computeJbYieldBreakdown(rows: Record<string, unknown>[]): {
+  hasInterrupt: boolean;
+  interruptHalf: JbYieldMetrics | null;
+  completionHalf: JbYieldMetrics | null;
+  wholeWafer: JbYieldMetrics;
+} {
+  const interruptRows = rows.filter(isInterruptPasstype);
+  const completionRows = rows.filter((r) => !isInterruptPasstype(r));
+  const hasInterrupt = interruptRows.length > 0;
+  return {
+    hasInterrupt,
+    interruptHalf: hasInterrupt ? segmentMetrics(interruptRows) : null,
+    completionHalf:
+      completionRows.length > 0 ? segmentMetrics(completionRows) : null,
+    wholeWafer: computeJbYieldMetrics(rows),
+  };
+}
 
 export function buildSlotYieldSummary(
   rows: Record<string, unknown>[]
@@ -178,17 +202,23 @@ export function buildSlotYieldSummary(
   const out: SlotYieldSummaryEntry[] = [];
   for (const slot of [...bySlot.keys()].sort((a, b) => a - b)) {
     const slotRows = bySlot.get(slot)!;
-    const m = computeJbYieldMetrics(slotRows);
-    const hasInterrupt = slotRows.some(isInterruptPasstype);
-    out.push({
+    const b = computeJbYieldBreakdown(slotRows);
+    const entry: SlotYieldSummaryEntry = {
       slot,
-      grossDie: m.grossDie,
-      badDie: m.badDie,
-      goodDie: m.goodDie,
-      yieldPct: m.yieldPct,
-      hasInterrupt,
+      grossDie: b.wholeWafer.grossDie,
+      badDie: b.wholeWafer.badDie,
+      goodDie: b.wholeWafer.goodDie,
+      yieldPct: b.wholeWafer.yieldPct,
+      hasInterrupt: b.hasInterrupt,
       rowCount: slotRows.length,
-    });
+    };
+    if (b.hasInterrupt && b.interruptHalf) {
+      entry.interruptHalf = b.interruptHalf;
+    }
+    if (b.hasInterrupt && b.completionHalf) {
+      entry.completionHalf = b.completionHalf;
+    }
+    out.push(entry);
   }
   return out;
 }
