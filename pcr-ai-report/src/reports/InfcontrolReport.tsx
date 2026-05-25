@@ -12,7 +12,6 @@ import type {
 } from "../api/types";
 import { ChartDrillSplit } from "../components/ChartDrillSplit";
 import { CollapsibleQueryPanel } from "../components/CollapsibleQueryPanel";
-import { DarkChart } from "../components/DarkChart";
 import { DataTable } from "../components/DataTable";
 import {
   DraggableReportBlocks,
@@ -21,7 +20,7 @@ import {
   ReportLayoutResetButton,
   resetReportLayoutStorage,
 } from "../components/DraggableReportSections";
-import { DrillDownPanel, formatGroupLabel } from "../components/DrillDownPanel";
+import { DrillDownPanel } from "../components/DrillDownPanel";
 import { InfDutDistPanel } from "../components/InfDutDistPanel";
 import { KpiCard } from "../components/KpiCard";
 import { TreeTable } from "../components/TreeTable";
@@ -152,17 +151,6 @@ function activeChips(
   return chips;
 }
 
-const FREE_DIMS: { label: string; value: string }[] = [
-  { label: "Bin",          value: "bin"          },
-  { label: "Lot",          value: "lot"          },
-  { label: "Device",       value: "device"       },
-  { label: "ProbeCardType",value: "probeCardType"},
-  { label: "CardId",       value: "cardId"       },
-  { label: "Slot",         value: "slot"         },
-  { label: "TsType",       value: "tstype"       },
-  { label: "PassId",       value: "passId"       },
-  { label: "TesterId",     value: "testerId"     },
-];
 
 const JB_REPORT_SECTION_ORDER = [
   "binDist",
@@ -175,7 +163,7 @@ const JB_REPORT_SECTION_ORDER = [
 
 const JB_KPI_BLOCK_ORDER = ["jbWafer", "jbYieldPct", "jbWorstType", "jbTopBin"] as const;
 
-const JB_CHART_BLOCK_ORDER = ["jbDevice", "jbPcType", "jbSlot", "jbFreeDim"] as const;
+const JB_CHART_BLOCK_ORDER = ["jbPcType", "jbDevice", "jbSlot"] as const;
 
 // Sub-dimension options per parent drill
 const DRILL_FROM_DEVICE_JB: { label: string; value: string }[] = [
@@ -713,8 +701,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
   const [aggSlot,     setAggSlot]     = useState<InfcontrolAggregateBlock | null>(null);
   const [aggTree,     setAggTree]     = useState<InfcontrolAggregateBlock | null>(null);
   const [aggDevice,   setAggDevice]   = useState<InfcontrolAggregateBlock | null>(null);
-  const [aggFree,     setAggFree]     = useState<InfcontrolAggregateResponse | null>(null);
-  const [freeDim, setFreeDim] = useState("bin");
 
   const [loadingList, setLoadingList] = useState(false);
   const [loadingAgg,  setLoadingAgg]  = useState(false);
@@ -762,7 +748,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     setAggSlot(null);
     setAggTree(null);
     setAggDevice(null);
-    setAggFree(null);
     setDrills({});
     drillCacheRef.current = {};
     setSelectedLotLabel(null);
@@ -934,22 +919,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     [apiBase, aggTree, list?.rows]
   );
 
-  const fetchFreeAgg = useCallback(
-    async (dim: string, currentForm: FormState) => {
-      try {
-        const gby = jbAggregateGroupBy(dim);
-        const res = await apiGetJson<InfcontrolAggregateResponse>(
-          apiBase,
-          INFCONTROL_AGGREGATE_PATH,
-          { ...buildCoreParams(currentForm), groupBy: gby, groupTop: 30 }
-        );
-        setAggFree(res);
-      } catch {
-        setAggFree(null);
-      }
-    },
-    [apiBase]
-  );
 
   const query = useCallback(async () => {
     setLoadingList(true);
@@ -970,7 +939,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     setAggDevice(null);
     setSelectedDevice(null);
     setInfCtx(null);
-    setAggFree(null);
 
     try {
       const res = await apiGetJson<InfcontrolCombinedResponse>(
@@ -1004,16 +972,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       setLoadingAgg(false);
     }
 
-    void fetchFreeAgg(freeDim, form);
-  }, [apiBase, form, freeDim, fetchFreeAgg, listLimits]);
-
-  const handleFreeDimChange = useCallback(
-    (dim: string) => {
-      setFreeDim(dim);
-      if (list || aggBin) fetchFreeAgg(dim, form);
-    },
-    [list, aggBin, form, fetchFreeAgg]
-  );
+  }, [apiBase, form, listLimits]);
 
   // ── KPI derivations ──────────────────────────────────────────────────────
 
@@ -1308,33 +1267,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     };
   }, [aggDevice, selectedDevice]);
 
-  const freeOption = useMemo((): EChartsOption => {
-    const sorted = [...(aggFree?.groups ?? [])]
-      .sort((a, b) => a.count - b.count)
-      .slice(-10);
-    return {
-      ...horizontalBarChartBase(),
-      xAxis: {
-        type: "value",
-        axisLabel: { color: chartAxisColor },
-        splitLine: { lineStyle: { color: chartSplitLine } },
-      },
-      yAxis: {
-        type: "category",
-        data: sorted.map((g) => formatGroupLabel(g.parts) || g.key),
-        axisLabel: { ...horizontalBarCategoryAxisLabel, interval: 0 },
-      },
-      series: [
-        {
-          type: "bar",
-          cursor: "default",
-          data: sorted.map((g) => g.count),
-          itemStyle: { color: "#58a6ff", borderRadius: [0, 4, 4, 0] as unknown as number },
-          animationDuration: 600,
-        },
-      ],
-    };
-  }, [aggFree]);
 
   // ── Tree: Device → LOT → ProbeCard Type → CardId ─────────────────────────
 
@@ -1545,13 +1477,12 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         defaultOrder={JB_CHART_BLOCK_ORDER}
         layoutEpoch={layoutEpoch}
         axis="grid"
-        fullRowIds={["jbDevice", "jbPcType", "jbSlot", "jbFreeDim"]}
+        fullRowIds={["jbPcType", "jbDevice", "jbSlot"]}
         groupClassName="report-reorder-group--chartgrid"
         labels={{
-          jbDevice: "Device 不良分析",
           jbPcType: "ProbeCard Type 不良对比",
+          jbDevice: "Device 不良分析",
           jbSlot: "Slot 趋势（Wafer 间）",
-          jbFreeDim: "自由维度聚合",
         }}
         sections={{
           jbDevice: (
@@ -1756,39 +1687,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
               />
             </>
           ),
-          jbFreeDim: (
-            <div className="report-chart-panel">
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
-                {FREE_DIMS.map((d) => (
-                  <button
-                    key={d.value}
-                    type="button"
-                    className="chip"
-                    style={
-                      d.value === freeDim
-                        ? {
-                            background: "rgba(56,139,253,0.2)",
-                            borderColor: "#388bfd",
-                            color: "#58a6ff",
-                          }
-                        : undefined
-                    }
-                    onClick={() => handleFreeDimChange(d.value)}
-                  >
-                    {d.label}
-                  </button>
-                ))}
-              </div>
-              {aggFree && (
-                <div className="chart-no-drill">
-                  <DarkChart
-                    option={freeOption}
-                    height={rankBarChartHeight(aggFree.groups?.length ?? 0, 10, "medium")}
-                  />
-                </div>
-              )}
-            </div>
-          ),
         }}
       />
     );
@@ -1992,10 +1890,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     aggDevice,
     deviceOption,
     selectedDevice,
-    aggFree,
-    freeOption,
-    freeDim,
-    handleFreeDimChange,
     treeRoots,
     showTree,
     list,
