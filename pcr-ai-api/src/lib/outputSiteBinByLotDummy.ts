@@ -11,6 +11,7 @@ import {
 } from "./outputSiteBinByLot.js";
 import {
   distinctProbeCardTypesFromDummy,
+  recentLotsForDeviceFromDummy,
   resolveSiteBinWafersFromDummy,
 } from "./siteBinByLotWaferResolve.js";
 import type { SiteBinTestEndWindow } from "./siteBinByLotTestEndWindow.js";
@@ -120,6 +121,8 @@ export type SiteBinByLotDummyAggResult = SiteBinByLotData & {
   waferCount: number;
   waferSlots: number[];
   waferLots?: string[];
+  selectedLots?: string[];
+  topN?: number;
   lotDir?: string;
   deviceDir?: string;
   skippedInfPaths: string[];
@@ -155,6 +158,7 @@ function tryResolveSiteBinByLotDummyAggregate(params: {
   passIds: number[];
   testEndWindow: SiteBinTestEndWindow;
   aggregateScope: "lot" | "device";
+  topN?: number;
 }): SiteBinByLotDummyAggResult | null {
   if (!siteBinByLotUseDummy()) return null;
 
@@ -164,12 +168,27 @@ function tryResolveSiteBinByLotDummyAggregate(params: {
       : buildInfDeviceDir(params.device);
   if (!siteBinByLotDummyPathAllowed(checkPath)) return null;
 
+  let selectedLots: string[] | undefined;
+  let lotsIn: string[] | undefined;
+  if (params.aggregateScope === "device" && params.topN !== undefined) {
+    selectedLots = recentLotsForDeviceFromDummy({
+      device: params.device,
+      probeCardType: params.probeCardType,
+      passIds: params.passIds,
+      testEndWindow: params.testEndWindow,
+      topN: params.topN,
+    });
+    if (selectedLots.length === 0) return null;
+    lotsIn = selectedLots;
+  }
+
   const wafers = resolveSiteBinWafersFromDummy({
     device: params.device,
     lot: params.lot,
     probeCardType: params.probeCardType,
     passIds: params.passIds,
     testEndWindow: params.testEndWindow,
+    lotsIn,
   });
   if (wafers.length === 0) return null;
 
@@ -183,6 +202,8 @@ function tryResolveSiteBinByLotDummyAggregate(params: {
     waferCount: wafers.length,
     waferSlots: wafers.map((w) => w.slot),
     waferLots: params.aggregateScope === "device" ? [...lotSet].sort() : undefined,
+    selectedLots,
+    topN: params.topN,
     lotDir:
       params.aggregateScope === "lot"
         ? buildInfLotDir(params.device, params.lot!)
@@ -238,6 +259,7 @@ export function tryResolveSiteBinByLotDummyForDevice(
   device: string,
   passIds: number[],
   testEndWindow: SiteBinTestEndWindow,
+  topN: number,
   probeCardType?: string
 ): SiteBinByLotDummyAggResult | null {
   if (!siteBinByLotUseDummy()) return null;
@@ -258,5 +280,6 @@ export function tryResolveSiteBinByLotDummyForDevice(
     passIds,
     testEndWindow,
     aggregateScope: "device",
+    topN,
   });
 }

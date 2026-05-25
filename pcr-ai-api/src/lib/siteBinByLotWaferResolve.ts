@@ -29,6 +29,17 @@ export type ResolveSiteBinWafersParams = {
   passIds: number[];
   /** JB 路径必填：限制 TESTEND（device / lot+probeCardType） */
   testEndWindow: SiteBinTestEndWindow;
+  /** device 聚合：仅纳入 TESTEND 最新的 N 个 lot */
+  deviceTopLots?: number;
+};
+
+type JbWaferFilterParams = {
+  device: string;
+  lot?: string;
+  probeCardType: string;
+  passIds: number[];
+  testEndWindow: SiteBinTestEndWindow;
+  lotsIn?: string[];
 };
 
 const LOT_PREFIX_EXCLUDE_RE = /^(kk|gg|c)/i;
@@ -215,13 +226,102 @@ async function effectiveProbeCardType(
   return inferProbeCardTypeForDeviceScope(params);
 }
 
-export function resolveSiteBinWafersFromDummy(params: {
+/** device 范围：按 lot 的 MAX(TESTEND) 降序取前 topN 个 lot。 */
+export function recentLotsForDeviceFromDummy(params: {
   device: string;
-  lot?: string;
   probeCardType: string;
   passIds: number[];
   testEndWindow: SiteBinTestEndWindow;
-}): SiteBinWaferRef[] {
+  topN: number;
+}): string[] {
+  const passSet = new Set(params.passIds);
+  const lotMaxEnd = new Map<string, number>();
+
+  for (const row of getInfcontrolLayerBinDummyRows()) {
+    if (
+      !rowMatchesDeviceLotPass(
+        row,
+        params.device,
+        undefined,
+        passSet,
+        params.testEndWindow
+      )
+    ) {
+      continue;
+    }
+    if (!cardIdMatchesProbeCardType(row.CARDID, params.probeCardType)) continue;
+
+    const lot = String(row.LOT).trim();
+    const t = new Date(String(row.TESTEND ?? "")).getTime();
+    if (Number.isNaN(t)) continue;
+    const prev = lotMaxEnd.get(lot) ?? 0;
+    if (t > prev) lotMaxEnd.set(lot, t);
+  }
+
+  return [...lotMaxEnd.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, params.topN)
+    .map(([lot]) => lot);
+}
+
+async function recentLotsForDeviceFromOracle(params: {
+  device: string;
+  probeCardType: string;
+  passIds: number[];
+  testEndWindow: SiteBinTestEndWindow;
+  topN: number;
+}): Promise<string[]> {
+  const binds: Record<string, string | number | Date> = {
+    device: params.device.trim(),
+    probeCardType: params.probeCardType.trim(),
+    testend_lo: params.testEndWindow.lo,
+    testend_hi: params.testEndWindow.hi,
+    topn: params.topN,
+  };
+  const passPlaceholders = params.passIds.map((_, i) => `:pass${i}`);
+  for (let i = 0; i < params.passIds.length; i++) {
+    binds[`pass${i}`] = params.passIds[i]!;
+  }
+
+  const sql = `
+SELECT LOT FROM (
+  SELECT LOT, MAX_TE FROM (
+    SELECT TRIM(ic.LOT) AS LOT, MAX(lb.TESTEND) AS MAX_TE
+    FROM INFCONTROL ic
+    INNER JOIN INFLAYERBINLIST lb ON ic.KEYNUMBER = lb.KEYNUMBER
+    WHERE UPPER(TRIM(ic.DEVICE)) = UPPER(:device)
+      AND UPPER(TRIM(lb.PASSTYPE)) = 'TEST'
+      AND (
+        UPPER(TRIM(lb.CARDID)) = UPPER(:probeCardType)
+        OR UPPER(TRIM(lb.CARDID)) LIKE UPPER(:probeCardType) || '-%'
+      )
+      AND lb.PASSID IN (${passPlaceholders.join(", ")})
+      AND lb.TESTEND >= :testend_lo
+      AND lb.TESTEND <= :testend_hi
+      AND NOT REGEXP_LIKE(ic.LOT, '^(kk|gg|c)', 'i')
+    GROUP BY TRIM(ic.LOT)
+  )
+  ORDER BY MAX_TE DESC
+)
+WHERE ROWNUM <= :topn
+`.trim();
+
+  const rows = await withConnection(async (conn) => {
+    const result = await conn.execute<{ LOT: string }>(sql, binds, {
+      outFormat: oracledb.OUT_FORMAT_OBJECT,
+    });
+    return result.rows ?? [];
+  });
+
+  const lots: string[] = [];
+  for (const row of rows) {
+    const lot = String(row.LOT ?? "").trim();
+    if (lot) lots.push(lot);
+  }
+  return lots;
+}
+
+export function resolveSiteBinWafersFromDummy(params: JbWaferFilterParams): SiteBinWaferRef[] {
   const passSet = new Set(params.passIds);
   const wafers: SiteBinWaferRef[] = [];
 
@@ -240,6 +340,13 @@ export function resolveSiteBinWafersFromDummy(params: {
     if (!cardIdMatchesProbeCardType(row.CARDID, params.probeCardType)) continue;
 
     const lot = String(row.LOT).trim();
+    if (
+      params.lotsIn !== undefined &&
+      params.lotsIn.length > 0 &&
+      !params.lotsIn.includes(lot)
+    ) {
+      continue;
+    }
     const slot = Number(row.SLOT);
     if (!Number.isInteger(slot) || slot < 1) continue;
     wafers.push({
@@ -251,13 +358,9 @@ export function resolveSiteBinWafersFromDummy(params: {
   return dedupeWafers(wafers);
 }
 
-async function resolveSiteBinWafersFromOracle(params: {
-  device: string;
-  lot?: string;
-  probeCardType: string;
-  passIds: number[];
-  testEndWindow: SiteBinTestEndWindow;
-}): Promise<SiteBinWaferRef[]> {
+async function resolveSiteBinWafersFromOracle(
+  params: JbWaferFilterParams
+): Promise<SiteBinWaferRef[]> {
   const binds: Record<string, string | number | Date> = {
     device: params.device.trim(),
     probeCardType: params.probeCardType.trim(),
@@ -273,6 +376,14 @@ async function resolveSiteBinWafersFromOracle(params: {
   if (params.lot !== undefined) {
     binds.lot = params.lot.trim();
     lotClause = " AND UPPER(TRIM(ic.LOT)) = UPPER(:lot)";
+  } else if (params.lotsIn !== undefined && params.lotsIn.length > 0) {
+    const lotPlaceholders = params.lotsIn.map((_, i) => `:lotin${i}`);
+    for (let i = 0; i < params.lotsIn.length; i++) {
+      binds[`lotin${i}`] = params.lotsIn[i]!.trim();
+    }
+    lotClause = ` AND UPPER(TRIM(ic.LOT)) IN (${lotPlaceholders
+      .map((p) => `UPPER(${p})`)
+      .join(", ")})`;
   }
 
   const sql = `
@@ -322,14 +433,46 @@ export async function resolveSiteBinWafersWithSkips(
   wafers: SiteBinWaferRef[];
   skippedInfPaths: string[];
   probeCardType: string;
+  /** device 聚合：按 TESTEND 选中的 lot（有序，新→旧） */
+  selectedLots?: string[];
+  topN?: number;
 }> {
   const probeCardType = await effectiveProbeCardType(params);
-  const resolved = {
+
+  let selectedLots: string[] | undefined;
+  let lotsIn: string[] | undefined;
+  if (params.lot === undefined && params.deviceTopLots !== undefined) {
+    const topN = params.deviceTopLots;
+    selectedLots = listApisForceOracleNoDummy()
+      ? await recentLotsForDeviceFromOracle({
+          device: params.device,
+          probeCardType,
+          passIds: params.passIds,
+          testEndWindow: params.testEndWindow,
+          topN,
+        })
+      : recentLotsForDeviceFromDummy({
+          device: params.device,
+          probeCardType,
+          passIds: params.passIds,
+          testEndWindow: params.testEndWindow,
+          topN,
+        });
+    if (selectedLots.length === 0) {
+      throw new OutputSiteBinByLotNotFoundError(
+        `No JB TEST lots for device=${params.device}, probeCardType=${probeCardType}, passIds=[${params.passIds.join(", ")}]`
+      );
+    }
+    lotsIn = selectedLots;
+  }
+
+  const resolved: JbWaferFilterParams = {
     device: params.device,
     lot: params.lot,
     probeCardType,
     passIds: params.passIds,
     testEndWindow: params.testEndWindow,
+    lotsIn,
   };
 
   const fromJb = listApisForceOracleNoDummy()
@@ -339,7 +482,9 @@ export async function resolveSiteBinWafersWithSkips(
   if (fromJb.length === 0) {
     const scope = params.lot
       ? `device=${params.device}, lot=${params.lot}`
-      : `device=${params.device}`;
+      : selectedLots
+        ? `device=${params.device}, topN lots=[${selectedLots.join(", ")}]`
+        : `device=${params.device}`;
     throw new OutputSiteBinByLotNotFoundError(
       `No JB TEST rows for ${scope}, probeCardType=${probeCardType}, passIds=[${params.passIds.join(", ")}]`
     );
@@ -362,7 +507,14 @@ export async function resolveSiteBinWafersWithSkips(
     );
   }
 
-  return { wafers, skippedInfPaths, probeCardType };
+  return {
+    wafers,
+    skippedInfPaths,
+    probeCardType,
+    ...(selectedLots !== undefined
+      ? { selectedLots, topN: params.deviceTopLots }
+      : {}),
+  };
 }
 
 export function probeCardTypeFromCardId(cardId: unknown): string | null {

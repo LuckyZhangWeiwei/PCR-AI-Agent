@@ -72,7 +72,9 @@ curl -s "http://10.192.130.89:30008/api/v1/inf-analysis/site-bin-bylot?device=WA
 
 跨该 device 下**所有 lot** 中、JB 命中且 INF 可读的 wafer，按同一 `passId` 累加。
 
-**默认时间窗（与层控 v3 一致）：** 未传任何 `testStart*` / `testEnd*` 时，JB 仅取 **UTC 最近一年** 内 `TESTEND` 的行（响应含 `testEndWindow`、`testEndWindowDefaultOneYear: true`）。全历史会命中上千片 wafer 并触发 `SITE_BIN_BY_LOT_MAX_WAFERS_DEVICE`（默认 100）。
+**Lot 范围：** 在 JB 候选行内按每个 lot 的 **MAX(TESTEND)** 降序，默认只取最新 **`topN=10`** 个 lot（`topN` 最大 **50**）。响应含 `topN`、`selectedLots`（选中 lot 列表，新→旧）。
+
+**时间窗（与层控 v3 一致）：** 未传 `testStart*` / `testEnd*` 时，先在 **UTC 最近一年** `TESTEND` 内筛 lot，再取 topN。
 
 | `probeCardType` | 行为 |
 | --- | --- |
@@ -80,8 +82,11 @@ curl -s "http://10.192.130.89:30008/api/v1/inf-analysis/site-bin-bylot?device=WA
 | **传** | 只聚合该卡型对应 wafer |
 
 ```bash
-# 仅 device + pass（生产 Oracle 常用）
+# 仅 device + pass（默认 topN=10 个最新 lot）
 curl -s "http://10.192.130.89:30008/api/v1/inf-analysis/site-bin-bylot?device=WA03P02G&passId=1"
+
+# 扩大到 20 个 lot（上限 50）
+curl -s "http://10.192.130.89:30008/api/v1/inf-analysis/site-bin-bylot?device=WA03P02G&passId=1&topN=20"
 
 # 显式指定卡型（同一 device+pass 存在多种卡时）
 curl -s "http://10.192.130.89:30008/api/v1/inf-analysis/site-bin-bylot?device=WA03P02G&probeCardType=8037&passId=1"

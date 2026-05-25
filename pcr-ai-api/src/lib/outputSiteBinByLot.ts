@@ -27,7 +27,7 @@ export const SITE_BIN_BY_LOT_LOT_AGG_SUMMARY =
   "Lot-level aggregation (probeCardType filter): sum dieCount across JB-matched wafer INFs under {INF_STORAGE_ROOT}/{DEVICE}/{LOT}/ for one probeCardType and requested passId(s), per passId×bin×dut.";
 
 export const SITE_BIN_BY_LOT_DEVICE_AGG_SUMMARY =
-  "Device-level aggregation: sum dieCount across all lots/slots under {INF_STORAGE_ROOT}/{DEVICE}/ for one probeCardType and requested passId(s), per passId×bin×dut.";
+  "Device-level aggregation: pick the N most recent lots by MAX(TESTEND) (default topN=10, max 50), then sum dieCount across readable wafer INFs under those lots for one probeCardType and passId(s), per passId×bin×dut.";
 
 export class OutputSiteBinByLotValidationError extends Error {
   readonly statusCode = 400;
@@ -229,6 +229,9 @@ export type RunOutputSiteBinByLotAggregateResult = {
   waferCount: number;
   waferSlots: number[];
   waferLots?: string[];
+  /** device：按 TESTEND 选中的 lot（新→旧） */
+  selectedLots?: string[];
+  topN?: number;
   skippedInfPaths: string[];
   data: SiteBinByLotData;
   stderrParts: string[];
@@ -245,7 +248,7 @@ function assertWaferCountWithinLimit(
     const hints: string[] = [];
     if (opts?.jbTimeFiltered) {
       hints.push(
-        "narrow with testEndFrom/testEndTo (omit all time params for default one-year TESTEND window)"
+        "reduce topN (default 10 lots) or narrow testEndFrom/testEndTo"
       );
     }
     hints.push(`raise ${envName} on server (cap 500)`);
@@ -374,14 +377,16 @@ export async function runOutputSiteBinByLotForDevice(
   device: string,
   passIds: number[],
   testEndWindow: SiteBinTestEndWindow,
+  topN: number,
   probeCardType?: string
 ): Promise<RunOutputSiteBinByLotAggregateResult> {
-  const { wafers, skippedInfPaths, probeCardType: pct } =
+  const { wafers, skippedInfPaths, probeCardType: pct, selectedLots } =
     await resolveSiteBinWafersWithSkips({
     device,
     probeCardType,
     passIds,
     testEndWindow,
+    deviceTopLots: topN,
   });
   assertWaferCountWithinLimit(
     wafers.length,
@@ -404,6 +409,8 @@ export async function runOutputSiteBinByLotForDevice(
     deviceDir: validateInfPath(buildInfDeviceDir(device)),
     probeCardType: pct,
     testEndWindow,
+    topN,
+    selectedLots,
     waferCount: wafers.length,
     waferSlots: wafers.map((w) => w.slot),
     waferLots: [...lotSet].sort((a, b) => a.localeCompare(b)),

@@ -23,6 +23,7 @@ import {
   tryResolveSiteBinByLotDummyForLotByDirectory,
 } from "../lib/outputSiteBinByLotDummy.js";
 import { reqId } from "../lib/routeHelpers.js";
+import { parseSiteBinDeviceTopN } from "../lib/siteBinByLotDeviceTopN.js";
 import { parseSiteBinByLotTestEndWindow } from "../lib/siteBinByLotTestEndWindow.js";
 import { validateProbeCardType } from "../lib/siteBinByLotWaferResolve.js";
 
@@ -71,7 +72,7 @@ function jsonAggregateResponse(
  * 单片（不变）：`?infPath=...&passId=1`
  * Lot 目录扫描（兼容）：`?device=...&lot=...&passId=1`
  * Lot + 卡型：`?device=...&lot=...&probeCardType=...&passId=1`
- * Device：`?device=...&passId=1`（无 lot；`probeCardType` 可选；默认最近一年 TESTEND）
+ * Device：`?device=...&passId=1`（无 lot；默认 TESTEND 最新 `topN=10` 个 lot，最大 50）
  */
 infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
   const infRaw = req.query.infPath ?? req.query.inf_path;
@@ -275,9 +276,13 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
     }
 
     let testEndWindow;
+    let topN: number;
     try {
       testEndWindow = parseSiteBinByLotTestEndWindow(
         req.query as Record<string, unknown>
+      );
+      topN = parseSiteBinDeviceTopN(
+        req.query.topN ?? req.query.topn
       );
     } catch (e) {
       if (e instanceof OutputSiteBinByLotValidationError) {
@@ -291,6 +296,7 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
         device,
         passIds,
         testEndWindow,
+        topN,
         probeCardTypeOpt
       );
       if (dummyDev !== null) {
@@ -299,6 +305,7 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
           waferCount,
           waferSlots,
           waferLots,
+          selectedLots,
           skippedInfPaths,
           passes,
           probeCardType: pct,
@@ -312,6 +319,8 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
               device,
               deviceDir,
               probeCardType: pct,
+              topN,
+              selectedLots,
               waferCount,
               waferSlots,
               waferLots,
@@ -328,6 +337,7 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
         device,
         passIds,
         testEndWindow,
+        topN,
         probeCardTypeOpt
       );
       return res.json(
@@ -339,6 +349,8 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
             device,
             deviceDir: result.deviceDir,
             probeCardType: result.probeCardType,
+            topN: result.topN,
+            selectedLots: result.selectedLots,
             waferCount: result.waferCount,
             waferSlots: result.waferSlots,
             waferLots: result.waferLots,

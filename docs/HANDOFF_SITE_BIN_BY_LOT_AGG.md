@@ -18,7 +18,7 @@
 | --- | --- | --- | --- | --- |
 | **单片** | `infPath`, `passId` | — | `wafer`（或无 scope） | 原有行为；报表 `InfDutDistPanel` 仍用此模式 |
 | **Lot** | `device`, `lot`, `passId` | `probeCardType` | `lot` | 无卡型：扫 `{INF_STORAGE_ROOT}/{DEVICE}/{LOT}/` 下全部 `r_1-{slot}`（兼容旧行为）。有卡型：JB `PASSTYPE=TEST` + `CARDID` 前缀匹配后读 INF |
-| **Device** | `device`, `passId` | `probeCardType` | `device` | **勿传 `lot`**。无卡型：JB 推断唯一卡型。**默认 TESTEND 最近一年**（与 v3 层控一致）；可传 `testEndFrom`/`testEndTo` 收窄。全历史易超 **100** 片上限。 |
+| **Device** | `device`, `passId` | `probeCardType`, `topN` | `device` | **勿传 `lot`**。默认 **`topN=10`**：在 TESTEND 窗内取 **最新 10 个 lot**（`topN` 最大 **50**），再聚合这些 lot 下 wafer。响应 `selectedLots`、`topN`。 |
 
 **INF 只读：** Node `readdir` / `access(R_OK)` + Perl `LoadINF`；无写删。
 

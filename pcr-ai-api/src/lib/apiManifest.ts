@@ -748,7 +748,7 @@ export const apiManifest = {
       path: "/api/v1/inf-analysis/site-bin-bylot",
       method: "GET",
       purpose:
-        "Per wafer test pass (one or more PASS_ID): from on-disk INF wafer map(s), list which probe-card DUT produced each bin and die counts (PASS_TYPE=TEST). Single wafer: infPath. Lot: device+lot+passId (optional probeCardType: JB filter or scan all r_1-{slot} under lot dir). Device: device+passId without lot (optional probeCardType; auto-infer single card type from JB). Sums dieCount per pass×bin×dut. Not Oracle JB—Perl output_site_bin_bylot.pl --json.",
+        "Per wafer test pass (one or more PASS_ID): from on-disk INF wafer map(s), list which probe-card DUT produced each bin and die counts (PASS_TYPE=TEST). Single wafer: infPath. Lot: device+lot+passId. Device: device+passId; default topN=10 most recent lots by MAX(TESTEND) (max topN=50), optional probeCardType. Sums dieCount per pass×bin×dut. Perl output_site_bin_bylot.pl --json.",
       queryParameters: [
         {
           name: "infPath",
@@ -779,6 +779,12 @@ export const apiManifest = {
           type: "number",
           optional: false,
           note: "Wafer test pass(es) to include—repeat or comma-separated, e.g. passId=1&passId=2 (alias: pass_id)",
+        },
+        {
+          name: "topN",
+          type: "number",
+          optional: true,
+          note: "Device scope only: include the N most recent lots by MAX(TESTEND); default 10, max 50 (alias: topn)",
         },
       ],
       responseShape: {

@@ -10,6 +10,11 @@ import {
 } from "../src/lib/outputSiteBinByLot.js";
 import { buildInfLotDir } from "../src/lib/buildInfPath.js";
 import { getInfcontrolLayerBinDummyRows } from "../src/lib/infcontrolLayerBinDummy.js";
+import {
+  parseSiteBinDeviceTopN,
+  SITE_BIN_DEVICE_TOP_LOTS_DEFAULT,
+  SITE_BIN_DEVICE_TOP_LOTS_MAX,
+} from "../src/lib/siteBinByLotDeviceTopN.js";
 import { parseSiteBinByLotTestEndWindow } from "../src/lib/siteBinByLotTestEndWindow.js";
 import {
   cardIdMatchesProbeCardType,
@@ -39,6 +44,15 @@ describe("outputSiteBinByLot validation", () => {
 
   test("parsePassIdsFromQuery splits comma and repeats", () => {
     assert.deepEqual(parsePassIdsFromQuery(["1, 2", "3"]), [1, 2, 3]);
+  });
+
+  test("parseSiteBinDeviceTopN defaults and caps", () => {
+    assert.equal(parseSiteBinDeviceTopN(undefined), SITE_BIN_DEVICE_TOP_LOTS_DEFAULT);
+    assert.equal(parseSiteBinDeviceTopN("25"), 25);
+    assert.throws(
+      () => parseSiteBinDeviceTopN(String(SITE_BIN_DEVICE_TOP_LOTS_MAX + 1)),
+      (e) => e instanceof OutputSiteBinByLotValidationError
+    );
   });
 
   test("parsePassIdsFromQuery rejects non-integer", () => {
@@ -401,10 +415,14 @@ describe("GET /inf-analysis/site-bin-bylot route", () => {
     const body = (await r.json()) as {
       meta: { aggregateScope?: string };
       probeCardType: string;
+      topN: number;
+      selectedLots: string[];
       waferLots?: string[];
     };
     assert.equal(body.meta.aggregateScope, "device");
     assert.ok(body.probeCardType.length > 0);
+    assert.equal(body.topN, SITE_BIN_DEVICE_TOP_LOTS_DEFAULT);
+    assert.ok(body.selectedLots.length >= 1);
     assert.ok(body.waferLots && body.waferLots.length >= 1);
 
     await new Promise<void>((resolve) => server.close(() => resolve()));
