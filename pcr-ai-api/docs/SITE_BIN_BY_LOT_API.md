@@ -25,16 +25,66 @@
 
 | 项 | 值 |
 | --- | --- |
-| 方法 | `GET` |
+| 方法 | `GET`（**只读**；不修改、不删除 INF 文件） |
 | 路径 | `/api/v1/inf-analysis/site-bin-bylot`（亦可用 `/api/v3/...`、`/api/v4/...`） |
-| 查询参数 | 见下表 |
+
+### 2.1 三种调用模式（互斥）
+
+| 模式 | 查询参数 | 说明 |
+| --- | --- | --- |
+| **单片 wafer**（原有） | `infPath` + `passId` | 读**一个** INF 文件 |
+| **Lot 聚合** | `device` + `lot` + `passId`；可选 `probeCardType` | 见 §2.2 |
+| **Device 聚合**（新） | `device` + `probeCardType` + `passId`（**不要**传 `lot`） | 跨 lot 累加，见 §2.3 |
+
+**不要**同时传 `infPath` 与 `device`。
+
+### 2.2 公共参数
+
+| 参数 | 必填 | 说明 |
+| --- | --- | --- |
+| `passId` | 是 | 一个或多个 INF `PASS_ID`；可 `passId=1&passId=2` 或 `passId=1,2`；别名 `pass_id` |
+| `probeCardType` | Lot/Device 聚合时见下 | 与 JB **`PROBECARDTYPE`** 一致：`CARDID` 首个 `-` 前一段（如 `9400-01` → `9400`） |
+
+Perl 在匹配 `PASS_ID` 后还会过滤 **`PASS_TYPE='TEST'`**（与 JB **`PASSTYPE=TEST`** 一致）。
+
+### 2.3 Lot 聚合（`device` + `lot`）
+
+**路径规则：** `{INF_STORAGE_ROOT}/{DEVICE大写}/{LOT大写}/r_1-{slot}`（默认根 `/data/INF`）。
+
+| 是否传 `probeCardType` | 行为 |
+| --- | --- |
+| **不传**（兼容原逻辑） | 扫描 lot 目录下**全部** `r_1-{slot}` 文件，按 pass×bin×dut **累加** `dieCount` |
+| **传** | 先查 JB（`PASSTYPE=TEST` + 同 `probeCardType` + `passId`），只对命中的 wafer 读 INF 并累加；磁盘无文件记入 `skippedInfPaths` |
+
+```bash
+# 目录扫描（整 lot 下所有片）
+curl -s "http://10.192.130.89:30008/api/v1/inf-analysis/site-bin-bylot?device=WA03P02G&lot=NF12551.1N&passId=1"
+
+# 同卡型过滤（推荐与 JB 下钻一致）
+curl -s "http://10.192.130.89:30008/api/v1/inf-analysis/site-bin-bylot?device=WA03P02G&lot=NF12551.1N&probeCardType=8037&passId=1"
+```
+
+响应除 `passes` 外还有：`meta.aggregateScope: "lot"`、`device`、`lot`、`lotDir`、`waferCount`、`waferSlots`；带卡型时另有 `probeCardType`。
+
+上限：`SITE_BIN_BY_LOT_MAX_WAFERS`（默认 **25** 片）。
+
+### 2.4 Device 聚合（`device` + `probeCardType`，无 `lot`）
+
+跨该 device 下**所有 lot** 中、JB 命中且 INF 可读的 wafer，按同一 `passId` 累加。
+
+```bash
+curl -s "http://10.192.130.89:30008/api/v1/inf-analysis/site-bin-bylot?device=WA03P02G&probeCardType=8037&passId=1"
+```
+
+响应：`meta.aggregateScope: "device"`、`deviceDir`、`waferLots[]`、`probeCardType`、`waferCount`、`waferSlots`、`passes`。
+
+上限：`SITE_BIN_BY_LOT_MAX_WAFERS_DEVICE`（默认 **100** 片）。
+
+### 2.5 单片 wafer（`infPath`）
 
 | 参数 | 必填 | 说明 |
 | --- | --- | --- |
 | `infPath` | 是 | API **服务器本机**上的 INF 绝对路径；别名 `inf_path` |
-| `passId` | 是 | 一个或多个 INF `PASS_ID`；可 `passId=1&passId=2` 或 `passId=1,2`；别名 `pass_id` |
-
-Perl 脚本 **`output_site_bin_bylot.pl`** 在匹配 `PASS_ID` 后还会过滤 **`PASS_TYPE='TEST'`**（跳过 INTERRUPT 等非 TEST pass，与 JB **`PASSTYPE=TEST`** 语义一致）。
 
 **sort 与 passId（与 JB 一致）：**
 
@@ -46,15 +96,19 @@ Perl 脚本 **`output_site_bin_bylot.pl`** 在匹配 `PASS_ID` 后还会过滤 *
 
 ---
 
-## 3. `infPath` 怎么来
+## 3. `infPath` 怎么来（单片模式）
 
-现场规则：**由 `device`、`lot`、`slot` 在程序里拼接**（不要手填乱路径）。模板需与运维一致，例如：
+程序拼接（与 `buildInfPath` 一致）：
 
 ```text
-{INF_STORAGE_ROOT}/{device}/.../{lot}/.../slot{n}
+{INF_STORAGE_ROOT}/{DEVICE大写}/{LOT大写}/r_1-{slot}
 ```
 
-联调 Dummy 使用**固定路径**（见 §4），与样本 JSON 对应。
+示例：`device=WA03P02G`、`lot=NF12551.1N`、`slot=3` → `/data/INF/WA03P02G/NF12551.1N/r_1-3`
+
+Lot/Device 聚合**不需要**传 `infPath`，由服务端按上式解析路径。
+
+联调 Dummy 单片固定路径见 §4。
 
 ---
 
@@ -182,16 +236,18 @@ Vite 开发若走代理：base 用 `window.location.origin`，路径仍为 `/api
 
 | HTTP | `code` | 常见原因 |
 | --- | --- | --- |
-| 400 | `VALIDATION_ERROR` | 缺少 `infPath` 或 `passId`；`passId` 非整数 |
+| 400 | `VALIDATION_ERROR` | 缺少 `passId`；`infPath` 与 `device` 同传；Device 聚合无 `probeCardType`；wafer 数超上限 |
+| 404 | `LOT_INF_NOT_FOUND` | lot 目录无 `r_1-*`；JB 无匹配行；JB 有匹配但 INF 均不可读 |
 | 502 | `PERL_SCRIPT_FAILED` | INF 不存在、Perl 报错、无 INFAnalysis 模块 |
 | 502 | `PERL_OUTPUT_PARSE_FAILED` | Perl 未输出合法 JSON |
 | 504 | `PERL_SCRIPT_TIMEOUT` | 超过 `PERL_SCRIPT_TIMEOUT_MS` |
 
-缺少参数示例：
-
 ```bash
+# 单片缺 passId → 400
 curl -s "http://127.0.0.1:30008/api/v1/inf-analysis/site-bin-bylot?infPath=/tmp/x.inf"
-# → 400 VALIDATION_ERROR（无 passId）
+
+# Device 聚合缺 probeCardType → 400
+curl -s "http://127.0.0.1:30008/api/v1/inf-analysis/site-bin-bylot?device=WA03P02G&passId=1"
 ```
 
 ---
@@ -212,8 +268,10 @@ curl -s "http://127.0.0.1:30008/api/v1/inf-analysis/site-bin-bylot?infPath=/tmp/
 
 | 文件 | 说明 |
 | --- | --- |
-| `src/routes/infAnalysisRoutes.ts` | 路由 |
-| `src/lib/outputSiteBinByLot.ts` | 校验、Perl 调用 |
+| `src/routes/infAnalysisRoutes.ts` | 路由（单片 / lot / device 分支） |
+| `src/lib/outputSiteBinByLot.ts` | 校验、Perl、目录扫描与 JB 聚合 |
+| `src/lib/siteBinByLotWaferResolve.ts` | JB 查 wafer 列表 + `probeCardType` 过滤 |
+| `src/lib/buildInfPath.ts` | `buildInfPath` / `buildInfLotDir` / `buildInfDeviceDir` |
 | `src/lib/outputSiteBinByLotDummy.ts` | Dummy 开关与固定路径 |
 | `docs/site-bin-bylot-dummy-r_1-1.passes.json` | Dummy 样本数据 |
 | `test/outputSiteBinByLot.test.ts` | 单测 |

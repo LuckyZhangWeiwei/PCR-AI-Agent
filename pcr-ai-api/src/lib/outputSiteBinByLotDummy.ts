@@ -3,7 +3,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { listApisForceOracleNoDummy } from "./listDummyRuntime.js";
-import type { SiteBinByLotData, SiteBinPass } from "./outputSiteBinByLot.js";
+import { buildInfDeviceDir, buildInfLotDir } from "./buildInfPath.js";
+import {
+  mergeSiteBinByLotData,
+  type SiteBinByLotData,
+  type SiteBinPass,
+} from "./outputSiteBinByLot.js";
+import { resolveSiteBinWafersFromDummy } from "./siteBinByLotWaferResolve.js";
 
 /** Dummy 联调固定 INF 路径（与 `docs/site-bin-bylot-dummy-r_1-1.passes.json` 样本一致）。 */
 export const SITE_BIN_BY_LOT_DUMMY_CANONICAL_INF_PATH =
@@ -102,4 +108,110 @@ export function tryResolveSiteBinByLotDummy(
   if (!siteBinByLotUseDummy()) return null;
   if (!siteBinByLotDummyPathAllowed(infPath)) return null;
   return buildSiteBinByLotDummyData(passIds);
+}
+
+export type SiteBinByLotDummyAggResult = SiteBinByLotData & {
+  probeCardType?: string;
+  waferCount: number;
+  waferSlots: number[];
+  waferLots?: string[];
+  lotDir?: string;
+  deviceDir?: string;
+  skippedInfPaths: string[];
+};
+
+/** 兼容：lot 目录扫描 Dummy（固定 3 片，无 probeCardType）。 */
+const SITE_BIN_BY_LOT_DUMMY_LOT_DIR_WAFER_SLOTS = [1, 2, 3] as const;
+
+export function tryResolveSiteBinByLotDummyForLotByDirectory(
+  device: string,
+  lot: string,
+  passIds: number[]
+): SiteBinByLotDummyAggResult | null {
+  if (!siteBinByLotUseDummy()) return null;
+  const lotDir = buildInfLotDir(device, lot);
+  if (!siteBinByLotDummyPathAllowed(lotDir)) return null;
+
+  const single = buildSiteBinByLotDummyData(passIds);
+  const chunks = SITE_BIN_BY_LOT_DUMMY_LOT_DIR_WAFER_SLOTS.map(() => single);
+  return {
+    ...mergeSiteBinByLotData(chunks),
+    lotDir,
+    waferCount: SITE_BIN_BY_LOT_DUMMY_LOT_DIR_WAFER_SLOTS.length,
+    waferSlots: [...SITE_BIN_BY_LOT_DUMMY_LOT_DIR_WAFER_SLOTS],
+    skippedInfPaths: [],
+  };
+}
+
+function tryResolveSiteBinByLotDummyAggregate(params: {
+  device: string;
+  lot?: string;
+  probeCardType: string;
+  passIds: number[];
+  aggregateScope: "lot" | "device";
+}): SiteBinByLotDummyAggResult | null {
+  if (!siteBinByLotUseDummy()) return null;
+
+  const checkPath =
+    params.aggregateScope === "lot"
+      ? buildInfLotDir(params.device, params.lot!)
+      : buildInfDeviceDir(params.device);
+  if (!siteBinByLotDummyPathAllowed(checkPath)) return null;
+
+  const wafers = resolveSiteBinWafersFromDummy({
+    device: params.device,
+    lot: params.lot,
+    probeCardType: params.probeCardType,
+    passIds: params.passIds,
+  });
+  if (wafers.length === 0) return null;
+
+  const single = buildSiteBinByLotDummyData(params.passIds);
+  const chunks = wafers.map(() => single);
+  const lotSet = new Set(wafers.map((w) => w.lot));
+
+  return {
+    ...mergeSiteBinByLotData(chunks),
+    probeCardType: params.probeCardType,
+    waferCount: wafers.length,
+    waferSlots: wafers.map((w) => w.slot),
+    waferLots: params.aggregateScope === "device" ? [...lotSet].sort() : undefined,
+    lotDir:
+      params.aggregateScope === "lot"
+        ? buildInfLotDir(params.device, params.lot!)
+        : undefined,
+    deviceDir:
+      params.aggregateScope === "device"
+        ? buildInfDeviceDir(params.device)
+        : undefined,
+    skippedInfPaths: [],
+  };
+}
+
+export function tryResolveSiteBinByLotDummyForLot(
+  device: string,
+  lot: string,
+  probeCardType: string,
+  passIds: number[]
+): SiteBinByLotDummyAggResult | null {
+  return tryResolveSiteBinByLotDummyAggregate({
+    device,
+    lot,
+    probeCardType,
+    passIds,
+    aggregateScope: "lot",
+  });
+}
+
+export function tryResolveSiteBinByLotDummyForDevice(
+  device: string,
+  probeCardType: string,
+  passIds: number[]
+): SiteBinByLotDummyAggResult | null {
+  return tryResolveSiteBinByLotDummyAggregate({
+    device,
+    probeCardType,
+    passIds,
+    aggregateScope: "device",
+  });
 }

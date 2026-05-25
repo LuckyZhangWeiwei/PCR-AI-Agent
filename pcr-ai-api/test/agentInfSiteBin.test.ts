@@ -1,9 +1,16 @@
 import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
-import { buildInfPath } from "../src/lib/buildInfPath.js";
+import { buildInfLotDir, buildInfPath } from "../src/lib/buildInfPath.js";
 import { runTool } from "../src/lib/agent/agentToolHandlers.js";
 
 describe("buildInfPath", () => {
+  it("buildInfLotDir uppercases device and lot", () => {
+    assert.equal(
+      buildInfLotDir("wa03p02g", "nf12551.1n"),
+      "/data/INF/WA03P02G/NF12551.1N"
+    );
+  });
+
   it("uppercases device and lot, appends slot", () => {
     assert.equal(
       buildInfPath("WA03P02G", "NF12551.1N", 3),
