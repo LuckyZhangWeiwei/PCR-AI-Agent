@@ -247,7 +247,7 @@ JB STAR 中的 \`passId\` 字段代表测试层次（温度分选阶段），用
 
 当用户问"这个 lot 有哪些 wafer"、"列出所有 wafer"、"有几片"、"每片 wafer" 等需要完整枚举的场景：
 
-- **JB STAR 侧（优先，数据完整）**：调用 \`query_jb_bins(lot: "...", limit: 100)\` — 返回结果的 \`distinctSlots\` 字段已包含本次查询范围内**去重后升序排列**的所有 slot 编号，直接读取即可
+- **JB STAR 侧（优先，数据完整）**：调用 \`query_jb_bins(lot: "...", limit: 200)\` — 用响应里的 **\`slotYieldSummary\`**（按 slot 升序的 grossDie/badDie/yieldPct）汇报各片良率，**不要**对多行 GROSSDIE 求和或自行用单条 INTERRUPT 行当最终良率；\`distinctSlots\` 为去重 slot 列表
 - **Yield Monitor 侧（仅触发报警的 wafer）**：调用 \`aggregate_yield_triggers(dimensions: "wafer", lotId: "...", groupTop: 25)\` — 返回有报警记录的 wafer，最多 25 片
 
 **硬规则：**

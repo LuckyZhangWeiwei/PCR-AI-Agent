@@ -1,29 +1,52 @@
 /** Pure utilities for Yield% computation, DUT label parsing, tree building, and date shortcuts. */
 
+import { collectGoodBinNumbersFromJbRow } from "./infGoodBins";
+import type { InfcontrolLayerBinV3Row } from "../api/types";
+
 // ── Yield% ─────────────────────────────────────────────────────────────────
 
 type BinCell = { n: number; value: number; isGoodBin: boolean };
 
+function badDieFromJbListRow(
+  row: { bins?: BinCell[]; GROSSDIE?: number; grossDie?: number } & InfcontrolLayerBinV3Row
+): number {
+  const good = collectGoodBinNumbersFromJbRow(row as InfcontrolLayerBinV3Row);
+  let bad = 0;
+  if (!Array.isArray(row.bins)) return 0;
+  for (const b of row.bins) {
+    const n = Number(b.n);
+    const v = Number(b.value);
+    if (!Number.isFinite(n) || !Number.isFinite(v) || v <= 0) continue;
+    if (good.has(n) || b.isGoodBin) continue;
+    bad += v;
+  }
+  return bad;
+}
+
+function grossDieFromRow(row: { GROSSDIE?: number; grossDie?: number }): number {
+  const g = Number(row.GROSSDIE ?? row.grossDie ?? 0);
+  return Number.isFinite(g) && g > 0 ? g : 0;
+}
+
 /**
- * Compute Yield% for an array of v3 list rows.
- * Formula: 1 - totalBadDie / totalGrossDie
- * Returns null when grossDie sum is 0.
+ * JB 列表行良率（与 API `jbYieldCalc` 一致）：
+ * GROSSDIE 取组内 MAX；坏 die 仅在 GROSSDIE 等于该 max 的行上累加；BIN1 为良品。
  */
 export function computeYieldPct(
-  rows: Array<{ bins?: BinCell[]; GROSSDIE?: number; grossDie?: number }>
+  rows: Array<
+    { bins?: BinCell[]; GROSSDIE?: number; grossDie?: number } & InfcontrolLayerBinV3Row
+  >
 ): number | null {
-  let totalBad = 0;
-  let totalGross = 0;
+  if (!rows.length) return null;
+  let grossDie = 0;
+  for (const row of rows) grossDie = Math.max(grossDie, grossDieFromRow(row));
+  if (grossDie <= 0) return null;
+  let badDie = 0;
   for (const row of rows) {
-    const gross = Number(row.GROSSDIE ?? row.grossDie ?? 0);
-    if (Number.isFinite(gross) && gross > 0) totalGross += gross;
-    if (Array.isArray(row.bins)) {
-      for (const b of row.bins) {
-        if (!b.isGoodBin && Number.isFinite(b.value)) totalBad += b.value;
-      }
-    }
+    if (grossDieFromRow(row) !== grossDie) continue;
+    badDie += badDieFromJbListRow(row);
   }
-  return totalGross > 0 ? (1 - totalBad / totalGross) * 100 : null;
+  return ((grossDie - badDie) / grossDie) * 100;
 }
 
 /** Color based on yield%: ≥95 green, 80-95 yellow/orange, <80 red. */

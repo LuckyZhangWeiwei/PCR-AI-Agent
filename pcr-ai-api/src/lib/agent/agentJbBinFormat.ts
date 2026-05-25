@@ -1,6 +1,11 @@
 // pcr-ai-api/src/lib/agent/agentJbBinFormat.ts
 /** Agent 工具回传：与 aggregate_jb_bins 的 bin/count 语义对齐，避免 n/value 被模型对调。 */
 
+import {
+  buildSlotYieldSummary,
+  slotYieldSummaryFieldGuide,
+} from "../jbYieldCalc.js";
+
 export type AgentJbBinEntry = {
   bin: number;
   dieCount: number;
@@ -54,10 +59,13 @@ export function wrapJbQueryResultForAgent(
     if (Number.isFinite(n) && n > 0) slotSet.add(n);
   }
   const distinctSlots = [...slotSet].sort((a, b) => a - b);
+  const slotYieldSummary = buildSlotYieldSummary(rows);
   return {
     _binFieldGuide: BIN_SCHEMA_HINT,
+    _slotYieldGuide: slotYieldSummaryFieldGuide(),
     count: rows.length,
     distinctSlots,
+    slotYieldSummary,
     rows: formatJbRowsForAgent(rows),
   };
 }
