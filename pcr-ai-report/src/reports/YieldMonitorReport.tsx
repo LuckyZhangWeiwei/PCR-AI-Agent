@@ -1328,6 +1328,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
                         setSelectedProbeCard(null);
                         setDrills((prev) => { const n = { ...prev }; delete n["probeCardType"]; return n; });
                       }}
+                      interactive={drills["probeCardType"]!.subDim === "probeCard"}
                       onBarClick={
                         drills["probeCardType"]!.subDim === "probeCard"
                           ? (key) => setSelectedProbeCard(key)
@@ -1450,6 +1451,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
                             return n;
                           });
                         }}
+                        interactive={drills.freeDim.subDim === "probeCard"}
                         onBarClick={
                           drills.freeDim.subDim === "probeCard"
                             ? (key) => setFreeDimSelectedProbeCard(key)

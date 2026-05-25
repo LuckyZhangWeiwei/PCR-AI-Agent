@@ -37,6 +37,8 @@ type Props = {
   compact?: boolean;
   /** Bar height tier; `compact` prop overrides this when true */
   chartSize?: BarChartHeightVariant;
+  /** When true, clicking the chart is a real drill action — suppresses the prohibition cursor */
+  interactive?: boolean;
 };
 
 const COL_PANEL = chartAccent;
@@ -81,6 +83,7 @@ export function DrillDownPanel({
   footer,
   compact = false,
   chartSize = "default",
+  interactive = false,
 }: Props) {
   const barHeightVariant: BarChartHeightVariant = compact ? "compact" : chartSize;
   const sorted = [...groups].sort((a, b) => a.count - b.count).slice(-10);
@@ -212,7 +215,7 @@ export function DrillDownPanel({
           暂无数据
         </div>
       ) : !error && groups.length > 0 ? (
-        <div className="chart-drill-panel-chart chart-no-drill">
+        <div className={`chart-drill-panel-chart${interactive ? "" : " chart-no-drill"}`}>
           <DarkChart
             option={option}
             height={drillBarChartHeight(sorted.length, 10, barHeightVariant)}
