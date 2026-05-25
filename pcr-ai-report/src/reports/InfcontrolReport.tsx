@@ -165,6 +165,7 @@ const FREE_DIMS: { label: string; value: string }[] = [
 ];
 
 const JB_REPORT_SECTION_ORDER = [
+  "binDist",
   "kpi",
   "lotYield",
   "chartsGrid",
@@ -406,7 +407,9 @@ function topBadBinForLot(
   for (const [bin, count] of binTotals) {
     if (count > topCount) { topCount = count; topBin = bin; }
   }
-  return { bin: topBin, pct: Math.round((topCount / lotTotalBad) * 100) };
+  const binNum = parseBinLabelNumber(topBin);
+  const binLabel = binNum !== null ? `BIN${binNum}` : topBin.toUpperCase();
+  return { bin: binLabel, pct: Math.round((topCount / lotTotalBad) * 100) };
 }
 
 function infcontrolTreeYieldExtra(
@@ -445,7 +448,7 @@ function infcontrolTreeYieldExtra(
       })}
       {topBin && (
         <span style={{ color: "#e0824a", opacity: 0.85 }}>
-          · 主坏 {topBin.bin} ({topBin.pct}%)
+          · 主坏{topBin.bin}({topBin.pct}%)
         </span>
       )}
     </span>
@@ -1147,6 +1150,44 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
             color: chartAxisColor,
             fontSize: 10,
           },
+          animationDuration: 600,
+        },
+      ],
+    };
+  }, [aggBin, selectedBin]);
+
+  const binDistOption = useMemo((): EChartsOption => {
+    const sorted = [...(aggBin?.groups ?? [])]
+      .sort((a, b) => a.count - b.count)
+      .slice(-15);
+    const COL = "#ff7b72", COL_B = "#ff5050", COL_D = "rgba(255,123,114,0.3)";
+    return {
+      ...horizontalBarChartBase(),
+      xAxis: {
+        type: "value",
+        axisLabel: { color: chartAxisColor },
+        splitLine: { lineStyle: { color: chartSplitLine } },
+      },
+      yAxis: {
+        type: "category",
+        data: sorted.map((g) => `BIN${g.parts.bin ?? g.key}`),
+        axisLabel: { ...horizontalBarCategoryAxisLabelFull, interval: 0 },
+      },
+      series: [
+        {
+          type: "bar",
+          data: sorted.map((g) => {
+            const key = g.parts.bin ?? g.key;
+            const isSel = selectedBin !== null && key === selectedBin;
+            return {
+              value: g.count,
+              itemStyle: {
+                color: isSel ? COL_B : selectedBin !== null ? COL_D : COL,
+                borderRadius: [0, 4, 4, 0] as unknown as number,
+              },
+            };
+          }),
+          label: { show: true, position: "right", color: chartAxisColor, fontSize: 10 },
           animationDuration: 600,
         },
       ],
@@ -1943,7 +1984,33 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         </>
       ) : null;
 
+    const binDistSection = aggBin?.groups?.length ? (
+      <div className="report-chart-panel">
+        <div style={{ fontSize: 11, color: "#6e7681", marginBottom: 6 }}>
+          Top 15 坏 Bin · 点击选中并下钻
+        </div>
+        <ReactECharts
+          option={binDistOption}
+          style={{
+            height: rankBarChartHeight(Math.min(aggBin.groups.length, 15), 15, "medium"),
+            width: "100%",
+          }}
+          opts={{ renderer: "canvas" }}
+          notMerge
+          lazyUpdate
+          onEvents={{
+            click: (params: { name: string }) => {
+              const bin = params.name.replace(/^BIN/i, "");
+              setSelectedBin(bin);
+              fetchDrill("bin", bin, "cardId", form);
+            },
+          }}
+        />
+      </div>
+    ) : null;
+
     return {
+      binDist: binDistSection,
       kpi: kpiSection,
       lotYield: lotYieldSection,
       chartsGrid: chartsGridSection,
@@ -1963,6 +2030,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     fetchDrill,
     aggBin,
     binRankOption,
+    binDistOption,
     aggCardType,
     cardTypeOption,
     aggSlot,
