@@ -77,7 +77,11 @@ export const TOOL_SCHEMAS = [
           cardId: { type: "string", description: "探针卡 ID（CARDID）" },
           probeCardType: { type: "string", description: "探针卡类型" },
           testerId: { type: "string", description: "测试机 ID" },
-          passId: { type: "number", description: "Pass ID" },
+          passId: {
+            type: "number",
+            description:
+              "测试层 PASSID：sort1/pass1→1，sort2/pass3→3，sort3/pass5→5（勿用2/4）",
+          },
           meslot: { type: "string", description: "MES 槽位" },
           testEndFrom: {
             type: "string",
@@ -120,7 +124,11 @@ export const TOOL_SCHEMAS = [
           cardId: { type: "string" },
           probeCardType: { type: "string" },
           testerId: { type: "string" },
-          passId: { type: "number" },
+          passId: {
+            type: "number",
+            description:
+              "测试层 PASSID：sort1→1，sort2→3，sort3→5（pass1/3/5；勿用2/4）",
+          },
           meslot: { type: "string" },
           testEndFrom: { type: "string" },
           testEndTo: { type: "string" },
@@ -239,8 +247,16 @@ export const TOOL_SCHEMAS = [
           device:   { type: "string", description: "产品代码，必填" },
           lot:      { type: "string", description: "批次 ID，含 '.' 后缀，必填" },
           slot:     { type: "number", description: "wafer 槽位 SLOT，必填" },
-          passId:   { type: "number", description: "PASS_ID；sort1/2/3→1/3/5" },
-          passIds:  { type: "array", items: { type: "number" }, description: "多 pass 对比" },
+          passId: {
+            type: "number",
+            description:
+              "PASS_ID：sort1→1，sort2→3，sort3→5（pass1/3/5；禁止写成2/4）",
+          },
+          passIds: {
+            type: "array",
+            items: { type: "number" },
+            description: "多 pass 对比，如 sort1+2+3 用 [1,3,5]",
+          },
           focusBin: { type: "number", description: "结论聚焦某一 BIN" },
           cardId:   { type: "string", description: "探针卡 ID（来自 query_jb_bins 的 CARDID），用于结论描述卡号" },
         },

@@ -62,6 +62,9 @@ ${buildManifestSection(manifest)}
 4. **直接执行** — 请求明确，步骤简单（1~2 步）
    → **立即调用工具，不要先说"马上查询"再停下来等待**——说完就查，查完再写结论
 
+5. **sort / passId** — 用户提到 sort1/2/3、pass1/3/5、常温/高温/低温时
+   → JB / INF 工具参数用 **passId 1 / 3 / 5**（见下文「pass1=sort1，pass3=sort2，pass5=sort3」），禁止写成 2 或 4
+
 ## 两张表的业务含义与联合分析策略
 
 ### Yield Monitor（query_yield_triggers / aggregate_yield_triggers）
@@ -169,19 +172,35 @@ device
 - "哪种卡报警最多" → 聚合维度用 probeCardType（卡类别）
 - 用户问 dut / site 分析时，**必须同时指定具体的卡**（cardId / probeCard），否则数据无意义
 
-### Pass ID（测试层）与"sort"用语映射
+### Pass ID（测试层）与 sort 映射（硬规则，必须遵守）
 
-JB STAR 中的 \`passId\` 字段代表测试层次（温度分选阶段），用户常用"sort"术语表达：
+JB STAR / INF 的 **\`passId\`（库列 PASSID）** 与现场 **sort1/2/3** 不是连续编号，固定对应关系为：
 
-| 用户说法 | passId | 测试条件 |
-|---|---|---|
-| sort1 / 常温 | 1 | 常温（Room Temperature） |
-| sort2 / 高温 | 3 | 高温（High Temperature） |
-| sort3 / 低温 | 5 | 低温（Low Temperature） |
+| 用户说法 | passId（API 参数） | 等价写法 | 测试条件 |
+|---|---|---|---|
+| **sort1** / 常温 / 第一 sort | **1** | **pass1** | 常温（Room Temperature） |
+| **sort2** / 高温 / 第二 sort | **3** | **pass3** | 高温（High Temperature） |
+| **sort3** / 低温 / 第三 sort | **5** | **pass5** | 低温（Low Temperature） |
 
-- 用户说"sort1"/"sort2"/"sort3"时，分别映射 passId = 1 / 3 / 5，直接带入 \`passId\` 参数，无需向用户确认
-- 用户单说"pass"时，理解为 JB STAR 的 \`passId\`（API 参数名 \`passId\`）；Yield Monitor 同样有 \`pass\` 字段（API 参数名 \`pass\`）
-- 用户未指定 sort/pass 时，**不加 passId 过滤**，查询全部层次
+**一句话记忆：pass1=sort1，pass3=sort2，pass5=sort3（pass 编号跳号，不是 1/2/3 连续）。**
+
+**调用工具时必须：**
+- 用户说 sort1 / pass1 / 常温 → \`passId: 1\`（或 INF 的 \`passId: 1\` / \`passIds: [1]\`）
+- 用户说 sort2 / pass3 / 高温 → \`passId: 3\`
+- 用户说 sort3 / pass5 / 低温 → \`passId: 5\`
+- 直接代入参数，**无需向用户确认**「sort 对应哪个 pass」
+
+**严禁以下错误：**
+- 把 sort2 写成 \`passId: 2\`（错；应是 **3**）
+- 把 sort3 写成 \`passId: 3\` 若用户指的是低温 sort3（错；应是 **5**）
+- 把 sort 序号 1/2/3 当成 passId 1/2/3
+- 回复里写「sort2（pass2）」——不存在 pass2 对应 sort2，应写 **sort2（pass3 / 高温）**
+
+**其它：**
+- 用户单说「pass」且给数字时，该数字指 **passId**（如「pass 3」= 高温 sort2），不是 sort 序号
+- 用户未指定 sort/pass 时，**不加 passId 过滤**，查询全部测试层
+- 结论中同时写清 **sort 与 passId**，例如：「sort2（passId=3，高温）」
+- Yield Monitor 的 \`pass\` 字段含义不同，**不要**把 JB 的 pass1/3/5 规则套到 Yield 的 \`pass\` 上
 
 ### INF Wafer Map · DUT 分布（query_inf_site_bin_by_dut）
 
@@ -194,7 +213,7 @@ JB STAR 中的 \`passId\` 字段代表测试层次（温度分选阶段），用
 **调用前置（须同时满足）：**
 1. 先调 query_jb_bins 获取 device、lot、slot、CARDID、PASSID。
 2. 将 cardId 传入 query_inf_site_bin_by_dut，结论中必须写明卡号。
-3. passId：sort1/2/3 → 1/3/5；或直接用 JB 行 PASSID。
+3. passId：sort1→**1**，sort2→**3**，sort3→**5**（pass1/3/5）；或直接用 JB 行上的 PASSID，勿自行改成 2/4。
 4. **禁止**在仅 device / 仅 lot / 仅 probeCardType 级调用。
 
 **推荐顺序：** query_jb_bins → query_inf_site_bin_by_dut →（可选）generate_chart 堆叠 bar。
@@ -239,6 +258,7 @@ JB STAR 中的 \`passId\` 字段代表测试层次（温度分选阶段），用
 | 批次号 | \`lotId\` | \`lot\` |
 | 具体探针卡 | \`probeCard\` | \`cardId\` |
 | 探针卡种类 | \`probeCardType\` | \`probeCardType\` |
+| 测试层 sort1/2/3 | \`pass\`（勿与 JB passId 混用） | \`passId\`：**1/3/5** = sort1/2/3 |
 
 - 用户说"第 X 片 wafer"或"wafer X" → Yield Monitor 用 \`wafer=X\`，JB STAR 用 \`slot=X\`（均为数字）
 - **两域含义完全相同**，只是字段名不同，无需向用户解释

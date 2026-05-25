@@ -48,7 +48,8 @@ interface AiMessage {
   kind: "ai";
   text: string;
   streaming: boolean;
-  hasToolContext?: boolean;
+  /** 本轮回复已结束且可展示结论后，由 SSE done 置 true */
+  showFeedback?: boolean;
 }
 interface ToolMessage {
   kind: "tool";
@@ -195,7 +196,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
             };
           } else {
             // second round: last message is a tool result, create new ai bubble
-            copy.push({ kind: "ai", text: event.delta ?? "", streaming: true, hasToolContext: true });
+            copy.push({ kind: "ai", text: event.delta ?? "", streaming: true });
           }
           return copy;
         });
@@ -237,11 +238,24 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
         ]);
         break;
       case "done":
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.kind === "ai" && m.streaming ? { ...m, streaming: false } : m
-          )
-        );
+        setMessages((prev) => {
+          let lastAiIdx = -1;
+          for (let i = prev.length - 1; i >= 0; i--) {
+            if (prev[i]!.kind === "ai") {
+              lastAiIdx = i;
+              break;
+            }
+          }
+          return prev.map((m, i) => {
+            if (m.kind !== "ai") return m;
+            const next =
+              m.streaming ? { ...m, streaming: false } : m;
+            if (i === lastAiIdx && next.text.trim()) {
+              return { ...next, showFeedback: true };
+            }
+            return next;
+          });
+        });
         break;
       case "error":
         setMessages((prev) => [
@@ -538,62 +552,70 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
           }
           if (msg.kind === "ai") {
             const planMatch = !msg.streaming && msg.text.match(/\[PLAN\]([\s\S]*?)\[\/PLAN\]/);
+            const showFeedbackBar =
+              !loading &&
+              !msg.streaming &&
+              msg.showFeedback === true &&
+              msg.text.trim().length > 0 &&
+              findLastUserText(messages.slice(0, i)) !== undefined;
             return (
               <div key={i} className="ai-msg ai-msg--ai">
                 <div className="ai-avatar ai-avatar--ai"><RobotAvatar /></div>
-                <div className="ai-msg-bubble ai-msg-bubble--md">
-                  {msg.text ? (
-                    <ReactMarkdown
-                      remarkPlugins={[[remarkGfm, { singleTilde: false }]]}
-                      components={AGENT_MARKDOWN_COMPONENTS}
-                    >
-                      {sanitizeAgentMarkdownForDisplay(msg.text)}
-                    </ReactMarkdown>
-                  ) : (
-                    msg.streaming
-                      ? <span className="ai-status-hint">{statusHint || "正在思考…"}</span>
-                      : ""
-                  )}
-                  {msg.streaming && <span className="ai-cursor" />}
-                </div>
-                {planMatch && (
-                  <button
-                    type="button"
-                    className="ai-plan-confirm"
-                    onClick={() => {
-                      setInput("确认");
-                      inputRef.current?.focus();
-                    }}
-                  >
-                    ✓ 确认执行
-                  </button>
-                )}
-                {!msg.streaming && msg.hasToolContext && findLastUserText(messages.slice(0, i)) !== undefined && (
-                  <div className="ai-feedback-bar">
-                    {feedbackState[i] !== undefined ? (
-                      <span className="ai-feedback-thanks">感谢反馈</span>
+                <div className="ai-msg-content">
+                  <div className="ai-msg-bubble ai-msg-bubble--md">
+                    {msg.text ? (
+                      <ReactMarkdown
+                        remarkPlugins={[[remarkGfm, { singleTilde: false }]]}
+                        components={AGENT_MARKDOWN_COMPONENTS}
+                      >
+                        {sanitizeAgentMarkdownForDisplay(msg.text)}
+                      </ReactMarkdown>
                     ) : (
-                      <>
-                        <button
-                          type="button"
-                          className="ai-feedback-btn"
-                          onClick={() => void handleGoodFeedback(i, msg)}
-                          title="这条回答有用"
-                        >
-                          👍
-                        </button>
-                        <button
-                          type="button"
-                          className="ai-feedback-btn"
-                          onClick={() => handleOpenBadFeedback(i, msg)}
-                          title="这条回答有问题"
-                        >
-                          👎
-                        </button>
-                      </>
+                      msg.streaming
+                        ? <span className="ai-status-hint">{statusHint || "正在思考…"}</span>
+                        : ""
                     )}
+                    {msg.streaming && <span className="ai-cursor" />}
                   </div>
-                )}
+                  {planMatch && (
+                    <button
+                      type="button"
+                      className="ai-plan-confirm"
+                      onClick={() => {
+                        setInput("确认");
+                        inputRef.current?.focus();
+                      }}
+                    >
+                      ✓ 确认执行
+                    </button>
+                  )}
+                  {showFeedbackBar && (
+                    <div className="ai-feedback-bar">
+                      {feedbackState[i] !== undefined ? (
+                        <span className="ai-feedback-thanks">感谢反馈</span>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="ai-feedback-btn"
+                            onClick={() => void handleGoodFeedback(i, msg)}
+                            title="这条回答有用"
+                          >
+                            👍
+                          </button>
+                          <button
+                            type="button"
+                            className="ai-feedback-btn"
+                            onClick={() => handleOpenBadFeedback(i, msg)}
+                            title="这条回答有问题"
+                          >
+                            👎
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             );
           }
