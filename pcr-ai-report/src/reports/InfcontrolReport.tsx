@@ -41,8 +41,10 @@ import {
   collectGoodBinNumbersFromJbRow,
   collectGoodBinNumbersFromJbRows,
   goodBinNumbersFromDetailRow,
+  HARD_GOOD_BIN,
   JB_DETAIL_GOOD_BINS,
   JB_DETAIL_LIST_INDEX,
+  parseBinLabelNumber,
 } from "../utils/infGoodBins";
 import {
   buildTree,
@@ -384,8 +386,32 @@ function lotYields(
   return result.sort((a, b) => a.yieldPct - b.yieldPct);
 }
 
+function topBadBinForLot(
+  groups: AggregateGroup[] | undefined,
+  lotValue: string,
+  lotTotalBad: number,
+): { bin: string; pct: number } | null {
+  if (!groups?.length || !lotValue || lotTotalBad <= 0) return null;
+  const binTotals = new Map<string, number>();
+  for (const g of groups) {
+    if (g.parts.lot !== lotValue) continue;
+    const bin = g.parts.bin;
+    if (!bin) continue;
+    if (parseBinLabelNumber(bin) === HARD_GOOD_BIN) continue;
+    binTotals.set(bin, (binTotals.get(bin) ?? 0) + g.count);
+  }
+  if (binTotals.size === 0) return null;
+  let topBin = "";
+  let topCount = 0;
+  for (const [bin, count] of binTotals) {
+    if (count > topCount) { topCount = count; topBin = bin; }
+  }
+  return { bin: topBin, pct: Math.round((topCount / lotTotalBad) * 100) };
+}
+
 function infcontrolTreeYieldExtra(
   rows: InfcontrolLayerBinV3Row[] | undefined,
+  aggGroups: AggregateGroup[] | undefined,
   node: TreeNode,
   depth: number,
 ): ReactNode {
@@ -405,8 +431,9 @@ function infcontrolTreeYieldExtra(
     byPass.get(p)!.push(r);
   }
   if (byPass.size === 0) return null;
+  const topBin = lot ? topBadBinForLot(aggGroups, lot, node.total) : null;
   return (
-    <span style={{ fontSize: 11, display: "flex", gap: 6, flexWrap: "wrap" }}>
+    <span style={{ fontSize: 11, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
       {[...byPass.entries()].map(([p, rs]) => {
         const yp = computeYieldPct(rs);
         if (yp === null) return null;
@@ -416,6 +443,11 @@ function infcontrolTreeYieldExtra(
           </span>
         );
       })}
+      {topBin && (
+        <span style={{ color: "#e0824a", opacity: 0.85 }}>
+          · 主坏 {topBin.bin} ({topBin.pct}%)
+        </span>
+      )}
     </span>
   );
 }
@@ -1828,7 +1860,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
               roots={treeRoots}
               totalHeader="坏 die"
               renderExtra={(node, depth) =>
-                infcontrolTreeYieldExtra(list?.rows as InfcontrolLayerBinV3Row[], node, depth)
+                infcontrolTreeYieldExtra(list?.rows as InfcontrolLayerBinV3Row[], aggTree?.groups, node, depth)
               }
             />
           )}
