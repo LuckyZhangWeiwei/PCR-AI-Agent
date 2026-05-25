@@ -367,15 +367,17 @@ function DutDistPassChart({
 
   return (
     <div ref={wrapRef} className="dut-dist-chart-block">
-      <DarkChart
-        key={`pass-${pass.passId}-good-${goodBinNumbersKey(goodBinNumbers)}`}
-        option={option}
-        height={chartHeight}
-        onEvents={onEvents}
-        onChartReady={(chart) => {
-          chartRef.current = chart;
-        }}
-      />
+      <div className="chart-no-drill">
+        <DarkChart
+          key={`pass-${pass.passId}-good-${goodBinNumbersKey(goodBinNumbers)}`}
+          option={option}
+          height={chartHeight}
+          onEvents={onEvents}
+          onChartReady={(chart) => {
+            chartRef.current = chart;
+          }}
+        />
+      </div>
       <DutDistHtmlLegend
         items={seriesList}
         activeIndex={activeIndex}
