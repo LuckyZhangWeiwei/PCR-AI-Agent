@@ -61,37 +61,107 @@ function computeNoInterruptYieldPct(rows: JbYieldRow[]): number | null {
   return ((grossDie - badDie) / grossDie) * 100;
 }
 
+function testEndMs(row: JbYieldRow): number {
+  const raw = (row as { TESTEND?: string }).TESTEND;
+  if (raw == null || raw === "") return 0;
+  const t = new Date(String(raw)).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
+function passIdFromRow(row: JbYieldRow): number {
+  const v = Number((row as { PASSID?: number }).PASSID ?? 0);
+  return Number.isFinite(v) && v > 0 ? v : 0;
+}
+
+function passNumFromRow(row: JbYieldRow): number {
+  const v = Number((row as { PASSNUM?: number }).PASSNUM ?? 0);
+  return Number.isFinite(v) && v > 0 ? Math.round(v) : 1;
+}
+
+function splitPassGroup(rows: JbYieldRow[]): {
+  segmented: boolean;
+  firstHalf: JbYieldRow[];
+  secondHalf: JbYieldRow[];
+} {
+  const interruptRows = rows.filter(isInterruptRow);
+  if (interruptRows.length > 0) {
+    return {
+      segmented: true,
+      firstHalf: interruptRows,
+      secondHalf: rows.filter((r) => !isInterruptRow(r)),
+    };
+  }
+  if (rows.length < 2) {
+    return { segmented: false, firstHalf: [], secondHalf: [] };
+  }
+  const passNums = rows.map(passNumFromRow);
+  const minPn = Math.min(...passNums);
+  const maxPn = Math.max(...passNums);
+  if (maxPn > minPn) {
+    return {
+      segmented: true,
+      firstHalf: rows.filter((r) => passNumFromRow(r) === minPn),
+      secondHalf: rows.filter((r) => passNumFromRow(r) > minPn),
+    };
+  }
+  const sorted = [...rows].sort((a, b) => testEndMs(a) - testEndMs(b));
+  return {
+    segmented: true,
+    firstHalf: [sorted[0]!],
+    secondHalf: sorted.slice(1),
+  };
+}
+
+function splitSlotRows(rows: JbYieldRow[]): {
+  segmented: boolean;
+  firstHalf: JbYieldRow[];
+  secondHalf: JbYieldRow[];
+} {
+  const byPassId = new Map<number, JbYieldRow[]>();
+  for (const row of rows) {
+    const pid = passIdFromRow(row);
+    if (!byPassId.has(pid)) byPassId.set(pid, []);
+    byPassId.get(pid)!.push(row);
+  }
+  for (const pid of [...byPassId.keys()].sort((a, b) => a - b)) {
+    const split = splitPassGroup(byPassId.get(pid)!);
+    if (split.segmented) return split;
+  }
+  return { segmented: false, firstHalf: [], secondHalf: [] };
+}
+
 /**
- * JB 良率（与 API `jbYieldCalc` 一致）：有 INTERRUPT 时按上半/下半段规则合并。
+ * JB 良率（与 API `jbYieldCalc` 一致）：INTERRUPT 或续测双 TEST 时按上半/下半段规则合并。
  */
 export function computeYieldPct(rows: JbYieldRow[]): number | null {
   if (!rows.length) return null;
 
-  const interruptRows = rows.filter(isInterruptRow);
-  const completionRows = rows.filter((r) => !isInterruptRow(r));
-
-  if (interruptRows.length === 0) {
+  const split = splitSlotRows(rows);
+  if (!split.segmented) {
     return computeNoInterruptYieldPct(rows);
   }
 
-  if (completionRows.length === 0) {
-    return segmentYieldPct(interruptRows);
-  }
+  const firstPct = segmentYieldPct(split.firstHalf);
+  if (!split.secondHalf.length) return firstPct;
+
+  const secondPct = segmentYieldPct(split.secondHalf);
+  if (firstPct === null) return secondPct;
+  if (secondPct === null) return firstPct;
 
   let grossUp = 0;
   let badUp = 0;
-  for (const row of interruptRows) {
+  for (const row of split.firstHalf) {
     grossUp += grossDieFromRow(row);
     badUp += badDieFromJbListRow(row);
   }
   const goodUp = Math.max(0, grossUp - badUp);
   if (goodUp === 0) {
-    return segmentYieldPct(completionRows);
+    return secondPct;
   }
 
   let grossDown = 0;
   let badDown = 0;
-  for (const row of completionRows) {
+  for (const row of split.secondHalf) {
     grossDown += grossDieFromRow(row);
     badDown += badDieFromJbListRow(row);
   }

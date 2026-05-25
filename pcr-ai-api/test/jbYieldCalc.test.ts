@@ -142,4 +142,67 @@ describe("jbYieldCalc", () => {
     assert.equal(s.goodDie, 1908);
     assert.ok(s.yieldPct !== null && Math.abs(s.yieldPct - 94.88) < 0.05);
   });
+
+  it("splits by PASSNUM when passNum increases (passId unchanged)", () => {
+    const rows = [
+      {
+        SLOT: 5,
+        PASSID: 1,
+        PASSNUM: 1,
+        PASSTYPE: "TEST",
+        GROSSDIE: 100,
+        bins: [{ n: 5, value: 100, isGoodBin: false }],
+      },
+      {
+        SLOT: 5,
+        PASSID: 1,
+        PASSNUM: 2,
+        PASSTYPE: "TEST",
+        GROSSDIE: 200,
+        bins: [
+          { n: 1, value: 180, isGoodBin: true },
+          { n: 5, value: 20, isGoodBin: false },
+        ],
+      },
+    ];
+    const s = buildSlotYieldSummary(rows).find((x) => x.slot === 5)!;
+    assert.equal(s.hasInterrupt, true);
+    assert.equal(s.interruptHalf!.grossDie, 100);
+    assert.equal(s.completionHalf!.grossDie, 200);
+  });
+
+  it("resume: two TEST rows same PASSNUM split by TESTEND (NF12773 slot22 pattern)", () => {
+    const rows = [
+      {
+        SLOT: 22,
+        GROSSDIE: 960,
+        PASSTYPE: "TEST",
+        TESTEND: "2026-05-23T13:07:22.000Z",
+        PASSBIN: "1",
+        bins: [
+          { n: 1, value: 800, isGoodBin: true },
+          { n: 5, value: 160, isGoodBin: false },
+        ],
+      },
+      {
+        SLOT: 22,
+        GROSSDIE: 2011,
+        PASSTYPE: "TEST",
+        TESTEND: "2026-05-23T15:41:23.000Z",
+        PASSBIN: "1",
+        bins: [
+          { n: 1, value: 1908, isGoodBin: true },
+          { n: 5, value: 103, isGoodBin: false },
+        ],
+      },
+    ];
+    const summary = buildSlotYieldSummary(rows);
+    const s = summary.find((x) => x.slot === 22)!;
+    assert.equal(s.hasInterrupt, true);
+    assert.equal(s.interruptHalf!.grossDie, 960);
+    assert.equal(s.completionHalf!.grossDie, 2011);
+    assert.equal(s.grossDie, 2971);
+    assert.equal(s.goodDie, 2708);
+    assert.ok(s.yieldPct !== null && Math.abs(s.yieldPct - 91.15) < 0.1);
+  });
 });

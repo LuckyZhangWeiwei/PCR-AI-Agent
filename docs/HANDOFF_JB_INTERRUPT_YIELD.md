@@ -24,9 +24,11 @@
 
 | 场景 | 规则 |
 | --- | --- |
-| **无 INTERRUPT** | 同 slot 多行：`grossDie = MAX(GROSSDIE)`，坏 die 仅在 **满片行**（GROSSDIE = max）上累加非良品 bin。 |
-| **有 INTERRUPT** | **前半** = 所有 `PASSTYPE=INTERRUPT` 行，`segmentMetrics` 累加 gross/bad。**后半** = 非 INTERRUPT 行（通常 `TEST` 续测完成）。 |
-| **整片正片**（顶层 `grossDie` / `yieldPct`） | 前半 **goodDie = 0** → 正片 **仅后半**（例：DR43375 Slot 21 → 4732 / 94.82%）。前半 **goodDie > 0** → **(good_上+good_下)/(total_上+total_下)**。 |
+| **分组键** | **(slot, passId)** — 同一片 wafer、同一 sort 层；`splitSlotIntoHalves` 先按 `PASSID` 分组，取第一个发生分段的 pass 组。 |
+| **判定有分段** (`hasInterrupt:true`) | 组内：存在 `PASSTYPE=INTERRUPT`；或 **PASSNUM 递增**（1→2→3）；或 **PASSNUM 相同但多行**（按 `TESTEND` 先后拆）。 |
+| **前半 / 后半** | INTERRUPT → 前半；或 **较小 PASSNUM** → 前半；或 **较早 TESTEND**（同 PASSNUM 多行）→ 前半。 |
+| **无分段** | 同 slot 仅一行/一 pass 组：`grossDie = MAX(GROSSDIE)`，坏 die 仅在满片行累加。 |
+| **整片正片**（顶层） | 前半 **goodDie = 0** → 正片 **仅后半**（例：DR43375 Slot 21）。前半 **goodDie > 0** → 上下半合并。 |
 
 良品 bin：`BIN1` + `PASSBIN` 连字符段 + `bins[].isGoodBin`（与 `passBinSemantics` / 报表 `infGoodBins` 一致）。
 
@@ -94,18 +96,15 @@ npx tsx scripts/print-slot-breakdown.ts NF12773.1H 20-25
 
 ## 6. 数据注意（NF12773.1H Slot 22）
 
-2026-05 线上拉取：该 lot Slot 22 为 **2 条 `PASSTYPE=TEST`**（2011 + 960），**无 `INTERRUPT` 行**，故 `hasInterrupt=false`，不会出半片字段。用户口述「有中断」时，需核对库表 `PASSTYPE` 是否标成 INTERRUPT，或是否另一 `passId`/`passNum`。
+2026-05 线上：`slot=22, passId=1` 有 **2 条 TEST、PASSNUM 均为 1**（960 @ 13:07 + 2011 @ 15:41）。按 **同 PASSNUM 多行 + TESTEND** 应 `hasInterrupt:true`，半片为 960（前半）与 2011（后半）；整片正片在前后半均有良品时为 **2971 合并** 或前半 good=0 时仅后半（以实算为准）。
 
-Slot 20–25 Sort1（passId=1）正片参考（无中断满片 2971）：
+诊断：
 
-| Slot | 总 die | 良率 |
-| --- | --- | --- |
-| 20 | 2971 | 94.68% |
-| 21 | 2971 | 93.94% |
-| 22 | 2011 | 94.88%（仅满片行；另有 960 行未计入正片） |
-| 23 | 2971 | 95.02% |
-| 24 | — | 无数据 |
-| 25 | 2971 | 94.24% |
+```bash
+npx tsx scripts/dump-slot-rows.ts NF12773.1H 22
+npx tsx scripts/scan-passnum.ts NF12773.1H
+npx tsx scripts/print-slot-breakdown.ts NF12773.1H 22
+```
 
 ---
 

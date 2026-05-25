@@ -1,7 +1,7 @@
 /**
  * JB STAR 良率：与报表 `infGoodBins` 一致。
  * - 无中断：同 slot 多行在 MAX(GROSSDIE) 满片行上累加坏 die。
- * - 有中断：上半段 = INTERRUPT 行；下半段 = 非 INTERRUPT（通常为 TEST 续测完成）。
+ * - 有中断/续测分段（同 slot、同 passId）：见 splitSlotIntoHalves — INTERRUPT 行，或 PASSNUM 递增，或同 PASSNUM 多行按 TESTEND 最早/最晚拆前后半。
  *   - `interruptHalf` / `completionHalf` 始终分别计算并输出（上半段 yield 可为 0%）。
  *   - 整片正片（顶层 grossDie/yieldPct）：上半段 good=0 → 仅下半段；上半段 good>0 → 上下半段合并。
  */
@@ -73,6 +73,103 @@ export function isInterruptPasstype(row: Record<string, unknown>): boolean {
   );
 }
 
+function testEndMs(row: Record<string, unknown>): number {
+  const raw = row.TESTEND ?? row.testEnd ?? row.testend;
+  if (raw == null || raw === "") return 0;
+  const t = new Date(String(raw)).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
+export function passIdFromJbRow(row: Record<string, unknown>): number {
+  const v = Number(row.PASSID ?? row.passId ?? 0);
+  return Number.isFinite(v) && v > 0 ? v : 0;
+}
+
+export function passNumFromJbRow(row: Record<string, unknown>): number {
+  const v = Number(row.PASSNUM ?? row.passNum ?? 0);
+  return Number.isFinite(v) && v > 0 ? Math.round(v) : 1;
+}
+
+/** 同 (slot, passId) 下是否应拆前后半（与 agentPrompt / HANDOFF 一致）。 */
+export function splitPassGroupIntoHalves(
+  group: Record<string, unknown>[]
+): {
+  segmented: boolean;
+  firstHalfRows: Record<string, unknown>[];
+  secondHalfRows: Record<string, unknown>[];
+} {
+  const interruptRows = group.filter(isInterruptPasstype);
+  if (interruptRows.length > 0) {
+    return {
+      segmented: true,
+      firstHalfRows: interruptRows,
+      secondHalfRows: group.filter((r) => !isInterruptPasstype(r)),
+    };
+  }
+
+  if (group.length < 2) {
+    return { segmented: false, firstHalfRows: [], secondHalfRows: [] };
+  }
+
+  const passNums = group.map(passNumFromJbRow);
+  const minPn = Math.min(...passNums);
+  const maxPn = Math.max(...passNums);
+
+  if (maxPn > minPn) {
+    return {
+      segmented: true,
+      firstHalfRows: group.filter((r) => passNumFromJbRow(r) === minPn),
+      secondHalfRows: group.filter((r) => passNumFromJbRow(r) > minPn),
+    };
+  }
+
+  const sorted = [...group].sort((a, b) => testEndMs(a) - testEndMs(b));
+  return {
+    segmented: true,
+    firstHalfRows: [sorted[0]!],
+    secondHalfRows: sorted.slice(1),
+  };
+}
+
+/**
+ * 同 slot 拆前后半：先按 passId 分组，取第一个发生续测/中断的 pass 组（passId 升序）。
+ */
+export function splitSlotIntoHalves(rows: Record<string, unknown>[]): {
+  segmented: boolean;
+  firstHalfRows: Record<string, unknown>[];
+  secondHalfRows: Record<string, unknown>[];
+} {
+  const byPassId = new Map<number, Record<string, unknown>[]>();
+  for (const row of rows) {
+    const pid = passIdFromJbRow(row);
+    if (!byPassId.has(pid)) byPassId.set(pid, []);
+    byPassId.get(pid)!.push(row);
+  }
+
+  for (const pid of [...byPassId.keys()].sort((a, b) => a - b)) {
+    const split = splitPassGroupIntoHalves(byPassId.get(pid)!);
+    if (split.segmented) {
+      return split;
+    }
+  }
+
+  return { segmented: false, firstHalfRows: [], secondHalfRows: [] };
+}
+
+function computeSegmentedWholeWafer(
+  firstHalf: JbYieldMetrics,
+  secondHalf: JbYieldMetrics
+): JbYieldMetrics {
+  if (firstHalf.goodDie === 0) {
+    return secondHalf;
+  }
+  const grossDie = firstHalf.grossDie + secondHalf.grossDie;
+  const goodDie = firstHalf.goodDie + secondHalf.goodDie;
+  const badDie = grossDie - goodDie;
+  const yieldPct = grossDie > 0 ? (goodDie / grossDie) * 100 : null;
+  return { grossDie, badDie, goodDie, yieldPct };
+}
+
 export type JbYieldMetrics = {
   grossDie: number;
   badDie: number;
@@ -125,31 +222,17 @@ export function computeJbYieldMetrics(
     return { grossDie: 0, badDie: 0, goodDie: 0, yieldPct: null };
   }
 
-  const interruptRows = rows.filter(isInterruptPasstype);
-  const completionRows = rows.filter((r) => !isInterruptPasstype(r));
-
-  if (interruptRows.length === 0) {
+  const split = splitSlotIntoHalves(rows);
+  if (!split.segmented) {
     return computeNoInterruptYield(rows);
   }
 
-  const firstHalf = segmentMetrics(interruptRows);
-
-  if (completionRows.length === 0) {
+  const firstHalf = segmentMetrics(split.firstHalfRows);
+  if (!split.secondHalfRows.length) {
     return firstHalf;
   }
-
-  const secondHalf = segmentMetrics(completionRows);
-
-  /** 上半段无良品 → 不参与正片，仅用下半段（如 slot21：116/0 + 4732/4487） */
-  if (firstHalf.goodDie === 0) {
-    return secondHalf;
-  }
-
-  const grossDie = firstHalf.grossDie + secondHalf.grossDie;
-  const goodDie = firstHalf.goodDie + secondHalf.goodDie;
-  const badDie = grossDie - goodDie;
-  const yieldPct = grossDie > 0 ? (goodDie / grossDie) * 100 : null;
-  return { grossDie, badDie, goodDie, yieldPct };
+  const secondHalf = segmentMetrics(split.secondHalfRows);
+  return computeSegmentedWholeWafer(firstHalf, secondHalf);
 }
 
 export type SlotYieldSummaryEntry = {
@@ -161,30 +244,32 @@ export type SlotYieldSummaryEntry = {
   yieldPct: number | null;
   hasInterrupt: boolean;
   rowCount: number;
-  /** 上半片（INTERRUPT），有中断时必有 */
+  /** 前半段（INTERRUPT 或较早续测 TEST），hasInterrupt 时必有 */
   interruptHalf?: JbYieldMetrics;
-  /** 下半片（续测完成，非 INTERRUPT），有中断且存在完成段时必有 */
+  /** 后半段（续测完成），hasInterrupt 且存在完成段时必有 */
   completionHalf?: JbYieldMetrics;
 };
 
 const SLOT_YIELD_GUIDE =
-  "slotYieldSummary：无中断时仅顶层整片。hasInterrupt:true 时须写三项且顺序固定：①整片正片(顶层) ②interruptHalf(前半) ③completionHalf(后半)。任一段 yieldPct=0 或 goodDie=0 仍须输出该段 total/好/坏/0%，禁止因无良品省略。勿只报后半段。";
+  "slotYieldSummary：无分段时仅顶层整片。hasInterrupt:true=同 slot+passId 有 INTERRUPT，或 PASSNUM>1，或同 PASSNUM 多行(按 TESTEND 分前后半)。顺序：①整片正片 ②interruptHalf ③completionHalf；0% 也须写出。";
 
-/** 有 INTERRUPT 时拆出上半/下半；整片正片走 computeJbYieldMetrics。 */
+/** 拆出前半/后半；整片正片走 computeJbYieldMetrics。 */
 export function computeJbYieldBreakdown(rows: Record<string, unknown>[]): {
   hasInterrupt: boolean;
   interruptHalf: JbYieldMetrics | null;
   completionHalf: JbYieldMetrics | null;
   wholeWafer: JbYieldMetrics;
 } {
-  const interruptRows = rows.filter(isInterruptPasstype);
-  const completionRows = rows.filter((r) => !isInterruptPasstype(r));
-  const hasInterrupt = interruptRows.length > 0;
+  const split = splitSlotIntoHalves(rows);
   return {
-    hasInterrupt,
-    interruptHalf: hasInterrupt ? segmentMetrics(interruptRows) : null,
+    hasInterrupt: split.segmented,
+    interruptHalf: split.segmented
+      ? segmentMetrics(split.firstHalfRows)
+      : null,
     completionHalf:
-      completionRows.length > 0 ? segmentMetrics(completionRows) : null,
+      split.segmented && split.secondHalfRows.length > 0
+        ? segmentMetrics(split.secondHalfRows)
+        : null,
     wholeWafer: computeJbYieldMetrics(rows),
   };
 }
