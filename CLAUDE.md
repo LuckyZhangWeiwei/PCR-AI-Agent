@@ -13,7 +13,7 @@ This is a two-package monorepo (no shared workspace tooling — each package has
 
 > **Deep API context:** [`pcr-ai-api/CLAUDE.md`](pcr-ai-api/CLAUDE.md) — Dummy/Oracle, v3/v4 aggregate, `MEMORY_AGG_ORACLE_MAX_ROWS`, SiliconFlow, CORS, Oracle driver pinning.  
 > **Deep report context:** [`pcr-ai-report/CLAUDE.md`](pcr-ai-report/CLAUDE.md) — draggable layout, localStorage keys, query panel, chart labels, tab/settings shell. Read the relevant package doc before editing that package.  
-> **INF site-bin-bylot（API 已实现，报表 `InfDutDistPanel` 已接入）：** [`docs/SITE_BIN_BY_LOT_INTEGRATION.md`](docs/SITE_BIN_BY_LOT_INTEGRATION.md) — 单片 `infPath` 由 device+lot+slot 拼接、下钻后调 API。**Lot/Device 聚合：** [`docs/HANDOFF_SITE_BIN_BY_LOT_AGG.md`](docs/HANDOFF_SITE_BIN_BY_LOT_AGG.md) — Device 仅需 `device`+`passId`；[`pcr-ai-api/docs/SITE_BIN_BY_LOT_API.md`](pcr-ai-api/docs/SITE_BIN_BY_LOT_API.md) 含 curl。  
+> **INF site-bin-bylot（API 已实现，报表 `InfDutDistPanel` 已接入）：** [`docs/SITE_BIN_BY_LOT_INTEGRATION.md`](docs/SITE_BIN_BY_LOT_INTEGRATION.md) — 单片 `infPath`。**Lot/Device 聚合交接：** [`docs/HANDOFF_SITE_BIN_BY_LOT_AGG.md`](docs/HANDOFF_SITE_BIN_BY_LOT_AGG.md) — Device：`device`+`passId`，默认 **topN=10** 最新 lot、TESTEND 最近一年；curl 见 [`pcr-ai-api/docs/SITE_BIN_BY_LOT_API.md`](pcr-ai-api/docs/SITE_BIN_BY_LOT_API.md)。  
 > **JB 中断 slot 良率（半片 + Agent 汇报顺序）：** [`docs/HANDOFF_JB_INTERRUPT_YIELD.md`](docs/HANDOFF_JB_INTERRUPT_YIELD.md) — `slotYieldSummary.interruptHalf` / `completionHalf`、整片正片规则、输出顺序与 0% 必写。
 
 ---

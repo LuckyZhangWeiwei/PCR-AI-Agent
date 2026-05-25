@@ -34,7 +34,7 @@
 | --- | --- | --- |
 | **单片 wafer**（原有） | `infPath` + `passId` | 读**一个** INF 文件 |
 | **Lot 聚合** | `device` + `lot` + `passId`；可选 `probeCardType` | 见 §2.2 |
-| **Device 聚合** | `device` + `passId`（**不要**传 `lot`）；`probeCardType` 可选 | 跨 lot 累加，见 §2.3 |
+| **Device 聚合** | `device` + `passId`（**不要**传 `lot`） | 默认 `topN=10` 最新 lot；见 §2.4 |
 
 **不要**同时传 `infPath` 与 `device`。
 
@@ -44,6 +44,8 @@
 | --- | --- | --- |
 | `passId` | 是 | 一个或多个 INF `PASS_ID`；可 `passId=1&passId=2` 或 `passId=1,2`；别名 `pass_id` |
 | `probeCardType` | Lot/Device 聚合时见下 | 与 JB **`PROBECARDTYPE`** 一致：`CARDID` 首个 `-` 前一段（如 `9400-01` → `9400`） |
+| `topN` / `topn` | Device 可选 | 默认 **10**，最大 **50**；按 `MAX(TESTEND)` 取最新 N 个 lot |
+| `testEndFrom` / `testEndTo` 等 | Device / Lot+JB 可选 | 未传则默认 UTC 最近一年；见 [`../docs/HANDOFF_SITE_BIN_BY_LOT_AGG.md`](../docs/HANDOFF_SITE_BIN_BY_LOT_AGG.md) |
 
 Perl 在匹配 `PASS_ID` 后还会过滤 **`PASS_TYPE='TEST'`**（与 JB **`PASSTYPE=TEST`** 一致）。
 
@@ -92,7 +94,7 @@ curl -s "http://10.192.130.89:30008/api/v1/inf-analysis/site-bin-bylot?device=WA
 curl -s "http://10.192.130.89:30008/api/v1/inf-analysis/site-bin-bylot?device=WA03P02G&probeCardType=8037&passId=1"
 ```
 
-响应：`meta.aggregateScope: "device"`、`deviceDir`、`waferLots[]`、`probeCardType`（推断或传入）、`waferCount`、`waferSlots`、`passes`。
+响应：`meta.aggregateScope: "device"`、`topN`、`selectedLots[]`、`deviceDir`、`waferLots[]`、`probeCardType`、`testEndWindow`、`waferCount`、`waferSlots`、`passes`。
 
 上限：`SITE_BIN_BY_LOT_MAX_WAFERS_DEVICE`（默认 **100** 片）。
 

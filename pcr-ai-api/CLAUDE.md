@@ -19,7 +19,7 @@
 | 1 | [`docs/AI_AGENT_API.md`](docs/AI_AGENT_API.md) | **主手册**：manifest、Dummy、v3 通俗说明、§8 curl、错误码、§9 源码索引 |
 | 1b | [`docs/SITE_BIN_BY_LOT_API.md`](docs/SITE_BIN_BY_LOT_API.md) | **site-bin-bylot 用法**：curl / Dummy URL / `fetch` 示例 |
 | 1c | [`../docs/SITE_BIN_BY_LOT_INTEGRATION.md`](../docs/SITE_BIN_BY_LOT_INTEGRATION.md) | **INF map × bin × DUT**：`buildInfPath`、报表下钻、Agent 工具/prompt（UI/Agent 待做） |
-| 1d | [`../docs/HANDOFF_SITE_BIN_BY_LOT_AGG.md`](../docs/HANDOFF_SITE_BIN_BY_LOT_AGG.md) | **Lot/Device 聚合交接**：`device`+`passId`、JB 推断 `probeCardType`、实现文件索引 |
+| 1d | [`../docs/HANDOFF_SITE_BIN_BY_LOT_AGG.md`](../docs/HANDOFF_SITE_BIN_BY_LOT_AGG.md) | **Lot/Device 聚合交接**：`topN` 最新 lot、`TESTEND` 窗、`siteBinByLotDeviceTopN.ts` / `siteBinByLotTestEndWindow.ts`、Git 纪要 |
 | 1d | [`../docs/HANDOFF_JB_INTERRUPT_YIELD.md`](../docs/HANDOFF_JB_INTERRUPT_YIELD.md) | **JB 中断 slot 良率**：`slotYieldSummary` 半片字段、整片正片规则、Agent 输出顺序（整片→前半→后半，0% 必写） |
 | 2 | [`docs/API_V3.md`](docs/API_V3.md) | **v3 列表**完整 SQL（由 `npm run docs:api-v3` 从 `dist` 再生） |
 | 3 | [`.env.example`](.env.example) | 环境变量与 Dummy 开关说明 |

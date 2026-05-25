@@ -36,14 +36,15 @@
 | --- | --- | --- |
 | **单片** | `infPath` + `passId` | 一片 wafer；报表 `InfDutDistPanel` |
 | **Lot 聚合** | `device` + `lot` + `passId`；可选 `probeCardType` | 一个 lot 下多片 INF 按 pass×bin×dut 累加 |
-| **Device 聚合** | `device` + `passId`（**勿传 `lot`**）；`probeCardType` 可选 | 跨 lot；无卡型时 JB 推断唯一卡型，多种卡型须显式传 `probeCardType` |
+| **Device 聚合** | `device` + `passId`（**勿传 `lot`**） | 默认 **`topN=10`** 个 TESTEND 最新 lot（最大 50）；`probeCardType` 可选；详见 [`HANDOFF_SITE_BIN_BY_LOT_AGG.md`](HANDOFF_SITE_BIN_BY_LOT_AGG.md) |
 
 ```
 # 单片
 GET /api/v1/inf-analysis/site-bin-bylot?infPath=...&passId=1&passId=2
 
-# Device（生产常用）
+# Device（生产常用，默认 topN=10）
 GET /api/v4/inf-analysis/site-bin-bylot?device=WA03P02G&passId=1
+GET /api/v4/inf-analysis/site-bin-bylot?device=WA03P02G&passId=1&topN=20
 ```
 
 **联调 Dummy 一键 URL（需 `SITE_BIN_BY_LOT_DUMMY=true` 或 `INFCONTROL_LAYER_BINS_DUMMY=true`）：**
@@ -57,7 +58,7 @@ http://127.0.0.1:30008/api/v1/inf-analysis/site-bin-bylot?infPath=/data/probe_lo
 | 参数 | 必填 | 说明 |
 | --- | --- | --- |
 | `infPath`（别名 `inf_path`） | 单片必填 | API 主机上可读的 INF 绝对路径；与 `device`+`lot` 互斥 |
-| `device` / `lot` / `probeCardType` | 聚合 | 见 [`HANDOFF_SITE_BIN_BY_LOT_AGG.md`](HANDOFF_SITE_BIN_BY_LOT_AGG.md) |
+| `device` / `lot` / `probeCardType` / `topN` / `testEnd*` | 聚合 | 见 [`HANDOFF_SITE_BIN_BY_LOT_AGG.md`](HANDOFF_SITE_BIN_BY_LOT_AGG.md) §3–4 |
 | `passId`（别名 `pass_id`） | 是 | 一个或多个整数；可重复传参或逗号分隔 |
 
 环境变量见 `pcr-ai-api/.env.example`：`PERL_BIN`、`PERL_SCRIPT_TIMEOUT_MS`、`INF_PATH_ALLOWED_ROOT`（可选，限制 `infPath` 必须在某根目录下）。
