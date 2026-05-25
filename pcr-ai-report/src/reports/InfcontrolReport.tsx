@@ -175,7 +175,7 @@ const JB_REPORT_SECTION_ORDER = [
 
 const JB_KPI_BLOCK_ORDER = ["jbWafer", "jbYieldPct", "jbWorstType", "jbTopBin"] as const;
 
-const JB_CHART_BLOCK_ORDER = ["jbDevice", "jbBin", "jbPcType", "jbSlot", "jbFreeDim"] as const;
+const JB_CHART_BLOCK_ORDER = ["jbDevice", "jbPcType", "jbSlot", "jbFreeDim"] as const;
 
 // Sub-dimension options per parent drill
 const DRILL_FROM_DEVICE_JB: { label: string; value: string }[] = [
@@ -476,6 +476,7 @@ type JbChartBlockId = (typeof JB_CHART_BLOCK_ORDER)[number];
 type InfDutAnchor =
   | { source: "detail" }
   | { source: "lotYield" }
+  | { source: "binDist" }
   | { source: "chartsGrid"; block: JbChartBlockId };
 
 function infDutAnchorForParentDimKey(parentDimKey: string): InfDutAnchor | null {
@@ -485,7 +486,7 @@ function infDutAnchorForParentDimKey(parentDimKey: string): InfDutAnchor | null 
     case "device":
       return { source: "chartsGrid", block: "jbDevice" };
     case "bin":
-      return { source: "chartsGrid", block: "jbBin" };
+      return { source: "binDist" };
     case "probeCardType":
       return { source: "chartsGrid", block: "jbPcType" };
     case "slot":
@@ -1156,44 +1157,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     };
   }, [aggBin, selectedBin]);
 
-  const binDistOption = useMemo((): EChartsOption => {
-    const sorted = [...(aggBin?.groups ?? [])]
-      .sort((a, b) => a.count - b.count)
-      .slice(-15);
-    const COL = "#ff7b72", COL_B = "#ff5050", COL_D = "rgba(255,123,114,0.3)";
-    return {
-      ...horizontalBarChartBase(),
-      xAxis: {
-        type: "value",
-        axisLabel: { color: chartAxisColor },
-        splitLine: { lineStyle: { color: chartSplitLine } },
-      },
-      yAxis: {
-        type: "category",
-        data: sorted.map((g) => `BIN${g.parts.bin ?? g.key}`),
-        axisLabel: { ...horizontalBarCategoryAxisLabelFull, interval: 0 },
-      },
-      series: [
-        {
-          type: "bar",
-          data: sorted.map((g) => {
-            const key = g.parts.bin ?? g.key;
-            const isSel = selectedBin !== null && key === selectedBin;
-            return {
-              value: g.count,
-              itemStyle: {
-                color: isSel ? COL_B : selectedBin !== null ? COL_D : COL,
-                borderRadius: [0, 4, 4, 0] as unknown as number,
-              },
-            };
-          }),
-          label: { show: true, position: "right", color: chartAxisColor, fontSize: 10 },
-          animationDuration: 600,
-        },
-      ],
-    };
-  }, [aggBin, selectedBin]);
-
   // ProbeCard Type — sum bad-die per type (aggregate over bin dimension)
   const cardTypeOption = useMemo((): EChartsOption => {
     const typeBad = new Map<string, number>();
@@ -1565,11 +1528,10 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         defaultOrder={JB_CHART_BLOCK_ORDER}
         layoutEpoch={layoutEpoch}
         axis="grid"
-        fullRowIds={["jbDevice", "jbBin", "jbPcType", "jbSlot", "jbFreeDim"]}
+        fullRowIds={["jbDevice", "jbPcType", "jbSlot", "jbFreeDim"]}
         groupClassName="report-reorder-group--chartgrid"
         labels={{
           jbDevice: "Device 不良分析",
-          jbBin: "不良 BIN 全量排名",
           jbPcType: "ProbeCard Type 不良对比",
           jbSlot: "Slot 趋势（Wafer 间）",
           jbFreeDim: "自由维度聚合",
@@ -1624,61 +1586,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
               <InfDutAnchorRow
                 infCtx={infCtx}
                 match={(a) => a.source === "chartsGrid" && a.block === "jbDevice"}
-                apiBase={apiBase}
-                onClose={closeInfDut}
-              />
-            </>
-          ),
-          jbBin: (
-            <>
-            <div className="report-chart-panel">
-              <ChartDrillSplit
-                hint="点击钻取"
-                chart={
-                  aggBin ? (
-                    <ReactECharts
-                      option={binRankOption}
-                      style={{
-                        height: rankBarChartHeight(aggBin.groups?.length ?? 0, 10, "medium"),
-                        width: "100%",
-                      }}
-                      opts={{ renderer: "canvas" }}
-                      notMerge
-                      lazyUpdate
-                      onEvents={{
-                        click: (params: { name: string }) => {
-                          const bin = params.name.replace(/^Bin /, "");
-                          setSelectedBin(bin);
-                          fetchDrill("bin", bin, "cardId", form);
-                        },
-                      }}
-                    />
-                  ) : null
-                }
-                drill={
-                  drills["bin"] != null ? (
-                    <DrillDownPanel
-                      chartSize="medium"
-                      layout="side"
-                      title={`Bin ${drills["bin"]!.parentDimVal} · 下钻：按 ${drills["bin"]!.subDim}`}
-                      groups={drills["bin"]!.groups}
-                      loading={drills["bin"]!.loading}
-                      error={drills["bin"]!.error}
-                      activeSubDim={drills["bin"]!.subDim}
-                      subDimOptions={DRILL_FROM_BIN}
-                      onSubDimChange={(d) =>
-                        fetchDrill("bin", drills["bin"]!.parentDimVal, d, form)
-                      }
-                      onBarClick={(key) => openInfFromDrill(drills["bin"]!, key)}
-                      onClose={() => closeDrillPanel("bin", () => setSelectedBin(null))}
-                    />
-                  ) : null
-                }
-              />
-              </div>
-              <InfDutAnchorRow
-                infCtx={infCtx}
-                match={(a) => a.source === "chartsGrid" && a.block === "jbBin"}
                 apiBase={apiBase}
                 onClose={closeInfDut}
               />
@@ -1985,28 +1892,57 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       ) : null;
 
     const binDistSection = aggBin?.groups?.length ? (
-      <div className="report-chart-panel">
-        <div style={{ fontSize: 11, color: "#6e7681", marginBottom: 6 }}>
-          Top 15 坏 Bin · 点击选中并下钻
+      <>
+        <div className="report-chart-panel">
+          <ChartDrillSplit
+            hint="点击钻取"
+            chart={
+              <ReactECharts
+                option={binRankOption}
+                style={{
+                  height: rankBarChartHeight(aggBin.groups.length, 10, "medium"),
+                  width: "100%",
+                }}
+                opts={{ renderer: "canvas" }}
+                notMerge
+                lazyUpdate
+                onEvents={{
+                  click: (params: { name: string }) => {
+                    const bin = params.name.replace(/^Bin /, "");
+                    setSelectedBin(bin);
+                    fetchDrill("bin", bin, "cardId", form);
+                  },
+                }}
+              />
+            }
+            drill={
+              drills["bin"] != null ? (
+                <DrillDownPanel
+                  chartSize="medium"
+                  layout="side"
+                  title={`Bin ${drills["bin"]!.parentDimVal} · 下钻：按 ${drills["bin"]!.subDim}`}
+                  groups={drills["bin"]!.groups}
+                  loading={drills["bin"]!.loading}
+                  error={drills["bin"]!.error}
+                  activeSubDim={drills["bin"]!.subDim}
+                  subDimOptions={DRILL_FROM_BIN}
+                  onSubDimChange={(d) =>
+                    fetchDrill("bin", drills["bin"]!.parentDimVal, d, form)
+                  }
+                  onBarClick={(key) => openInfFromDrill(drills["bin"]!, key)}
+                  onClose={() => closeDrillPanel("bin", () => setSelectedBin(null))}
+                />
+              ) : null
+            }
+          />
         </div>
-        <ReactECharts
-          option={binDistOption}
-          style={{
-            height: rankBarChartHeight(Math.min(aggBin.groups.length, 15), 15, "medium"),
-            width: "100%",
-          }}
-          opts={{ renderer: "canvas" }}
-          notMerge
-          lazyUpdate
-          onEvents={{
-            click: (params: { name: string }) => {
-              const bin = params.name.replace(/^BIN/i, "");
-              setSelectedBin(bin);
-              fetchDrill("bin", bin, "cardId", form);
-            },
-          }}
+        <InfDutAnchorRow
+          infCtx={infCtx}
+          match={(a) => a.source === "binDist"}
+          apiBase={apiBase}
+          onClose={closeInfDut}
         />
-      </div>
+      </>
     ) : null;
 
     return {
@@ -2030,7 +1966,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     fetchDrill,
     aggBin,
     binRankOption,
-    binDistOption,
     aggCardType,
     cardTypeOption,
     aggSlot,
