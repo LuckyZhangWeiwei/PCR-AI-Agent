@@ -617,14 +617,6 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
                   )}
                   {showFeedbackBar && (
                     <div className="ai-feedback-bar">
-                      <button
-                        type="button"
-                        className="ai-feedback-btn ai-feedback-btn--regen"
-                        onClick={() => void handleRegenerate(i)}
-                        title="重新生成这条回答"
-                      >
-                        🔄
-                      </button>
                       {feedbackState[i] !== undefined ? (
                         <span className="ai-feedback-thanks">感谢反馈</span>
                       ) : (
@@ -647,6 +639,14 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
                           </button>
                         </>
                       )}
+                      <button
+                        type="button"
+                        className="ai-feedback-btn ai-feedback-btn--regen"
+                        onClick={() => void handleRegenerate(i)}
+                        title="重新生成这条回答"
+                      >
+                        🔄
+                      </button>
                     </div>
                   )}
                 </div>
