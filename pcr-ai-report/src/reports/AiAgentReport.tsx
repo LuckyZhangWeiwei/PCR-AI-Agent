@@ -293,8 +293,8 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
   }, [agentConfig.clientTimeoutSec, agentConfig.streamTimeoutSec]);
 
   const submitAgentRequest = useCallback(
-    async (options: { text?: string; retry?: boolean }) => {
-      const { text, retry = false } = options;
+    async (options: { text?: string; retry?: boolean; baseMessages?: ChatMessage[] }) => {
+      const { text, retry = false, baseMessages } = options;
       const userText = (retry ? text ?? findLastUserText(messages) : text)?.trim();
       if (!userText) return;
 
@@ -309,9 +309,15 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
       );
 
       setLoading(true);
-      setStatusHint(retry ? "正在重试…" : "正在连接服务器…");
+      setStatusHint(retry ? "正在重试…" : baseMessages !== undefined ? "正在重新生成…" : "正在连接服务器…");
 
-      if (retry) {
+      if (baseMessages !== undefined) {
+        setMessages([
+          ...baseMessages,
+          { kind: "user", text: userText },
+          { kind: "ai", text: "", streaming: true },
+        ]);
+      } else if (retry) {
         setMessages((prev) => {
           const copy = [...prev];
           const last = copy[copy.length - 1];
@@ -531,6 +537,26 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
     setFeedbackModal({ msgIndex: idx, question, answer: msg.text });
   }
 
+  const handleRegenerate = useCallback(async (idx: number) => {
+    if (loading) return;
+    const question = findLastUserText(messages.slice(0, idx));
+    if (!question) return;
+    let userIdx = -1;
+    for (let k = idx - 1; k >= 0; k--) {
+      if (messages[k].kind === "user") { userIdx = k; break; }
+    }
+    if (userIdx === -1) return;
+    setFeedbackState((prev) => {
+      const next: Record<number, "good" | "bad"> = {};
+      for (const key of Object.keys(prev)) {
+        const n = Number(key);
+        if (n < userIdx + 1) next[n] = prev[n];
+      }
+      return next;
+    });
+    await submitAgentRequest({ text: question, baseMessages: messages.slice(0, userIdx) });
+  }, [loading, messages, submitAgentRequest]);
+
   return (
     <div className="ai-agent-report">
       <div className="ai-agent-toolbar">
@@ -591,6 +617,14 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
                   )}
                   {showFeedbackBar && (
                     <div className="ai-feedback-bar">
+                      <button
+                        type="button"
+                        className="ai-feedback-btn ai-feedback-btn--regen"
+                        onClick={() => void handleRegenerate(i)}
+                        title="重新生成这条回答"
+                      >
+                        🔄
+                      </button>
                       {feedbackState[i] !== undefined ? (
                         <span className="ai-feedback-thanks">感谢反馈</span>
                       ) : (

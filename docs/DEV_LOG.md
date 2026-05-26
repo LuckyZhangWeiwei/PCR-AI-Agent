@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-05-26 — AI Chat 重新生成按钮 + 会话日志
+
+**完成内容：**
+- `pcr-ai-report/src/reports/AiAgentReport.tsx`：每条完整 AI 回答的反馈栏新增 🔄 重新生成按钮（位于 👍👎 左侧，竖线分隔）；`handleRegenerate(idx)` 截断消息列表到该回答前的用户问题，重新提交同一问题并清除旧反馈状态；`submitAgentRequest` 增加 `baseMessages` 选项支持重新生成场景。
+- `pcr-ai-report/src/reports/AiAgentReport.css`：新增 `.ai-feedback-btn--regen` 样式（右侧竖线分隔符，与 👍👎 区分）。
+- `pcr-ai-api/src/lib/agent/sessionLogger.ts`（新建）：`SessionLogger` 类，监听 SSE emit 事件（text/tool_start/tool_result/done/error），将每次对话请求记录为 markdown 文件；文件名 = 请求开始时间戳（Windows 安全格式，`:` → `-`）；存放目录由 `SESSION_LOG_DIR` env 控制，默认 `pcr-ai-api/session-logs/`。
+- `pcr-ai-api/src/routes/agent.ts`：每次请求创建 `SessionLogger` 并将所有 `writeEvent` 调用同步 feed 给 logger。
+- `pcr-ai-api/.env.example`：新增 `SESSION_LOG_DIR` 说明注释。
+
+**测试：** typecheck 与 build 均通过（前端 `npm run build`，后端 `npm run typecheck` + `npm run build`）。
+
+---
+
 ## 2026-05-25 — Code Review 修复 + Agent 工程经验提示词
 
 **完成内容：**

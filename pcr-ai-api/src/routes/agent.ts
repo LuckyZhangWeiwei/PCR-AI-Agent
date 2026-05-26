@@ -5,6 +5,7 @@ import { resolveAgentConfig, type AgentConfig } from "../lib/agent/agentConfig.j
 import { runAgentLoop, type AgentSseEvent } from "../lib/agent/agentLoop.js";
 import { saveFeedback, type FeedbackRecord } from "../lib/agent/agentFeedback.js";
 import { sendAgentError } from "../lib/agentResponse.js";
+import { SessionLogger } from "../lib/agent/sessionLogger.js";
 
 export const agentRouter = Router();
 
@@ -54,6 +55,13 @@ agentRouter.post("/chat", async (req, res) => {
     });
   }
 
+  const logger = new SessionLogger({
+    sessionId,
+    userMessage: message || "(retry — no new message)",
+    model: config.model,
+    isRetry: retry,
+  });
+
   // SSE headers
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -63,6 +71,7 @@ agentRouter.post("/chat", async (req, res) => {
 
   const writeEvent = (event: AgentSseEvent) => {
     if (closed) return;
+    logger.feed(event);
     res.write(`data: ${JSON.stringify(event)}\n\n`);
     const resWithFlush = res as typeof res & { flush?: () => void };
     if (typeof resWithFlush.flush === "function") resWithFlush.flush();

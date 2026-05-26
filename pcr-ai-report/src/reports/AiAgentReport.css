@@ -444,4 +444,6 @@
 }
 .ai-feedback-btn { background: none; border: 1px solid transparent; border-radius: 4px; cursor: pointer; font-size: 0.95rem; padding: 2px 6px; opacity: 0.4; transition: opacity 0.15s, border-color 0.15s; line-height: 1; }
 .ai-feedback-btn:hover { opacity: 0.9; border-color: var(--border, #2a3f6f); }
+.ai-feedback-btn--regen { margin-right: 6px; border-right: 1px solid var(--border, #2a3f6f); padding-right: 10px; border-radius: 0; border-left: none; border-top: none; border-bottom: none; }
+.ai-feedback-btn--regen:hover { border-right-color: var(--border, #2a3f6f); }
 .ai-feedback-thanks { font-size: 0.8rem; color: #6a8aaa; font-style: italic; }
