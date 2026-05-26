@@ -8,3 +8,6 @@ dist.tar
 
 # Agent feedback data (runtime-generated, may contain user questions)
 data/feedback.json
+
+# AI agent session logs (runtime-generated, may contain user queries)
+session-logs/
