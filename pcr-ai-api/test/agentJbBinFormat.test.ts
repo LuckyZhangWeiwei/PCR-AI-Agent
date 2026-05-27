@@ -1,8 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildSlotBadBinsCompact,
   formatJbRowsForAgent,
   normalizeBinsForAgent,
+  serializeJbQueryResultForAgent,
   wrapJbQueryResultForAgent,
 } from "../src/lib/agent/agentJbBinFormat.js";
 
@@ -88,5 +90,86 @@ describe("agentJbBinFormat", () => {
     const out = wrapJbQueryResultForAgent(rows);
     assert.deepEqual(out.distinctSlots, [1, 2, 3, 25]);
     assert.equal(out.count, 5);
+  });
+
+  it("buildSlotBadBinsCompact sums bad bins per slot across rows", () => {
+    const rows = [
+      {
+        SLOT: 23,
+        bins: [
+          { n: 7, value: 100, isGoodBin: false },
+          { n: 3, value: 5, isGoodBin: false },
+        ],
+      },
+      {
+        SLOT: 23,
+        bins: [{ n: 7, value: 24, isGoodBin: false }],
+      },
+      {
+        SLOT: 24,
+        bins: [{ n: 7, value: 134, isGoodBin: false }],
+      },
+    ] as Record<string, unknown>[];
+    const compact = buildSlotBadBinsCompact(rows);
+    assert.deepEqual(compact, [
+      {
+        slot: 23,
+        badBins: [
+          { bin: 3, dieCount: 5, isGoodBin: false },
+          { bin: 7, dieCount: 124, isGoodBin: false },
+        ],
+      },
+      {
+        slot: 24,
+        badBins: [{ bin: 7, dieCount: 134, isGoodBin: false }],
+      },
+    ]);
+  });
+
+  it("wrapJbQueryResultForAgent includes slotBadBinsCompact guide", () => {
+    const out = wrapJbQueryResultForAgent([
+      { SLOT: 1, bins: [{ n: 7, value: 10, isGoodBin: false }] },
+    ] as Record<string, unknown>[]);
+    assert.ok(String(out._slotBadBinsCompactGuide).includes("slotBadBinsCompact"));
+    const compact = out.slotBadBinsCompact as Array<{ slot: number; badBins: unknown[] }>;
+    assert.equal(compact[0]!.slot, 1);
+    assert.deepEqual(compact[0]!.badBins, [
+      { bin: 7, dieCount: 10, isGoodBin: false },
+    ]);
+  });
+
+  it("serializeJbQueryResultForAgent omits rows when payload too large", () => {
+    const rows = Array.from({ length: 30 }, (_, i) => ({
+      SLOT: i + 1,
+      LOT: "NF12316.1X",
+      DEVICE: "WA03P02G",
+      CARDID: "8041-05",
+      TESTERID: "b3uflex17",
+      PASSID: 1,
+      GROSSDIE: 5000,
+      bins: Array.from({ length: 20 }, (__, j) => ({
+        n: j + 2,
+        value: 50 + j,
+        isGoodBin: false,
+      })),
+    })) as Record<string, unknown>[];
+    const wrapped = wrapJbQueryResultForAgent(rows);
+    const json = serializeJbQueryResultForAgent(wrapped, 6000);
+    const parsed = JSON.parse(json) as Record<string, unknown>;
+    assert.equal(parsed.rowsOmitted, true);
+    assert.equal(parsed.rowCount, 30);
+    assert.equal(parsed.rows, undefined);
+    assert.ok(!json.endsWith("…(truncated)"), "must remain valid JSON");
+    const binBySlot = parsed.binBySlot as Record<string, Record<string, number>>;
+    const compact = parsed.slotBadBinsCompact as Array<{ slot: number }> | undefined;
+    if (compact) {
+      assert.deepEqual(
+        compact.map((x) => x.slot),
+        Array.from({ length: 30 }, (_, i) => i + 1)
+      );
+    } else {
+      assert.equal(Object.keys(binBySlot).length, 30);
+      assert.equal(binBySlot["23"]?.["7"], 55);
+    }
   });
 });

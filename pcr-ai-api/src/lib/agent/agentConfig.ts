@@ -7,6 +7,8 @@ export interface AgentConfig {
   streamTimeoutSec: number;
   /** 流式 idle 超时（毫秒）；Settings 为秒，env 可为任意毫秒 */
   streamTimeoutMs: number;
+  /** 单次工具结果 JSON 最大字符数（发给 LLM 前截断/压缩） */
+  toolResultMaxChars: number;
 }
 
 const DEFAULT_API_BASE = "https://api.siliconflow.cn/v1";
@@ -18,6 +20,10 @@ const MAX_MAX_ROUNDS = 20;
 export const DEFAULT_STREAM_TIMEOUT_SEC = 150;
 const MIN_STREAM_TIMEOUT_SEC = 30;
 const MAX_STREAM_TIMEOUT_SEC = 600;
+
+export const DEFAULT_TOOL_RESULT_MAX_CHARS = 12000;
+const MIN_TOOL_RESULT_MAX_CHARS = 6000;
+const MAX_TOOL_RESULT_MAX_CHARS = 30000;
 
 function clampMaxRounds(n: unknown): number {
   const parsed = typeof n === "number" ? n : Number(n);
@@ -31,6 +37,15 @@ export function clampStreamTimeoutSec(n: unknown): number {
   return Math.min(
     Math.max(Math.round(parsed), MIN_STREAM_TIMEOUT_SEC),
     MAX_STREAM_TIMEOUT_SEC
+  );
+}
+
+export function clampToolResultMaxChars(n: unknown): number {
+  const parsed = typeof n === "number" ? n : Number(n);
+  if (!Number.isFinite(parsed)) return DEFAULT_TOOL_RESULT_MAX_CHARS;
+  return Math.min(
+    Math.max(Math.round(parsed), MIN_TOOL_RESULT_MAX_CHARS),
+    MAX_TOOL_RESULT_MAX_CHARS
   );
 }
 
@@ -96,5 +111,16 @@ export function resolveAgentConfig(
     override?.maxRounds ?? process.env.AGENT_MAX_ROUNDS
   );
   const { streamTimeoutSec, streamTimeoutMs } = resolveStreamTimeout(override);
-  return { apiKey, apiBase, model, maxRounds, streamTimeoutSec, streamTimeoutMs };
+  const toolResultMaxChars = clampToolResultMaxChars(
+    override?.toolResultMaxChars ?? process.env.AGENT_TOOL_RESULT_MAX_CHARS
+  );
+  return {
+    apiKey,
+    apiBase,
+    model,
+    maxRounds,
+    streamTimeoutSec,
+    streamTimeoutMs,
+    toolResultMaxChars,
+  };
 }

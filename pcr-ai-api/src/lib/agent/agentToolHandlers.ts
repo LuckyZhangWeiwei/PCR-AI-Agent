@@ -47,7 +47,14 @@ import {
   type ClarificationSentinel,
 } from "./agentChartTool.js";
 import { runGetFilterValues } from "./agentFilterValuesTool.js";
-import { wrapJbQueryResultForAgent } from "./agentJbBinFormat.js";
+import {
+  serializeJbQueryResultForAgent,
+  wrapJbQueryResultForAgent,
+} from "./agentJbBinFormat.js";
+import {
+  clampToolResultMaxChars,
+  DEFAULT_TOOL_RESULT_MAX_CHARS,
+} from "./agentConfig.js";
 import { buildInfPath } from "../buildInfPath.js";
 import {
   runOutputSiteBinByLot,
@@ -57,20 +64,29 @@ import { tryResolveSiteBinByLotDummy } from "../outputSiteBinByLotDummy.js";
 
 export type { ChartSentinel, ClarificationSentinel };
 
+export type RunToolOptions = {
+  toolResultMaxChars?: number;
+};
+
 const TOOL_LIST_LIMIT = 50;
 const TOOL_LIST_LIMIT_MAX = 200;
-const TOOL_RESULT_TRUNCATE = 6000;
+
+function resolveToolResultMaxChars(options?: RunToolOptions): number {
+  return clampToolResultMaxChars(
+    options?.toolResultMaxChars ?? DEFAULT_TOOL_RESULT_MAX_CHARS
+  );
+}
 
 function clampLimit(raw: unknown, defaultVal: number, max: number): number {
   const n = typeof raw === "number" ? raw : defaultVal;
   return Math.min(Math.max(1, Math.round(n)), max);
 }
 
-function truncateResult(obj: unknown): string {
+function truncateResult(obj: unknown, maxChars: number): string {
   try {
     const s = JSON.stringify(obj);
-    return s.length > TOOL_RESULT_TRUNCATE
-      ? s.slice(0, TOOL_RESULT_TRUNCATE) + "…(truncated)"
+    return s.length > maxChars
+      ? s.slice(0, maxChars) + "…(truncated)"
       : s;
   } catch {
     return "(结果序列化失败)";
@@ -96,7 +112,8 @@ function enrichJbRow(row: Record<string, unknown>): Record<string, unknown> {
 }
 
 async function toolQueryYieldTriggers(
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  maxChars: number
 ): Promise<string> {
   const limit = clampLimit(args["limit"], TOOL_LIST_LIMIT, TOOL_LIST_LIMIT_MAX);
   const params: Record<string, unknown> = { ...args, limit };
@@ -110,7 +127,7 @@ async function toolQueryYieldTriggers(
     const rows = filterYieldMonitorDummyRowsV3(parsed.applied, limit).map(
       (r) => enrichYieldRow(r as Record<string, unknown>)
     );
-    return truncateResult({ count: rows.length, rows });
+    return truncateResult({ count: rows.length, rows }, maxChars);
   }
 
   const sql = buildYieldMonitorTriggersV3Sql(parsed.whereSql);
@@ -121,11 +138,12 @@ async function toolQueryYieldTriggers(
     return (result.rows ?? []) as Record<string, unknown>[];
   });
   const enriched = rows.map(enrichYieldRow);
-  return truncateResult({ count: enriched.length, rows: enriched });
+  return truncateResult({ count: enriched.length, rows: enriched }, maxChars);
 }
 
 async function toolAggregateYieldTriggers(
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  maxChars: number
 ): Promise<string> {
   const dimensionsRaw = String(args["dimensions"] ?? "device");
   const groupTop = clampLimit(args["groupTop"], 10, 25);
@@ -146,7 +164,7 @@ async function toolAggregateYieldTriggers(
       parsed.dimensions as YieldMonitorV3AggDim[],
       parsed.groupTop
     );
-    return truncateResult(result);
+    return truncateResult(result, maxChars);
   }
 
   const sql = buildYieldMonitorTriggerV3AggregateSql(
@@ -184,11 +202,12 @@ async function toolAggregateYieldTriggers(
     return { groups: builtGroups, total: totalCount };
   });
 
-  return truncateResult({ totalRowsMatching: total, groups });
+  return truncateResult({ totalRowsMatching: total, groups }, maxChars);
 }
 
 async function toolQueryJbBins(
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  maxChars: number
 ): Promise<string> {
   const limit = clampLimit(args["limit"], TOOL_LIST_LIMIT, TOOL_LIST_LIMIT_MAX);
   const parsed = parseInfcontrolLayerBinsV3Query({ ...args, limit });
@@ -198,7 +217,7 @@ async function toolQueryJbBins(
     const rows = filterInfcontrolLayerBinV3DummyRows(parsed.applied, limit).map(
       (r) => enrichJbRow(r as Record<string, unknown>)
     );
-    return truncateResult(wrapJbQueryResultForAgent(rows));
+    return serializeJbQueryResultForAgent(wrapJbQueryResultForAgent(rows), maxChars);
   }
 
   const sql = buildInfcontrolLayerBinsV3Sql(parsed.whereAndSql);
@@ -211,11 +230,12 @@ async function toolQueryJbBins(
     return (result.rows ?? []) as Record<string, unknown>[];
   });
   const enriched = rows.map(enrichJbRow);
-  return truncateResult(wrapJbQueryResultForAgent(enriched));
+  return serializeJbQueryResultForAgent(wrapJbQueryResultForAgent(enriched), maxChars);
 }
 
 async function toolAggregateJbBins(
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  maxChars: number
 ): Promise<string> {
   const groupByRaw = String(args["groupBy"] ?? "bin");
   const groupTop = clampLimit(args["groupTop"], 10, 50);
@@ -241,7 +261,7 @@ async function toolAggregateJbBins(
       parsed.groupBy as InfcontrolLayerBinGroupBy[],
       parsed.groupTop
     );
-    return truncateResult(result);
+    return truncateResult(result, maxChars);
   }
 
   const sql = buildInfcontrolLayerBinAggregateSql(
@@ -280,11 +300,12 @@ async function toolAggregateJbBins(
     return { groups: builtGroups, total: totalCount };
   });
 
-  return truncateResult({ totalRowsMatching: total, groups });
+  return truncateResult({ totalRowsMatching: total, groups }, maxChars);
 }
 
 async function toolQueryInfSiteBinByDut(
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  maxChars: number
 ): Promise<string> {
   const device = typeof args["device"] === "string" ? args["device"].trim() : "";
   const lot    = typeof args["lot"]    === "string" ? args["lot"].trim()    : "";
@@ -310,7 +331,7 @@ async function toolQueryInfSiteBinByDut(
   const dummy = tryResolveSiteBinByLotDummy(infPath, passIds);
   if (dummy) {
     const result = { cardId, device, lot, slot, infPath, passes: dummy.passes };
-    return truncateResult(result);
+    return truncateResult(result, maxChars);
   }
 
   const { stdout, stderr, exitCode } = await runOutputSiteBinByLot(infPath, passIds);
@@ -319,11 +340,11 @@ async function toolQueryInfSiteBinByDut(
       error: "INF/Perl 失败",
       stderr: stderr.slice(0, 500),
       hint: "检查 INF_STORAGE_ROOT 及 infPath 在 API 主机上是否可读",
-    });
+    }, maxChars);
   }
   try {
     const data = parseSiteBinByLotJson(stdout);
-    return truncateResult({ cardId, device, lot, slot, infPath, passes: data.passes });
+    return truncateResult({ cardId, device, lot, slot, infPath, passes: data.passes }, maxChars);
   } catch (e) {
     return `INF 解析失败: ${e instanceof Error ? e.message : String(e)}`;
   }
@@ -331,17 +352,19 @@ async function toolQueryInfSiteBinByDut(
 
 export async function runTool(
   name: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  options?: RunToolOptions
 ): Promise<string | ChartSentinel | ClarificationSentinel> {
+  const maxChars = resolveToolResultMaxChars(options);
   switch (name) {
     case "query_yield_triggers":
-      return toolQueryYieldTriggers(args);
+      return toolQueryYieldTriggers(args, maxChars);
     case "aggregate_yield_triggers":
-      return toolAggregateYieldTriggers(args);
+      return toolAggregateYieldTriggers(args, maxChars);
     case "query_jb_bins":
-      return toolQueryJbBins(args);
+      return toolQueryJbBins(args, maxChars);
     case "aggregate_jb_bins":
-      return toolAggregateJbBins(args);
+      return toolAggregateJbBins(args, maxChars);
     case "generate_chart": {
       try {
         const chartType = args["chartType"] as "bar" | "line" | "pie" | "scatter";
@@ -361,7 +384,7 @@ export async function runTool(
     case "get_filter_values":
       return runGetFilterValues(args);
     case "query_inf_site_bin_by_dut":
-      return toolQueryInfSiteBinByDut(args);
+      return toolQueryInfSiteBinByDut(args, maxChars);
     default:
       return `未知工具: ${name}`;
   }

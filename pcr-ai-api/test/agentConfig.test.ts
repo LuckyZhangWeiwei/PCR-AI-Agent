@@ -18,6 +18,7 @@ describe("resolveAgentConfig", () => {
     assert.equal(cfg.maxRounds, 5);
     assert.equal(cfg.streamTimeoutSec, 150);
     assert.equal(cfg.streamTimeoutMs, 150_000);
+    assert.equal(cfg.toolResultMaxChars, 12000);
   });
 
   it("clamps streamTimeoutSec from override", async () => {
@@ -51,6 +52,29 @@ describe("resolveAgentConfig", () => {
     assert.equal(resolveAgentConfig({ maxRounds: 0 }).maxRounds, 1);
     assert.equal(resolveAgentConfig({ maxRounds: 99 }).maxRounds, 20);
     assert.equal(resolveAgentConfig({ maxRounds: 8 }).maxRounds, 8);
+  });
+
+  it("clamps toolResultMaxChars from override", async () => {
+    const { resolveAgentConfig } = await import(
+      "../src/lib/agent/agentConfig.js"
+    );
+    assert.equal(resolveAgentConfig({ toolResultMaxChars: 1000 }).toolResultMaxChars, 6000);
+    assert.equal(resolveAgentConfig({ toolResultMaxChars: 99999 }).toolResultMaxChars, 30000);
+    assert.equal(resolveAgentConfig({ toolResultMaxChars: 15000 }).toolResultMaxChars, 15000);
+  });
+
+  it("reads AGENT_TOOL_RESULT_MAX_CHARS from env when override omitted", async () => {
+    const saved = process.env.AGENT_TOOL_RESULT_MAX_CHARS;
+    process.env.AGENT_TOOL_RESULT_MAX_CHARS = "18000";
+    try {
+      const { resolveAgentConfig } = await import(
+        "../src/lib/agent/agentConfig.js"
+      );
+      assert.equal(resolveAgentConfig({}).toolResultMaxChars, 18000);
+    } finally {
+      if (saved !== undefined) process.env.AGENT_TOOL_RESULT_MAX_CHARS = saved;
+      else delete process.env.AGENT_TOOL_RESULT_MAX_CHARS;
+    }
   });
 
   it("reads AGENT_MAX_ROUNDS from env when override omitted", async () => {

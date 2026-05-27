@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-05-27 — Agent JB 逐片 BIN + 工具结果体积可配
+
+**现象：** 问 lot 每片 BIN7 颗数时 Agent 报「API 截断」，只列部分 slot。
+
+**完成内容：**
+- `pcr-ai-api/src/lib/agent/agentJbBinFormat.ts`：`slotBadBinsCompact`、`binBySlot`、`serializeJbQueryResultForAgent(wrapped, maxChars)`（超限省略 `rows`，不输出无效 JSON）。
+- `pcr-ai-api/src/lib/agent/agentConfig.ts`：`toolResultMaxChars` 默认 **12000**（6000–30000）；env `AGENT_TOOL_RESULT_MAX_CHARS`。
+- `pcr-ai-api/src/lib/agent/agentToolHandlers.ts` / `agentLoop.ts`：`runTool(..., { toolResultMaxChars })`。
+- `pcr-ai-api/src/lib/agent/agentPrompt.ts` + `agentToolSchemas.ts`：逐片 BIN 专节与工具描述。
+- `pcr-ai-report` Settings：`toolResultMaxChars` 输入（`usePersistedAgentConfig.ts`、`App.tsx`）。
+- 交接文档：`docs/HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md`；`pcr-ai-api/CLAUDE.md` §11 条目 15。
+
+**测试：** `test/agentJbBinFormat.test.ts`、`test/agentConfig.test.ts`；前后端 build/typecheck 通过。
+
+**部署：** `pcr-ai-api` build + pm2 reload；`pcr-ai-report` build。Settings 改值无需重启 API。
+
+---
+
 ## 2026-05-26 — AI Chat 重新生成按钮 + 会话日志
 
 **完成内容：**

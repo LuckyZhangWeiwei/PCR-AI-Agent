@@ -15,6 +15,9 @@ import {
   AGENT_CLIENT_TIMEOUT_SEC_DEFAULT,
   AGENT_CLIENT_TIMEOUT_SEC_MAX,
   AGENT_CLIENT_TIMEOUT_BUFFER_SEC,
+  AGENT_TOOL_RESULT_MAX_CHARS_DEFAULT,
+  AGENT_TOOL_RESULT_MAX_CHARS_MAX,
+  AGENT_TOOL_RESULT_MAX_CHARS_MIN,
 } from "./hooks/usePersistedAgentConfig.js";
 import { AiAgentReport } from "./reports/AiAgentReport";
 import { InfcontrolReport } from "./reports/InfcontrolReport";
@@ -294,6 +297,25 @@ export default function App() {
               <p className="field-hint">
                 浏览器整次聊天请求的最长等待，应略大于流式 idle 超时（默认{" "}
                 {AGENT_CLIENT_TIMEOUT_SEC_DEFAULT}）。
+              </p>
+              <label>
+                <span>
+                  工具结果最大字符数（{AGENT_TOOL_RESULT_MAX_CHARS_MIN}–
+                  {AGENT_TOOL_RESULT_MAX_CHARS_MAX}）
+                </span>
+                <input
+                  type="number"
+                  min={AGENT_TOOL_RESULT_MAX_CHARS_MIN}
+                  max={AGENT_TOOL_RESULT_MAX_CHARS_MAX}
+                  value={agentConfig.toolResultMaxChars}
+                  onChange={(e) =>
+                    updateAgentConfig({ toolResultMaxChars: Number(e.target.value) })
+                  }
+                />
+              </label>
+              <p className="field-hint">
+                单次工具返回 JSON 发给 LLM 前的体积上限；JB 查询会先压缩为
+                slotBadBinsCompact（默认 {AGENT_TOOL_RESULT_MAX_CHARS_DEFAULT}）。
               </p>
               <div className="api-panel-actions">
                 <button type="button" className="btn ghost" onClick={resetAgentConfig}>

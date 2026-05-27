@@ -555,7 +555,9 @@ export async function runAgentLoop(
 
       let historyContent: string;
       try {
-        const toolResult = await runTool(tc.name, parsedArgs);
+        const toolResult = await runTool(tc.name, parsedArgs, {
+          toolResultMaxChars: agentConfig.toolResultMaxChars,
+        });
         if (
           typeof toolResult === "object" &&
           toolResult !== null &&

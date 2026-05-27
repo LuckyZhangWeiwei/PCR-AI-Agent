@@ -21,6 +21,7 @@
 | 1c | [`../docs/SITE_BIN_BY_LOT_INTEGRATION.md`](../docs/SITE_BIN_BY_LOT_INTEGRATION.md) | **INF map × bin × DUT**：`buildInfPath`、报表下钻、Agent 工具/prompt（UI/Agent 待做） |
 | 1d | [`../docs/HANDOFF_SITE_BIN_BY_LOT_AGG.md`](../docs/HANDOFF_SITE_BIN_BY_LOT_AGG.md) | **Lot/Device 聚合交接**：`topN` 最新 lot、`TESTEND` 窗、`siteBinByLotDeviceTopN.ts` / `siteBinByLotTestEndWindow.ts`、Git 纪要 |
 | 1d | [`../docs/HANDOFF_JB_INTERRUPT_YIELD.md`](../docs/HANDOFF_JB_INTERRUPT_YIELD.md) | **JB 中断 slot 良率**：`slotYieldSummary` 半片字段、整片正片规则、Agent 输出顺序（整片→前半→后半，0% 必写） |
+| 1e | [`../docs/HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md`](../docs/HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md) | **Agent JB 逐片 BIN + 工具结果体积**：`slotBadBinsCompact` / `binBySlot`、`toolResultMaxChars`（Settings 默认 12000） |
 | 2 | [`docs/API_V3.md`](docs/API_V3.md) | **v3 列表**完整 SQL（由 `npm run docs:api-v3` 从 `dist` 再生） |
 | 3 | [`.env.example`](.env.example) | 环境变量与 Dummy 开关说明 |
 | 4 | [`.cursor/rules/dummy-parity.mdc`](.cursor/rules/dummy-parity.mdc) | **Oracle 与 Dummy 双路径必须同步**（改筛选/WHERE/响应形状时必读） |
@@ -245,6 +246,13 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
    - **`agentLoop.ts` `createDeepSeekFilter`**：剥离推理标签；DSML 块结束为 **`</｜DSML｜tool_calls>`**（勿写成尾部多一个 **`｜`**）；尽量解析 DSML **`invoke`** 为嵌入式工具调用。
    - **`agentStream.ts`**：仅转发 **`delta.content`**，忽略 **`reasoning_content`**。
    - **测试**：**`test/agentLoop.test.ts`**（**`filterAgentStreamTextForUi`**）。
+15. **Agent JB 逐片 BIN + 工具结果体积（2026-05-27）**：
+   - **现象**：问「lot 1–25 片 BIN7 颗数」时模型报「API 截断」，只列 `rows` 前几片。
+   - **根因**：工具 JSON 超 **`toolResultMaxChars`**（原 **6000**）被硬切；非 Oracle 限制。
+   - **`agentJbBinFormat.ts`**：**`slotBadBinsCompact`** / 超限 **`binBySlot`**；**`serializeJbQueryResultForAgent(wrapped, maxChars)`** 省略 **`rows`** 而非输出无效 JSON。
+   - **`agentConfig.toolResultMaxChars`**：默认 **12000**，clamp **6000–30000**；Settings 随 **`agentConfig`** 下发；env **`AGENT_TOOL_RESULT_MAX_CHARS`**。
+   - **`agentPrompt.ts`** 专节「按 slot 分析某一 BIN」；**`agentToolSchemas.ts`** **`query_jb_bins`** 描述同步。
+   - **交接全文**：[`../docs/HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md`](../docs/HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md)。回归 **`test/agentJbBinFormat.test.ts`**、**`test/agentConfig.test.ts`**。
 
 ---
 
@@ -258,6 +266,7 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 - **AI Agent 轮数**：**`agentConfig.maxRounds`**（前端 Settings，默认 5）→ 服务端 **`AGENT_MAX_ROUNDS`** 回退；**`agentLoop.ts`** ReAct 上限。
 - **AI Agent 超时重试**：请求体 **`retry: true`** 从 session 历史续跑（不重复 user 消息）；前端 timeout 错误显示 **↻ 重试**。
 - **AI Agent 超时**：**`agentConfig.streamTimeoutSec`**（前端 Settings，默认 **150s**）→ **`agentStream.ts`** idle 超时；未传时回退 **`AGENT_STREAM_TIMEOUT_MS`** env。前端 **`clientTimeoutSec`**（默认 **180s**）仅浏览器整请求 Abort，不发给后端逻辑。超时时 SSE **`{ type: "error", message: "Request timeout after ...ms" }`**。
+- **AI Agent 工具结果体积**：**`agentConfig.toolResultMaxChars`**（Settings 默认 **12000**，6000–30000）→ **`runTool(..., { toolResultMaxChars })`**；**`query_jb_bins`** 优先 **`slotBadBinsCompact`** / **`binBySlot`**（见 **§11 条目 15**、[`../docs/HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md`](../docs/HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md)）。Settings 改值**无需**重启 API；改 **`.env`** **`AGENT_TOOL_RESULT_MAX_CHARS`** 或部署新代码须 **pm2 reload**。
 - **AI Agent 工具后总结轮（2026-05-22）**：**`historyAwaitingToolSummary`** 为真时（history 末条 **`tool`**，含 **retry 续跑**），**`agentLoop`** 以 **`tool_choice: "none"`** 调 SiliconFlow，并注入 **`SUMMARIZE_NUDGE`**。勿改回工具轮也带 **`tool_choice: "auto"`**，否则易复现「工具有 JSON、无中文结论」。详见 **§11 条目 11**。
 - **AI Agent 流式泄漏过滤（2026-05-22）**：**`createDeepSeekFilter`** 剥离 **think / redacted_thinking / DSML** 标记，见 **§11 条目 14**。
 - **TLS**：见 **`SILICONFLOW_TLS_INSECURE`**、**`SILICONFLOW_TLS_STRICT`**、**`NODE_EXTRA_CA_CERTS`**（**`.env.example`**）。**禁止 npm 包 `undici`**（见 **`.cursor/rules/no-undici.mdc`**）：严格校验用 Node 内置 **`fetch`**；跳过证书链用 **`node:https`** + **`rejectUnauthorized: false`**（仅硅基流动出站）。

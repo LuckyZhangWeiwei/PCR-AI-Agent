@@ -67,7 +67,7 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "query_jb_bins",
       description:
-        "查询 JB STAR Layer Bins 数据列表（INFCONTROL ⋈ INFLAYERBINLIST，PASSTYPE=TEST）。返回 rows[].badBins/goodBins：每项 { bin: BIN编号, dieCount: die颗数 }，禁止把 dieCount 写成 BIN 号。结果中 distinctSlots 字段列出本次查询范围内所有出现过的 slot 编号（去重升序），可直接用于 wafer 列表枚举。",
+        "查询 JB STAR Layer Bins 数据列表（INFCONTROL ⋈ INFLAYERBINLIST）。返回 slotBadBinsCompact（每 slot 汇总 badBins，适合「1–N 片某 BIN 颗数」）、slotYieldSummary（整片/中断良率）、distinctSlots（去重 slot 升序）。rows 为明细，体积大时可能省略（见 rowsOmitted）。问每片 BIN 颗数时优先读 slotBadBinsCompact，勿声称 API 截断。",
       parameters: {
         type: "object",
         properties: {

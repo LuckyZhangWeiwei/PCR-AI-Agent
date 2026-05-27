@@ -10,6 +10,8 @@ export interface AgentConfig {
   streamTimeoutSec: number;
   /** 浏览器整次聊天请求超时（秒）；仅前端使用，应略大于 streamTimeoutSec */
   clientTimeoutSec: number;
+  /** 单次工具结果 JSON 最大字符数；随 agentConfig 下发 */
+  toolResultMaxChars: number;
 }
 
 const STORAGE_KEY = "pcr-ai-report.agent.v1";
@@ -29,6 +31,10 @@ export const AGENT_CLIENT_TIMEOUT_SEC_MAX = 900;
 /** 客户端超时至少比流式 idle 超时多这么多秒 */
 export const AGENT_CLIENT_TIMEOUT_BUFFER_SEC = 30;
 
+export const AGENT_TOOL_RESULT_MAX_CHARS_DEFAULT = 12000;
+export const AGENT_TOOL_RESULT_MAX_CHARS_MIN = 6000;
+export const AGENT_TOOL_RESULT_MAX_CHARS_MAX = 30000;
+
 const DEFAULTS: AgentConfig = {
   apiKey: "",
   apiBase: "https://api.siliconflow.cn/v1",
@@ -36,6 +42,7 @@ const DEFAULTS: AgentConfig = {
   maxRounds: AGENT_MAX_ROUNDS_DEFAULT,
   streamTimeoutSec: AGENT_STREAM_TIMEOUT_SEC_DEFAULT,
   clientTimeoutSec: AGENT_CLIENT_TIMEOUT_SEC_DEFAULT,
+  toolResultMaxChars: AGENT_TOOL_RESULT_MAX_CHARS_DEFAULT,
 };
 
 function clampMaxRounds(n: unknown): number {
@@ -72,6 +79,15 @@ export function clampClientTimeoutSec(
   );
 }
 
+export function clampToolResultMaxChars(n: unknown): number {
+  const parsed = typeof n === "number" ? n : Number(n);
+  if (!Number.isFinite(parsed)) return AGENT_TOOL_RESULT_MAX_CHARS_DEFAULT;
+  return Math.min(
+    Math.max(Math.round(parsed), AGENT_TOOL_RESULT_MAX_CHARS_MIN),
+    AGENT_TOOL_RESULT_MAX_CHARS_MAX
+  );
+}
+
 function normalizeAgentConfig(partial: Partial<AgentConfig>): AgentConfig {
   const streamTimeoutSec = clampStreamTimeoutSec(partial.streamTimeoutSec);
   return {
@@ -91,6 +107,7 @@ function normalizeAgentConfig(partial: Partial<AgentConfig>): AgentConfig {
       partial.clientTimeoutSec,
       streamTimeoutSec
     ),
+    toolResultMaxChars: clampToolResultMaxChars(partial.toolResultMaxChars),
   };
 }
 
