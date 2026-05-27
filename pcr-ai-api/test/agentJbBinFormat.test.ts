@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildBin10Vs66ByLot,
   buildRecentLotsByTestEnd,
   buildSlotBadBinsCompact,
   formatJbRowsForAgent,
@@ -177,6 +178,60 @@ describe("agentJbBinFormat", () => {
     assert.equal(out.distinctLotCount, 2);
     const recent = out.recentLotsByTestEnd as Array<{ lot: string }>;
     assert.deepEqual(recent.map((x) => x.lot), ["B", "A"]);
+  });
+
+  it("buildBin10Vs66ByLot sums per lot across slots", () => {
+    const rows = [
+      {
+        LOT: "TR13069.1F",
+        DEVICE: "WA01",
+        SLOT: 1,
+        bins: [
+          { n: 66, value: 3000, isGoodBin: false },
+          { n: 10, value: 100, isGoodBin: false },
+        ],
+      },
+      {
+        LOT: "TR13069.1F",
+        DEVICE: "WA01",
+        SLOT: 2,
+        bins: [
+          { n: 66, value: 2000, isGoodBin: false },
+          { n: 10, value: 4000, isGoodBin: false },
+        ],
+      },
+      {
+        LOT: "TR13073.1Y",
+        DEVICE: "WA01",
+        SLOT: 1,
+        bins: [{ n: 66, value: 5000, isGoodBin: false }],
+      },
+    ] as Record<string, unknown>[];
+    const out = buildBin10Vs66ByLot(rows);
+    const t1 = out.find((x) => x.lot === "TR13069.1F")!;
+    assert.equal(t1.bin10, 4100);
+    assert.equal(t1.bin66, 5000);
+    assert.equal(t1.bin10GtBin66, false);
+    const t2 = out.find((x) => x.lot === "TR13073.1Y")!;
+    assert.equal(t2.bin10, 0);
+    assert.equal(t2.bin66, 5000);
+  });
+
+  it("wrapJbQueryResultForAgent includes bin10Vs66ByLot", () => {
+    const out = wrapJbQueryResultForAgent([
+      {
+        LOT: "L1",
+        DEVICE: "D",
+        SLOT: 1,
+        bins: [
+          { n: 10, value: 50, isGoodBin: false },
+          { n: 66, value: 10, isGoodBin: false },
+        ],
+      },
+    ] as Record<string, unknown>[]);
+    assert.ok(String(out._bin10Vs66ByLotGuide).includes("bin10Vs66ByLot"));
+    const cmp = out.bin10Vs66ByLot as Array<{ lot: string; bin10GtBin66: boolean }>;
+    assert.equal(cmp[0]!.bin10GtBin66, true);
   });
 
   it("serializeJbQueryResultForAgent omits rows when payload too large", () => {

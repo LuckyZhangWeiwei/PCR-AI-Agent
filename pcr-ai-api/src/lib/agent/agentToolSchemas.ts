@@ -67,7 +67,7 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "query_jb_bins",
       description:
-        "查询 JB STAR Layer Bins 数据列表（INFCONTROL ⋈ INFLAYERBINLIST）。返回 recentLotsByTestEnd（按 lot 的 MAX(TESTEND) 降序 top5，适合「某卡最近 N 个 lot」）、slotBadBinsCompact、slotYieldSummary、distinctSlots。rows 可能省略。问最近 lot 必须用本工具，禁止 aggregate_jb_bins。",
+        "查询 JB STAR Layer Bins 数据列表（INFCONTROL ⋈ INFLAYERBINLIST）。返回 recentLotsByTestEnd（按 lot 的 MAX(TESTEND) 降序 top5）、bin10Vs66ByLot（按 lot 汇总 BIN10/BIN66 对比）、slotBadBinsCompact、slotYieldSummary、distinctSlots。rows 可能省略。问最近 lot 或 by lot BIN10 vs BIN66 须用本工具，禁止 aggregate_jb_bins 代替。",
       parameters: {
         type: "object",
         properties: {
@@ -105,7 +105,7 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "aggregate_jb_bins",
       description:
-        "对 JB STAR 数据按维度聚合统计坏 bin 的 die 数量（UNPIVOT BIN0-BIN255）。按合计坏 die 降序取 top，不是 TESTEND 时间序。禁止用于「某卡最近 N 个 lot」——须用 query_jb_bins 的 recentLotsByTestEnd。",
+        "对 JB STAR 数据按维度聚合统计坏 bin 的 die 数量（UNPIVOT BIN0-BIN255）。按合计坏 die 降序取 top，不是 TESTEND 时间序。禁止用于「某卡最近 N 个 lot」（须 query_jb_bins.recentLotsByTestEnd）或「by lot 对比 BIN10 vs BIN66」（须 query_jb_bins.bin10Vs66ByLot）。",
       parameters: {
         type: "object",
         properties: {

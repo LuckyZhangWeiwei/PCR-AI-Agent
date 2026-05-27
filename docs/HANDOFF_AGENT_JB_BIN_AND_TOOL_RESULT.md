@@ -27,6 +27,8 @@
 
 | 字段 | 用途 |
 | --- | --- |
+| **`recentLotsByTestEnd`** | 每 lot 取 MAX(TESTEND) 降序 top5（「某卡最近 N 个 lot」） |
+| **`bin10Vs66ByLot`** | 每 lot 汇总 BIN10 / BIN66 / diff / bin10GtBin66（by lot 两 bin 对比） |
 | **`slotBadBinsCompact`** | `[{ slot, badBins: [{ bin, dieCount }] }]`，按 slot 升序；同 slot 跨 INTERRUPT/续测行 **dieCount 相加** |
 | **`binBySlot`** | 体积仍超限时由 `serializeJbQueryResultForAgent` 降级：`{ "23": { "7": 124 } }` |
 | **`distinctSlots`** | 去重 slot 列表（枚举 wafer 片数） |
@@ -72,7 +74,7 @@
 
 | 文件 | 职责 |
 | --- | --- |
-| `pcr-ai-api/src/lib/agent/agentJbBinFormat.ts` | `buildSlotBadBinsCompact`、`serializeJbQueryResultForAgent` |
+| `pcr-ai-api/src/lib/agent/agentJbBinFormat.ts` | `buildSlotBadBinsCompact`、`buildBin10Vs66ByLot`、`serializeJbQueryResultForAgent` |
 | `pcr-ai-api/src/lib/agent/agentToolHandlers.ts` | `runTool` + `RunToolOptions.toolResultMaxChars` |
 | `pcr-ai-api/src/lib/agent/agentConfig.ts` | `DEFAULT_TOOL_RESULT_MAX_CHARS=12000`、`clampToolResultMaxChars` |
 | `pcr-ai-api/src/lib/agent/agentPrompt.ts` | 逐片 BIN 规则 |
@@ -105,7 +107,7 @@
 1. `agentJbBinFormat.ts`（字段形状 / 压缩策略）  
 2. `agentPrompt.ts` + `agentToolSchemas.ts`  
 3. `agentConfig.ts` + `usePersistedAgentConfig.ts`（若改默认或范围）  
-4. 本文件 + `pcr-ai-api/CLAUDE.md` §11 条目 15  
+4. 本文件 + `pcr-ai-api/CLAUDE.md` §11 条目 15 / 17  
 
 ---
 
@@ -144,3 +146,55 @@ cd pcr-ai-report && npm ci && npm run build   # 或 pack:dist 部署静态资源
 **修复：** `query_jb_bins` 回传 **`recentLotsByTestEnd`**（每 lot 取 MAX(TESTEND) 降序 top5）。Prompt / 工具 schema 禁止用 aggregate 答「最近 lot」。
 
 **回归：** `test/agentJbBinFormat.test.ts`（`buildRecentLotsByTestEnd`）。
+
+---
+
+## 9. 「by lot BIN10 vs BIN66」勿用 aggregate top 表（2026-05-27 补充）
+
+**现象：** 问「7747-01 by lot 是不是 BIN10 多于 BIN66」时，Agent 调 `aggregate_jb_bins(groupBy: lot,bin)`，表格里 TR17367.1T 排前列且为 BIN10，用户误以为 **全卡 / 多数 lot** 都是 BIN10 更多；实际上 aggregate 每行是 **(lot, 单个 bin)** 按坏 die 降序的 top 组，**不能**横向对比同一 lot 的 BIN10 与 BIN66 总量。
+
+**Oracle 实测（7747-01，近一年，全量 3368 行 / 149 lot，人工分页验证）：**
+
+| 维度 | 结果 |
+| --- | --- |
+| 全卡汇总 | BIN10 ≈ **62k**，BIN66 ≈ **195k** → **BIN66 约为 BIN10 的 3 倍** |
+| 按 lot 胜负 | BIN66 更多的 lot：**139**；BIN10 更多的 lot：**仅 10** |
+| 最近 5 lot | 4/5 为 BIN66 多；仅 TR21346.1K BIN10 略多（265 vs 242） |
+| BIN10 明显领先的 lot（举例） | TR17367.1T（3686 vs 1608）、TR13070.1X（2485 vs 1710） |
+| BIN66 明显领先的 lot（举例） | TR13069.1F（45 vs 5121）、TR13073.1Y（37 vs 5118） |
+
+**修复：** `query_jb_bins` 回传 **`bin10Vs66ByLot`**（由 `buildBinTotalsByLot` → `buildBin10Vs66ByLot` 预计算）：
+
+| 字段 | 含义 |
+| --- | --- |
+| `lot` / `device` | lot 与 device |
+| `bin10` / `bin66` | 该 lot 跨全部匹配行（slot、INTERRUPT 续测行）汇总的坏 die |
+| `diff` | bin10 − bin66 |
+| `bin10GtBin66` | 布尔，是否 BIN10 更多 |
+
+**Prompt（`agentPrompt.ts`）** 新增专节「按 lot 对比两个 BIN」：须读 `bin10Vs66ByLot`，逐 lot 列表 + 汇总胜负 lot 数；**禁止**用 aggregate top 表代替。
+
+**工具 schema（`agentToolSchemas.ts`）**：`query_jb_bins` 描述含 `bin10Vs66ByLot`；`aggregate_jb_bins` 禁止用于 BIN10 vs BIN66 对比。
+
+**回归：** `test/agentJbBinFormat.test.ts`（`buildBin10Vs66ByLot`、wrap 含字段）。
+
+### 9.1 Agent 单次查询覆盖范围（重要）
+
+`query_jb_bins` 工具 **`limit` 最大 200**（按 TESTEND DESC 取行）。7747-01 近一年有 **3368 行 / 149 lot**，单次 200 行约覆盖 **~22 个最近 lot** 的明细。
+
+- **`bin10Vs66ByLot` 仅对本次返回行所属 lot 汇总**，不等于全卡 149 lot 全量对比。
+- Agent 回答时须说明：**「基于本次查询返回的 N 行 / M 个 lot」**；若用户要全卡历史，需说明工具上限或建议报表 v4 聚合（`groupBy=bin` 可看全卡 BIN 排名）。
+- 全卡级 BIN10 vs BIN66 可直接调 **`GET …/v4/aggregate?cardId=…&groupBy=bin&groupTop=20`**（不受 list limit 影响）。
+
+### 9.2 验证用例
+
+部署后 **New Chat** 问：
+
+> 7747-01 by lot，BIN10 是否多于 BIN66？请逐 lot 列表并汇总。
+
+**期望：**
+
+- 调 **`query_jb_bins(cardId: "7747-01", limit: 200)`**，读 **`bin10Vs66ByLot`**
+- **不**调 `aggregate_jb_bins` 作为主依据
+- 结论含逐 lot 表格 + 「X 个 lot BIN10 多 / Y 个 lot BIN66 多」
+- 注明数据范围（200 行内 lot 子集，非全卡 149 lot  unless 用户指定单个 lot）

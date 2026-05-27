@@ -2,6 +2,20 @@
 
 ---
 
+## 2026-05-27 — Agent by lot BIN10 vs BIN66 + recentLots 延续
+
+**现象：** 问「7747-01 by lot BIN10 是否多于 BIN66」时 Agent 用 `aggregate_jb_bins` top 表，误判 BIN10 整体更多。
+
+**完成内容：**
+- `agentJbBinFormat.ts`：`buildBinTotalsByLot`、`buildBin10Vs66ByLot` → 工具回传 **`bin10Vs66ByLot`**。
+- `agentPrompt.ts`：专节「按 lot 对比两个 BIN」；禁止 aggregate 代替横向对比。
+- `agentToolSchemas.ts`：`query_jb_bins` / `aggregate_jb_bins` 描述同步。
+- 交接 `docs/HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md` **§9**（含 7747-01 Oracle 全量验证：149 lot 中 139 个 BIN66 多）；`pcr-ai-api/CLAUDE.md` §11 条目 17。
+
+**测试：** `test/agentJbBinFormat.test.ts`（`buildBin10Vs66ByLot`）。
+
+---
+
 ## 2026-05-27 — Agent JB 逐片 BIN + 工具结果体积可配
 
 **现象：** 问 lot 每片 BIN7 颗数时 Agent 报「API 截断」，只列部分 slot。

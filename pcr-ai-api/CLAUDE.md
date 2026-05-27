@@ -256,8 +256,14 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 16. **MiniMax-M2.5 嵌入式工具 JSON + orphan 泄漏（2026-05-27）**：
    - **现象**：仅泄漏 `cardId…</invoke></minimax:tool_call>`，无中文；或「7747-01 最近五个 lot」无结果。
    - **`agentLoop.ts`**：**`parseMinimaxInvokeBody`**（JSON / loose key:value）；**`stripOrphanToolMarkupTail`**；总结轮不执行 **`embeddedCalls`**。
-   - **`agentPrompt.ts`**：「某张探针卡最近测试的 lot」→ **`query_jb_bins(cardId, limit:200)`** 按 TESTEND 去重取前 5 lot。
+   - **`agentPrompt.ts`**：「某张探针卡最近测试的 lot」→ **`query_jb_bins(cardId, limit:200)`** 读 **`recentLotsByTestEnd`**。
    - 回归 **`test/agentLoop.test.ts`**。
+17. **Agent by lot BIN10 vs BIN66（2026-05-27）**：
+   - **现象**：用 **`aggregate_jb_bins(groupBy: lot,bin)`** 答「by lot BIN10 是否多于 BIN66」，把 **(lot, 单 bin)** top 表当成横向对比。
+   - **`agentJbBinFormat.ts`**：**`bin10Vs66ByLot`**（**`buildBin10Vs66ByLot`**）；超限序列化保留该字段。
+   - **`agentPrompt.ts`** 专节「按 lot 对比两个 BIN」；**`agentToolSchemas.ts`** 同步。
+   - **单次 `query_jb_bins` limit≤200**：`bin10Vs66ByLot` 仅覆盖返回行内 lot 子集；全卡对比见交接 **§9.1**（v4 `groupBy=bin` aggregate）。
+   - 交接 [`../docs/HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md`](../docs/HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md) **§9**；回归 **`test/agentJbBinFormat.test.ts`**。
 
 ---
 
