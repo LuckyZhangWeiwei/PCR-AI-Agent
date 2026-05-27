@@ -35,6 +35,15 @@ export default function App() {
   const [agentConfig, updateAgentConfig, resetAgentConfig] = usePersistedAgentConfig();
   const [agentApiKeyVisible, setAgentApiKeyVisible] = useState(false);
 
+  const AGENT_ENABLED_KEY = "pcr-ai-report.agent.enabled";
+  const [agentEnabled, setAgentEnabled] = useState<boolean>(() => {
+    try { return localStorage.getItem(AGENT_ENABLED_KEY) !== "false"; } catch { return true; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(AGENT_ENABLED_KEY, agentEnabled ? "true" : "false"); } catch {}
+    if (!agentEnabled && tab === "ai") setTab("yield");
+  }, [agentEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Sync input when apiBase changes externally (resetApiBase)
   useEffect(() => { setApiBaseInput(apiBase); }, [apiBase]);
 
@@ -116,13 +125,15 @@ export default function App() {
         >
           🔬 JB Star
         </button>
-        <button
-          type="button"
-          className={`tab ${tab === "ai" ? "active" : ""}`}
-          onClick={() => setTab("ai")}
-        >
-          🤖 AI Agent
-        </button>
+        {agentEnabled && (
+          <button
+            type="button"
+            className={`tab ${tab === "ai" ? "active" : ""}`}
+            onClick={() => setTab("ai")}
+          >
+            🤖 AI Agent
+          </button>
+        )}
         <button
           type="button"
           className={`tab ${tab === "table" ? "active" : ""}`}
@@ -214,6 +225,27 @@ export default function App() {
           <section className="settings-section">
             <h2 className="settings-section-title">AI Agent 配置</h2>
             <div className="api-panel">
+
+              {/* ── 开关 ── */}
+              <div className="setting-toggle-row">
+                <label className="toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={agentEnabled}
+                    onChange={(e) => setAgentEnabled(e.target.checked)}
+                  />
+                  <span className="toggle-track" />
+                  <span className="toggle-label-text">启用 AI Agent 标签页</span>
+                </label>
+                <p className="field-hint">
+                  关闭后 AI Agent 标签页从导航栏隐藏，下方配置及会话历史仍保留。
+                </p>
+              </div>
+
+              <hr className="settings-divider" />
+
+              {/* ── 接入配置 ── */}
+              <p className="settings-group-title">接入配置</p>
               <label>
                 <span>API Key</span>
                 <div className="api-panel-key-row">
@@ -234,16 +266,47 @@ export default function App() {
                   </button>
                 </div>
               </label>
+              <p className="field-hint">
+                SiliconFlow / OpenAI 兼容接口的密钥。留空时后端读取服务器环境变量
+                <code>AGENT_API_KEY</code>；若两处均无则返回 400。
+              </p>
               <label>
                 <span>API Base URL</span>
-                <input type="text" value={agentConfig.apiBase} onChange={(e) => updateAgentConfig({ apiBase: e.target.value })} />
+                <input
+                  type="text"
+                  value={agentConfig.apiBase}
+                  onChange={(e) => updateAgentConfig({ apiBase: e.target.value })}
+                  spellCheck={false}
+                />
               </label>
+              <p className="field-hint">
+                OpenAI 兼容接口地址，结尾不加 <code>/</code>。默认 SiliconFlow：
+                <code>https://api.siliconflow.cn/v1</code>。
+              </p>
               <label>
                 <span>模型</span>
-                <input type="text" value={agentConfig.model} onChange={(e) => updateAgentConfig({ model: e.target.value })} />
+                <input
+                  type="text"
+                  value={agentConfig.model}
+                  onChange={(e) => updateAgentConfig({ model: e.target.value })}
+                  spellCheck={false}
+                  placeholder="deepseek-ai/DeepSeek-V3"
+                />
               </label>
+              <p className="field-hint">
+                SiliconFlow 模型 ID，例如 <code>deepseek-ai/DeepSeek-V3</code>、
+                <code>MiniMax/MiniMax-M1</code>。需支持 Function Calling。
+              </p>
+
+              <hr className="settings-divider" />
+
+              {/* ── 推理行为 ── */}
+              <p className="settings-group-title">推理行为</p>
               <label>
-                <span>最大推理轮数（{AGENT_MAX_ROUNDS_MIN}–{AGENT_MAX_ROUNDS_MAX}）</span>
+                <span>
+                  最大推理轮数（{AGENT_MAX_ROUNDS_MIN}–{AGENT_MAX_ROUNDS_MAX}，默认{" "}
+                  {AGENT_MAX_ROUNDS_DEFAULT}）
+                </span>
                 <input
                   type="number"
                   min={AGENT_MAX_ROUNDS_MIN}
@@ -255,13 +318,44 @@ export default function App() {
                 />
               </label>
               <p className="field-hint">
-                Agent 连续调用工具的上限；跨表分析、INF 下钻等复杂问题可适当提高（默认{" "}
-                {AGENT_MAX_ROUNDS_DEFAULT}）。
+                每次提问 Agent 连续调用工具的轮次上限，超过后强制输出结论。
+                简单查询 3–5 轮足够；跨表分析、INF 下钻可调至 8–10。
               </p>
               <label>
                 <span>
-                  流式 idle 超时（秒，{AGENT_STREAM_TIMEOUT_SEC_MIN}–
-                  {AGENT_STREAM_TIMEOUT_SEC_MAX}）
+                  工具结果最大字符数（{AGENT_TOOL_RESULT_MAX_CHARS_MIN}–
+                  {AGENT_TOOL_RESULT_MAX_CHARS_MAX}，默认{" "}
+                  {AGENT_TOOL_RESULT_MAX_CHARS_DEFAULT}）
+                </span>
+                <input
+                  type="number"
+                  min={AGENT_TOOL_RESULT_MAX_CHARS_MIN}
+                  max={AGENT_TOOL_RESULT_MAX_CHARS_MAX}
+                  value={agentConfig.toolResultMaxChars}
+                  onChange={(e) =>
+                    updateAgentConfig({ toolResultMaxChars: Number(e.target.value) })
+                  }
+                />
+              </label>
+              <p className="field-hint">
+                <strong>单次分析</strong>：每次工具调用结果发给 LLM 的数据量上限。
+                超限时 JB 查询自动切换紧凑格式（保留 slotBadBinsCompact /
+                bin10Vs66ByLot 等摘要字段，省略 rows 明细）。建议 8 000–12 000，
+                过大收益递减且增加延迟。
+                <br />
+                <strong>历史存储</strong>：无论此值设多大，每条工具结果存入会话历史时
+                固定限制为 6 000 字符，防止多轮对话上下文无限膨胀。
+              </p>
+
+              <hr className="settings-divider" />
+
+              {/* ── 超时 ── */}
+              <p className="settings-group-title">超时</p>
+              <label>
+                <span>
+                  LLM 响应超时（秒，{AGENT_STREAM_TIMEOUT_SEC_MIN}–
+                  {AGENT_STREAM_TIMEOUT_SEC_MAX}，默认{" "}
+                  {AGENT_STREAM_TIMEOUT_SEC_DEFAULT}）
                 </span>
                 <input
                   type="number"
@@ -274,13 +368,16 @@ export default function App() {
                 />
               </label>
               <p className="field-hint">
-                后端等待 LLM 流式输出的 idle 上限；有 SSE 字节会重置计时（默认{" "}
-                {AGENT_STREAM_TIMEOUT_SEC_DEFAULT}）。
+                后端等待 LLM 流式输出的 <strong>idle 超时</strong>：只要有 SSE
+                字节到达就重置计时，真正"无字"才算超时。
+                INF 下钻等重型查询可调至 200–300。
               </p>
               <label>
                 <span>
-                  客户端总超时（秒，至少流式 + {AGENT_CLIENT_TIMEOUT_BUFFER_SEC}，最大{" "}
-                  {AGENT_CLIENT_TIMEOUT_SEC_MAX}）
+                  浏览器请求超时（秒，至少 LLM 超时 +{" "}
+                  {AGENT_CLIENT_TIMEOUT_BUFFER_SEC}s，最大{" "}
+                  {AGENT_CLIENT_TIMEOUT_SEC_MAX}，默认{" "}
+                  {AGENT_CLIENT_TIMEOUT_SEC_DEFAULT}）
                 </span>
                 <input
                   type="number"
@@ -295,28 +392,11 @@ export default function App() {
                 />
               </label>
               <p className="field-hint">
-                浏览器整次聊天请求的最长等待，应略大于流式 idle 超时（默认{" "}
-                {AGENT_CLIENT_TIMEOUT_SEC_DEFAULT}）。
+                浏览器端整次 fetch 请求的最长等待。应比 LLM 响应超时多{" "}
+                {AGENT_CLIENT_TIMEOUT_BUFFER_SEC}s 以上，让后端有机会完成流并关闭连接。
+                超时后显示「↻ 重试」按钮，可从同一 session 续跑。
               </p>
-              <label>
-                <span>
-                  工具结果最大字符数（{AGENT_TOOL_RESULT_MAX_CHARS_MIN}–
-                  {AGENT_TOOL_RESULT_MAX_CHARS_MAX}）
-                </span>
-                <input
-                  type="number"
-                  min={AGENT_TOOL_RESULT_MAX_CHARS_MIN}
-                  max={AGENT_TOOL_RESULT_MAX_CHARS_MAX}
-                  value={agentConfig.toolResultMaxChars}
-                  onChange={(e) =>
-                    updateAgentConfig({ toolResultMaxChars: Number(e.target.value) })
-                  }
-                />
-              </label>
-              <p className="field-hint">
-                单次工具返回 JSON 发给 LLM 前的体积上限；JB 查询会先压缩为
-                slotBadBinsCompact（默认 {AGENT_TOOL_RESULT_MAX_CHARS_DEFAULT}）。
-              </p>
+
               <div className="api-panel-actions">
                 <button type="button" className="btn ghost" onClick={resetAgentConfig}>
                   恢复默认

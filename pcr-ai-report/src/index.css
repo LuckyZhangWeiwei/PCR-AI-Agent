@@ -1400,3 +1400,78 @@ button.chip:hover {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ── Settings: toggle switch ── */
+.setting-toggle-row {
+  margin: 0.25rem 0 0.5rem;
+}
+
+.toggle-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  font-size: 0.95rem;
+  color: var(--text, #cdd9e5);
+}
+
+.toggle-switch input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.toggle-track {
+  position: relative;
+  width: 2.4rem;
+  height: 1.3rem;
+  background: var(--border, #444c56);
+  border-radius: 0.65rem;
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+
+.toggle-track::after {
+  content: '';
+  position: absolute;
+  top: 0.17rem;
+  left: 0.17rem;
+  width: 0.96rem;
+  height: 0.96rem;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+}
+
+.toggle-switch input:checked ~ .toggle-track {
+  background: #4a9eff;
+}
+
+.toggle-switch input:checked ~ .toggle-track::after {
+  transform: translateX(1.1rem);
+}
+
+.toggle-label-text {
+  font-weight: 500;
+}
+
+/* ── Settings: section helpers ── */
+.settings-divider {
+  border: none;
+  border-top: 1px solid var(--border, #444c56);
+  margin: 1rem 0 0.75rem;
+}
+
+.settings-group-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #58a6ff;
+  margin: 0 0 0.6rem;
+}

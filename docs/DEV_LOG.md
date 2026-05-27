@@ -2,6 +2,18 @@
 
 ---
 
+## 2026-05-27 — history bug 修复 + AI Agent 开关 + Settings 描述清晰化
+
+**完成内容：**
+- `pcr-ai-api/src/lib/agent/agentLoop.ts`：修复 `TOOL_RESULT_MAX_HISTORY` 对 string 类型不生效的 bug（`runTool` 始终返回 string，旧分支是死代码）；调整上限 3000 → **6000**。修复前每条工具结果最多塞 12000 chars 进历史，多轮对话后 LLM context 快速膨胀导致无输出；修复后历史每条固定 ≤ 6000 chars，与 `toolResultMaxChars`（单次分析）解耦。
+- `pcr-ai-report/src/App.tsx`：Settings 新增「**启用 AI Agent 标签页**」toggle switch（`localStorage` 键 `pcr-ai-report.agent.enabled`）；关闭时导航栏隐藏 AI tab，若当前在 AI tab 则自动跳回 Yield；下方配置及会话历史保留。
+- `pcr-ai-report/src/App.tsx`：AI Agent 配置区重构为三分组（接入配置 / 推理行为 / 超时）+ 分隔线 + 小标题，每项均有完整说明；工具结果字符数描述新增「历史固定 6000 上限不受此值影响」说明，消除用户误以为调大此值只影响单次分析的误解。
+- `pcr-ai-report/src/index.css`：新增 `.toggle-switch` / `.toggle-track` toggle switch 样式；`.settings-divider` / `.settings-group-title` 分组辅助样式。
+
+**测试：** `pcr-ai-api` typecheck 通过；`pcr-ai-report` build 通过（901 modules）。
+
+---
+
 ## 2026-05-27 — Agent by lot BIN10 vs BIN66 + recentLots 延续
 
 **现象：** 问「7747-01 by lot BIN10 是否多于 BIN66」时 Agent 用 `aggregate_jb_bins` top 表，误判 BIN10 整体更多。

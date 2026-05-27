@@ -26,7 +26,11 @@ export type AgentSseEvent =
   | { type: "clarification"; question: string }
   | { type: "done" }
   | { type: "error"; message: string };
-const TOOL_RESULT_MAX_HISTORY = 3000;
+// Max chars stored in session history per tool result — intentionally smaller than
+// toolResultMaxChars so accumulated history stays manageable across multi-turn sessions.
+// runTool always returns a string, so the cap must be applied explicitly (the JSON.stringify
+// branch below was dead code before this fix).
+const TOOL_RESULT_MAX_HISTORY = 6000;
 
 // ─── DeepSeek / reasoning stream filter ─────────────────────────────────────
 // DeepSeek V3 via SiliconFlow sometimes puts its native function-call tokens
@@ -656,10 +660,11 @@ export async function runAgentLoop(
           emit({ type: "clarification", question });
           historyContent = `[已向用户提问：${question}]`;
         } else {
-          historyContent =
+          const rawContent =
             typeof toolResult === "string"
               ? toolResult
-              : JSON.stringify(toolResult).slice(0, TOOL_RESULT_MAX_HISTORY);
+              : JSON.stringify(toolResult);
+          historyContent = rawContent.slice(0, TOOL_RESULT_MAX_HISTORY);
         }
       } catch (err) {
         historyContent = `工具执行失败: ${err instanceof Error ? err.message : String(err)}`;
