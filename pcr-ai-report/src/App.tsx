@@ -38,14 +38,7 @@ export default function App() {
   const [agentConfig, updateAgentConfig, resetAgentConfig] = usePersistedAgentConfig();
   const [agentApiKeyVisible, setAgentApiKeyVisible] = useState(false);
 
-  const AGENT_ENABLED_KEY = "pcr-ai-report.agent.enabled";
-  const [agentEnabled, setAgentEnabled] = useState<boolean>(() => {
-    try { return localStorage.getItem(AGENT_ENABLED_KEY) !== "false"; } catch { return true; }
-  });
-  useEffect(() => {
-    try { localStorage.setItem(AGENT_ENABLED_KEY, agentEnabled ? "true" : "false"); } catch {}
-    if (!agentEnabled && tab === "ai") setTab("yield");
-  }, [agentEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [agentEnabled, setAgentEnabled] = useState<boolean>(true);
 
   // Sync input when apiBase changes externally (resetApiBase)
   useEffect(() => { setApiBaseInput(apiBase); }, [apiBase]);
@@ -69,13 +62,16 @@ export default function App() {
     setHealthOk(null);
     setDbOk(null);
     try {
-      const h = await apiGetJson<{ status?: string }>(
+      const h = await apiGetJson<{ status?: string; agentEnabled?: boolean }>(
         apiBase,
         "/health",
         undefined,
         { cache: "no-store" }
       );
       setHealthOk(h.status === "ok");
+      const enabled = h.agentEnabled !== false;
+      setAgentEnabled(enabled);
+      if (!enabled && tab === "ai") setTab("yield");
     } catch {
       setHealthOk(false);
     }
@@ -93,7 +89,10 @@ export default function App() {
     }
     setProbeMsg("已刷新");
     setTimeout(() => setProbeMsg(null), 2400);
-  }, [apiBase]);
+  }, [apiBase, tab]);
+
+  // Fetch agentEnabled from server on mount and whenever apiBase changes.
+  useEffect(() => { probe(); }, [apiBase]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="app-shell">
@@ -229,19 +228,15 @@ export default function App() {
             <h2 className="settings-section-title">AI Agent 配置</h2>
             <div className="api-panel">
 
-              {/* ── 开关 ── */}
+              {/* ── 开关（服务端控制）── */}
               <div className="setting-toggle-row">
-                <label className="toggle-switch">
-                  <input
-                    type="checkbox"
-                    checked={agentEnabled}
-                    onChange={(e) => setAgentEnabled(e.target.checked)}
-                  />
-                  <span className="toggle-track" />
-                  <span className="toggle-label-text">启用 AI Agent 标签页</span>
-                </label>
+                <span className={`toggle-label-text ${agentEnabled ? "" : "toggle-label-disabled"}`}>
+                  AI Agent 标签页当前：<strong>{agentEnabled ? "已启用" : "已禁用"}</strong>
+                </span>
                 <p className="field-hint">
-                  关闭后 AI Agent 标签页从导航栏隐藏，下方配置及会话历史仍保留。
+                  由服务端环境变量 <code>AGENT_ENABLED</code> 控制，影响所有用户。
+                  设为 <code>false</code> 后所有人的导航栏均隐藏 AI Agent 标签页；
+                  默认为启用。
                 </p>
               </div>
 
