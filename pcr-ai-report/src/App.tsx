@@ -41,6 +41,13 @@ export default function App() {
 
   const agentEnabled = serverConfig.agentEnabled;
 
+  // Local buffers for text inputs — only PATCH server on blur
+  const [agentApiBaseInput, setAgentApiBaseInput] = useState(serverConfig.agentApiBase);
+  const [agentModelInput, setAgentModelInput] = useState(serverConfig.agentModel);
+
+  // Sync text buffers when server config loads/resets
+  useEffect(() => { setAgentApiBaseInput(serverConfig.agentApiBase); }, [serverConfig.agentApiBase]);
+  useEffect(() => { setAgentModelInput(serverConfig.agentModel); }, [serverConfig.agentModel]);
 
   // Sync input when apiBase changes externally (resetApiBase)
   useEffect(() => { setApiBaseInput(apiBase); }, [apiBase]);
@@ -284,8 +291,9 @@ export default function App() {
                 <span>API Base URL</span>
                 <input
                   type="text"
-                  value={serverConfig.agentApiBase}
-                  onChange={(e) => updateServerConfig({ agentApiBase: e.target.value })}
+                  value={agentApiBaseInput}
+                  onChange={(e) => setAgentApiBaseInput(e.target.value)}
+                  onBlur={(e) => updateServerConfig({ agentApiBase: e.target.value.trim() })}
                   spellCheck={false}
                 />
               </label>
@@ -297,8 +305,9 @@ export default function App() {
                 <span>模型</span>
                 <input
                   type="text"
-                  value={serverConfig.agentModel}
-                  onChange={(e) => updateServerConfig({ agentModel: e.target.value })}
+                  value={agentModelInput}
+                  onChange={(e) => setAgentModelInput(e.target.value)}
+                  onBlur={(e) => updateServerConfig({ agentModel: e.target.value.trim() })}
                   spellCheck={false}
                   placeholder="deepseek-ai/DeepSeek-V3"
                 />
