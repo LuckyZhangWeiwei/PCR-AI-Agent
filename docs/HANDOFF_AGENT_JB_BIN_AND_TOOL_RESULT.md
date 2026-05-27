@@ -115,3 +115,20 @@
 cd pcr-ai-api && npm ci && npm run build && npm run pm2:reload
 cd pcr-ai-report && npm ci && npm run build   # 或 pack:dist 部署静态资源
 ```
+
+---
+
+## 7. MiniMax-M2.5 嵌入式工具调用（2026-05-27 补充）
+
+**现象：** 回答区只出现 `cardId: "7747-01", limit: 1000 } </invoke></minimax:tool_call>`，数秒内 `done`，无中文结论。
+
+**原因：**
+
+1. MiniMax 在 `<invoke>` 内用 **JSON / 松散 key:value** 传参，旧解析只认 `<parameter>`，工具未正确执行。
+2. 流式片段缺少开头 `<minimax:tool_call>` 时，参数尾巴被当作正文推到 UI。
+3. **Retry** 总结轮（history 末条为 `tool`）若再解析出嵌入式工具，会误触发工具而非中文总结。
+
+**修复（`agentLoop.ts`）：** `parseMinimaxInvokeBody`、`stripOrphanToolMarkupTail`、总结轮忽略 `embeddedCalls`。  
+**Prompt：**「某张探针卡最近五个 lot」→ `query_jb_bins(cardId, limit:200)` 按 TESTEND 去重取前 5 个 LOT。
+
+**回归：** `test/agentLoop.test.ts`。
