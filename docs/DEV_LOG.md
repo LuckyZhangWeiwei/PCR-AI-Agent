@@ -2,6 +2,18 @@
 
 ---
 
+## 2026-05-27 — toolResultMaxHistoryChars 可配置化
+
+**完成内容：**
+- `pcr-ai-api/src/lib/agent/agentConfig.ts`：`AgentConfig` 接口新增 `toolResultMaxHistoryChars`；常量 `DEFAULT=6000 / MIN=1000 / MAX=12000`；`clampToolResultMaxHistoryChars`；`resolveAgentConfig` 读 `AGENT_TOOL_RESULT_MAX_HISTORY_CHARS` env 并写入返回对象。
+- `pcr-ai-api/src/lib/agent/agentLoop.ts`：移除硬编码 `TOOL_RESULT_MAX_HISTORY = 6000`，改为 `agentConfig.toolResultMaxHistoryChars`。
+- `pcr-ai-report/src/hooks/usePersistedAgentConfig.ts`：`AgentConfig` 接口加 `toolResultMaxHistoryChars`；常量 `DEFAULT=6000 / MIN=1000 / MAX=12000`；`clampToolResultMaxHistoryChars`；`DEFAULTS` / `normalizeAgentConfig` 对齐。
+- `pcr-ai-report/src/App.tsx`：Settings 「工具结果最大字符数」区域下方增加「历史存储上限」数字输入（1000–12000，默认 6000）；字段说明改为动态说明（不再写死 6000）。
+
+**测试：** 150 个测试，0 失败
+
+---
+
 ## 2026-05-27 — mask filter + 报表展示
 
 **完成内容：**

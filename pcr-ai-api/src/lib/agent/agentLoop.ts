@@ -30,7 +30,6 @@ export type AgentSseEvent =
 // toolResultMaxChars so accumulated history stays manageable across multi-turn sessions.
 // runTool always returns a string, so the cap must be applied explicitly (the JSON.stringify
 // branch below was dead code before this fix).
-const TOOL_RESULT_MAX_HISTORY = 6000;
 
 // ─── DeepSeek / reasoning stream filter ─────────────────────────────────────
 // DeepSeek V3 via SiliconFlow sometimes puts its native function-call tokens
@@ -664,7 +663,7 @@ export async function runAgentLoop(
             typeof toolResult === "string"
               ? toolResult
               : JSON.stringify(toolResult);
-          historyContent = rawContent.slice(0, TOOL_RESULT_MAX_HISTORY);
+          historyContent = rawContent.slice(0, agentConfig.toolResultMaxHistoryChars);
         }
       } catch (err) {
         historyContent = `工具执行失败: ${err instanceof Error ? err.message : String(err)}`;

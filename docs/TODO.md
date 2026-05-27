@@ -21,6 +21,7 @@
 
 ## 已完成
 
+- ✅ toolResultMaxHistoryChars 可配置化：Settings 新增「历史存储上限」（1000–12000，默认 6000），随 agentConfig 下发替代硬编码常量 — 2026-05-27 完成
 - ✅ mask 字段：所有 API device 相关响应新增 `mask`（device 末 4 位，Oracle+Dummy 双路径 + 聚合 parts）— 2026-05-27 完成
 - ✅ history bug 修复：`TOOL_RESULT_MAX_HISTORY` 对 string 实际生效（3000→6000），多轮对话不再 context 膨胀 — 2026-05-27 完成
 - ✅ AI Agent 标签页开关（Settings toggle，localStorage 持久化）— 2026-05-27 完成

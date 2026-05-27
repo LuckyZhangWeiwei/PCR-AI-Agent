@@ -9,6 +9,8 @@ export interface AgentConfig {
   streamTimeoutMs: number;
   /** 单次工具结果 JSON 最大字符数（发给 LLM 前截断/压缩） */
   toolResultMaxChars: number;
+  /** 每条工具结果写入会话历史时的最大字符数（防止多轮上下文膨胀） */
+  toolResultMaxHistoryChars: number;
 }
 
 const DEFAULT_API_BASE = "https://api.siliconflow.cn/v1";
@@ -24,6 +26,10 @@ const MAX_STREAM_TIMEOUT_SEC = 600;
 export const DEFAULT_TOOL_RESULT_MAX_CHARS = 12000;
 const MIN_TOOL_RESULT_MAX_CHARS = 6000;
 const MAX_TOOL_RESULT_MAX_CHARS = 30000;
+
+export const DEFAULT_TOOL_RESULT_MAX_HISTORY_CHARS = 6000;
+const MIN_TOOL_RESULT_MAX_HISTORY_CHARS = 1000;
+const MAX_TOOL_RESULT_MAX_HISTORY_CHARS = 12000;
 
 function clampMaxRounds(n: unknown): number {
   const parsed = typeof n === "number" ? n : Number(n);
@@ -46,6 +52,15 @@ export function clampToolResultMaxChars(n: unknown): number {
   return Math.min(
     Math.max(Math.round(parsed), MIN_TOOL_RESULT_MAX_CHARS),
     MAX_TOOL_RESULT_MAX_CHARS
+  );
+}
+
+export function clampToolResultMaxHistoryChars(n: unknown): number {
+  const parsed = typeof n === "number" ? n : Number(n);
+  if (!Number.isFinite(parsed)) return DEFAULT_TOOL_RESULT_MAX_HISTORY_CHARS;
+  return Math.min(
+    Math.max(Math.round(parsed), MIN_TOOL_RESULT_MAX_HISTORY_CHARS),
+    MAX_TOOL_RESULT_MAX_HISTORY_CHARS
   );
 }
 
@@ -114,6 +129,10 @@ export function resolveAgentConfig(
   const toolResultMaxChars = clampToolResultMaxChars(
     override?.toolResultMaxChars ?? process.env.AGENT_TOOL_RESULT_MAX_CHARS
   );
+  const toolResultMaxHistoryChars = clampToolResultMaxHistoryChars(
+    override?.toolResultMaxHistoryChars ??
+      process.env.AGENT_TOOL_RESULT_MAX_HISTORY_CHARS
+  );
   return {
     apiKey,
     apiBase,
@@ -122,5 +141,6 @@ export function resolveAgentConfig(
     streamTimeoutSec,
     streamTimeoutMs,
     toolResultMaxChars,
+    toolResultMaxHistoryChars,
   };
 }

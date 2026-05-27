@@ -18,6 +18,9 @@ import {
   AGENT_TOOL_RESULT_MAX_CHARS_DEFAULT,
   AGENT_TOOL_RESULT_MAX_CHARS_MAX,
   AGENT_TOOL_RESULT_MAX_CHARS_MIN,
+  AGENT_TOOL_RESULT_MAX_HISTORY_CHARS_DEFAULT,
+  AGENT_TOOL_RESULT_MAX_HISTORY_CHARS_MAX,
+  AGENT_TOOL_RESULT_MAX_HISTORY_CHARS_MIN,
 } from "./hooks/usePersistedAgentConfig.js";
 import { AiAgentReport } from "./reports/AiAgentReport";
 import { InfcontrolReport } from "./reports/InfcontrolReport";
@@ -343,9 +346,27 @@ export default function App() {
                 bin10Vs66ByLot 等摘要字段，省略 rows 明细）。建议 8 000–12 000，
                 过大收益递减且增加延迟。
               </p>
+              <label>
+                <span>
+                  历史存储上限（{AGENT_TOOL_RESULT_MAX_HISTORY_CHARS_MIN}–
+                  {AGENT_TOOL_RESULT_MAX_HISTORY_CHARS_MAX}，默认{" "}
+                  {AGENT_TOOL_RESULT_MAX_HISTORY_CHARS_DEFAULT}）
+                </span>
+                <input
+                  type="number"
+                  min={AGENT_TOOL_RESULT_MAX_HISTORY_CHARS_MIN}
+                  max={AGENT_TOOL_RESULT_MAX_HISTORY_CHARS_MAX}
+                  value={agentConfig.toolResultMaxHistoryChars}
+                  onChange={(e) =>
+                    updateAgentConfig({
+                      toolResultMaxHistoryChars: Number(e.target.value),
+                    })
+                  }
+                />
+              </label>
               <p className="field-hint">
-                ⓘ 工具结果写入会话历史时有独立的 6 000 字符上限（后端固定，不受此值影响），
-                防止多轮对话上下文膨胀。
+                工具结果写入<strong>会话历史</strong>时的上限（影响多轮上下文大小，独立于上方的当轮上限）。
+                调低可减少长对话的上下文体积；调高可让后续轮次看到更完整的历史工具数据。
               </p>
 
               <hr className="settings-divider" />
