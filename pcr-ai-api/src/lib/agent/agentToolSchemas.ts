@@ -67,7 +67,7 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "query_jb_bins",
       description:
-        "查询 JB STAR Layer Bins 数据列表（INFCONTROL ⋈ INFLAYERBINLIST）。返回 slotBadBinsCompact（每 slot 汇总 badBins，适合「1–N 片某 BIN 颗数」）、slotYieldSummary（整片/中断良率）、distinctSlots（去重 slot 升序）。rows 为明细，体积大时可能省略（见 rowsOmitted）。问每片 BIN 颗数时优先读 slotBadBinsCompact，勿声称 API 截断。",
+        "查询 JB STAR Layer Bins 数据列表（INFCONTROL ⋈ INFLAYERBINLIST）。返回 recentLotsByTestEnd（按 lot 的 MAX(TESTEND) 降序 top5，适合「某卡最近 N 个 lot」）、slotBadBinsCompact、slotYieldSummary、distinctSlots。rows 可能省略。问最近 lot 必须用本工具，禁止 aggregate_jb_bins。",
       parameters: {
         type: "object",
         properties: {
@@ -105,7 +105,7 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "aggregate_jb_bins",
       description:
-        "对 JB STAR 数据按维度聚合统计 die 数量（UNPIVOT BIN0-BIN255，仅统计坏 bin）。bin 维度自动包含。",
+        "对 JB STAR 数据按维度聚合统计坏 bin 的 die 数量（UNPIVOT BIN0-BIN255）。按合计坏 die 降序取 top，不是 TESTEND 时间序。禁止用于「某卡最近 N 个 lot」——须用 query_jb_bins 的 recentLotsByTestEnd。",
       parameters: {
         type: "object",
         properties: {

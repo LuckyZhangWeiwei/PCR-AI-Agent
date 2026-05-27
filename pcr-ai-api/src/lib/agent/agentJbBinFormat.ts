@@ -18,11 +18,63 @@ export type SlotBadBinsCompactEntry = {
   badBins: AgentJbBinEntry[];
 };
 
+export type RecentLotByTestEndEntry = {
+  lot: string;
+  device: string;
+  cardId: string;
+  testEnd: string | null;
+  testerId?: string;
+};
+
 const BIN_SCHEMA_HINT =
   "每条: bin=BINDie编号(通常较小), dieCount=该BIN的die颗数(可很大); 禁止写成 BIN{dieCount} {bin}颗";
 
 const SLOT_BAD_BINS_COMPACT_GUIDE =
   "slotBadBinsCompact：按 slot 升序，每 slot 汇总全部匹配行的 badBins（同 bin 跨 INTERRUPT/续测行 dieCount 相加）。问「每片 BIN7 颗数」时读此字段，勿依赖 rows。";
+
+const RECENT_LOTS_GUIDE =
+  "recentLotsByTestEnd：按 lot 取 MAX(TESTEND) 后降序，默认 top 5。问「某卡最近 N 个 lot」时读此字段；禁止用 aggregate_jb_bins（聚合按坏 die 排序，不是测试时间）。";
+
+function testEndMsFromRow(row: Record<string, unknown>): number {
+  const raw = row["TESTEND"] ?? row["testEnd"] ?? row["testend"];
+  if (raw == null || raw === "") return 0;
+  const t = new Date(String(raw)).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
+/** 按 lot 聚合最近 TESTEND，降序取 topN（用于「7747-01 最近五个 lot」类问题）。 */
+export function buildRecentLotsByTestEnd(
+  rows: Record<string, unknown>[],
+  topN = 5
+): RecentLotByTestEndEntry[] {
+  const byLot = new Map<
+    string,
+    RecentLotByTestEndEntry & { _testEndMs: number }
+  >();
+  for (const row of rows) {
+    const lot = String(row["LOT"] ?? row["lot"] ?? "").trim();
+    if (!lot) continue;
+    const ms = testEndMsFromRow(row);
+    const teRaw = row["TESTEND"] ?? row["testEnd"];
+    const testEnd = teRaw != null && teRaw !== "" ? String(teRaw) : null;
+    const prev = byLot.get(lot);
+    if (!prev || ms > prev._testEndMs) {
+      const tester = String(row["TESTERID"] ?? row["testerId"] ?? "").trim();
+      byLot.set(lot, {
+        lot,
+        device: String(row["DEVICE"] ?? row["device"] ?? "").trim(),
+        cardId: String(row["CARDID"] ?? row["cardid"] ?? "").trim(),
+        testEnd,
+        ...(tester ? { testerId: tester } : {}),
+        _testEndMs: ms,
+      });
+    }
+  }
+  return [...byLot.values()]
+    .sort((a, b) => b._testEndMs - a._testEndMs)
+    .slice(0, topN)
+    .map(({ _testEndMs: _omit, ...rest }) => rest);
+}
 
 export function normalizeBinsForAgent(bins: unknown): AgentJbBinEntry[] {
   if (!Array.isArray(bins)) return [];
@@ -97,12 +149,21 @@ export function wrapJbQueryResultForAgent(
   const distinctSlots = [...slotSet].sort((a, b) => a - b);
   const slotYieldSummary = buildSlotYieldSummary(rows);
   const slotBadBinsCompact = buildSlotBadBinsCompact(rows);
+  const recentLotsByTestEnd = buildRecentLotsByTestEnd(rows, 5);
+  const distinctLotCount = new Set(
+    rows
+      .map((r) => String(r["LOT"] ?? r["lot"] ?? "").trim())
+      .filter(Boolean)
+  ).size;
   return {
     _binFieldGuide: BIN_SCHEMA_HINT,
     _slotYieldGuide: slotYieldSummaryFieldGuide(),
     _slotBadBinsCompactGuide: SLOT_BAD_BINS_COMPACT_GUIDE,
+    _recentLotsGuide: RECENT_LOTS_GUIDE,
     count: rows.length,
     distinctSlots,
+    distinctLotCount,
+    recentLotsByTestEnd,
     slotYieldSummary,
     slotBadBinsCompact,
     rows: formatJbRowsForAgent(rows),
@@ -174,7 +235,7 @@ export function serializeJbQueryResultForAgent(
   withoutRows["rowsOmitted"] = true;
   withoutRows["rowCount"] = rowCount;
   withoutRows["_rowsNote"] =
-    "明细 rows 已省略以控制体积；请用 slotBadBinsCompact、binBySlot、slotYieldSummary、distinctSlots";
+    "明细 rows 已省略以控制体积；请用 recentLotsByTestEnd、slotBadBinsCompact、binBySlot、slotYieldSummary、distinctSlots";
 
   const slim = fitsLimit(withoutRows, maxChars);
   if (slim) return slim;
@@ -182,11 +243,14 @@ export function serializeJbQueryResultForAgent(
   const ultra: Record<string, unknown> = {
     _binFieldGuide: wrapped["_binFieldGuide"],
     _slotBadBinsCompactGuide: wrapped["_slotBadBinsCompactGuide"],
+    _recentLotsGuide: wrapped["_recentLotsGuide"],
     _rowsNote: withoutRows["_rowsNote"],
     rowsOmitted: true,
     rowCount,
     count: wrapped["count"],
     distinctSlots: wrapped["distinctSlots"],
+    distinctLotCount: wrapped["distinctLotCount"],
+    recentLotsByTestEnd: wrapped["recentLotsByTestEnd"],
     binBySlot: compact ? buildBinBySlotMap(compact) : {},
     slotYieldSummary: yieldSummary
       ? minimalSlotYieldSummary(yieldSummary)

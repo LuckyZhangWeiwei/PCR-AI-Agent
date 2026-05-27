@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildRecentLotsByTestEnd,
   buildSlotBadBinsCompact,
   formatJbRowsForAgent,
   normalizeBinsForAgent,
@@ -136,6 +137,46 @@ describe("agentJbBinFormat", () => {
     assert.deepEqual(compact[0]!.badBins, [
       { bin: 7, dieCount: 10, isGoodBin: false },
     ]);
+  });
+
+  it("buildRecentLotsByTestEnd uses max TESTEND per lot and sorts desc", () => {
+    const rows = [
+      { LOT: "TR13069.1F", DEVICE: "WA01", CARDID: "7747-01", TESTEND: "2026-05-20T10:00:00.000Z", SLOT: 1 },
+      { LOT: "TR13073.1Y", DEVICE: "WA01", CARDID: "7747-01", TESTEND: "2026-05-25T10:00:00.000Z", SLOT: 2 },
+      { LOT: "TR13069.1F", DEVICE: "WA01", CARDID: "7747-01", TESTEND: "2026-05-10T10:00:00.000Z", SLOT: 3 },
+      { LOT: "TR17367.1T", DEVICE: "WA02", CARDID: "7747-01", TESTEND: "2026-05-22T10:00:00.000Z", SLOT: 1 },
+    ] as Record<string, unknown>[];
+    assert.deepEqual(buildRecentLotsByTestEnd(rows, 3), [
+      {
+        lot: "TR13073.1Y",
+        device: "WA01",
+        cardId: "7747-01",
+        testEnd: "2026-05-25T10:00:00.000Z",
+      },
+      {
+        lot: "TR17367.1T",
+        device: "WA02",
+        cardId: "7747-01",
+        testEnd: "2026-05-22T10:00:00.000Z",
+      },
+      {
+        lot: "TR13069.1F",
+        device: "WA01",
+        cardId: "7747-01",
+        testEnd: "2026-05-20T10:00:00.000Z",
+      },
+    ]);
+  });
+
+  it("wrapJbQueryResultForAgent includes recentLotsByTestEnd", () => {
+    const out = wrapJbQueryResultForAgent([
+      { LOT: "A", DEVICE: "D", CARDID: "7747-01", TESTEND: "2026-05-01T00:00:00.000Z", SLOT: 1, bins: [] },
+      { LOT: "B", DEVICE: "D", CARDID: "7747-01", TESTEND: "2026-05-02T00:00:00.000Z", SLOT: 1, bins: [] },
+    ] as Record<string, unknown>[]);
+    assert.ok(String(out._recentLotsGuide).includes("recentLotsByTestEnd"));
+    assert.equal(out.distinctLotCount, 2);
+    const recent = out.recentLotsByTestEnd as Array<{ lot: string }>;
+    assert.deepEqual(recent.map((x) => x.lot), ["B", "A"]);
   });
 
   it("serializeJbQueryResultForAgent omits rows when payload too large", () => {

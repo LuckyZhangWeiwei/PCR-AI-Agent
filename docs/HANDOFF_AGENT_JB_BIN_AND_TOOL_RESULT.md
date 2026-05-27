@@ -132,3 +132,15 @@ cd pcr-ai-report && npm ci && npm run build   # 或 pack:dist 部署静态资源
 **Prompt：**「某张探针卡最近五个 lot」→ `query_jb_bins(cardId, limit:200)` 按 TESTEND 去重取前 5 个 LOT。
 
 **回归：** `test/agentLoop.test.ts`。
+
+---
+
+## 8. 「某卡最近 N 个 lot」勿用 aggregate（2026-05-27 补充）
+
+**现象：** 问「7747-01 最近五个 lot」时调 `aggregate_jb_bins`，按 BIN66 坏 die 排序，并声称 API 不能按 TESTEND 排序。
+
+**原因：** `aggregate_jb_bins` 按 **坏 die 合计** 取 top，与 **最近测试时间** 无关；`groupBy lot,bin` 时表格「主要坏 BIN」是 **该 lot 下单个 bin 的峰值**，不是全 lot 或全卡 BIN10 vs BIN66 总量对比。
+
+**修复：** `query_jb_bins` 回传 **`recentLotsByTestEnd`**（每 lot 取 MAX(TESTEND) 降序 top5）。Prompt / 工具 schema 禁止用 aggregate 答「最近 lot」。
+
+**回归：** `test/agentJbBinFormat.test.ts`（`buildRecentLotsByTestEnd`）。
