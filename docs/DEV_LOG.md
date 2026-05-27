@@ -2,6 +2,15 @@
 
 ---
 
+## 2026-05-27 — fix: mask 在聚合 parts 中未填充
+
+**完成内容：**
+- `pcr-ai-api/src/lib/infcontrolLayerBinDummy.ts`：`aggregateInfcontrolLayerBinDummyRows` 与 `aggregateInfcontrolLayerBinV3FromRows` 在 parts 构建后加 `if (groupBy.includes("device")) parts["mask"] = deviceMask(DEVICE) ?? ""`，对齐 `buildInfcontrolLayerBinAggregateGroupParts` 的逻辑。根因：combined 端点（Oracle + Dummy 路径均走 `aggregateInfcontrolLayerBinV3FromRows`）不走 `buildInfcontrolLayerBinAggregateGroupParts`，导致 mask 图表显示 "—"。
+
+**测试：** 150 个测试，148 通过，0 失败（2 skipped）
+
+---
+
 ## 2026-05-27 — JB Star mask 分组汇总维度
 
 **完成内容：**

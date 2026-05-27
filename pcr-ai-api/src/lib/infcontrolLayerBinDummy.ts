@@ -423,6 +423,9 @@ export function aggregateInfcontrolLayerBinDummyRows(
           parts[d] = valueForInfcontrolDimension(row, d);
         }
       }
+      if (groupBy.includes("device")) {
+        parts["mask"] = deviceMask(String(row.DEVICE ?? "")) ?? "";
+      }
       const key = groupBy
         .map((d) => parts[d])
         .join(INFCONTROL_LAYER_BIN_AGGREGATE_KEY_SEP);
@@ -579,6 +582,9 @@ export function aggregateInfcontrolLayerBinV3FromRows(
         } else {
           parts[d] = valueForInfcontrolDimension(row, d);
         }
+      }
+      if (groupBy.includes("device")) {
+        parts["mask"] = deviceMask(String(row.DEVICE ?? "")) ?? "";
       }
       const key = groupBy
         .map((d) => parts[d])
