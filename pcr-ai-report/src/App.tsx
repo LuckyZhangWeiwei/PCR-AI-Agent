@@ -338,13 +338,14 @@ export default function App() {
                 />
               </label>
               <p className="field-hint">
-                <strong>单次分析</strong>：每次工具调用结果发给 LLM 的数据量上限。
+                每次工具调用结果发给 LLM 的数据量上限（<strong>仅影响当轮分析</strong>）。
                 超限时 JB 查询自动切换紧凑格式（保留 slotBadBinsCompact /
                 bin10Vs66ByLot 等摘要字段，省略 rows 明细）。建议 8 000–12 000，
                 过大收益递减且增加延迟。
-                <br />
-                <strong>历史存储</strong>：无论此值设多大，每条工具结果存入会话历史时
-                固定限制为 6 000 字符，防止多轮对话上下文无限膨胀。
+              </p>
+              <p className="field-hint">
+                ⓘ 工具结果写入会话历史时有独立的 6 000 字符上限（后端固定，不受此值影响），
+                防止多轮对话上下文膨胀。
               </p>
 
               <hr className="settings-divider" />

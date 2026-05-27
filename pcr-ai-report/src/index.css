@@ -285,6 +285,9 @@ code {
   color: var(--dimmed);
   line-height: 1.4;
 }
+.field-hint + .field-hint {
+  margin-top: 4px;
+}
 
 /* ── Settings tab ───────────────────────────────────────────────────── */
 .settings-panel {
