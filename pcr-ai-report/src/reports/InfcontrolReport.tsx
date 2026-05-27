@@ -237,7 +237,7 @@ type DrillState = {
 // Dimensions available in aggTree parts (device→lot→probeCardType→cardId→bin).
 // Any drill where both the filter key and all subDim keys are in this set
 // can be served from the cached aggTree without hitting Oracle.
-const TREE_DRILL_DIMS = new Set(["device", "lot", "probeCardType", "cardId", "bin"]);
+const TREE_DRILL_DIMS = new Set(["mask", "device", "lot", "probeCardType", "cardId", "bin"]);
 
 const JB_DRILL_KEY_SEP = "|";
 
@@ -261,6 +261,11 @@ function rowMatchesJbDrillParent(
       const prefix = (dash > 0 ? cardId.slice(0, dash) : cardId).toLowerCase();
       return prefix === val.toLowerCase();
     }
+    case "mask": {
+      const dev = String(row.DEVICE ?? "").trim();
+      if (!dev) return false;
+      return dev.slice(-4).toUpperCase() === val.toUpperCase();
+    }
     case "bin":
       return true;
     default:
@@ -270,6 +275,12 @@ function rowMatchesJbDrillParent(
 
 function jbRowDimValue(row: InfcontrolLayerBinV3Row, dim: string): string | undefined {
   switch (dim) {
+    case "mask": {
+      const m = row.MASK;
+      if (m != null && String(m).trim()) return String(m).trim();
+      const dev = String(row.DEVICE ?? "").trim();
+      return dev ? dev.slice(-4).toUpperCase() : undefined;
+    }
     case "device":
       return String(row.DEVICE ?? "").trim() || undefined;
     case "lot":
@@ -420,9 +431,10 @@ function infcontrolTreeYieldExtra(
   node: TreeNode,
   depth: number,
 ): ReactNode {
-  if (depth > 1) return null;
+  void depth;
   const device = node.dimKey === "device" ? node.dimValue : undefined;
   const lot = node.dimKey === "lot" ? node.dimValue : undefined;
+  if (!device && !lot) return null;
   if (!rows?.length) return null;
   const filtered = rows.filter((r) => {
     if (device && r.DEVICE !== device) return false;
@@ -1330,11 +1342,11 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     };
   }, [aggDevice, selectedMask]);
 
-  // ── Tree: Device → LOT → ProbeCard Type → CardId ─────────────────────────
+  // ── Tree: Mask → Device → LOT → ProbeCard Type → CardId ─────────────────
 
   const treeRoots = useMemo(() => {
     if (!aggTree?.groups?.length) return [];
-    return buildTree(aggTree.groups, ["device", "lot", "probeCardType", "cardId"]);
+    return buildTree(aggTree.groups, ["mask", "device", "lot", "probeCardType", "cardId"]);
   }, [aggTree]);
 
   // ── Detail rows ──────────────────────────────────────────────────────────
@@ -1828,7 +1840,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
             onClick={() => setShowTree((s) => !s)}
           >
             <span style={{ fontSize: 10, opacity: 0.6 }}>{showTree ? "▼" : "▶"}</span>
-            Device → LOT → ProbeCard Type → CardId
+            Mask → Device → LOT → ProbeCard Type → CardId
             <span style={{ fontSize: 11, color: "#6e7681", fontWeight: 400 }}>
               {showTree ? "" : `— ${treeRoots.length} 组，点击展开`}
             </span>

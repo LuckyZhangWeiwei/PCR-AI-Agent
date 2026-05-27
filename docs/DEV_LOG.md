@@ -2,6 +2,15 @@
 
 ---
 
+## 2026-05-27 — JB Star 分组汇总树加入 Mask 层
+
+**完成内容：**
+- `pcr-ai-report/src/reports/InfcontrolReport.tsx`：`buildTree` 第一维改为 `"mask"`，树层次变为 **Mask → Device → LOT → ProbeCard Type → CardId**；树标头同步更新。`infcontrolTreeYieldExtra` 去掉 `depth > 1` 早退，改为 `if (!device && !lot) return null`（mask 节点静默，device/lot 节点仍正常显示良率）。`TREE_DRILL_DIMS` 加 `"mask"`。`rowMatchesJbDrillParent` 加 mask 分支（`DEVICE.slice(-4).toUpperCase() === val`）。`jbRowDimValue` 加 mask 分支（优先 `row.MASK`，回退 `DEVICE.slice(-4)`）。
+
+**测试：** 构建通过（tsc + vite），后端 150 个测试，0 失败
+
+---
+
 ## 2026-05-27 — fix: mask 在聚合 parts 中未填充
 
 **完成内容：**
