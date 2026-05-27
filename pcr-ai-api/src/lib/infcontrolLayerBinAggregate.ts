@@ -1,5 +1,6 @@
 import type { BindParameters } from "oracledb";
 import { parseInfcontrolLayerBinQuery } from "./infcontrolLayerBinFilters.js";
+import { deviceMask } from "./deviceMask.js";
 
 /** 默认返回的分组条数上限 */
 export const INFCONTROL_LAYER_BIN_AGGREGATE_DEFAULT_TOP = 10;
@@ -476,14 +477,18 @@ ${wc}
 export function buildInfcontrolLayerBinAggregateGroupParts(
   grpKey: string,
   dimensions: InfcontrolLayerBinGroupBy[]
-): Record<string, string> {
+): Record<string, string | null> {
+  const parts: Record<string, string | null> = {};
   if (dimensions.length === 1) {
-    return { [dimensions[0]]: grpKey };
+    parts[dimensions[0]] = grpKey;
+  } else {
+    const pieces = grpKey.split(INFCONTROL_LAYER_BIN_AGGREGATE_KEY_SEP);
+    dimensions.forEach((d, i) => {
+      parts[d] = pieces[i] ?? "";
+    });
   }
-  const pieces = grpKey.split(INFCONTROL_LAYER_BIN_AGGREGATE_KEY_SEP);
-  const parts: Record<string, string> = {};
-  dimensions.forEach((d, i) => {
-    parts[d] = pieces[i] ?? "";
-  });
+  if (dimensions.includes("device")) {
+    parts["mask"] = deviceMask(parts["device"]);
+  }
   return parts;
 }

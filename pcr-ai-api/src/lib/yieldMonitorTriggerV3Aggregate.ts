@@ -1,5 +1,6 @@
 import type { BindParameters } from "oracledb";
 import { parseYieldMonitorTriggerV3Query } from "./yieldMonitorTriggerFilters.js";
+import { deviceMask } from "./deviceMask.js";
 
 /** 随 JSON 返回的固定说明（给人与 Agent；与 manifest `purpose` 一致） */
 export const YIELD_MONITOR_V3_AGGREGATE_DOCUMENTATION =
@@ -275,14 +276,18 @@ ${wc}
 export function buildYieldMonitorV3AggregateGroupParts(
   dimensions: YieldMonitorV3AggDim[],
   grpKey: string
-): Record<string, string> {
+): Record<string, string | null> {
+  const parts: Record<string, string | null> = {};
   if (dimensions.length === 1) {
-    return { [dimensions[0]]: grpKey };
+    parts[dimensions[0]] = grpKey;
+  } else {
+    const pieces = grpKey.split(GRP_SEP);
+    dimensions.forEach((d, i) => {
+      parts[d] = pieces[i] ?? "";
+    });
   }
-  const pieces = grpKey.split(GRP_SEP);
-  const parts: Record<string, string> = {};
-  dimensions.forEach((d, i) => {
-    parts[d] = pieces[i] ?? "";
-  });
+  if (dimensions.includes("device")) {
+    parts["mask"] = deviceMask(parts["device"]);
+  }
   return parts;
 }

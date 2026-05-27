@@ -10,6 +10,7 @@ import {
 import { loadInfcontrolLayerBinRowsFromJbStartXlsx } from "./dummyRowsFromExcel.js";
 import { listApisForceOracleNoDummy } from "./listDummyRuntime.js";
 import { probeCardTypeLeadingSegment } from "./probeCardTypeLeadingSegment.js";
+import { deviceMask } from "./deviceMask.js";
 
 /**
  * 与 INFCONTROL ⋈ INFLAYERBINLIST 查询列一致（Oracle 列名大写，含 BIN0…BIN255）。
@@ -521,6 +522,7 @@ export function filterInfcontrolLayerBinV3DummyRowsMatching(
   return rows.map((r) => ({
     ...r,
     PROBECARDTYPE: probeCardTypeLeadingSegment(r.CARDID),
+    MASK: deviceMask(r.DEVICE),
   }));
 }
 

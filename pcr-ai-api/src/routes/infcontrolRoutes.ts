@@ -58,6 +58,7 @@ import { INFCONTROL_V4_AGGREGATE_DOCUMENTATION } from "../lib/apiV4Docs.js";
 import { normalizeDbRowKeysUpper } from "../lib/dbRowKeyUpper.js";
 import { readMemoryAggregateOracleMaxRows } from "../lib/memoryAggregateOracleLimits.js";
 import { probeCardTypeLeadingSegment } from "../lib/probeCardTypeLeadingSegment.js";
+import { deviceMask } from "../lib/deviceMask.js";
 import { clampLimitFromQuery } from "../lib/sqlIdent.js";
 import { withConnection } from "../oracle.js";
 
@@ -70,6 +71,7 @@ function enrichInfcontrolLayerBinV3ListRow(
   return {
     ...e,
     PROBECARDTYPE: probeCardTypeLeadingSegment(e.CARDID ?? e.cardid),
+    MASK: deviceMask(e.DEVICE ?? e.device),
   };
 }
 

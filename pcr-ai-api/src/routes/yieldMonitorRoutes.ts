@@ -35,6 +35,7 @@ import { YIELD_MONITOR_V4_AGGREGATE_DOCUMENTATION } from "../lib/apiV4Docs.js";
 import { normalizeDbRowKeysUpper } from "../lib/dbRowKeyUpper.js";
 import { readMemoryAggregateOracleMaxRows } from "../lib/memoryAggregateOracleLimits.js";
 import { probeCardTypeLeadingSegment } from "../lib/probeCardTypeLeadingSegment.js";
+import { deviceMask } from "../lib/deviceMask.js";
 import {
   API_V3_LIST_LIMIT_MAX,
   buildYieldMonitorTriggersV3Sql,
@@ -53,6 +54,7 @@ function enrichYieldMonitorTriggerV3ListRow(
   return {
     ...base,
     PROBECARDTYPE: probeCardTypeLeadingSegment(base.PROBECARD ?? base.probecard),
+    MASK: deviceMask(base.DEVICE ?? base.device),
   };
 }
 

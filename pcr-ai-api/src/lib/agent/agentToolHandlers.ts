@@ -38,6 +38,7 @@ import {
   buildInfcontrolLayerBinsV3Sql,
 } from "../apiV3ListSql.js";
 import { probeCardTypeLeadingSegment } from "../probeCardTypeLeadingSegment.js";
+import { deviceMask } from "../deviceMask.js";
 import { addDutNumberToYieldMonitorV3Row } from "../yieldTriggerLabelDut.js";
 import { enrichInfcontrolLayerBinRowV2 } from "../passBinSemantics.js";
 import {
@@ -100,6 +101,7 @@ function enrichYieldRow(row: Record<string, unknown>): Record<string, unknown> {
     PROBECARDTYPE: probeCardTypeLeadingSegment(
       base["PROBECARD"] ?? base["probecard"]
     ),
+    MASK: deviceMask(base["DEVICE"] ?? base["device"]),
   };
 }
 
@@ -108,6 +110,7 @@ function enrichJbRow(row: Record<string, unknown>): Record<string, unknown> {
   return {
     ...e,
     PROBECARDTYPE: probeCardTypeLeadingSegment(e["CARDID"] ?? e["cardid"]),
+    MASK: deviceMask(e["DEVICE"] ?? e["device"]),
   };
 }
 

@@ -13,6 +13,7 @@
 - [ ] 服务器部署：API `npm run build + pm2:reload`；前端 `npm run pack:dist` → scp dist.tar → nginx web root
 - [ ] AI Agent 生产部署验证：确认 `AGENT_API_KEY` / `SILICONFLOW_API_KEY`、PM2 重启后聊天页可用；验证工具调用后能正常输出分析结论（已修复总结轮非标消息结构 + 双超时注册）
 - [ ] INF DUT 面板 Agent 工具：`query_inf_site_bin_by_dut` 接入 agentPrompt + agentToolHandlers（设计见 `docs/SITE_BIN_BY_LOT_INTEGRATION.md`）
+- [ ] 前端使用 `mask` 字段：Yield / JB 报表筛选/分组 UI 中展示或按 mask 过滤
 - [ ] Phase 1：YM 报表顶部新增探针卡报警排名图（`ProbeCardRankPanel.tsx`）
 - [ ] Phase 2b：YM↔JB 跨报表跳转链接
 - [ ] Phase 3：新 API `GET /inf-analysis/lot-dut-bin-agg`（读取 `/data/INF/{DEVICE}/{LOT}/` 下最多 25 个 INF 文件汇总）+ 前端 `LotDutBinPanel.tsx`
@@ -20,6 +21,7 @@
 
 ## 已完成
 
+- ✅ mask 字段：所有 API device 相关响应新增 `mask`（device 末 4 位，Oracle+Dummy 双路径 + 聚合 parts）— 2026-05-27 完成
 - ✅ history bug 修复：`TOOL_RESULT_MAX_HISTORY` 对 string 实际生效（3000→6000），多轮对话不再 context 膨胀 — 2026-05-27 完成
 - ✅ AI Agent 标签页开关（Settings toggle，localStorage 持久化）— 2026-05-27 完成
 - ✅ Settings AI Agent 配置描述清晰化（分组 + 每项说明 + 历史 cap 解耦说明）— 2026-05-27 完成

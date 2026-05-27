@@ -2,6 +2,22 @@
 
 ---
 
+## 2026-05-27 — mask 字段：所有涉及 device 的 API 返回后四位产品标识
+
+**完成内容：**
+- `pcr-ai-api/src/lib/deviceMask.ts`（新建）：`deviceMask(raw)` 取 device 字符串末 4 位，空则 null；例：`"WA03P02G"` → `"P02G"`。
+- `pcr-ai-api/src/routes/yieldMonitorRoutes.ts`：`enrichYieldMonitorTriggerV3ListRow` 增加 `MASK` 字段。
+- `pcr-ai-api/src/routes/infcontrolRoutes.ts`：`enrichInfcontrolLayerBinV3ListRow` 增加 `MASK` 字段。
+- `pcr-ai-api/src/lib/agent/agentToolHandlers.ts`：`enrichYieldRow` / `enrichJbRow` 增加 `MASK` 字段。
+- `pcr-ai-api/src/lib/yieldMonitorTriggerDummy.ts`：`filterYieldMonitorDummyRowsMatchingV3` map 增加 `MASK`（dummy-parity）。
+- `pcr-ai-api/src/lib/infcontrolLayerBinDummy.ts`：`filterInfcontrolLayerBinV3DummyRowsMatching` map 增加 `MASK`（dummy-parity）。
+- `pcr-ai-api/src/lib/yieldMonitorTriggerV3Aggregate.ts`：`buildYieldMonitorV3AggregateGroupParts` 当 dimensions 含 `device` 时在 parts 追加 `mask`。
+- `pcr-ai-api/src/lib/infcontrolLayerBinAggregate.ts`：`buildInfcontrolLayerBinAggregateGroupParts` 同上逻辑。
+
+**测试：** 150 个测试，0 失败（2 skipped）
+
+---
+
 ## 2026-05-27 — history bug 修复 + AI Agent 开关 + Settings 描述清晰化
 
 **完成内容：**
