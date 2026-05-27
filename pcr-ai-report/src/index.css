@@ -1409,6 +1409,31 @@ button.chip:hover {
   margin: 0.25rem 0 0.5rem;
 }
 
+.agent-enabled-status {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.agent-status-badge {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.15rem 0.55rem;
+  border-radius: 0.9rem;
+}
+
+.agent-status-on {
+  background: rgba(63, 185, 80, 0.18);
+  color: #3fb950;
+  border: 1px solid rgba(63, 185, 80, 0.35);
+}
+
+.agent-status-off {
+  background: rgba(200, 80, 80, 0.18);
+  color: #e06c6c;
+  border: 1px solid rgba(200, 80, 80, 0.35);
+}
+
 .toggle-switch {
   display: inline-flex;
   align-items: center;

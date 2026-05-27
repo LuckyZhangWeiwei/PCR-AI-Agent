@@ -230,13 +230,15 @@ export default function App() {
 
               {/* ── 开关（服务端控制）── */}
               <div className="setting-toggle-row">
-                <span className={`toggle-label-text ${agentEnabled ? "" : "toggle-label-disabled"}`}>
-                  AI Agent 标签页当前：<strong>{agentEnabled ? "已启用" : "已禁用"}</strong>
-                </span>
+                <div className="agent-enabled-status">
+                  <span className="toggle-label-text">启用 AI Agent 标签页</span>
+                  <span className={`agent-status-badge ${agentEnabled ? "agent-status-on" : "agent-status-off"}`}>
+                    {agentEnabled ? "已启用" : "已禁用"}
+                  </span>
+                </div>
                 <p className="field-hint">
-                  由服务端环境变量 <code>AGENT_ENABLED</code> 控制，影响所有用户。
-                  设为 <code>false</code> 后所有人的导航栏均隐藏 AI Agent 标签页；
-                  默认为启用。
+                  由服务端环境变量 <code>AGENT_ENABLED</code> 控制，影响<strong>所有用户</strong>。
+                  改为 <code>false</code> 并 pm2 reload 后所有人均隐藏此标签页。
                 </p>
               </div>
 
