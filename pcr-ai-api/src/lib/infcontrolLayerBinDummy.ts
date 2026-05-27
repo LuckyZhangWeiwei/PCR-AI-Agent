@@ -383,6 +383,8 @@ function valueForInfcontrolDimension(
       return String(row.SESSIONNUMBER);
     case "passNum":
       return String(row.PASSNUM);
+    case "mask":
+      return deviceMask(String(row.DEVICE ?? "")) ?? "";
     default: {
       const _e: never = d;
       return _e;

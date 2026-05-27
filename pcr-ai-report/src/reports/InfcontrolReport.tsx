@@ -166,11 +166,12 @@ const JB_REPORT_SECTION_ORDER = [
 
 const JB_KPI_BLOCK_ORDER = ["jbWafer", "jbYieldPct", "jbWorstType", "jbTopBin"] as const;
 
-const JB_CHART_BLOCK_ORDER = ["jbPcType", "jbDevice", "jbSlot"] as const;
+const JB_CHART_BLOCK_ORDER = ["jbPcType", "jbDevice", "jbMask", "jbSlot"] as const;
 
 // Sub-dimension options per parent drill
 const DRILL_FROM_DEVICE_JB: { label: string; value: string }[] = [
   { label: "LOT",    value: "lot"    },
+  { label: "Mask",   value: "mask"   },
   { label: "Pass",   value: "passId" },
   { label: "CardId", value: "cardId" },
   { label: "Slot",   value: "slot"   },
@@ -179,6 +180,7 @@ const DRILL_FROM_DEVICE_JB: { label: string; value: string }[] = [
 const DRILL_FROM_CARDTYPE: { label: string; value: string }[] = [
   { label: "CardId", value: "cardId" },
   { label: "Device", value: "device" },
+  { label: "Mask",   value: "mask"   },
   { label: "Slot",   value: "slot"   },
   { label: "Bin",    value: "bin"    },
   { label: "Lot",    value: "lot"    },
@@ -188,6 +190,7 @@ const DRILL_FROM_CARD: { label: string; value: string }[] = [
   { label: "Slot",   value: "slot"   },
   { label: "Bin",    value: "bin"    },
   { label: "Device", value: "device" },
+  { label: "Mask",   value: "mask"   },
   { label: "Lot",    value: "lot"    },
 ];
 
@@ -201,6 +204,7 @@ const DRILL_FROM_SLOT: { label: string; value: string }[] = [
 const DRILL_FROM_BIN: { label: string; value: string }[] = [
   { label: "CardId", value: "cardId" },
   { label: "Device", value: "device" },
+  { label: "Mask",   value: "mask"   },
   { label: "Lot",    value: "lot"    },
   { label: "Slot",   value: "slot"   },
 ];
@@ -208,8 +212,17 @@ const DRILL_FROM_BIN: { label: string; value: string }[] = [
 const DRILL_FROM_LOT: { label: string; value: string }[] = [
   { label: "CardId",       value: "cardId"       },
   { label: "ProbeCardType",value: "probeCardType"},
+  { label: "Mask",         value: "mask"         },
   { label: "Slot",         value: "slot"         },
   { label: "Bin",          value: "bin"          },
+];
+
+const DRILL_FROM_MASK: { label: string; value: string }[] = [
+  { label: "Bin",    value: "bin"    },
+  { label: "Device", value: "device" },
+  { label: "Lot",    value: "lot"    },
+  { label: "CardId", value: "cardId" },
+  { label: "Slot",   value: "slot"   },
 ];
 
 type DrillState = {
@@ -721,6 +734,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
   const [selectedCardType, setSelectedCardType] = useState<string | null>(null);
   const [selectedSlot,     setSelectedSlot]     = useState<string | null>(null);
   const [selectedDevice,   setSelectedDevice]   = useState<string | null>(null);
+  const [selectedMask,     setSelectedMask]     = useState<string | null>(null);
   const [infCtx, setInfCtx] = useState<InfCtx>(null);
   const [layoutEpoch, setLayoutEpoch] = useState(0);
 
@@ -758,6 +772,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     setSelectedCardType(null);
     setSelectedSlot(null);
     setSelectedDevice(null);
+    setSelectedMask(null);
     setInfCtx(null);
     setErrorList(null);
     setErrorAgg(null);
@@ -1270,6 +1285,50 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     };
   }, [aggDevice, selectedDevice]);
 
+  const maskOption = useMemo((): EChartsOption => {
+    const maskBad = new Map<string, number>();
+    for (const g of aggDevice?.groups ?? []) {
+      const m = g.parts.mask ?? "—";
+      maskBad.set(m, (maskBad.get(m) ?? 0) + g.count);
+    }
+    const sorted = [...maskBad.entries()].sort((a, b) => a[1] - b[1]).slice(-10);
+    const COL = "#d2a8ff", COL_B = "#bf8fff", COL_D = "rgba(210,168,255,0.3)";
+    return {
+      ...horizontalBarChartBase(),
+      xAxis: {
+        type: "value",
+        axisLabel: { color: chartAxisColor },
+        splitLine: { lineStyle: { color: chartSplitLine } },
+      },
+      yAxis: {
+        type: "category",
+        data: sorted.map(([m]) => m),
+        axisLabel: { ...horizontalBarCategoryAxisLabel, interval: 0 },
+      },
+      series: [
+        {
+          type: "bar",
+          data: sorted.map(([m, v]) => {
+            const isSel = selectedMask !== null && m === selectedMask;
+            return {
+              value: v,
+              itemStyle: {
+                color: isSel ? COL_B : selectedMask !== null ? COL_D : COL,
+                borderRadius: [0, 4, 4, 0] as unknown as number,
+              },
+            };
+          }),
+          label: {
+            show: true,
+            position: "right",
+            color: chartAxisColor,
+            fontSize: 10,
+          },
+          animationDuration: 600,
+        },
+      ],
+    };
+  }, [aggDevice, selectedMask]);
 
   // ── Tree: Device → LOT → ProbeCard Type → CardId ─────────────────────────
 
@@ -1481,11 +1540,12 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         defaultOrder={JB_CHART_BLOCK_ORDER}
         layoutEpoch={layoutEpoch}
         axis="grid"
-        fullRowIds={["jbPcType", "jbDevice", "jbSlot"]}
+        fullRowIds={["jbPcType", "jbDevice", "jbMask", "jbSlot"]}
         groupClassName="report-reorder-group--chartgrid"
         labels={{
           jbPcType: "ProbeCard Type 不良对比",
           jbDevice: "Device 不良分析",
+          jbMask: "Mask 不良分析",
           jbSlot: "Slot 趋势（Wafer 间）",
         }}
         sections={{
@@ -1542,6 +1602,55 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                 onClose={closeInfDut}
               />
             </>
+          ),
+          jbMask: (
+            <div className="report-chart-panel">
+              <ChartDrillSplit
+                hint="点击 Mask 钻取"
+                chart={
+                  aggDevice && (new Set((aggDevice.groups ?? []).map(g => g.parts.mask ?? "")).size) > 0 ? (
+                    <ReactECharts
+                      option={maskOption}
+                      style={{
+                        height: rankBarChartHeight(
+                          new Set((aggDevice.groups ?? []).map(g => g.parts.mask ?? "")).size,
+                          10,
+                          "medium"
+                        ),
+                        width: "100%",
+                      }}
+                      opts={{ renderer: "canvas" }}
+                      notMerge
+                      lazyUpdate
+                      onEvents={{
+                        click: (params: { name: string }) => {
+                          setSelectedMask(params.name);
+                          fetchDrill("mask", params.name, "bin", form);
+                        },
+                      }}
+                    />
+                  ) : null
+                }
+                drill={
+                  drills["mask"] != null ? (
+                    <DrillDownPanel
+                      chartSize="medium"
+                      layout="side"
+                      title={`Mask: ${drills["mask"]!.parentDimVal} · 下钻：按 ${drills["mask"]!.subDim}`}
+                      groups={drills["mask"]!.groups}
+                      loading={drills["mask"]!.loading}
+                      error={drills["mask"]!.error}
+                      activeSubDim={drills["mask"]!.subDim}
+                      subDimOptions={DRILL_FROM_MASK}
+                      onSubDimChange={(d) =>
+                        fetchDrill("mask", drills["mask"]!.parentDimVal, d, form)
+                      }
+                      onClose={() => closeDrillPanel("mask", () => setSelectedMask(null))}
+                    />
+                  ) : null
+                }
+              />
+            </div>
           ),
           jbPcType: (
             <>

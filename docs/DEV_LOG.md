@@ -2,6 +2,17 @@
 
 ---
 
+## 2026-05-27 — JB Star mask 分组汇总维度
+
+**完成内容：**
+- `pcr-ai-api/src/lib/infcontrolLayerBinAggregate.ts`：`InfcontrolLayerBinGroupBy` 新增 `"mask"`；`parseGroupByToken` 加 `mask: "mask"`；`infcontrolLayerBinNonBinSelectSql` 返回 `UPPER(SUBSTR(TRIM(ic.DEVICE), -4)) AS MASK`；`oracleGroupColumnName` 返回 `"MASK"`；`sqlExprForGrpKeyFragment` / `groupBySqlExprs` 通过 default 路径自动处理。
+- `pcr-ai-api/src/lib/infcontrolLayerBinDummy.ts`：`valueForInfcontrolDimension` 新增 `case "mask"` → `deviceMask(DEVICE) ?? ""`（Dummy 路径对齐 Oracle）。
+- `pcr-ai-report/src/reports/InfcontrolReport.tsx`：新增 `DRILL_FROM_MASK` 下钻选项组；`DRILL_FROM_DEVICE_JB / CARDTYPE / CARD / BIN / LOT` 各加 `Mask` 选项；`JB_CHART_BLOCK_ORDER` 加 `"jbMask"`；新增 `selectedMask` state；`maskOption` useMemo（从 `aggDevice.groups[].parts.mask` 汇总，紫色，无需额外 API 调用）；chartsGrid 加 `jbMask` section（ChartDrillSplit + DrillDownPanel）。
+
+**测试：** 150 个测试，148 通过，0 失败（2 skipped）
+
+---
+
 ## 2026-05-27 — toolResultMaxHistoryChars 可配置化
 
 **完成内容：**

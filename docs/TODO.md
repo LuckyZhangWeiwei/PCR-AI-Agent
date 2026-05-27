@@ -13,7 +13,7 @@
 - [ ] 服务器部署：API `npm run build + pm2:reload`；前端 `npm run pack:dist` → scp dist.tar → nginx web root
 - [ ] AI Agent 生产部署验证：确认 `AGENT_API_KEY` / `SILICONFLOW_API_KEY`、PM2 重启后聊天页可用；验证工具调用后能正常输出分析结论（已修复总结轮非标消息结构 + 双超时注册）
 - [ ] INF DUT 面板 Agent 工具：`query_inf_site_bin_by_dut` 接入 agentPrompt + agentToolHandlers（设计见 `docs/SITE_BIN_BY_LOT_INTEGRATION.md`）
-- [ ] 前端使用 `mask` 字段：Yield / JB 报表筛选/分组 UI 中展示或按 mask 过滤
+- ✅ 前端使用 `mask` 字段：JB Star 聚合 charts 新增 Mask 不良分析图 + 所有下钻选项加 Mask — 2026-05-27 完成
 - [ ] Phase 1：YM 报表顶部新增探针卡报警排名图（`ProbeCardRankPanel.tsx`）
 - [ ] Phase 2b：YM↔JB 跨报表跳转链接
 - [ ] Phase 3：新 API `GET /inf-analysis/lot-dut-bin-agg`（读取 `/data/INF/{DEVICE}/{LOT}/` 下最多 25 个 INF 文件汇总）+ 前端 `LotDutBinPanel.tsx`

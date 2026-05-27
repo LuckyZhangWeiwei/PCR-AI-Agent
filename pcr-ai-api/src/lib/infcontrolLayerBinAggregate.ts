@@ -35,7 +35,9 @@ export type InfcontrolLayerBinGroupBy =
   | "grossDie"
   | "passId"
   | "sessionNumber"
-  | "passNum";
+  | "passNum"
+  /** DEVICE 末 4 位大写：`UPPER(SUBSTR(TRIM(DEVICE), -4))` */
+  | "mask";
 
 /** 单次聚合最多组合的维度数 */
 export const INFCONTROL_LAYER_BIN_AGGREGATE_MAX_DIMENSIONS = 8;
@@ -100,6 +102,7 @@ function parseGroupByToken(
     passid: "passId",
     sessionnumber: "sessionNumber",
     passnum: "passNum",
+    mask: "mask",
   };
   return map[lower];
 }
@@ -154,6 +157,8 @@ export function infcontrolLayerBinNonBinSelectSql(
       return "lb.PASSTYPE AS PASSTYPE";
     case "passBin":
       return "lb.PASSBIN AS PASSBIN";
+    case "mask":
+      return "UPPER(SUBSTR(TRIM(ic.DEVICE), -4)) AS MASK";
     default: {
       const _e: never = d;
       return _e;
@@ -229,6 +234,8 @@ function oracleGroupColumnName(d: Exclude<InfcontrolLayerBinGroupBy, "bin">): st
       return "SESSIONNUMBER";
     case "passNum":
       return "PASSNUM";
+    case "mask":
+      return "MASK";
     default: {
       const _e: never = d;
       return _e;
