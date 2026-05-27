@@ -1,161 +1,38 @@
 // pcr-ai-report/src/hooks/usePersistedAgentConfig.ts
+// All settings except apiKey are now stored server-side (useServerConfig).
+
 import { useState, useEffect } from "react";
 
+/** Shape sent in every POST /api/v4/agent/chat request body */
 export interface AgentConfig {
   apiKey: string;
   apiBase: string;
   model: string;
   maxRounds: number;
-  /** 后端 LLM 流式 idle 超时（秒）；随 agentConfig 下发 */
   streamTimeoutSec: number;
-  /** 浏览器整次聊天请求超时（秒）；仅前端使用，应略大于 streamTimeoutSec */
   clientTimeoutSec: number;
-  /** 单次工具结果 JSON 最大字符数；随 agentConfig 下发 */
   toolResultMaxChars: number;
-  /** 工具结果写入会话历史时的最大字符数；随 agentConfig 下发 */
   toolResultMaxHistoryChars: number;
 }
 
-const STORAGE_KEY = "pcr-ai-report.agent.v1";
+const STORAGE_KEY = "pcr-ai-report.agent.apikey.v1";
 
-export const AGENT_MAX_ROUNDS_DEFAULT = 5;
-export const AGENT_MAX_ROUNDS_MIN = 1;
-export const AGENT_MAX_ROUNDS_MAX = 20;
-
-export const AGENT_STREAM_TIMEOUT_SEC_DEFAULT = 150;
-export const AGENT_STREAM_TIMEOUT_SEC_MIN = 30;
-export const AGENT_STREAM_TIMEOUT_SEC_MAX = 600;
-
-export const AGENT_CLIENT_TIMEOUT_SEC_DEFAULT = 180;
-export const AGENT_CLIENT_TIMEOUT_SEC_MIN = 60;
-export const AGENT_CLIENT_TIMEOUT_SEC_MAX = 900;
-
-/** 客户端超时至少比流式 idle 超时多这么多秒 */
-export const AGENT_CLIENT_TIMEOUT_BUFFER_SEC = 30;
-
-export const AGENT_TOOL_RESULT_MAX_CHARS_DEFAULT = 12000;
-export const AGENT_TOOL_RESULT_MAX_CHARS_MIN = 6000;
-export const AGENT_TOOL_RESULT_MAX_CHARS_MAX = 30000;
-
-export const AGENT_TOOL_RESULT_MAX_HISTORY_CHARS_DEFAULT = 6000;
-export const AGENT_TOOL_RESULT_MAX_HISTORY_CHARS_MIN = 1000;
-export const AGENT_TOOL_RESULT_MAX_HISTORY_CHARS_MAX = 12000;
-
-const DEFAULTS: AgentConfig = {
-  apiKey: "",
-  apiBase: "https://api.siliconflow.cn/v1",
-  model: "deepseek-ai/DeepSeek-V3",
-  maxRounds: AGENT_MAX_ROUNDS_DEFAULT,
-  streamTimeoutSec: AGENT_STREAM_TIMEOUT_SEC_DEFAULT,
-  clientTimeoutSec: AGENT_CLIENT_TIMEOUT_SEC_DEFAULT,
-  toolResultMaxChars: AGENT_TOOL_RESULT_MAX_CHARS_DEFAULT,
-  toolResultMaxHistoryChars: AGENT_TOOL_RESULT_MAX_HISTORY_CHARS_DEFAULT,
-};
-
-function clampMaxRounds(n: unknown): number {
-  const parsed = typeof n === "number" ? n : Number(n);
-  if (!Number.isFinite(parsed)) return AGENT_MAX_ROUNDS_DEFAULT;
-  return Math.min(
-    Math.max(Math.round(parsed), AGENT_MAX_ROUNDS_MIN),
-    AGENT_MAX_ROUNDS_MAX
-  );
-}
-
-export function clampStreamTimeoutSec(n: unknown): number {
-  const parsed = typeof n === "number" ? n : Number(n);
-  if (!Number.isFinite(parsed)) return AGENT_STREAM_TIMEOUT_SEC_DEFAULT;
-  return Math.min(
-    Math.max(Math.round(parsed), AGENT_STREAM_TIMEOUT_SEC_MIN),
-    AGENT_STREAM_TIMEOUT_SEC_MAX
-  );
-}
-
-export function clampClientTimeoutSec(
-  n: unknown,
-  streamTimeoutSec: number
-): number {
-  const parsed = typeof n === "number" ? n : Number(n);
-  const floor = Math.max(
-    AGENT_CLIENT_TIMEOUT_SEC_MIN,
-    streamTimeoutSec + AGENT_CLIENT_TIMEOUT_BUFFER_SEC
-  );
-  if (!Number.isFinite(parsed)) return Math.max(floor, AGENT_CLIENT_TIMEOUT_SEC_DEFAULT);
-  return Math.min(
-    Math.max(Math.round(parsed), floor),
-    AGENT_CLIENT_TIMEOUT_SEC_MAX
-  );
-}
-
-export function clampToolResultMaxChars(n: unknown): number {
-  const parsed = typeof n === "number" ? n : Number(n);
-  if (!Number.isFinite(parsed)) return AGENT_TOOL_RESULT_MAX_CHARS_DEFAULT;
-  return Math.min(
-    Math.max(Math.round(parsed), AGENT_TOOL_RESULT_MAX_CHARS_MIN),
-    AGENT_TOOL_RESULT_MAX_CHARS_MAX
-  );
-}
-
-export function clampToolResultMaxHistoryChars(n: unknown): number {
-  const parsed = typeof n === "number" ? n : Number(n);
-  if (!Number.isFinite(parsed)) return AGENT_TOOL_RESULT_MAX_HISTORY_CHARS_DEFAULT;
-  return Math.min(
-    Math.max(Math.round(parsed), AGENT_TOOL_RESULT_MAX_HISTORY_CHARS_MIN),
-    AGENT_TOOL_RESULT_MAX_HISTORY_CHARS_MAX
-  );
-}
-
-function normalizeAgentConfig(partial: Partial<AgentConfig>): AgentConfig {
-  const streamTimeoutSec = clampStreamTimeoutSec(partial.streamTimeoutSec);
-  return {
-    apiKey:
-      typeof partial.apiKey === "string" ? partial.apiKey : DEFAULTS.apiKey,
-    apiBase:
-      typeof partial.apiBase === "string" && partial.apiBase
-        ? partial.apiBase
-        : DEFAULTS.apiBase,
-    model:
-      typeof partial.model === "string" && partial.model
-        ? partial.model
-        : DEFAULTS.model,
-    maxRounds: clampMaxRounds(partial.maxRounds),
-    streamTimeoutSec,
-    clientTimeoutSec: clampClientTimeoutSec(
-      partial.clientTimeoutSec,
-      streamTimeoutSec
-    ),
-    toolResultMaxChars: clampToolResultMaxChars(partial.toolResultMaxChars),
-    toolResultMaxHistoryChars: clampToolResultMaxHistoryChars(
-      partial.toolResultMaxHistoryChars
-    ),
-  };
-}
-
-function load(): AgentConfig {
-  try {
-    const s = localStorage.getItem(STORAGE_KEY);
-    if (!s) return { ...DEFAULTS };
-    const p = JSON.parse(s) as Partial<AgentConfig>;
-    return normalizeAgentConfig(p);
-  } catch {
-    return { ...DEFAULTS };
-  }
-}
-
-export function usePersistedAgentConfig(): [
-  AgentConfig,
-  (update: Partial<AgentConfig>) => void,
-  () => void,
-] {
-  const [config, setConfig] = useState<AgentConfig>(load);
+export function usePersistedApiKey(): [string, (key: string) => void] {
+  const [apiKey, setApiKeyState] = useState<string>(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEY) ?? "";
+    } catch {
+      return "";
+    }
+  });
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
-  }, [config]);
+    try {
+      localStorage.setItem(STORAGE_KEY, apiKey);
+    } catch {
+      /* ignore */
+    }
+  }, [apiKey]);
 
-  const update = (patch: Partial<AgentConfig>) =>
-    setConfig((prev) => normalizeAgentConfig({ ...prev, ...patch }));
-
-  const reset = () => setConfig({ ...DEFAULTS });
-
-  return [config, update, reset];
+  return [apiKey, setApiKeyState];
 }

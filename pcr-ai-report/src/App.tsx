@@ -3,25 +3,8 @@ import { apiGetJson } from "./api/client";
 import { API_PREFIX } from "./api/paths";
 import { ReportListLimitsSettings } from "./components/ReportListLimitsSettings";
 import { usePersistedApiBase } from "./hooks/usePersistedApiBase";
-import { usePersistedReportLimits } from "./hooks/usePersistedReportLimits";
-import {
-  usePersistedAgentConfig,
-  AGENT_MAX_ROUNDS_DEFAULT,
-  AGENT_MAX_ROUNDS_MAX,
-  AGENT_MAX_ROUNDS_MIN,
-  AGENT_STREAM_TIMEOUT_SEC_DEFAULT,
-  AGENT_STREAM_TIMEOUT_SEC_MAX,
-  AGENT_STREAM_TIMEOUT_SEC_MIN,
-  AGENT_CLIENT_TIMEOUT_SEC_DEFAULT,
-  AGENT_CLIENT_TIMEOUT_SEC_MAX,
-  AGENT_CLIENT_TIMEOUT_BUFFER_SEC,
-  AGENT_TOOL_RESULT_MAX_CHARS_DEFAULT,
-  AGENT_TOOL_RESULT_MAX_CHARS_MAX,
-  AGENT_TOOL_RESULT_MAX_CHARS_MIN,
-  AGENT_TOOL_RESULT_MAX_HISTORY_CHARS_DEFAULT,
-  AGENT_TOOL_RESULT_MAX_HISTORY_CHARS_MAX,
-  AGENT_TOOL_RESULT_MAX_HISTORY_CHARS_MIN,
-} from "./hooks/usePersistedAgentConfig.js";
+import { type AgentConfig, usePersistedApiKey } from "./hooks/usePersistedAgentConfig.js";
+import { useServerConfig, SERVER_CONFIG_DEFAULTS } from "./hooks/useServerConfig.js";
 import { AiAgentReport } from "./reports/AiAgentReport";
 import { InfcontrolReport } from "./reports/InfcontrolReport";
 import { OverviewReport } from "./reports/OverviewReport";
@@ -29,16 +12,35 @@ import { TableRowsReport } from "./reports/TableRowsReport";
 import { YieldMonitorReport } from "./reports/YieldMonitorReport";
 import "./index.css";
 
+const D = SERVER_CONFIG_DEFAULTS;
+
 type Tab = "yield" | "infcontrol" | "ai" | "table" | "settings";
 
 export default function App() {
   const [apiBase, setApiBase, resetApiBase] = usePersistedApiBase();
-  const [listLimits, setListLimits, resetListLimits] = usePersistedReportLimits();
   const [apiBaseInput, setApiBaseInput] = useState(apiBase);
-  const [agentConfig, updateAgentConfig, resetAgentConfig] = usePersistedAgentConfig();
+  const [serverConfig, updateServerConfig, fetchServerConfig] = useServerConfig(apiBase);
+  const [apiKey, setApiKey] = usePersistedApiKey();
   const [agentApiKeyVisible, setAgentApiKeyVisible] = useState(false);
 
-  const [agentEnabled, setAgentEnabled] = useState<boolean>(true);
+  const agentConfig: AgentConfig = {
+    apiKey,
+    apiBase: serverConfig.agentApiBase,
+    model: serverConfig.agentModel,
+    maxRounds: serverConfig.maxRounds,
+    streamTimeoutSec: serverConfig.streamTimeoutSec,
+    clientTimeoutSec: serverConfig.clientTimeoutSec,
+    toolResultMaxChars: serverConfig.toolResultMaxChars,
+    toolResultMaxHistoryChars: serverConfig.toolResultMaxHistoryChars,
+  };
+
+  const listLimits = {
+    defaultLimit: serverConfig.listDefaultLimit,
+    maxLimit: serverConfig.listMaxLimit,
+  };
+
+  const agentEnabled = serverConfig.agentEnabled;
+
 
   // Sync input when apiBase changes externally (resetApiBase)
   useEffect(() => { setApiBaseInput(apiBase); }, [apiBase]);
@@ -62,16 +64,14 @@ export default function App() {
     setHealthOk(null);
     setDbOk(null);
     try {
-      const h = await apiGetJson<{ status?: string; agentEnabled?: boolean }>(
+      const h = await apiGetJson<{ status?: string }>(
         apiBase,
         "/health",
         undefined,
         { cache: "no-store" }
       );
       setHealthOk(h.status === "ok");
-      const enabled = h.agentEnabled !== false;
-      setAgentEnabled(enabled);
-      if (!enabled && tab === "ai") setTab("yield");
+      await fetchServerConfig();
     } catch {
       setHealthOk(false);
     }
@@ -89,10 +89,8 @@ export default function App() {
     }
     setProbeMsg("已刷新");
     setTimeout(() => setProbeMsg(null), 2400);
-  }, [apiBase, tab]);
+  }, [apiBase, fetchServerConfig]);
 
-  // Fetch agentEnabled from server on mount and whenever apiBase changes.
-  useEffect(() => { probe(); }, [apiBase]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="app-shell">
@@ -220,15 +218,21 @@ export default function App() {
 
           <ReportListLimitsSettings
             limits={listLimits}
-            onChange={setListLimits}
-            onReset={resetListLimits}
+            onChange={(patch) => updateServerConfig({
+              ...(patch.defaultLimit !== undefined && { listDefaultLimit: patch.defaultLimit }),
+              ...(patch.maxLimit !== undefined && { listMaxLimit: patch.maxLimit }),
+            })}
+            onReset={() => updateServerConfig({
+              listDefaultLimit: D.listDefaultLimit,
+              listMaxLimit: D.listMaxLimit,
+            })}
           />
 
           <section className="settings-section">
             <h2 className="settings-section-title">AI Agent 配置</h2>
             <div className="api-panel">
 
-              {/* ── 开关（服务端持久化，影响所有用户）── */}
+              {/* ── 开关 ── */}
               <div className="setting-toggle-row">
                 <label className="toggle-switch">
                   <input
@@ -236,30 +240,15 @@ export default function App() {
                     checked={agentEnabled}
                     onChange={async (e) => {
                       const next = e.target.checked;
-                      setAgentEnabled(next);
                       if (!next && tab === "ai") setTab("yield");
-                      try {
-                        await fetch(
-                          (apiBase.replace(/\/$/, "") || window.location.origin) +
-                            "/api/v4/admin/agent-enabled",
-                          {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ agentEnabled: next }),
-                          }
-                        );
-                      } catch {
-                        // revert on failure
-                        setAgentEnabled(!next);
-                      }
+                      await updateServerConfig({ agentEnabled: next });
                     }}
                   />
                   <span className="toggle-track" />
                   <span className="toggle-label-text">启用 AI Agent 标签页</span>
                 </label>
                 <p className="field-hint">
-                  影响<strong>所有用户</strong>，立即生效无需重启。状态持久化在服务端文件，
-                  重启后保留。
+                  影响<strong>所有用户</strong>，立即生效无需重启。
                 </p>
               </div>
 
@@ -272,9 +261,9 @@ export default function App() {
                 <div className="api-panel-key-row">
                   <input
                     type={agentApiKeyVisible ? "text" : "password"}
-                    value={agentConfig.apiKey}
+                    value={apiKey}
                     placeholder="sk-..."
-                    onChange={(e) => updateAgentConfig({ apiKey: e.target.value })}
+                    onChange={(e) => setApiKey(e.target.value)}
                     autoComplete="off"
                   />
                   <button
@@ -295,8 +284,8 @@ export default function App() {
                 <span>API Base URL</span>
                 <input
                   type="text"
-                  value={agentConfig.apiBase}
-                  onChange={(e) => updateAgentConfig({ apiBase: e.target.value })}
+                  value={serverConfig.agentApiBase}
+                  onChange={(e) => updateServerConfig({ agentApiBase: e.target.value })}
                   spellCheck={false}
                 />
               </label>
@@ -308,8 +297,8 @@ export default function App() {
                 <span>模型</span>
                 <input
                   type="text"
-                  value={agentConfig.model}
-                  onChange={(e) => updateAgentConfig({ model: e.target.value })}
+                  value={serverConfig.agentModel}
+                  onChange={(e) => updateServerConfig({ agentModel: e.target.value })}
                   spellCheck={false}
                   placeholder="deepseek-ai/DeepSeek-V3"
                 />
@@ -325,16 +314,15 @@ export default function App() {
               <p className="settings-group-title">推理行为</p>
               <label>
                 <span>
-                  最大推理轮数（{AGENT_MAX_ROUNDS_MIN}–{AGENT_MAX_ROUNDS_MAX}，默认{" "}
-                  {AGENT_MAX_ROUNDS_DEFAULT}）
+                  最大推理轮数（1–20，默认 {D.maxRounds}）
                 </span>
                 <input
                   type="number"
-                  min={AGENT_MAX_ROUNDS_MIN}
-                  max={AGENT_MAX_ROUNDS_MAX}
-                  value={agentConfig.maxRounds}
+                  min={1}
+                  max={20}
+                  value={serverConfig.maxRounds}
                   onChange={(e) =>
-                    updateAgentConfig({ maxRounds: Number(e.target.value) })
+                    updateServerConfig({ maxRounds: Number(e.target.value) })
                   }
                 />
               </label>
@@ -344,17 +332,15 @@ export default function App() {
               </p>
               <label>
                 <span>
-                  工具结果最大字符数（{AGENT_TOOL_RESULT_MAX_CHARS_MIN}–
-                  {AGENT_TOOL_RESULT_MAX_CHARS_MAX}，默认{" "}
-                  {AGENT_TOOL_RESULT_MAX_CHARS_DEFAULT}）
+                  工具结果最大字符数（6000–30000，默认 {D.toolResultMaxChars}）
                 </span>
                 <input
                   type="number"
-                  min={AGENT_TOOL_RESULT_MAX_CHARS_MIN}
-                  max={AGENT_TOOL_RESULT_MAX_CHARS_MAX}
-                  value={agentConfig.toolResultMaxChars}
+                  min={6000}
+                  max={30000}
+                  value={serverConfig.toolResultMaxChars}
                   onChange={(e) =>
-                    updateAgentConfig({ toolResultMaxChars: Number(e.target.value) })
+                    updateServerConfig({ toolResultMaxChars: Number(e.target.value) })
                   }
                 />
               </label>
@@ -366,19 +352,15 @@ export default function App() {
               </p>
               <label>
                 <span>
-                  历史存储上限（{AGENT_TOOL_RESULT_MAX_HISTORY_CHARS_MIN}–
-                  {AGENT_TOOL_RESULT_MAX_HISTORY_CHARS_MAX}，默认{" "}
-                  {AGENT_TOOL_RESULT_MAX_HISTORY_CHARS_DEFAULT}）
+                  历史存储上限（1000–12000，默认 {D.toolResultMaxHistoryChars}）
                 </span>
                 <input
                   type="number"
-                  min={AGENT_TOOL_RESULT_MAX_HISTORY_CHARS_MIN}
-                  max={AGENT_TOOL_RESULT_MAX_HISTORY_CHARS_MAX}
-                  value={agentConfig.toolResultMaxHistoryChars}
+                  min={1000}
+                  max={12000}
+                  value={serverConfig.toolResultMaxHistoryChars}
                   onChange={(e) =>
-                    updateAgentConfig({
-                      toolResultMaxHistoryChars: Number(e.target.value),
-                    })
+                    updateServerConfig({ toolResultMaxHistoryChars: Number(e.target.value) })
                   }
                 />
               </label>
@@ -393,17 +375,15 @@ export default function App() {
               <p className="settings-group-title">超时</p>
               <label>
                 <span>
-                  LLM 响应超时（秒，{AGENT_STREAM_TIMEOUT_SEC_MIN}–
-                  {AGENT_STREAM_TIMEOUT_SEC_MAX}，默认{" "}
-                  {AGENT_STREAM_TIMEOUT_SEC_DEFAULT}）
+                  LLM 响应超时（秒，30–600，默认 {D.streamTimeoutSec}）
                 </span>
                 <input
                   type="number"
-                  min={AGENT_STREAM_TIMEOUT_SEC_MIN}
-                  max={AGENT_STREAM_TIMEOUT_SEC_MAX}
-                  value={agentConfig.streamTimeoutSec}
+                  min={30}
+                  max={600}
+                  value={serverConfig.streamTimeoutSec}
                   onChange={(e) =>
-                    updateAgentConfig({ streamTimeoutSec: Number(e.target.value) })
+                    updateServerConfig({ streamTimeoutSec: Number(e.target.value) })
                   }
                 />
               </label>
@@ -414,31 +394,37 @@ export default function App() {
               </p>
               <label>
                 <span>
-                  浏览器请求超时（秒，至少 LLM 超时 +{" "}
-                  {AGENT_CLIENT_TIMEOUT_BUFFER_SEC}s，最大{" "}
-                  {AGENT_CLIENT_TIMEOUT_SEC_MAX}，默认{" "}
-                  {AGENT_CLIENT_TIMEOUT_SEC_DEFAULT}）
+                  浏览器请求超时（秒，至少 LLM 超时 + 30s，最大 900，默认 {D.clientTimeoutSec}）
                 </span>
                 <input
                   type="number"
-                  min={
-                    agentConfig.streamTimeoutSec + AGENT_CLIENT_TIMEOUT_BUFFER_SEC
-                  }
-                  max={AGENT_CLIENT_TIMEOUT_SEC_MAX}
-                  value={agentConfig.clientTimeoutSec}
+                  min={serverConfig.streamTimeoutSec + 30}
+                  max={900}
+                  value={serverConfig.clientTimeoutSec}
                   onChange={(e) =>
-                    updateAgentConfig({ clientTimeoutSec: Number(e.target.value) })
+                    updateServerConfig({ clientTimeoutSec: Number(e.target.value) })
                   }
                 />
               </label>
               <p className="field-hint">
-                浏览器端整次 fetch 请求的最长等待。应比 LLM 响应超时多{" "}
-                {AGENT_CLIENT_TIMEOUT_BUFFER_SEC}s 以上，让后端有机会完成流并关闭连接。
+                浏览器端整次 fetch 请求的最长等待。应比 LLM 响应超时多 30s 以上，让后端有机会完成流并关闭连接。
                 超时后显示「↻ 重试」按钮，可从同一 session 续跑。
               </p>
 
               <div className="api-panel-actions">
-                <button type="button" className="btn ghost" onClick={resetAgentConfig}>
+                <button
+                  type="button"
+                  className="btn ghost"
+                  onClick={() => updateServerConfig({
+                    agentApiBase: D.agentApiBase,
+                    agentModel: D.agentModel,
+                    maxRounds: D.maxRounds,
+                    streamTimeoutSec: D.streamTimeoutSec,
+                    clientTimeoutSec: D.clientTimeoutSec,
+                    toolResultMaxChars: D.toolResultMaxChars,
+                    toolResultMaxHistoryChars: D.toolResultMaxHistoryChars,
+                  })}
+                >
                   恢复默认
                 </button>
               </div>
