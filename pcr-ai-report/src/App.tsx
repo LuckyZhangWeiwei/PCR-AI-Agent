@@ -228,17 +228,38 @@ export default function App() {
             <h2 className="settings-section-title">AI Agent 配置</h2>
             <div className="api-panel">
 
-              {/* ── 开关（服务端控制）── */}
+              {/* ── 开关（服务端持久化，影响所有用户）── */}
               <div className="setting-toggle-row">
-                <div className="agent-enabled-status">
+                <label className="toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={agentEnabled}
+                    onChange={async (e) => {
+                      const next = e.target.checked;
+                      setAgentEnabled(next);
+                      if (!next && tab === "ai") setTab("yield");
+                      try {
+                        await fetch(
+                          (apiBase.replace(/\/$/, "") || window.location.origin) +
+                            "/api/v4/admin/agent-enabled",
+                          {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ agentEnabled: next }),
+                          }
+                        );
+                      } catch {
+                        // revert on failure
+                        setAgentEnabled(!next);
+                      }
+                    }}
+                  />
+                  <span className="toggle-track" />
                   <span className="toggle-label-text">启用 AI Agent 标签页</span>
-                  <span className={`agent-status-badge ${agentEnabled ? "agent-status-on" : "agent-status-off"}`}>
-                    {agentEnabled ? "已启用" : "已禁用"}
-                  </span>
-                </div>
+                </label>
                 <p className="field-hint">
-                  由服务端环境变量 <code>AGENT_ENABLED</code> 控制，影响<strong>所有用户</strong>。
-                  改为 <code>false</code> 并 pm2 reload 后所有人均隐藏此标签页。
+                  影响<strong>所有用户</strong>，立即生效无需重启。状态持久化在服务端文件，
+                  重启后保留。
                 </p>
               </div>
 

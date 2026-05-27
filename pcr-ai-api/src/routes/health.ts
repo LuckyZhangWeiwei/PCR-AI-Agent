@@ -1,8 +1,8 @@
 import { Router } from "express";
+import { getAgentEnabled } from "../lib/runtimeConfig.js";
 
 export const healthRouter = Router();
 
 healthRouter.get("/health", (_req, res) => {
-  const agentEnabled = process.env.AGENT_ENABLED?.trim().toLowerCase() !== "false";
-  res.json({ status: "ok", service: "pcr-ai-api", agentEnabled });
+  res.json({ status: "ok", service: "pcr-ai-api", agentEnabled: getAgentEnabled() });
 });

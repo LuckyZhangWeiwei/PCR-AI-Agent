@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { sendAgentError } from "./lib/agentResponse.js";
 import { wideOpenCorsMiddleware } from "./lib/corsConfig.js";
 import { requestIdMiddleware } from "./middleware/requestId.js";
+import { adminRouter } from "./routes/admin.js";
 import { agentRouter } from "./routes/agent.js";
 import { apiRouter } from "./routes/api.js";
 import { healthRouter } from "./routes/health.js";
@@ -41,6 +42,7 @@ export function createApp() {
   /** v4：列表与 v3 相同；聚合在 Node 内对全量列表行集计算（见 **`GET /api/v4/manifest`**）。 */
   app.use("/api/v4", apiRouter);
   app.use("/api/v4/agent", agentRouter);
+  app.use("/api/v4/admin", adminRouter);
 
   const publicDir = path.join(
     path.dirname(fileURLToPath(import.meta.url)),
