@@ -2,6 +2,15 @@
 
 ---
 
+## 2026-05-27 — Agent prompt 支持 mask 提问
+
+**完成内容：**
+- `pcr-ai-api/src/lib/agent/agentPrompt.ts`：新增「device 后缀标识（mask）」章节，说明 mask = device 后 4 位、API 中的 MASK 字段位置、按 mask 提问时先用 get_filter_values / 快照匹配完整 device 再查询的流程，以及 4 位字母数字串默认判断为 mask 的规则。
+
+**测试：** N/A（prompt-only 改动，无测试文件）
+
+---
+
 ## 2026-05-27 — mask 字段：所有涉及 device 的 API 返回后四位产品标识
 
 **完成内容：**

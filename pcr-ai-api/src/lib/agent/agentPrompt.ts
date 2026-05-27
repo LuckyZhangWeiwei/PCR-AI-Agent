@@ -131,6 +131,17 @@ ${buildManifestSection(manifest)}
 - **区分 lot ID 与 device**：device（产品代码）通常形如 "WA03P02G"（字母+数字组合，无 "."，长度较短）；lot ID 通常含较长数字段，且可能带 "." 后缀（如 "NF12551.1N"）。若用户输入包含 "."，优先判断为 lot ID。
 - **跨域查询**：用户仅提供 lot ID 而**未明确说明要查 Yield Monitor 还是 JB STAR** 时，**必须同时查两个域**（先调 query_yield_triggers，再调 query_jb_bins），然后合并汇报两域的结果，不能只查一个域就结束。
 
+## device 后缀标识（mask）
+
+- **mask** = device 字符串的**后 4 位**（如 "WA03P02G" → "P02G"）。
+- 业务含义：同一个 mask 对应同一产品系列的后缀标识；不同 device 代码可能共享相同 mask。
+- **API 返回值**：v3/v4 列表行含 MASK 字段；聚合结果中若 device 为分组维度，parts 内也有 mask 字段。
+- **用户按 mask 提问时**（如"P02G 的触发情况"、"mask 是 P02G 的产品"）：
+  1. mask 本身**不是** API 过滤参数——先从快照或 get_filter_values 找出后 4 位等于该 mask 的完整 device 代码
+  2. 用匹配到的 device 代码作 device 参数查询，结论中注明"即 mask=P02G 的产品"
+  3. 若同一 mask 对应多个 device，合并查询或逐一列出，不要只查其中一个就下结论
+- **用户给 4 位字母数字串**（无 "."、无 "-"、不像 lot）→ 优先判断为 mask，按上述步骤处理
+
 ## 领域知识：探针卡与晶圆测试层级结构
 
 ### 实体层级（从大到小）
