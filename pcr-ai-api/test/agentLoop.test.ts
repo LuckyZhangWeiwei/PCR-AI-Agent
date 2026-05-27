@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   filterAgentStreamTextForUi,
   historyAwaitingToolSummary,
+  parseMinimaxInvokeBody,
 } from "../src/lib/agent/agentLoop.js";
 import type { ChatMessage } from "../src/lib/agent/agentHistory.js";
 
@@ -104,6 +105,41 @@ test("filterAgentStreamTextForUi strips split MiniMax tag across chunks", () => 
     "完成",
   ]);
   assert.equal(out, "查询中完成");
+});
+
+test("filterAgentStreamTextForUi strips MiniMax JSON invoke orphan tail", () => {
+  const out = filterAgentStreamTextForUi([
+    'cardId: "7747-01",\nlimit: 1000\n}\n</invoke>\n</minimax:tool_call>',
+  ]);
+  assert.equal(out, "");
+});
+
+test("filterAgentStreamTextForUi strips MiniMax invoke with JSON body", () => {
+  const block = `<minimax:tool_call>
+<invoke name="query_jb_bins">
+{
+  "cardId": "7747-01",
+  "limit": 200
+}
+</invoke>
+</minimax:tool_call>`;
+  const out = filterAgentStreamTextForUi(["正在查询…", block]);
+  assert.equal(out, "正在查询…");
+});
+
+test("parseMinimaxInvokeBody reads JSON and loose key:value in invoke", () => {
+  assert.deepEqual(
+    parseMinimaxInvokeBody(
+      `<invoke name="query_jb_bins">{"cardId":"7747-01","limit":200}</invoke>`
+    ),
+    { cardId: "7747-01", limit: "200" }
+  );
+  assert.deepEqual(
+    parseMinimaxInvokeBody(
+      `<invoke name="query_jb_bins">cardId: "7747-01", limit: 1000 }</invoke>`
+    ),
+    { cardId: "7747-01", limit: "1000" }
+  );
 });
 
 test("historyAwaitingToolSummary is true when last turn is tool output", () => {

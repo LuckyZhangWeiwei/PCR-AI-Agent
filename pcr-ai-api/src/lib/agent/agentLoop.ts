@@ -70,6 +70,79 @@ const MINIMAX_INVOKE_RE = /<invoke\s+name="([^"]+)"/i;
 const MINIMAX_PARAM_RE =
   /<parameter\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/parameter>/gi;
 const MINIMAX_PARTIAL_OPEN_TAIL_RE = /<(?:\/)?minimax:[^>]*$/i;
+const INVOKE_STANDALONE_RE = /<invoke\s+name="/i;
+const INVOKE_END_RE = /<\/invoke>/i;
+/** MiniMax 偶发：仅有 invoke 尾 + 关闭标签，无开头 `<minimax:tool_call>` */
+const ORPHAN_INVOKE_ARG_TAIL_RE =
+  /(?:^|[\s\S]*?)(?:<invoke[\s\S]*)?(?:[A-Za-z_]\w*\s*:\s*(?:"[^"]*"|\d+)\s*,?\s*)+\}?\s*<\/invoke>\s*<\/minimax:tool_call>\s*$/i;
+
+/** Parse `<parameter>` tags or JSON / loose key:value body inside `<invoke>`. */
+export function parseMinimaxInvokeBody(block: string): Record<string, string> {
+  const args: Record<string, string> = {};
+  let pm: RegExpExecArray | null;
+  MINIMAX_PARAM_RE.lastIndex = 0;
+  while ((pm = MINIMAX_PARAM_RE.exec(block)) !== null) {
+    args[pm[1]] = pm[2].trim();
+  }
+  if (Object.keys(args).length > 0) return args;
+
+  const body = block
+    .replace(/^[\s\S]*?<invoke[^>]*>/i, "")
+    .replace(/<\/invoke>[\s\S]*$/i, "")
+    .trim();
+  if (!body) return args;
+
+  try {
+    const parsed = JSON.parse(body) as Record<string, unknown>;
+    for (const [k, v] of Object.entries(parsed)) {
+      if (v == null) continue;
+      args[k] = typeof v === "string" ? v : String(v);
+    }
+    return args;
+  } catch {
+    const looseRe = /([A-Za-z_]\w*)\s*:\s*("([^"]*)"|(\d+(?:\.\d+)?))/g;
+    let m: RegExpExecArray | null;
+    while ((m = looseRe.exec(body)) !== null) {
+      args[m[1]] = m[3] ?? m[4] ?? "";
+    }
+  }
+  return args;
+}
+
+function stripOrphanToolMarkupTail(text: string): string {
+  if (ORPHAN_INVOKE_ARG_TAIL_RE.test(text)) {
+    return text.replace(ORPHAN_INVOKE_ARG_TAIL_RE, "").trimEnd();
+  }
+  const closeIdx = text.lastIndexOf("</minimax:tool_call>");
+  if (closeIdx < 0) return text;
+  const minimaxOpen = text.lastIndexOf("<minimax:tool_call", closeIdx);
+  const invokeOpen = text.lastIndexOf("<invoke", closeIdx);
+  const start =
+    minimaxOpen >= 0
+      ? minimaxOpen
+      : invokeOpen >= 0 && invokeOpen < closeIdx
+        ? invokeOpen
+        : -1;
+  if (start >= 0) return text.slice(0, start).trimEnd();
+  return text.slice(0, closeIdx).replace(/<\/invoke>\s*$/i, "").trimEnd();
+}
+
+function pushMinimaxInvokeCall(
+  calls: CollectedToolCall[],
+  block: string,
+  idx: number
+): number {
+  const invokeMatch = MINIMAX_INVOKE_RE.exec(block);
+  if (!invokeMatch) return idx;
+  const args = parseMinimaxInvokeBody(block);
+  calls.push({
+    index: idx,
+    id: `minimax_embedded_${idx}`,
+    name: invokeMatch[1],
+    args: JSON.stringify(args),
+  });
+  return idx + 1;
+}
 
 interface FilteredEmitter {
   /** Feed a raw text delta from the LLM stream. */
@@ -96,6 +169,7 @@ function createDeepSeekFilter(
 
   function flushPending(force = false): void {
     if (inToken) return;
+    pending = stripOrphanToolMarkupTail(pending);
     const safeLen = force ? pending.length : Math.max(0, pending.length - LOOKAHEAD);
     if (safeLen > 0) {
       const safe = pending.slice(0, safeLen);
@@ -145,28 +219,26 @@ function createDeepSeekFilter(
 
   function tryExtractFromMinimaxBuf(): void {
     const endMatch = MINIMAX_END_RE.exec(tokenBuf);
-    if (!endMatch) return; // block not complete yet
+    if (!endMatch) {
+      // MiniMax 有时无外层 minimax:tool_call，仅 </invoke> 闭合
+      const invokeEnd = INVOKE_END_RE.exec(tokenBuf);
+      if (invokeEnd && INVOKE_STANDALONE_RE.test(tokenBuf)) {
+        const block = tokenBuf.slice(0, invokeEnd.index + invokeEnd[0].length);
+        tokenBuf = tokenBuf.slice(invokeEnd.index + invokeEnd[0].length).trim();
+        callIdx = pushMinimaxInvokeCall(calls, block, callIdx);
+        if (!tokenBuf) {
+          inToken = false;
+        } else {
+          scanForTokens();
+        }
+      }
+      return;
+    }
 
     const block = tokenBuf.slice(0, endMatch.index);
     tokenBuf = tokenBuf.slice(endMatch.index + endMatch[0].length).trim();
 
-    const invokeMatch = MINIMAX_INVOKE_RE.exec(block);
-    if (invokeMatch) {
-      const fnName = invokeMatch[1];
-      const args: Record<string, string> = {};
-      let pm: RegExpExecArray | null;
-      MINIMAX_PARAM_RE.lastIndex = 0;
-      while ((pm = MINIMAX_PARAM_RE.exec(block)) !== null) {
-        args[pm[1]] = pm[2].trim();
-      }
-      calls.push({
-        index: callIdx,
-        id: `minimax_embedded_${callIdx}`,
-        name: fnName,
-        args: JSON.stringify(args),
-      });
-      callIdx++;
-    }
+    callIdx = pushMinimaxInvokeCall(calls, block, callIdx);
 
     if (!tokenBuf) {
       inToken = false;
@@ -241,6 +313,7 @@ function createDeepSeekFilter(
     const dsmlMatch = DSML_START_RE.exec(pending);
     const dsToolMatch = DS_START_RE.exec(pending);
     const minimaxMatch = MINIMAX_START_RE.exec(pending);
+    const invokeStandaloneMatch = INVOKE_STANDALONE_RE.exec(pending);
 
     let matchIndex = -1;
     let matchKind: "reasoning" | "tool" | null = null;
@@ -263,6 +336,14 @@ function createDeepSeekFilter(
     }
     if (minimaxMatch && (matchKind === null || minimaxMatch.index < matchIndex)) {
       matchIndex = minimaxMatch.index;
+      matchKind = "tool";
+      tokenKind = "minimax";
+    }
+    if (
+      invokeStandaloneMatch &&
+      (matchKind === null || invokeStandaloneMatch.index < matchIndex)
+    ) {
+      matchIndex = invokeStandaloneMatch.index;
       matchKind = "tool";
       tokenKind = "minimax";
     }
@@ -316,10 +397,11 @@ function createDeepSeekFilter(
         pending = "";
         inReasoning = false;
       }
-      // Stream ended mid-token: recover DeepSeek native tokens as plain text;
-      // drop DSML/MiniMax markup (it's not meaningful as raw text).
+      // Stream ended mid-token: recover invoke from partial MiniMax buffer when possible.
       if (inToken) {
-        if (tokenKind === "deepseek" && tokenBuf) {
+        if (tokenKind === "minimax" && tokenBuf && INVOKE_STANDALONE_RE.test(tokenBuf)) {
+          callIdx = pushMinimaxInvokeCall(calls, tokenBuf, callIdx);
+        } else if (tokenKind === "deepseek" && tokenBuf) {
           pending = tokenBuf;
         }
         tokenBuf = "";
@@ -499,9 +581,9 @@ export async function runAgentLoop(
     const embeddedCalls = dsFilter.finalize();
     const textBuffer = dsFilter.cleanText; // clean text (no tokens) for history
 
-    if (embeddedCalls.length > 0 && toolCalls.length === 0) {
+    if (embeddedCalls.length > 0 && toolCalls.length === 0 && !awaitingSummary) {
       // SiliconFlow returned function calls as text content instead of tool_calls.
-      // Recover them so execution continues normally.
+      // Recover them so execution continues normally (not on summary round).
       toolCalls.push(...embeddedCalls);
       finishReason = "tool_calls";
     }
