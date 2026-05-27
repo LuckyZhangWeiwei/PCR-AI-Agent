@@ -171,7 +171,6 @@ const JB_CHART_BLOCK_ORDER = ["jbPcType", "jbDevice", "jbMask", "jbSlot"] as con
 // Sub-dimension options per parent drill
 const DRILL_FROM_DEVICE_JB: { label: string; value: string }[] = [
   { label: "LOT",    value: "lot"    },
-  { label: "Mask",   value: "mask"   },
   { label: "Pass",   value: "passId" },
   { label: "CardId", value: "cardId" },
   { label: "Slot",   value: "slot"   },
@@ -180,7 +179,6 @@ const DRILL_FROM_DEVICE_JB: { label: string; value: string }[] = [
 const DRILL_FROM_CARDTYPE: { label: string; value: string }[] = [
   { label: "CardId", value: "cardId" },
   { label: "Device", value: "device" },
-  { label: "Mask",   value: "mask"   },
   { label: "Slot",   value: "slot"   },
   { label: "Bin",    value: "bin"    },
   { label: "Lot",    value: "lot"    },
@@ -190,7 +188,6 @@ const DRILL_FROM_CARD: { label: string; value: string }[] = [
   { label: "Slot",   value: "slot"   },
   { label: "Bin",    value: "bin"    },
   { label: "Device", value: "device" },
-  { label: "Mask",   value: "mask"   },
   { label: "Lot",    value: "lot"    },
 ];
 
@@ -204,7 +201,6 @@ const DRILL_FROM_SLOT: { label: string; value: string }[] = [
 const DRILL_FROM_BIN: { label: string; value: string }[] = [
   { label: "CardId", value: "cardId" },
   { label: "Device", value: "device" },
-  { label: "Mask",   value: "mask"   },
   { label: "Lot",    value: "lot"    },
   { label: "Slot",   value: "slot"   },
 ];
@@ -212,7 +208,6 @@ const DRILL_FROM_BIN: { label: string; value: string }[] = [
 const DRILL_FROM_LOT: { label: string; value: string }[] = [
   { label: "CardId",       value: "cardId"       },
   { label: "ProbeCardType",value: "probeCardType"},
-  { label: "Mask",         value: "mask"         },
   { label: "Slot",         value: "slot"         },
   { label: "Bin",          value: "bin"          },
 ];

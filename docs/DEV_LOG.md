@@ -2,6 +2,15 @@
 
 ---
 
+## 2026-05-27 — 下钻 tab 中移除 Mask 选项
+
+**完成内容：**
+- `pcr-ai-report/src/reports/InfcontrolReport.tsx`：`DRILL_FROM_LOT` 移除 `{ label: "Mask", value: "mask" }` 条目，完成所有下钻 tab（Device/CardType/Card/Bin/Lot）的 Mask 清理。`DRILL_FROM_MASK`（Mask 图表自身的下钻面板）保留不动。
+
+**测试：** 构建通过（tsc + vite），0 失败
+
+---
+
 ## 2026-05-27 — JB Star 分组汇总树加入 Mask 层
 
 **完成内容：**
