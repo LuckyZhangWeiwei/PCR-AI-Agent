@@ -63,6 +63,7 @@ type Props = { apiBase: string; listLimits: ReportListLimits };
 
 type FormState = {
   device: string;
+  mask: string;
   lot: string;
   slot: string;
   probeCardType: string;
@@ -77,6 +78,7 @@ type FormState = {
 
 const initialForm: FormState = {
   device: "",
+  mask: "",
   lot: "",
   slot: "",
   probeCardType: "",
@@ -92,6 +94,7 @@ const initialForm: FormState = {
 function buildCoreParams(f: FormState): Record<string, string | number | undefined> {
   return {
     device:        f.device        || undefined,
+    mask:          f.mask          || undefined,
     lot:           f.lot           || undefined,
     slot:          f.slot          ? Number(f.slot)   : undefined,
     probeCardType: f.probeCardType || undefined,
@@ -1288,6 +1291,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
           [JB_DETAIL_GOOD_BINS]: [...goodBins],
           TESTEND:       r.TESTEND ?? "",
           DEVICE:        r.DEVICE ?? "",
+          MASK:          r.MASK ?? "—",
           LOT:           r.LOT ?? "",
           SLOT:          r.SLOT ?? "",
           PROBECARDTYPE: r.PROBECARDTYPE ?? "—",
@@ -1926,6 +1930,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
           {(
             [
               ["Device", "device"],
+              ["Mask (后4位)", "mask"],
               ["Lot", "lot"],
               ["Slot", "slot"],
               ["ProbeCard Type", "probeCardType"],

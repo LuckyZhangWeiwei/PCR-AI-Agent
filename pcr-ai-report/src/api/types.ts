@@ -155,6 +155,8 @@ export type InfcontrolBinCell = {
 export type InfcontrolLayerBinV3Row = {
   KEYNUMBER?: number;
   DEVICE?: string;
+  /** DEVICE 末 4 位，由 API enrichInfcontrolLayerBinV3ListRow 注入 */
+  MASK?: string | null;
   LOT?: string;
   SLOT?: number;
   MESLOT?: string;
@@ -182,6 +184,8 @@ export type YieldMonitorV3Row = {
   ID?: string | number;
   HOSTNAME?: string;
   DEVICE?: string;
+  /** DEVICE 末 4 位，由 API enrichYieldMonitorTriggerV3ListRow 注入 */
+  MASK?: string | null;
   LOTID?: string;
   WAFER?: string;
   PASS?: number;

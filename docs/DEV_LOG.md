@@ -2,6 +2,21 @@
 
 ---
 
+## 2026-05-27 — mask filter + 报表展示
+
+**完成内容：**
+- `pcr-ai-api/src/lib/yieldMonitorTriggerFilters.ts`：`parseYieldMonitorTriggerV3Query` 新增 `mask` 参数 → `UPPER(SUBSTR(TRIM(t.DEVICE), -4)) = UPPER(:v3_mask)`（Oracle SQL）。
+- `pcr-ai-api/src/lib/infcontrolLayerBinFilters.ts`：`parseInfcontrolLayerBinsV3Query` 同上 → `UPPER(SUBSTR(TRIM(t1.DEVICE), -4)) = UPPER(:ic3_mask)`。
+- `pcr-ai-api/src/lib/yieldMonitorTriggerDummy.ts`：`filterYieldMonitorDummyRowsMatchingV3` 增加 mask 过滤（slice(-4) 等价 Oracle）。
+- `pcr-ai-api/src/lib/infcontrolLayerBinDummy.ts`：`filterInfcontrolLayerBinV3DummyRowsMatching` 同上。
+- `pcr-ai-report/src/api/types.ts`：`YieldMonitorV3Row` / `InfcontrolLayerBinV3Row` 添加 `MASK?: string | null`。
+- `pcr-ai-report/src/reports/YieldMonitorReport.tsx`：`FormState` + `buildCoreParams` 加 `mask`；filter-grid 新增「Mask (后4位)」输入；detail 表增加 `MASK` 列。
+- `pcr-ai-report/src/reports/InfcontrolReport.tsx`：同上。
+
+**测试：** 150 个测试，0 失败
+
+---
+
 ## 2026-05-27 — Agent prompt 支持 mask 提问
 
 **完成内容：**

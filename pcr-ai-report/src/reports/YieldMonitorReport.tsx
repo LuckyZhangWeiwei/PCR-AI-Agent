@@ -55,6 +55,7 @@ type Props = { apiBase: string; listLimits: ReportListLimits };
 
 type FormState = {
   device: string;
+  mask: string;
   lotId: string;
   wafer: string;
   hostname: string;
@@ -67,6 +68,7 @@ type FormState = {
 
 const initialForm: FormState = {
   device: "",
+  mask: "",
   lotId: "",
   wafer: "",
   hostname: "",
@@ -80,6 +82,7 @@ const initialForm: FormState = {
 function buildCoreParams(f: FormState): Record<string, string | number | undefined> {
   return {
     device: f.device || undefined,
+    mask: f.mask || undefined,
     lotId: f.lotId || undefined,
     wafer: f.wafer || undefined,
     hostname: f.hostname || undefined,
@@ -988,6 +991,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       TIME_STAMP: r.TIME_STAMP ?? "",
       HOSTNAME: r.HOSTNAME ?? "",
       DEVICE: r.DEVICE ?? "",
+      MASK: r.MASK ?? "—",
       LOTID: r.LOTID ?? "",
       WAFER: r.WAFER ?? "",
       PROBECARDTYPE: r.PROBECARDTYPE ?? "—",
@@ -1335,6 +1339,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
           {(
             [
               ["Device", "device"],
+              ["Mask (后4位)", "mask"],
               ["LotID", "lotId"],
               ["Wafer", "wafer"],
               ["Hostname", "hostname"],

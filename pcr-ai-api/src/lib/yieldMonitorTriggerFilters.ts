@@ -197,6 +197,15 @@ export function parseYieldMonitorTriggerV3Query(
     strEqTrimCi("wafer", "t.WAFER", "v3_wafer");
     strEqTrimCi("probeCard", "t.PROBECARD", "v3_probecard");
 
+    // mask is last-4-chars of DEVICE (computed suffix; not a DB column)
+    const maskVal = firstString(firstQueryValue(q, "mask"));
+    if (maskVal !== undefined && maskVal !== "") {
+      const t = maskVal.trim();
+      clauses.push(`UPPER(SUBSTR(TRIM(t.DEVICE), -4)) = UPPER(:v3_mask)`);
+      (binds as Record<string, string | number | Date>).v3_mask = t;
+      applied.mask = t;
+    }
+
     // probeCardType is derived (prefix of PROBECARD before first '-'); filter as equality OR prefix match
     const pctVal = firstString(firstQueryValue(q, "probeCardType"));
     if (pctVal !== undefined && pctVal !== "") {

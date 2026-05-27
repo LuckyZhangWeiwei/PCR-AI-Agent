@@ -246,6 +246,15 @@ export function parseInfcontrolLayerBinsV3Query(
     strEqTrimCi("tstype", "t2.TSTYPE", "ic3_tstype");
     strEqTrimCi("cardId", "t2.CARDID", "ic3_cardid");
 
+    // mask is last-4-chars of DEVICE (computed suffix; not a DB column)
+    const maskVal = firstString(firstQueryValue(q, "mask"));
+    if (maskVal !== undefined && maskVal !== "") {
+      const t = maskVal.trim();
+      clauses.push(`UPPER(SUBSTR(TRIM(t1.DEVICE), -4)) = UPPER(:ic3_mask)`);
+      (binds as Record<string, string | number | Date>).ic3_mask = t;
+      applied.mask = t;
+    }
+
     // probeCardType is derived (prefix of CARDID before first '-'); filter as equality OR prefix match
     const pctVal = firstString(firstQueryValue(q, "probeCardType"));
     if (pctVal !== undefined && pctVal !== "") {

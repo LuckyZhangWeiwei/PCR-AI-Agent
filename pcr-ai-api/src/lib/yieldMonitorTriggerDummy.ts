@@ -327,6 +327,13 @@ export function filterYieldMonitorDummyRowsMatchingV3(
   ci("WAFER", "wafer");
   ci("PROBECARD", "probeCard");
 
+  if (applied.mask !== undefined) {
+    const want = String(applied.mask).trim().toUpperCase();
+    rows = rows.filter(
+      (r) => String(r.DEVICE ?? "").trim().slice(-4).toUpperCase() === want
+    );
+  }
+
   if (applied.probeCardType !== undefined) {
     const want = String(applied.probeCardType).trim().toUpperCase();
     rows = rows.filter((r) => {
