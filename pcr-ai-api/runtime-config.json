@@ -1,0 +1,5 @@
+{
+  "agentEnabled": true,
+  "agentApiBase": "https://api.siliconflow.cn/v1",
+  "agentModel": "deepseek-ai/DeepSeek-V3"
+}
