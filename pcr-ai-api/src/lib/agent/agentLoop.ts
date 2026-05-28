@@ -14,6 +14,7 @@ import { TOOL_SCHEMAS } from "./agentToolSchemas.js";
 import { runTool, type ChartSentinel, type ClarificationSentinel } from "./agentToolHandlers.js";
 import { buildSystemPrompt } from "./agentPrompt.js";
 import { fetchOrCacheManifest } from "./agentManifest.js";
+import { generateChartArgsHaveData } from "./agentChartTool.js";
 import { streamSiliconFlow, type CollectedToolCall } from "./agentStream.js";
 import { buildFeedbackInjection } from "./agentFeedback.js";
 
@@ -79,6 +80,86 @@ const INVOKE_END_RE = /<\/invoke>/i;
 const ORPHAN_INVOKE_ARG_TAIL_RE =
   /(?:^|[\s\S]*?)(?:<invoke[\s\S]*)?(?:[A-Za-z_]\w*\s*:\s*(?:"[^"]*"|\d+)\s*,?\s*)+\}?\s*<\/invoke>\s*<\/minimax:tool_call>\s*$/i;
 
+// GLM 5.x (e.g. zai-org/GLM-5.1 via SiliconFlow) embeds tool calls as:
+//   <tool_call>generate_chart<arg_key>chartType</arg_key><arg_value>pie</arg_value>…</tool_call>
+const GLM_TOOL_CALL_START_RE = /<tool_call>/i;
+const GLM_TOOL_CALL_END_RE = /<\/tool_call>/i;
+const GLM_ARG_KEY_RE = /<arg_key>([\s\S]*?)<\/arg_key>/gi;
+const GLM_ARG_VALUE_RE = /<arg_value>([\s\S]*?)<\/arg_value>/gi;
+const GLM_PARTIAL_OPEN_TAIL_RE = /<(?:\/)?(?:tool_call|arg_key|arg_value)[^>]*$/i;
+const ORPHAN_GLM_TOOL_CALL_TAIL_RE =
+  /<tool_call>[\s\S]*?<\/tool_call>\s*$/i;
+
+/** Parse GLM `<tool_call>name<arg_key>…</arg_key><arg_value>…</arg_value>…</tool_call>`. */
+export function parseGlmToolCallBody(block: string): {
+  name: string;
+  args: Record<string, unknown>;
+} {
+  const inner = block
+    .replace(/^<tool_call>/i, "")
+    .replace(/<\/tool_call>\s*$/i, "")
+    .trim();
+  const firstArgKey = inner.search(/<arg_key>/i);
+  const name = (
+    firstArgKey >= 0 ? inner.slice(0, firstArgKey) : inner.replace(/<[\s\S]*$/, "")
+  ).trim();
+
+  const keys: string[] = [];
+  const vals: string[] = [];
+  let km: RegExpExecArray | null;
+  GLM_ARG_KEY_RE.lastIndex = 0;
+  while ((km = GLM_ARG_KEY_RE.exec(inner)) !== null) {
+    keys.push(km[1].trim());
+  }
+  GLM_ARG_VALUE_RE.lastIndex = 0;
+  while ((km = GLM_ARG_VALUE_RE.exec(inner)) !== null) {
+    vals.push(km[1].trim());
+  }
+
+  const args: Record<string, unknown> = {};
+  for (let i = 0; i < keys.length; i++) {
+    const raw = vals[i] ?? "";
+    const t = raw.trim();
+    if (t.startsWith("{") || t.startsWith("[")) {
+      try {
+        args[keys[i]] = JSON.parse(t) as unknown;
+        continue;
+      } catch {
+        /* keep string */
+      }
+    }
+    args[keys[i]] = raw;
+  }
+  return { name, args };
+}
+
+function stripOrphanGlmToolMarkupTail(text: string): string {
+  if (ORPHAN_GLM_TOOL_CALL_TAIL_RE.test(text)) {
+    return text.replace(ORPHAN_GLM_TOOL_CALL_TAIL_RE, "").trimEnd();
+  }
+  const openIdx = text.lastIndexOf("<tool_call>");
+  if (openIdx >= 0 && !GLM_TOOL_CALL_END_RE.test(text.slice(openIdx))) {
+    return text.slice(0, openIdx).trimEnd();
+  }
+  return text;
+}
+
+function pushGlmToolCall(
+  calls: CollectedToolCall[],
+  block: string,
+  idx: number
+): number {
+  const { name, args } = parseGlmToolCallBody(block);
+  if (!name) return idx;
+  calls.push({
+    index: idx,
+    id: `glm_embedded_${idx}`,
+    name,
+    args: JSON.stringify(args),
+  });
+  return idx + 1;
+}
+
 /** Parse `<parameter>` tags or JSON / loose key:value body inside `<invoke>`. */
 export function parseMinimaxInvokeBody(block: string): Record<string, string> {
   const args: Record<string, string> = {};
@@ -113,6 +194,7 @@ export function parseMinimaxInvokeBody(block: string): Record<string, string> {
 }
 
 function stripOrphanToolMarkupTail(text: string): string {
+  text = stripOrphanGlmToolMarkupTail(text);
   if (ORPHAN_INVOKE_ARG_TAIL_RE.test(text)) {
     return text.replace(ORPHAN_INVOKE_ARG_TAIL_RE, "").trimEnd();
   }
@@ -161,7 +243,7 @@ function createDeepSeekFilter(
 ): FilteredEmitter {
   let pending = "";      // text awaiting token-detection scan
   let inToken = false;   // inside embedded tool / DSML markup
-  let tokenKind: "deepseek" | "dsml" | "minimax" = "deepseek";
+  let tokenKind: "deepseek" | "dsml" | "minimax" | "glm" = "deepseek";
   let inReasoning = false;
   let tokenBuf = "";     // accumulates token content while inToken
   const calls: CollectedToolCall[] = [];
@@ -212,6 +294,27 @@ function createDeepSeekFilter(
       tryExtractFromDsmlBuf();
     } else if (!tokenBuf) {
       inToken = false;
+    } else {
+      inToken = false;
+      pending = tokenBuf;
+      tokenBuf = "";
+      scanForTokens();
+    }
+  }
+
+  function tryExtractFromGlmBuf(): void {
+    const endMatch = GLM_TOOL_CALL_END_RE.exec(tokenBuf);
+    if (!endMatch) return;
+
+    const block = tokenBuf.slice(0, endMatch.index + endMatch[0].length);
+    tokenBuf = tokenBuf.slice(endMatch.index + endMatch[0].length).trim();
+
+    callIdx = pushGlmToolCall(calls, block, callIdx);
+
+    if (!tokenBuf) {
+      inToken = false;
+    } else if (GLM_TOOL_CALL_START_RE.test(tokenBuf.slice(0, 16))) {
+      tryExtractFromGlmBuf();
     } else {
       inToken = false;
       pending = tokenBuf;
@@ -316,6 +419,7 @@ function createDeepSeekFilter(
     const dsmlMatch = DSML_START_RE.exec(pending);
     const dsToolMatch = DS_START_RE.exec(pending);
     const minimaxMatch = MINIMAX_START_RE.exec(pending);
+    const glmMatch = GLM_TOOL_CALL_START_RE.exec(pending);
     const invokeStandaloneMatch = INVOKE_STANDALONE_RE.exec(pending);
 
     let matchIndex = -1;
@@ -341,6 +445,11 @@ function createDeepSeekFilter(
       matchIndex = minimaxMatch.index;
       matchKind = "tool";
       tokenKind = "minimax";
+    }
+    if (glmMatch && (matchKind === null || glmMatch.index < matchIndex)) {
+      matchIndex = glmMatch.index;
+      matchKind = "tool";
+      tokenKind = "glm";
     }
     if (
       invokeStandaloneMatch &&
@@ -380,6 +489,7 @@ function createDeepSeekFilter(
     pending = "";
     if (tokenKind === "dsml") tryExtractFromDsmlBuf();
     else if (tokenKind === "minimax") tryExtractFromMinimaxBuf();
+    else if (tokenKind === "glm") tryExtractFromGlmBuf();
     else tryExtractFromTokenBuf();
   }
 
@@ -389,6 +499,7 @@ function createDeepSeekFilter(
         tokenBuf += delta;
         if (tokenKind === "dsml") tryExtractFromDsmlBuf();
         else if (tokenKind === "minimax") tryExtractFromMinimaxBuf();
+        else if (tokenKind === "glm") tryExtractFromGlmBuf();
         else tryExtractFromTokenBuf();
       } else {
         pending += delta;
@@ -404,6 +515,8 @@ function createDeepSeekFilter(
       if (inToken) {
         if (tokenKind === "minimax" && tokenBuf && INVOKE_STANDALONE_RE.test(tokenBuf)) {
           callIdx = pushMinimaxInvokeCall(calls, tokenBuf, callIdx);
+        } else if (tokenKind === "glm" && tokenBuf && GLM_TOOL_CALL_START_RE.test(tokenBuf)) {
+          callIdx = pushGlmToolCall(calls, tokenBuf, callIdx);
         } else if (tokenKind === "deepseek" && tokenBuf) {
           pending = tokenBuf;
         }
@@ -414,7 +527,8 @@ function createDeepSeekFilter(
       pending = pending
         .replace(REASONING_PARTIAL_OPEN_TAIL_RE, "")
         .replace(DSML_PARTIAL_OPEN_TAIL_RE, "")
-        .replace(MINIMAX_PARTIAL_OPEN_TAIL_RE, "");
+        .replace(MINIMAX_PARTIAL_OPEN_TAIL_RE, "")
+        .replace(GLM_PARTIAL_OPEN_TAIL_RE, "");
       flushPending(true);
       return calls;
     },
@@ -469,6 +583,73 @@ export function filterAgentStreamTextForUi(deltas: string[]): string {
   for (const delta of deltas) filter.push(delta);
   filter.finalize();
   return parts.join("");
+}
+
+function lastToolMessage(history: ChatMessage[]): ChatMessage | undefined {
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].role === "tool") return history[i];
+  }
+  return undefined;
+}
+
+function chartToolFallbackMessage(toolMsg: ChatMessage): string {
+  const c = String(toolMsg.content ?? "");
+  if (c.startsWith("[图表已生成]")) {
+    return "图表已生成，请查看上方。";
+  }
+  if (c.startsWith("生成图表失败") || c.startsWith("工具执行失败")) {
+    return c;
+  }
+  return `图表生成未完成：${c.slice(0, 200)}`;
+}
+
+function parseToolCallArgs(tc: CollectedToolCall): Record<string, unknown> {
+  const raw = (tc.args || "").trim();
+  if (!raw) return {};
+  try {
+    const o = JSON.parse(raw) as Record<string, unknown>;
+    return o && typeof o === "object" && !Array.isArray(o) ? o : {};
+  } catch {
+    return {};
+  }
+}
+
+function toolCallArgsUsable(tc: CollectedToolCall): boolean {
+  const o = parseToolCallArgs(tc);
+  if (Object.keys(o).length === 0) return false;
+  if (tc.name === "generate_chart") return generateChartArgsHaveData(o);
+  return true;
+}
+
+/** Prefer embedded args when structured streaming left {} or invalid JSON. */
+function mergeStructuredWithEmbedded(
+  structured: CollectedToolCall[],
+  embedded: CollectedToolCall[]
+): CollectedToolCall[] {
+  if (embedded.length === 0) return structured;
+  if (structured.length === 0) return embedded;
+
+  const usedEmbedded = new Set<number>();
+  return structured.map((tc, i) => {
+    if (toolCallArgsUsable(tc)) return tc;
+    let embIdx = embedded.findIndex(
+      (e, j) => !usedEmbedded.has(j) && e.name === tc.name && toolCallArgsUsable(e)
+    );
+    if (embIdx < 0) {
+      embIdx = embedded.findIndex(
+        (e, j) => !usedEmbedded.has(j) && j === i && toolCallArgsUsable(e)
+      );
+    }
+    if (embIdx < 0) return tc;
+    usedEmbedded.add(embIdx);
+    const emb = embedded[embIdx];
+    return {
+      ...tc,
+      id: tc.id || emb.id,
+      name: tc.name || emb.name,
+      args: emb.args,
+    };
+  });
 }
 
 /** True when the last history turn is tool output awaiting a text summary. */
@@ -584,10 +765,16 @@ export async function runAgentLoop(
     const embeddedCalls = dsFilter.finalize();
     const textBuffer = dsFilter.cleanText; // clean text (no tokens) for history
 
-    if (embeddedCalls.length > 0 && toolCalls.length === 0 && !awaitingSummary) {
-      // SiliconFlow returned function calls as text content instead of tool_calls.
-      // Recover them so execution continues normally (not on summary round).
-      toolCalls.push(...embeddedCalls);
+    if (embeddedCalls.length > 0 && !awaitingSummary) {
+      // SiliconFlow / GLM / MiniMax may put calls in content; structured tool_calls
+      // are often {} or truncated JSON — merge usable args from embedded markup.
+      if (toolCalls.length === 0) {
+        toolCalls.push(...embeddedCalls);
+      } else {
+        const merged = mergeStructuredWithEmbedded(toolCalls, embeddedCalls);
+        toolCalls.length = 0;
+        toolCalls.push(...merged);
+      }
       finishReason = "tool_calls";
     }
 
@@ -601,6 +788,14 @@ export async function runAgentLoop(
 
     if (finishReason !== "tool_calls" || toolCalls.length === 0) {
       if (awaitingSummary && !textBuffer.trim()) {
+        const lastTool = lastToolMessage(getHistory(sessionId));
+        if (lastTool?.name === "generate_chart") {
+          const note = chartToolFallbackMessage(lastTool);
+          appendMessages(sessionId, { role: "assistant", content: note });
+          emit({ type: "text", delta: note });
+          emit({ type: "done" });
+          return;
+        }
         emit({
           type: "error",
           message:
@@ -642,6 +837,7 @@ export async function runAgentLoop(
       try {
         const toolResult = await runTool(tc.name, parsedArgs, {
           toolResultMaxChars: agentConfig.toolResultMaxChars,
+          history: getHistory(sessionId),
         });
         if (
           typeof toolResult === "object" &&
@@ -686,6 +882,22 @@ export async function runAgentLoop(
       emit({ type: "done" });
       return;
     }
+
+    // generate_chart: chart is already shown via SSE — GLM often returns empty on the
+    // follow-up summary round; skip that round and close with a short confirmation.
+    const onlyGenerateChart =
+      toolCalls.length > 0 && toolCalls.every((tc) => tc.name === "generate_chart");
+    if (onlyGenerateChart) {
+      const lastTool = lastToolMessage(getHistory(sessionId));
+      if (lastTool?.name === "generate_chart") {
+        const note = chartToolFallbackMessage(lastTool);
+        appendMessages(sessionId, { role: "assistant", content: note });
+        emit({ type: "text", delta: note });
+        emit({ type: "done" });
+        return;
+      }
+    }
+
     // Continue to next round — let user know LLM is processing tool results
     emit({ type: "status", message: "正在分析工具结果…" });
   }

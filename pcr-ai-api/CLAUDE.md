@@ -22,6 +22,7 @@
 | 1d | [`../docs/HANDOFF_SITE_BIN_BY_LOT_AGG.md`](../docs/HANDOFF_SITE_BIN_BY_LOT_AGG.md) | **Lot/Device 聚合交接**：`topN` 最新 lot、`TESTEND` 窗、`siteBinByLotDeviceTopN.ts` / `siteBinByLotTestEndWindow.ts`、Git 纪要 |
 | 1d | [`../docs/HANDOFF_JB_INTERRUPT_YIELD.md`](../docs/HANDOFF_JB_INTERRUPT_YIELD.md) | **JB 中断 slot 良率**：`slotYieldSummary` 半片字段、整片正片规则、Agent 输出顺序（整片→前半→后半，0% 必写） |
 | 1e | [`../docs/HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md`](../docs/HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md) | **Agent JB 逐片 BIN + 工具结果体积**：`slotBadBinsCompact` / `binBySlot`、`toolResultMaxChars`（Settings 默认 12000） |
+| 1f | [`../docs/HANDOFF_AGENT_GENERATE_CHART.md`](../docs/HANDOFF_AGENT_GENERATE_CHART.md) | **Agent generate_chart**：GLM `<tool_call>` 解析、空参合并、`inferGenerateChartArgsFromHistory`（DUT 占比 pie） |
 | 2 | [`docs/API_V3.md`](docs/API_V3.md) | **v3 列表**完整 SQL（由 `npm run docs:api-v3` 从 `dist` 再生） |
 | 3 | [`.env.example`](.env.example) | 环境变量与 Dummy 开关说明 |
 | 4 | [`.cursor/rules/dummy-parity.mdc`](.cursor/rules/dummy-parity.mdc) | **Oracle 与 Dummy 双路径必须同步**（改筛选/WHERE/响应形状时必读） |
@@ -264,6 +265,13 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
    - **`agentPrompt.ts`** 专节「按 lot 对比两个 BIN」；**`agentToolSchemas.ts`** 同步。
    - **单次 `query_jb_bins` limit≤200**：`bin10Vs66ByLot` 仅覆盖返回行内 lot 子集；全卡对比见交接 **§9.1**（v4 `groupBy=bin` aggregate）。
    - 交接 [`../docs/HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md`](../docs/HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md) **§9**；回归 **`test/agentJbBinFormat.test.ts`**。
+18. **Agent generate_chart 空参数 / DUT 占比图（2026-05-28）**：
+   - **现象**：`generate_chart` 报错「收到参数键: (空)」；用户要 dut2 占比 pie。
+   - **根因**：SiliconFlow/GLM 结构化 `tool_calls` 常 `{}`；参数在 content `<tool_call><arg_key>…` 或在上一条 **`query_inf_site_bin_by_dut`** 结果中。
+   - **`agentLoop.ts`**：`parseGlmToolCallBody`、`mergeStructuredWithEmbedded`、`toolCallArgsUsable`。
+   - **`agentChartTool.ts`**：`normalizeGenerateChartArgs`（顶层 labels+values）、`inferGenerateChartArgsFromHistory`、`buildDutShareChartData`。
+   - **`agentToolHandlers.ts`**：`RunToolOptions.history`；**`agentToolSchemas.ts`** `generate_chart` 不再强制 `data`。
+   - **交接全文**：[`../docs/HANDOFF_AGENT_GENERATE_CHART.md`](../docs/HANDOFF_AGENT_GENERATE_CHART.md)。回归 **`test/agentLoop.test.ts`**。
 
 ---
 

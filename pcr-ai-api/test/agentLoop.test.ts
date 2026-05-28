@@ -3,8 +3,17 @@ import test from "node:test";
 import {
   filterAgentStreamTextForUi,
   historyAwaitingToolSummary,
+  parseGlmToolCallBody,
   parseMinimaxInvokeBody,
 } from "../src/lib/agent/agentLoop.js";
+import {
+  buildDutShareChartData,
+  inferGenerateChartArgsFromHistory,
+  normalizeGenerateChartArgs,
+  resolveGenerateChartData,
+  tryParseJsonish,
+} from "../src/lib/agent/agentChartTool.js";
+import { runTool } from "../src/lib/agent/agentToolHandlers.js";
 import type { ChatMessage } from "../src/lib/agent/agentHistory.js";
 
 const THINK_OPEN = "<" + "think>";
@@ -125,6 +134,185 @@ test("filterAgentStreamTextForUi strips MiniMax invoke with JSON body", () => {
 </minimax:tool_call>`;
   const out = filterAgentStreamTextForUi(["正在查询…", block]);
   assert.equal(out, "正在查询…");
+});
+
+test("filterAgentStreamTextForUi strips GLM tool_call markup", () => {
+  const block =
+    '<tool_call>generate_chart<arg_key>chartType</arg_key><arg_value>pie</arg_value>' +
+    '<arg_key>labels</arg_key><arg_value>["DUT2 (395颗)", "其他DUT (45颗)"]</arg_value>' +
+    '<arg_key>values</arg_key><arg_value>[395, 45]</arg_value>' +
+    '<arg_key>title</arg_key><arg_value>Slot 7-9 BIN7 DUT分布</arg_value></tool_call>';
+  const out = filterAgentStreamTextForUi(["正在生成图表…", block, "完成"]);
+  assert.equal(out, "正在生成图表…完成");
+});
+
+test("filterAgentStreamTextForUi strips split GLM tool_call across chunks", () => {
+  const out = filterAgentStreamTextForUi([
+    "请稍候",
+    "<tool_call>generate_chart<arg_key>chartType</arg_key><arg_val",
+    'ue>pie</arg_value></tool_call>',
+    "。",
+  ]);
+  assert.equal(out, "请稍候。");
+});
+
+test("parseGlmToolCallBody reads arg_key and arg_value pairs", () => {
+  const block =
+    '<tool_call>generate_chart<arg_key>chartType</arg_key><arg_value>pie</arg_value>' +
+    '<arg_key>labels</arg_key><arg_value>["A","B"]</arg_value>' +
+    '<arg_key>values</arg_key><arg_value>[1, 2]</arg_value></tool_call>';
+  assert.deepEqual(parseGlmToolCallBody(block), {
+    name: "generate_chart",
+    args: {
+      chartType: "pie",
+      labels: ["A", "B"],
+      values: [1, 2],
+    },
+  });
+});
+
+test("normalizeGenerateChartArgs maps flat labels and values to data.series", () => {
+  assert.deepEqual(
+    normalizeGenerateChartArgs({
+      chartType: "pie",
+      title: "t",
+      labels: ["A", "B"],
+      values: [10, 20],
+    }),
+    {
+      chartType: "pie",
+      title: "t",
+      data: {
+        labels: ["A", "B"],
+        series: [{ name: "占比", values: [10, 20] }],
+      },
+    }
+  );
+});
+
+test("normalizeGenerateChartArgs defaults chartType to pie for flat labels+values", () => {
+  const out = normalizeGenerateChartArgs({
+    title: "DUT2占比",
+    labels: ["DUT2", "其他"],
+    values: [395, 45],
+  });
+  assert.equal(out.chartType, "pie");
+  const data = resolveGenerateChartData(out);
+  assert.ok(data);
+  assert.deepEqual(data.labels, ["DUT2", "其他"]);
+  assert.deepEqual(data.series[0]?.values, [395, 45]);
+});
+
+test("normalizeGenerateChartArgs parses data JSON string with flat labels+values", () => {
+  const out = normalizeGenerateChartArgs({
+    chartType: "pie",
+    title: "DUT2",
+    data: '{"labels":["DUT2","其他"],"values":[395,45]}',
+  });
+  const data = resolveGenerateChartData(out);
+  assert.ok(data);
+  assert.deepEqual(data.labels, ["DUT2", "其他"]);
+});
+
+test("normalizeGenerateChartArgs parses string labels and values from GLM", () => {
+  const out = normalizeGenerateChartArgs({
+    chartType: "pie",
+    labels: '["DUT2 (395颗)", "其他DUT (45颗)"]',
+    values: "[395, 45]",
+  });
+  const data = resolveGenerateChartData(out);
+  assert.ok(data);
+  assert.equal(data.labels[0], "DUT2 (395颗)");
+  assert.deepEqual(data.series[0]?.values, [395, 45]);
+});
+
+test("tryParseJsonish leaves plain strings unchanged", () => {
+  assert.equal(tryParseJsonish("pie"), "pie");
+});
+
+test("buildDutShareChartData sums dut vs other for one bin", () => {
+  const data = buildDutShareChartData(
+    [
+      {
+        passId: 1,
+        bins: [
+          {
+            bin: "bin7",
+            duts: [
+              { dut: 2, dieCount: 395 },
+              { dut: 4, dieCount: 45 },
+            ],
+          },
+        ],
+      },
+    ],
+    2,
+    "bin7"
+  );
+  assert.ok(data);
+  assert.deepEqual(data.series[0]?.values, [395, 45]);
+});
+
+test("inferGenerateChartArgsFromHistory builds pie from query_inf_site_bin_by_dut", () => {
+  const infPayload = {
+    device: "X",
+    lot: "L",
+    slot: 1,
+    passes: [
+      {
+        passId: 1,
+        bins: [
+          {
+            bin: "bin7",
+            duts: [
+              { dut: 2, dieCount: 80 },
+              { dut: 3, dieCount: 20 },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+  const history: ChatMessage[] = [
+    { role: "user", content: "生成 dut2 占比的比例图" },
+    {
+      role: "tool",
+      name: "query_inf_site_bin_by_dut",
+      content: JSON.stringify(infPayload),
+      tool_call_id: "t1",
+    },
+  ];
+  const inferred = inferGenerateChartArgsFromHistory(history, {
+    chartType: "pie",
+    title: "DUT2 占比",
+  });
+  assert.ok(inferred);
+  const data = resolveGenerateChartData(inferred);
+  assert.ok(data);
+  assert.deepEqual(data.series[0]?.values, [80, 20]);
+});
+
+test("runTool generate_chart infers from history when args empty", async () => {
+  const history: ChatMessage[] = [
+    { role: "user", content: "dut2 占比图" },
+    {
+      role: "tool",
+      name: "query_inf_site_bin_by_dut",
+      content: JSON.stringify({
+        passes: [
+          {
+            passId: 1,
+            bins: [{ bin: "bin7", duts: [{ dut: 2, dieCount: 3 }, { dut: 5, dieCount: 7 }] }],
+          },
+        ],
+      }),
+      tool_call_id: "t1",
+    },
+  ];
+  const result = await runTool("generate_chart", {}, { history });
+  assert.ok(
+    typeof result === "object" && result !== null && "__chartOption" in result
+  );
 });
 
 test("parseMinimaxInvokeBody reads JSON and loose key:value in invoke", () => {

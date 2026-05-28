@@ -142,19 +142,30 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "generate_chart",
       description:
-        "根据数据生成 ECharts 图表配置。调用后图表会内嵌显示在对话中。",
+        "根据数据生成 ECharts 图表。占比 pie 可传顶层 labels+values；或 data:{labels,series}。刚执行 query_inf_site_bin_by_dut 后画 DUT 占比可只传 chartType=pie 与含 DUT 编号的 title。",
       parameters: {
         type: "object",
         properties: {
           chartType: {
             type: "string",
             enum: ["bar", "line", "pie", "scatter"],
-            description: "图表类型",
+            description: "图表类型，占比默认 pie",
           },
-          title: { type: "string", description: "图表标题" },
+          title: { type: "string", description: "图表标题（含 DUT/BIN 编号便于自动取数）" },
+          labels: {
+            type: "array",
+            items: { type: "string" },
+            description: "分类标签（与 values 成对，可替代 data）",
+          },
+          values: {
+            type: "array",
+            items: { type: "number" },
+            description: "各分类数值（与 labels 成对）",
+          },
+          seriesName: { type: "string", description: "单系列名称，默认「占比」" },
           data: {
             type: "object",
-            description: "图表数据",
+            description: "嵌套图表数据 labels + series",
             properties: {
               labels: {
                 type: "array",
@@ -173,10 +184,9 @@ export const TOOL_SCHEMAS = [
                 },
               },
             },
-            required: ["labels", "series"],
           },
         },
-        required: ["chartType", "title", "data"],
+        required: ["chartType", "title"],
       },
     },
   },

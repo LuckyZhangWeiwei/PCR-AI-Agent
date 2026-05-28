@@ -43,10 +43,13 @@ import { addDutNumberToYieldMonitorV3Row } from "../yieldTriggerLabelDut.js";
 import { enrichInfcontrolLayerBinRowV2 } from "../passBinSemantics.js";
 import {
   buildChartOption,
-  type ChartData,
+  inferGenerateChartArgsFromHistory,
+  normalizeGenerateChartArgs,
+  resolveGenerateChartData,
   type ChartSentinel,
   type ClarificationSentinel,
 } from "./agentChartTool.js";
+import type { ChatMessage } from "./agentHistory.js";
 import { runGetFilterValues } from "./agentFilterValuesTool.js";
 import {
   serializeJbQueryResultForAgent,
@@ -67,6 +70,8 @@ export type { ChartSentinel, ClarificationSentinel };
 
 export type RunToolOptions = {
   toolResultMaxChars?: number;
+  /** Recent session turns — used to infer generate_chart data when model omits args. */
+  history?: ChatMessage[];
 };
 
 const TOOL_LIST_LIMIT = 50;
@@ -370,9 +375,31 @@ export async function runTool(
       return toolAggregateJbBins(args, maxChars);
     case "generate_chart": {
       try {
-        const chartType = args["chartType"] as "bar" | "line" | "pie" | "scatter";
-        const title = String(args["title"] ?? "");
-        const data = args["data"] as ChartData;
+        const fromHistory =
+          options?.history && options.history.length > 0
+            ? inferGenerateChartArgsFromHistory(options.history, args)
+            : null;
+        const normalized = fromHistory ?? normalizeGenerateChartArgs(args);
+        const chartType = (normalized["chartType"] ?? "pie") as
+          | "bar"
+          | "line"
+          | "pie"
+          | "scatter";
+        const title = String(normalized["title"] ?? "");
+        const data = resolveGenerateChartData(normalized);
+        if (!data) {
+          const keys = Object.keys(args).join(", ") || "(空)";
+          const hint = options?.history?.some(
+            (m) => m.role === "tool" && m.name === "query_inf_site_bin_by_dut"
+          )
+            ? " 若刚查询过 INF DUT 分布，请确保 title 或用户问题中含 DUT 编号（如 DUT2），或显式传入 labels+values。"
+            : "";
+          return (
+            `生成图表失败: 缺少有效的 labels/values 或 data 结构。` +
+            `请传入 data: { labels, series } 或顶层 labels + values 数组。收到参数键: ${keys}` +
+            hint
+          );
+        }
         const option = buildChartOption(chartType, title, data);
         return { __chartOption: option };
       } catch (err) {

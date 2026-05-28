@@ -1,5 +1,8 @@
 // pcr-ai-api/src/lib/agent/agentChartTool.ts
 
+import type { ChatMessage } from "./agentHistory.js";
+import type { SiteBinPass } from "../outputSiteBinByLot.js";
+
 export interface ChartData {
   labels: string[];
   series: { name: string; values: number[] }[];
@@ -13,11 +16,235 @@ export interface ClarificationSentinel {
   __clarification: string;
 }
 
+/** Parse JSON array/object strings from GLM arg_value / tool arguments. */
+export function tryParseJsonish(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  const t = value.trim();
+  if (!t || (t[0] !== "{" && t[0] !== "[")) return value;
+  try {
+    return JSON.parse(t) as unknown;
+  } catch {
+    return value;
+  }
+}
+
+function asNumberArray(values: unknown[]): number[] {
+  return values.map((v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  });
+}
+
+function buildChartDataFromFlat(
+  labels: unknown[],
+  values: unknown[],
+  seriesName: string
+): ChartData {
+  return {
+    labels: labels.map((l) => String(l)),
+    series: [{ name: seriesName, values: asNumberArray(values) }],
+  };
+}
+
+function chartDataFromRecord(d: Record<string, unknown>): ChartData | null {
+  let labels = tryParseJsonish(d.labels);
+  let values = tryParseJsonish(d.values);
+  const series = tryParseJsonish(d.series);
+
+  if (Array.isArray(labels) && Array.isArray(values)) {
+    const seriesName =
+      typeof d.seriesName === "string" && d.seriesName.trim()
+        ? d.seriesName.trim()
+        : "占比";
+    return buildChartDataFromFlat(labels, values, seriesName);
+  }
+
+  if (Array.isArray(labels) && Array.isArray(series) && series.length > 0) {
+    const first = series[0];
+    if (first != null && typeof first === "object" && !Array.isArray(first)) {
+      const s0 = first as Record<string, unknown>;
+      const sValues = tryParseJsonish(s0.values);
+      if (Array.isArray(sValues)) {
+        return {
+          labels: labels.map((l) => String(l)),
+          series: [
+            {
+              name: String(s0.name ?? "series"),
+              values: asNumberArray(sValues),
+            },
+          ],
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+/** GLM / some providers pass flat labels+values or JSON strings instead of nested data.series. */
+export function normalizeGenerateChartArgs(
+  args: Record<string, unknown>
+): Record<string, unknown> {
+  const chartType =
+    typeof args.chartType === "string" && args.chartType.trim()
+      ? args.chartType.trim()
+      : "pie";
+  const title = args.title;
+
+  let dataRaw = tryParseJsonish(args.data);
+  if (dataRaw != null && typeof dataRaw === "object" && !Array.isArray(dataRaw)) {
+    const built = chartDataFromRecord(dataRaw as Record<string, unknown>);
+    if (built) {
+      return { chartType, title, data: built };
+    }
+  }
+
+  let labels = tryParseJsonish(args.labels);
+  let values = tryParseJsonish(args.values);
+  if (Array.isArray(labels) && Array.isArray(values)) {
+    const seriesName =
+      typeof args.seriesName === "string" && args.seriesName.trim()
+        ? args.seriesName.trim()
+        : "占比";
+    return {
+      chartType,
+      title,
+      data: buildChartDataFromFlat(labels, values, seriesName),
+    };
+  }
+
+  return { chartType, title, data: args.data };
+}
+
+/** True when args already contain enough structure to build a chart. */
+export function generateChartArgsHaveData(args: Record<string, unknown>): boolean {
+  return resolveGenerateChartData(normalizeGenerateChartArgs(args)) !== null;
+}
+
+export function extractDutNumberFromText(text: string): number | undefined {
+  const m =
+    text.match(/\bdut\s*#?\s*(\d+)\b/i) ??
+    text.match(/\bDUT\s*(\d+)\b/);
+  if (!m) return undefined;
+  const n = parseInt(m[1], 10);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+export function extractBinHintFromText(text: string): string | undefined {
+  const m = text.match(/\bBIN\s*(\d+)\b/i);
+  if (!m) return undefined;
+  return `bin${m[1]}`;
+}
+
+function parseInfSiteBinToolJson(content: string): { passes: SiteBinPass[] } | null {
+  try {
+    const o = JSON.parse(content) as { passes?: unknown };
+    if (o && Array.isArray(o.passes)) {
+      return { passes: o.passes as SiteBinPass[] };
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+export function buildDutShareChartData(
+  passes: SiteBinPass[],
+  dut: number,
+  binFilter?: string
+): ChartData | null {
+  const binKey = binFilter?.toLowerCase();
+  let dutSum = 0;
+  let otherSum = 0;
+  for (const pass of passes) {
+    for (const binEntry of pass.bins) {
+      if (binKey && String(binEntry.bin).toLowerCase() !== binKey) continue;
+      for (const { dut: d, dieCount } of binEntry.duts) {
+        if (typeof d !== "number") continue;
+        if (d === dut) dutSum += dieCount;
+        else otherSum += dieCount;
+      }
+    }
+  }
+  if (dutSum === 0 && otherSum === 0) return null;
+  return {
+    labels: [`DUT${dut}`, "其他DUT"],
+    series: [{ name: "dieCount", values: [dutSum, otherSum] }],
+  };
+}
+
+/**
+ * When the model calls generate_chart with empty or incomplete args, build pie data
+ * from the latest query_inf_site_bin_by_dut tool result (DUTn vs 其他).
+ */
+export function inferGenerateChartArgsFromHistory(
+  history: ChatMessage[],
+  args: Record<string, unknown>
+): Record<string, unknown> | null {
+  const existing = normalizeGenerateChartArgs(args);
+  if (resolveGenerateChartData(existing)) return existing;
+
+  let dutHint = extractDutNumberFromText(String(args.title ?? ""));
+  let binHint = extractBinHintFromText(String(args.title ?? ""));
+
+  for (let i = history.length - 1; i >= 0; i--) {
+    const msg = history[i];
+    if (msg.role === "user" && typeof msg.content === "string") {
+      dutHint = dutHint ?? extractDutNumberFromText(msg.content);
+      binHint = binHint ?? extractBinHintFromText(msg.content);
+    }
+    if (msg.role === "tool" && msg.name === "query_inf_site_bin_by_dut") {
+      const inf = parseInfSiteBinToolJson(String(msg.content ?? ""));
+      if (!inf) continue;
+      const dut = dutHint ?? 2;
+      const data = buildDutShareChartData(inf.passes, dut, binHint);
+      if (!data) continue;
+      const chartType =
+        typeof args.chartType === "string" && args.chartType.trim()
+          ? args.chartType.trim()
+          : "pie";
+      const title = String(args.title ?? "").trim();
+      return {
+        chartType,
+        title: title || (binHint ? `${binHint.toUpperCase()} DUT${dut} 占比` : `DUT${dut} 占比`),
+        data,
+      };
+    }
+  }
+  return null;
+}
+
+export function resolveGenerateChartData(
+  normalized: Record<string, unknown>
+): ChartData | null {
+  const data = normalized.data;
+  if (data == null) return null;
+  if (typeof data === "string") {
+    const parsed = tryParseJsonish(data);
+    if (parsed != null && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return chartDataFromRecord(parsed as Record<string, unknown>);
+    }
+    return null;
+  }
+  if (typeof data === "object" && !Array.isArray(data)) {
+    const d = data as ChartData;
+    if (Array.isArray(d.labels) && Array.isArray(d.series) && d.series.length > 0) {
+      return d;
+    }
+    return chartDataFromRecord(data as Record<string, unknown>);
+  }
+  return null;
+}
+
 export function buildChartOption(
   chartType: "bar" | "line" | "pie" | "scatter",
   title: string,
   data: ChartData
 ): object {
+  if (!Array.isArray(data.labels) || !Array.isArray(data.series)) {
+    throw new Error("图表 data 缺少 labels 或 series");
+  }
+
   if (chartType === "pie") {
     const pieData = data.labels.map((label, i) => ({
       name: label,
