@@ -48,6 +48,7 @@ import {
   parseDutNumber,
   tallyDutNumbers,
 } from "../utils/yieldCalc";
+import { TESTER_PLATFORM_OPTIONS } from "../utils/testerPlatform";
 import type { ReportListLimits } from "../hooks/usePersistedReportLimits";
 import type { EChartsOption } from "echarts";
 
@@ -59,6 +60,7 @@ type FormState = {
   lotId: string;
   wafer: string;
   hostname: string;
+  platform: string;
   probeCardType: string;
   probeCard: string;
   pass: string;
@@ -72,6 +74,7 @@ const initialForm: FormState = {
   lotId: "",
   wafer: "",
   hostname: "",
+  platform: "",
   probeCardType: "",
   probeCard: "",
   pass: "",
@@ -86,6 +89,7 @@ function buildCoreParams(f: FormState): Record<string, string | number | undefin
     lotId: f.lotId || undefined,
     wafer: f.wafer || undefined,
     hostname: f.hostname || undefined,
+    platform: f.platform || undefined,
     probeCardType: f.probeCardType || undefined,
     probeCard: f.probeCard || undefined,
     pass: f.pass ? Number(f.pass) : undefined,
@@ -1358,6 +1362,21 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
               />
             </label>
           ))}
+
+          <label>
+            <span>Platform（机台大类 / HOSTNAME）</span>
+            <select
+              value={form.platform}
+              onChange={(e) => setField("platform", e.target.value)}
+            >
+              <option value="">全部</option>
+              {TESTER_PLATFORM_OPTIONS.map((o) => (
+                <option key={o} value={o}>
+                  {o}
+                </option>
+              ))}
+            </select>
+          </label>
 
           <label className="span-2">
             <span>时间范围（TIME_STAMP）</span>

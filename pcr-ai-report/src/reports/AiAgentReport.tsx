@@ -110,7 +110,11 @@ function formatAgentErrorMessage(
 
 function isRetryableAgentError(message: string): boolean {
   const lower = message.toLowerCase();
-  return lower.includes("timeout") || message.includes("超时");
+  if (lower.includes("timeout") || message.includes("超时")) return true;
+  // Tool-summary round returned empty text — backend supports retry: true on same sessionId.
+  if (message.includes("模型未返回分析结论")) return true;
+  if (message.includes("请点「重试」")) return true;
+  return false;
 }
 
 function parseSseLine(line: string, onEvent: (event: SseEvent) => void): void {

@@ -11,6 +11,7 @@ import { loadYieldMonitorTriggerRowsFromDeltaDiffXlsx } from "./dummyRowsFromExc
 import { listApisForceOracleNoDummy } from "./listDummyRuntime.js";
 import { probeCardTypeLeadingSegment } from "./probeCardTypeLeadingSegment.js";
 import { deviceMask } from "./deviceMask.js";
+import { filterRowsByAppliedPlatform } from "./testerPlatform.js";
 
 /** 与 Oracle 返回列一致（YMWEB_YIELDMONITORTRIGGER） */
 export type YieldMonitorTriggerDummyRow = {
@@ -132,6 +133,8 @@ export function filterYieldMonitorDummyRowsMatching(
     const to = new Date(String(applied.timeStampTo)).getTime();
     rows = rows.filter((r) => new Date(r.TIME_STAMP).getTime() <= to);
   }
+
+  rows = filterRowsByAppliedPlatform(rows, (r) => r.HOSTNAME, applied);
 
   return rows;
 }
@@ -365,6 +368,8 @@ export function filterYieldMonitorDummyRowsMatchingV3(
       rows = rows.filter((r) => new Date(r.TIME_STAMP).getTime() <= to);
     }
   }
+
+  rows = filterRowsByAppliedPlatform(rows, (r) => r.HOSTNAME, applied);
 
   return rows.map((r) => ({
     ...r,

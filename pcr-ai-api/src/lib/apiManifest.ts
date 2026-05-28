@@ -70,10 +70,17 @@ export const apiManifest = {
           note: "ISO 8601; filters lb.TESTEND <= value",
         },
         {
+          name: "bins",
+          type: "string",
+          optional: true,
+          note:
+            "Comma-separated BIN column indices (0–255). Row matches if any NVL(BINn,0)>0, e.g. bins=8,11,131",
+        },
+        {
           name: "bin0 … bin255",
           type: "string",
           optional: true,
-          note: 'Comma-separated integers → IN list, e.g. bin5=1,3,5',
+          note: 'Comma-separated die counts → BINn IN (...), e.g. bin8=5,10',
         },
       ],
       responseShape: {
@@ -349,7 +356,7 @@ export const apiManifest = {
       path: "/api/v1/infcontrol-layer-bins/v3",
       method: "GET",
       purpose:
-        "INFCONTROL t1 INNER JOIN INFLAYERBINLIST t2 ON KEYNUMBER, WHERE PASSTYPE='TEST' plus optional AND filters (case-insensitive TRIM equality on device, lot, meslot, testerId, tstype, cardId via UPPER(TRIM(col))=UPPER(:bind); exact match on slot, passId; TESTSTART/TESTEND windows). If the client sends none of the eight testStart*/testEnd* query keys, the server AND-filters t2.TESTEND to [UTC now minus one calendar year, UTC now] (same default as v3 aggregate). Then ORDER BY TESTEND DESC NULLS LAST, SLOT, PASSID, PASSNUM, FETCH FIRST :lim ROWS ONLY. When INFCONTROL_LAYER_BINS_DUMMY is true and the process is not dist/production, serves rows from docs/JBStart.xlsx in memory (listDummyRuntime); otherwise main Oracle pool. Row shape matches infcontrol-layer-bins/v2 plus PROBECARDTYPE (leading segment of CARDID before first hyphen). Query keys are case-insensitive (including limit).",
+        "INFCONTROL t1 INNER JOIN INFLAYERBINLIST t2 ON KEYNUMBER, WHERE PASSTYPE='TEST' plus optional AND filters (case-insensitive TRIM equality on device, lot, meslot, testerId, tstype, cardId via UPPER(TRIM(col))=UPPER(:bind); exact match on slot, passId; TESTSTART/TESTEND windows; bins=8,11,131 requires NVL(BINn,0)>0 for any listed index; legacy bin8=5,10 requires BIN8 IN (...)). If the client sends none of the eight testStart*/testEnd* query keys, the server AND-filters t2.TESTEND to [UTC now minus one calendar year, UTC now] (same default as v3 aggregate). Then ORDER BY TESTEND DESC NULLS LAST, SLOT, PASSID, PASSNUM, FETCH FIRST :lim ROWS ONLY. When INFCONTROL_LAYER_BINS_DUMMY is true and the process is not dist/production, serves rows from docs/JBStart.xlsx in memory (listDummyRuntime); otherwise main Oracle pool. Row shape matches infcontrol-layer-bins/v2 plus PROBECARDTYPE (leading segment of CARDID before first hyphen). Query keys are case-insensitive (including limit).",
       queryParameters: [
         {
           name: "limit",
@@ -365,6 +372,19 @@ export const apiManifest = {
         { name: "tstype", type: "string", optional: true },
         { name: "cardId", type: "string", optional: true },
         { name: "passId", type: "number", optional: true },
+        {
+          name: "bins",
+          type: "string",
+          optional: true,
+          note:
+            "Comma-separated BIN column indices (0–255). Row matches if any NVL(t2.BINn,0)>0, e.g. bins=8,11,131",
+        },
+        {
+          name: "bin0 … bin255",
+          type: "string",
+          optional: true,
+          note: "Comma-separated die counts → t2.BINn IN (...), e.g. bin8=5,10",
+        },
         {
           name: "testStartBegin",
           type: "datetime",
@@ -424,7 +444,7 @@ export const apiManifest = {
         rows: "same enrichment as infcontrol-layer-bins/v2 plus PROBECARDTYPE (string | null from CARDID)",
       },
       example:
-        "/api/v1/infcontrol-layer-bins/v3?device=WB10N57U&lot=NF12615.1X&testEndBegin=2026-05-13T00:00:00.000Z&testEndEnd=2026-05-13T23:59:59.999Z&limit=200",
+        "/api/v1/infcontrol-layer-bins/v3?device=WB10N57U&lot=NF12615.1X&bins=8,11&limit=200",
     },
     {
       path: "/api/v1/infcontrol-layer-bins/v3/aggregate",

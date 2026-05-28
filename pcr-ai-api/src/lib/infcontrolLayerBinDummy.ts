@@ -11,6 +11,7 @@ import { loadInfcontrolLayerBinRowsFromJbStartXlsx } from "./dummyRowsFromExcel.
 import { listApisForceOracleNoDummy } from "./listDummyRuntime.js";
 import { probeCardTypeLeadingSegment } from "./probeCardTypeLeadingSegment.js";
 import { deviceMask } from "./deviceMask.js";
+import { rowMatchesInfcontrolBinColumnFilters } from "./infcontrolBinColumnFilters.js";
 
 /**
  * 与 INFCONTROL ⋈ INFLAYERBINLIST 查询列一致（Oracle 列名大写，含 BIN0…BIN255）。
@@ -184,16 +185,7 @@ export function filterInfcontrolLayerDummyRowsMatching(
     rows = rows.filter((r) => new Date(String(r.TESTEND)).getTime() <= to);
   }
 
-  for (const key of Object.keys(applied)) {
-    const m = key.match(/^bin(\d+)$/i);
-    if (!m) continue;
-    const idx = m[1];
-    const values = applied[key];
-    if (!Array.isArray(values) || values.length === 0) continue;
-    const col = `BIN${idx}`;
-    const set = new Set(values.map((x) => Number(x)));
-    rows = rows.filter((r) => set.has(Number(r[col])));
-  }
+  rows = rows.filter((r) => rowMatchesInfcontrolBinColumnFilters(r, applied));
 
   return rows;
 }
@@ -530,6 +522,8 @@ export function filterInfcontrolLayerBinV3DummyRowsMatching(
       rows = rows.filter((r) => new Date(String(r.TESTEND)).getTime() <= to);
     }
   }
+
+  rows = rows.filter((r) => rowMatchesInfcontrolBinColumnFilters(r, applied));
 
   return rows.map((r) => ({
     ...r,

@@ -1,4 +1,5 @@
 import type { BindParameters } from "oracledb";
+import { applyInfcontrolBinColumnFilters } from "./infcontrolBinColumnFilters.js";
 import { v3DefaultThroughNowMinusOneUtcYear } from "./v3DefaultOneYearWindow.js";
 
 /** 固定取前 200 条 */
@@ -55,24 +56,6 @@ function parseOptionalDate(raw: unknown, label: string): Date | undefined {
     throw new Error(`Invalid date for ${label}`);
   }
   return d;
-}
-
-/**
- * 解析逗号分隔整数，如 "1,3,5" → [1,3,5]
- */
-function parseBinList(raw: unknown, label: string): number[] {
-  const s = firstString(raw);
-  if (s === undefined) return [];
-  const parts = s.split(",").map((p) => p.trim()).filter(Boolean);
-  const out: number[] = [];
-  for (const p of parts) {
-    const n = Number(p);
-    if (!Number.isFinite(n) || !Number.isInteger(n)) {
-      throw new Error(`Invalid integer in ${label}: ${p}`);
-    }
-    out.push(n);
-  }
-  return out;
 }
 
 /**
@@ -174,26 +157,14 @@ export function parseInfcontrolLayerBinQuery(
       applied.testEndTo = teTo.toISOString();
     }
 
-    const binRe = /^bin(\d+)$/i;
-    for (const key of Object.keys(q)) {
-      const m = key.match(binRe);
-      if (!m) continue;
-      const idx = Number(m[1]);
-      if (!Number.isInteger(idx) || idx < 0 || idx > 255) {
-        return { ok: false, error: `Invalid BIN index in query key: ${key}` };
-      }
-      const values = parseBinList(q[key], key);
-      if (values.length === 0) continue;
-      const placeholders = values
-        .map((_, i) => `:f_bin_${idx}_${i}`)
-        .join(", ");
-      clauses.push(`lb.BIN${idx} IN (${placeholders})`);
-      applied[`bin${idx}`] = values;
-      const bb = binds as Record<string, string | number | Date>;
-      values.forEach((v, i) => {
-        bb[`f_bin_${idx}_${i}`] = v;
-      });
-    }
+    const binApplied = applyInfcontrolBinColumnFilters(
+      q,
+      clauses,
+      binds,
+      applied,
+      "lb."
+    );
+    if (!binApplied.ok) return binApplied;
 
     const whereSql =
       clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
@@ -388,6 +359,15 @@ export function parseInfcontrolLayerBinsV3Query(
       applied.testEndBegin = lo.toISOString();
       applied.testEndEnd = hi.toISOString();
     }
+
+    const binApplied = applyInfcontrolBinColumnFilters(
+      q,
+      clauses,
+      binds,
+      applied,
+      "t2."
+    );
+    if (!binApplied.ok) return binApplied;
 
     const whereAndSql = clauses.join(" AND ");
     return { ok: true, whereAndSql, binds, applied };

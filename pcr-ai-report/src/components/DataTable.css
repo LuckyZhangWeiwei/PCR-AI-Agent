@@ -55,3 +55,17 @@
   color: var(--muted);
   font-size: 14px;
 }
+
+.data-table-check-col {
+  width: 36px;
+  min-width: 36px;
+  max-width: 36px;
+  text-align: center;
+  padding-left: 8px !important;
+  padding-right: 8px !important;
+}
+
+.data-table-check-col input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: #58a6ff;
+}

@@ -157,6 +157,35 @@ describe(
       }
     });
 
+    test("GET /api/v3/infcontrol-layer-bins/v3 bins=8 filters BIN8 column", async () => {
+      const qs = new URLSearchParams();
+      qs.set("bins", "8");
+      const { status, body } = await getJson(
+        `${API}/infcontrol-layer-bins/v3?${qs.toString()}&limit=200`
+      );
+      assertOkJson(status, body);
+      const rows = (body as { rows?: Record<string, unknown>[] }).rows ?? [];
+      assert.ok(rows.length > 0);
+      for (const row of rows) {
+        const bins = row.bins;
+        assert.ok(Array.isArray(bins));
+        assert.ok(
+          bins.some(
+            (c) =>
+              c &&
+              typeof c === "object" &&
+              Number((c as { n?: number }).n) === 8 &&
+              Number((c as { value?: number }).value) > 0
+          ),
+          "enriched row should include bins[].n=8 with value>0"
+        );
+      }
+      assert.deepEqual(
+        (body as { filters?: { bins?: number[] } }).filters?.bins,
+        [8]
+      );
+    });
+
     test("GET /api/v3/infcontrol-layer-bins/v3 无 testStart/testEnd* 时 filters 含默认一年 TESTEND", async () => {
       const qs = new URLSearchParams(icExampleQs);
       for (const k of [
@@ -306,6 +335,25 @@ describe(
         );
       }
       assert.ok(withDut > 0, "样本中应至少有一行含 on dut# 且 dutNumber 非 null");
+    });
+
+    test("GET /api/v3/yield-monitor-triggers/v3 platform=UFLEX filters HOSTNAME", async () => {
+      const qs = new URLSearchParams(yExampleQs);
+      qs.set("platform", "UFLEX");
+      qs.delete("hostname");
+      const { status, body } = await getJson(
+        `${API}/yield-monitor-triggers/v3?${qs.toString()}&limit=200`
+      );
+      assertOkJson(status, body);
+      const rows = (body as { rows?: { HOSTNAME?: string }[] }).rows ?? [];
+      assert.ok(rows.length > 0);
+      for (const row of rows) {
+        assert.match(String(row.HOSTNAME).toLowerCase(), /uflex/);
+      }
+      assert.equal(
+        (body as { filters?: { platform?: string } }).filters?.platform,
+        "UFLEX"
+      );
     });
 
     test("GET /api/v3/yield-monitor-triggers/v3 无 timeStamp* 时 filters 含默认一年 TIME_STAMP", async () => {

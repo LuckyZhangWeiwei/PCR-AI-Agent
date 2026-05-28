@@ -1,4 +1,5 @@
 import type { BindParameters } from "oracledb";
+import { applyPlatformQueryFilter } from "./testerPlatform.js";
 import { v3DefaultThroughNowMinusOneUtcYear } from "./v3DefaultOneYearWindow.js";
 
 export const YIELD_MONITOR_TRIGGER_TOP = 200;
@@ -90,6 +91,14 @@ export function parseYieldMonitorTriggerQuery(
     };
 
     strEq("hostname", "t.HOSTNAME", "f_hostname");
+    const platformApplied = applyPlatformQueryFilter(
+      q,
+      clauses,
+      applied,
+      "t.HOSTNAME"
+    );
+    if (!platformApplied.ok) return platformApplied;
+
     strEq("device", "t.DEVICE", "f_device");
     strEq("lotId", "t.LOTID", "f_lotid");
     strEq("wafer", "t.WAFER", "f_wafer");
@@ -192,6 +201,14 @@ export function parseYieldMonitorTriggerV3Query(
     };
 
     strEqTrimCi("hostname", "t.HOSTNAME", "v3_hostname");
+    const platformApplied = applyPlatformQueryFilter(
+      q,
+      clauses,
+      applied,
+      "t.HOSTNAME"
+    );
+    if (!platformApplied.ok) return platformApplied;
+
     strEqTrimCi("device", "t.DEVICE", "v3_device");
     strEqTrimCi("lotId", "t.LOTID", "v3_lotid");
     strEqTrimCi("wafer", "t.WAFER", "v3_wafer");

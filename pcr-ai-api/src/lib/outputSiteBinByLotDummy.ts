@@ -3,7 +3,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { listApisForceOracleNoDummy } from "./listDummyRuntime.js";
-import { buildInfDeviceDir, buildInfLotDir } from "./buildInfPath.js";
+import {
+  buildInfDeviceDir,
+  buildInfLotDir,
+  parseInfWaferSlotFromPath,
+} from "./buildInfPath.js";
 import {
   mergeSiteBinByLotData,
   type SiteBinByLotData,
@@ -94,15 +98,36 @@ function loadDummyPasses(): readonly SiteBinPass[] {
   return _passesCache;
 }
 
+function scaleSiteBinPassDieCount(
+  pass: SiteBinPass,
+  waferSlot: number
+): SiteBinPass {
+  if (waferSlot <= 1) return pass;
+  return {
+    passId: pass.passId,
+    bins: pass.bins.map((b) => ({
+      bin: b.bin,
+      duts: b.duts.map((d) => ({
+        dut: d.dut,
+        dieCount: d.dieCount * waferSlot,
+      })),
+    })),
+  };
+}
+
 /**
  * 按请求的 passId 过滤样本；样本中不存在的 pass 不放入 `passes`（与生产 Perl 行为一致）。
+ * @param waferSlot Dummy 单片：按 slot 缩放 dieCount，便于多片 `infPath` 联调时与 Oracle「每片独立 map」区分（lot 目录聚合仍用 scale=1）。
  */
-export function buildSiteBinByLotDummyData(passIds: number[]): SiteBinByLotData {
+export function buildSiteBinByLotDummyData(
+  passIds: number[],
+  waferSlot = 1
+): SiteBinByLotData {
   const byPass = new Map(loadDummyPasses().map((p) => [p.passId, p]));
   const passes: SiteBinPass[] = [];
   for (const id of passIds) {
     const row = byPass.get(id);
-    if (row) passes.push(row);
+    if (row) passes.push(scaleSiteBinPassDieCount(row, waferSlot));
   }
   return { passes };
 }
@@ -113,7 +138,8 @@ export function tryResolveSiteBinByLotDummy(
 ): SiteBinByLotData | null {
   if (!siteBinByLotUseDummy()) return null;
   if (!siteBinByLotDummyPathAllowed(infPath)) return null;
-  return buildSiteBinByLotDummyData(passIds);
+  const slot = parseInfWaferSlotFromPath(infPath);
+  return buildSiteBinByLotDummyData(passIds, slot ?? 1);
 }
 
 export type SiteBinByLotDummyAggResult = SiteBinByLotData & {

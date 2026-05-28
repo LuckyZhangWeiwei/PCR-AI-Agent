@@ -8,9 +8,15 @@ type Props = {
   omitKeys?: string[];
   maxHeight?: number;
   /** Called when user clicks a row. Receives the full row object. */
-  onRowClick?: (row: Record<string, unknown>) => void;
+  onRowClick?: (row: Record<string, unknown>, rowIndex: number) => void;
   /** Highlight row at this index (0-based, matches `rows` order). */
   selectedRowIndex?: number | null;
+  /** Checkbox multi-select: stable row keys (e.g. list row index). */
+  multiSelect?: boolean;
+  selectedRowKeys?: ReadonlySet<string | number>;
+  getRowKey?: (row: Record<string, unknown>, rowIndex: number) => string | number;
+  onToggleRowKey?: (key: string | number, row: Record<string, unknown>) => void;
+  onToggleAllVisible?: (keys: (string | number)[], select: boolean) => void;
 };
 
 /** omitKeys 与行内键名大小写均可匹配 */
@@ -98,6 +104,11 @@ export function DataTable({
   maxHeight = 420,
   onRowClick,
   selectedRowIndex = null,
+  multiSelect = false,
+  selectedRowKeys,
+  getRowKey,
+  onToggleRowKey,
+  onToggleAllVisible,
 }: Props) {
   if (rows.length === 0) {
     return <p className="data-table-empty">No rows.</p>;
@@ -107,11 +118,31 @@ export function DataTable({
   const keysRaw = collectKeys(rows, omitLower);
   const columns = resolveColumns(keysRaw, columnOrder);
 
+  const visibleKeys = rows.map((row, i) =>
+    getRowKey ? getRowKey(row, i) : i
+  );
+  const allVisibleSelected =
+    multiSelect &&
+    visibleKeys.length > 0 &&
+    visibleKeys.every((k) => selectedRowKeys?.has(k));
+
   return (
     <div className="data-table-wrap" style={{ maxHeight }}>
       <table className="data-table">
         <thead>
           <tr>
+            {multiSelect ? (
+              <th className="data-table-check-col">
+                <input
+                  type="checkbox"
+                  aria-label="全选当前表"
+                  checked={allVisibleSelected}
+                  onChange={() => {
+                    onToggleAllVisible?.(visibleKeys, !allVisibleSelected);
+                  }}
+                />
+              </th>
+            ) : null}
             {columns.map((c) => (
               <th key={c}>{c}</th>
             ))}
@@ -119,20 +150,42 @@ export function DataTable({
         </thead>
         <tbody>
           {rows.map((row, i) => {
-            const selected = selectedRowIndex != null && selectedRowIndex === i;
+            const rowKey = visibleKeys[i]!;
+            const selected = multiSelect
+              ? selectedRowKeys?.has(rowKey) === true
+              : selectedRowIndex != null && selectedRowIndex === i;
             const rowClass = [
-              onRowClick ? "clickable" : "",
+              onRowClick || multiSelect ? "clickable" : "",
               selected ? "selected" : "",
             ]
               .filter(Boolean)
               .join(" ");
             return (
             <tr
-              key={i}
+              key={String(rowKey)}
               className={rowClass || undefined}
               aria-selected={selected || undefined}
-              onClick={onRowClick ? () => onRowClick(row) : undefined}
+              onClick={
+                multiSelect
+                  ? () => onToggleRowKey?.(rowKey, row)
+                  : onRowClick
+                  ? () => onRowClick(row, i)
+                  : undefined
+              }
             >
+              {multiSelect ? (
+                <td
+                  className="data-table-check-col"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <input
+                    type="checkbox"
+                    aria-label="选择行"
+                    checked={selected}
+                    onChange={() => onToggleRowKey?.(rowKey, row)}
+                  />
+                </td>
+              ) : null}
               {columns.map((c) => (
                 <td
                   key={c}

@@ -38,13 +38,20 @@ import { datetimeLocalToIso } from "../utils/datetimeLocal";
 import { drillFromTree, storeDrillTab } from "../utils/drillAggregate";
 import {
   collectGoodBinNumbersFromJbRow,
-  collectGoodBinNumbersFromJbRows,
-  goodBinNumbersFromDetailRow,
   HARD_GOOD_BIN,
   JB_DETAIL_GOOD_BINS,
   JB_DETAIL_LIST_INDEX,
   parseBinLabelNumber,
 } from "../utils/infGoodBins";
+import {
+  buildInfDutCtxFromDetailListIndices,
+  buildInfDutCtxFromDrillBarKeys,
+  parseSlotFromDrillBarLabel,
+  sameDeviceLot,
+  waferSpecFromJbRow,
+  type InfDutAnchor,
+  type InfDutSelectionCtx,
+} from "../utils/infDutSelection";
 import {
   buildTree,
   computeYieldPct,
@@ -70,6 +77,7 @@ type FormState = {
   cardId: string;
   tstype: string;
   testerId: string;
+  bins: string;
   passId: string;
   meslot: string;
   testEndFrom: string;
@@ -85,6 +93,7 @@ const initialForm: FormState = {
   cardId: "",
   tstype: "",
   testerId: "",
+  bins: "",
   passId: "",
   meslot: "",
   testEndFrom: "",
@@ -101,6 +110,7 @@ function buildCoreParams(f: FormState): Record<string, string | number | undefin
     cardId:        f.cardId        || undefined,
     tstype:        f.tstype        || undefined,
     testerId:      f.testerId      || undefined,
+    bins:          f.bins          || undefined,
     passId:        f.passId        ? Number(f.passId) : undefined,
     meslot:        f.meslot        || undefined,
     testEndFrom:   datetimeLocalToIso(f.testEndFrom),
@@ -355,18 +365,6 @@ function drillFromJbListRows(
     .slice(0, 50);
 }
 
-function parseSlotFromDrillClick(
-  clickedKey: string,
-  groups: AggregateGroup[]
-): number | null {
-  const g = groups.find((x) => x.key === clickedKey);
-  if (g?.parts.slot != null && String(g.parts.slot).trim() !== "") {
-    const n = parseInt(String(g.parts.slot), 10);
-    if (Number.isFinite(n)) return n;
-  }
-  return parseSlotFromDrillBarLabel(clickedKey);
-}
-
 function lotYields(
   rows: InfcontrolLayerBinV3Row[]
 ): Array<{ lot: string; passId: string; slot: string; device: string; label: string; yieldPct: number }> {
@@ -464,29 +462,7 @@ function infcontrolTreeYieldExtra(
   );
 }
 
-type InfCtxData = {
-  device: string;
-  lot: string;
-  slot: number;
-  passIds: number[];
-  cardId?: string;
-  focusBin?: string;
-  goodBinNumbers: Set<number>;
-  /** 明细表行索引（list.rows 原始下标）；钻取打开时为 undefined */
-  detailRowIndex?: number;
-  /** DUT 面板锚点：显示在触发源下方 */
-  anchor: InfDutAnchor;
-};
-
-type InfCtx = InfCtxData | null;
-
-type JbChartBlockId = (typeof JB_CHART_BLOCK_ORDER)[number];
-
-type InfDutAnchor =
-  | { source: "detail" }
-  | { source: "lotYield" }
-  | { source: "binDist" }
-  | { source: "chartsGrid"; block: JbChartBlockId };
+type InfCtx = InfDutSelectionCtx | null;
 
 function infDutAnchorForParentDimKey(parentDimKey: string): InfDutAnchor | null {
   switch (parentDimKey) {
@@ -537,11 +513,10 @@ function InfDutAnchorRow({
   return (
     <div className="inf-dut-standalone-row">
       <InfDutDistPanel
+        wafers={infCtx.wafers}
         device={infCtx.device}
         lot={infCtx.lot}
-        slot={infCtx.slot}
-        passIds={infCtx.passIds}
-        cardId={infCtx.cardId}
+        selectionSummary={infCtx.selectionSummary}
         focusBin={infCtx.focusBin}
         goodBinNumbers={infCtx.goodBinNumbers}
         apiBase={apiBase}
@@ -557,82 +532,6 @@ function queryLotRequired(form: FormState): string | null {
   return lot || null;
 }
 
-type InfCtxForSlotOpts = {
-  device?: string;
-  /** 明细行点击时传入该行 LOT；钻取路径不传，须依赖查询区 Lot */
-  lot?: string;
-  passIds?: number[];
-  cardId?: string;
-  focusBin?: string;
-  detailRowIndex?: number;
-  binFilter?: string;
-  anchor: InfDutAnchor;
-  /** 明细行等附加良品 bin（如当前行 PASSBIN） */
-  extraGoodBinNumbers?: ReadonlySet<number>;
-};
-
-/** 按 slot 组装 INF DUT 上下文：明细行用 opts.lot，图表钻取用查询区 Lot。 */
-function buildInfCtxForSlot(
-  form: FormState,
-  listRows: InfcontrolLayerBinV3Row[] | undefined,
-  slot: number,
-  opts: InfCtxForSlotOpts
-): InfCtxData | null {
-  const lot = (opts.lot?.trim() || queryLotRequired(form)) ?? null;
-  if (!lot) return null;
-
-  let device = (opts.device ?? form.device.trim()) || "";
-  let passIds =
-    opts.passIds ??
-    (form.passId ? [Number(form.passId)] : [1, 3, 5]);
-  let cardId = opts.cardId ?? (form.cardId.trim() || undefined);
-
-  if (!device) {
-    const fromList = resolveDeviceLotFromListRows(
-      listRows,
-      slot,
-      opts.binFilter,
-      lot
-    );
-    if (!fromList) return null;
-    device = fromList.device;
-    if (opts.passIds == null && fromList.passIds) passIds = fromList.passIds;
-    if (!cardId && fromList.cardId) cardId = fromList.cardId;
-  }
-
-  const goodBinNumbers = collectGoodBinNumbersFromJbRows(
-    listRows,
-    device,
-    lot,
-    slot,
-    passIds
-  );
-  if (opts.extraGoodBinNumbers) {
-    for (const n of opts.extraGoodBinNumbers) goodBinNumbers.add(n);
-  }
-
-  return {
-    device,
-    lot,
-    slot,
-    passIds,
-    cardId,
-    focusBin: opts.focusBin,
-    goodBinNumbers,
-    detailRowIndex: opts.detailRowIndex,
-    anchor: opts.anchor,
-  };
-}
-
-/** DrillDownPanel 条形 click 传的是 y 轴文案（如 `Slot 5` 或 `LOT NF12615.1X · Slot 20 · Bin 4`）。 */
-function parseSlotFromDrillBarLabel(clickedKey: string): number | null {
-  const t = clickedKey.trim();
-  const m = /\bslot\s*(\d+)/i.exec(t);
-  if (m) return parseInt(m[1], 10);
-  const n = parseInt(t, 10);
-  return Number.isFinite(n) ? n : null;
-}
-
 /** 从 BIN 下钻到 slot 时按 lot+slot 聚合，条形上显示 LOT。 */
 function drillSubDimKeysForFetch(parentDimKey: string, subDim: string): string[] {
   const parts = subDim.split(",").map((s) => s.trim()).filter(Boolean);
@@ -644,75 +543,6 @@ function drillSubDimKeysForFetch(parentDimKey: string, subDim: string): string[]
 
 function normalizeBinToken(raw: string): string {
   return raw.replace(/^bin\s*/i, "").trim();
-}
-
-function rowMatchesBinFilter(row: InfcontrolLayerBinV3Row, binToken: string | undefined): boolean {
-  if (!binToken) return true;
-  for (const c of row.bins ?? []) {
-    if (String(c.n) === binToken && (c.value ?? 0) > 0 && !c.isGoodBin) return true;
-  }
-  return false;
-}
-
-/** 从明细行反查 device（lot 须与查询区填写的一致）。 */
-function resolveDeviceLotFromListRows(
-  rows: InfcontrolLayerBinV3Row[] | undefined,
-  slot: number,
-  binFilter?: string,
-  requiredLot?: string
-): Pick<InfCtxData, "device" | "lot" | "passIds" | "cardId"> | null {
-  if (!rows?.length) return null;
-  const binToken = binFilter ? normalizeBinToken(binFilter) : undefined;
-  const lotNeed = requiredLot?.trim();
-  for (const r of rows) {
-    if (Number(r.SLOT) !== slot) continue;
-    if (lotNeed && String(r.LOT ?? "").trim() !== lotNeed) continue;
-    if (!rowMatchesBinFilter(r, binToken)) continue;
-    const device = String(r.DEVICE ?? "").trim();
-    const lot = String(r.LOT ?? "").trim();
-    if (!device || !lot) continue;
-    const passIds =
-      r.PASSID !== undefined && r.PASSID !== null && Number.isFinite(Number(r.PASSID))
-        ? [Number(r.PASSID)]
-        : [1, 3, 5];
-    const cardId = String(r.CARDID ?? "").trim() || undefined;
-    return { device, lot, passIds, cardId };
-  }
-  return null;
-}
-
-function resolveInfCtxFromDrill(
-  parentDimKey: string,
-  parentDimVal: string,
-  subDim: string,
-  clickedKey: string,
-  form: FormState,
-  listRows: InfcontrolLayerBinV3Row[] | undefined,
-  anchor: InfDutAnchor,
-  drillGroups: AggregateGroup[]
-): InfCtxData | null {
-  if (!queryLotRequired(form)) return null;
-  if (subDim !== "slot") return null;
-  const slot = parseSlotFromDrillClick(clickedKey, drillGroups);
-  if (slot === null) return null;
-
-  const binFilter = parentDimKey === "bin" ? parentDimVal : undefined;
-  const focusBin =
-    parentDimKey === "bin" && parentDimVal
-      ? /^bin/i.test(parentDimVal)
-        ? parentDimVal.toLowerCase()
-        : `bin${normalizeBinToken(parentDimVal)}`
-      : undefined;
-
-  const deviceHint =
-    parentDimKey === "device" ? parentDimVal.trim() : form.device.trim() || undefined;
-
-  return buildInfCtxForSlot(form, listRows, slot, {
-    device: deviceHint,
-    binFilter,
-    focusBin,
-    anchor,
-  });
 }
 
 export function InfcontrolReport({ apiBase, listLimits }: Props) {
@@ -743,6 +573,13 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
   const [selectedDevice,   setSelectedDevice]   = useState<string | null>(null);
   const [selectedMask,     setSelectedMask]     = useState<string | null>(null);
   const [infCtx, setInfCtx] = useState<InfCtx>(null);
+  const [detailSelectedListIndices, setDetailSelectedListIndices] = useState<
+    Set<number>
+  >(() => new Set());
+  const [drillBarSelectedKeys, setDrillBarSelectedKeys] = useState<
+    Record<string, Set<string>>
+  >({});
+  const [selectionHint, setSelectionHint] = useState<string | null>(null);
   const [layoutEpoch, setLayoutEpoch] = useState(0);
 
   const resetReportLayout = useCallback(() => {
@@ -781,6 +618,9 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     setSelectedDevice(null);
     setSelectedMask(null);
     setInfCtx(null);
+    setDetailSelectedListIndices(new Set());
+    setDrillBarSelectedKeys({});
+    setSelectionHint(null);
     setErrorList(null);
     setErrorAgg(null);
     setLoadingList(false);
@@ -801,6 +641,17 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     ) => {
       const subDimKeys = drillSubDimKeysForFetch(parentDimKey, subDim);
       const listRows = (list?.rows ?? []) as InfcontrolLayerBinV3Row[];
+
+      setDrillBarSelectedKeys((prev) => ({
+        ...prev,
+        [parentDimKey]: new Set<string>(),
+      }));
+      const drillAnchorOnFetch = infDutAnchorForParentDimKey(parentDimKey);
+      if (drillAnchorOnFetch) {
+        setInfCtx((prev) =>
+          prev && infDutAnchorsMatch(prev.anchor, drillAnchorOnFetch) ? null : prev
+        );
+      }
 
       // ── Tab cache: reuse already-fetched results for the same bar + tab ──────
       const cached = drillCacheRef.current[parentDimKey];
@@ -964,6 +815,9 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     setAggDevice(null);
     setSelectedDevice(null);
     setInfCtx(null);
+    setDetailSelectedListIndices(new Set());
+    setDrillBarSelectedKeys({});
+    setSelectionHint(null);
 
     try {
       const res = await apiGetJson<InfcontrolCombinedResponse>(
@@ -1372,45 +1226,136 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     return mapped.map((m) => m.row);
   }, [list]);
 
-  /** 明细排序后，用 list 行号反查当前表中的选中行 */
-  const detailSelectedRowIndex = useMemo(() => {
-    if (infCtx?.detailRowIndex == null) return null;
-    const i = detailRows.findIndex(
-      (r) => Number(r[JB_DETAIL_LIST_INDEX]) === infCtx.detailRowIndex
-    );
-    return i >= 0 ? i : null;
-  }, [detailRows, infCtx?.detailRowIndex]);
+  const listRowsForInf = list?.rows as InfcontrolLayerBinV3Row[] | undefined;
+
+  const toggleDetailListKey = useCallback(
+    (listIdx: number) => {
+      const row = listRowsForInf?.[listIdx];
+      if (!row) return;
+      const spec = waferSpecFromJbRow(row);
+      if (!spec) return;
+
+      setDrillBarSelectedKeys({});
+      setDetailSelectedListIndices((prev) => {
+        const next = new Set(prev);
+        if (next.has(listIdx)) {
+          next.delete(listIdx);
+        } else {
+          if (next.size > 0) {
+            const firstIdx = [...next][0]!;
+            const firstRow = listRowsForInf?.[firstIdx];
+            const firstSpec = firstRow ? waferSpecFromJbRow(firstRow) : null;
+            if (firstSpec && !sameDeviceLot(firstSpec, spec)) {
+              setSelectionHint("仅可选同一 Device + LOT 的行");
+              return prev;
+            }
+          }
+          next.add(listIdx);
+        }
+        const ctx = buildInfDutCtxFromDetailListIndices(next, listRowsForInf, {
+          source: "detail",
+        });
+        setInfCtx(next.size > 0 ? ctx : null);
+        setSelectionHint(null);
+        return next;
+      });
+    },
+    [listRowsForInf]
+  );
+
+  const toggleDetailAllVisible = useCallback(
+    (keys: (string | number)[], select: boolean) => {
+      const indices = keys
+        .map((k) => Number(k))
+        .filter((n) => Number.isInteger(n));
+      if (!select) {
+        setDetailSelectedListIndices(new Set());
+        setInfCtx(null);
+        return;
+      }
+      if (!listRowsForInf?.length) return;
+      const next = new Set<number>();
+      let device = "";
+      let lot = "";
+      for (const idx of indices) {
+        const row = listRowsForInf[idx];
+        if (!row) continue;
+        const spec = waferSpecFromJbRow(row);
+        if (!spec) continue;
+        if (!device) {
+          device = spec.device;
+          lot = spec.lot;
+        } else if (!sameDeviceLot({ device, lot }, spec)) {
+          setSelectionHint("仅可选同一 Device + LOT 的行");
+          return;
+        }
+        next.add(idx);
+      }
+      setDrillBarSelectedKeys({});
+      setDetailSelectedListIndices(next);
+      const ctx = buildInfDutCtxFromDetailListIndices(next, listRowsForInf, {
+        source: "detail",
+      });
+      setInfCtx(ctx);
+      setSelectionHint(null);
+    },
+    [listRowsForInf]
+  );
+
+  const toggleDrillBarKey = useCallback(
+    (parentDimKey: string, drill: DrillState, key: string) => {
+      if (drill.subDim !== "slot") return;
+      if (!queryLotRequired(form)) {
+        setSelectionHint("查看 DUT 分布须先在查询条件填写 Lot");
+        return;
+      }
+      setDetailSelectedListIndices(new Set());
+      const cur = drillBarSelectedKeys[parentDimKey] ?? new Set<string>();
+      const next = new Set(cur);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      setDrillBarSelectedKeys((prev) => ({ ...prev, [parentDimKey]: next }));
+      const anchor =
+        infDutAnchorForParentDimKey(parentDimKey) ??
+        infDutAnchorFromDrill(drill);
+      const ctx = buildInfDutCtxFromDrillBarKeys({
+        parentDimKey: drill.parentDimKey,
+        parentDimVal: drill.parentDimVal,
+        subDim: drill.subDim,
+        selectedKeys: next,
+        drillGroups: drill.groups,
+        formLot: form.lot,
+        formDevice: form.device,
+        formPassId: form.passId,
+        listRows: listRowsForInf,
+        anchor,
+      });
+      setInfCtx(next.size > 0 ? ctx : null);
+      setSelectionHint(null);
+    },
+    [drillBarSelectedKeys, form, listRowsForInf]
+  );
 
   const chips = useMemo(() => activeChips(form, listLimits), [form, listLimits]);
   const hasData = !!(list || aggBin || aggCardType);
   const noTestEndFilter = !form.testEndFrom && !form.testEndTo;
 
-  const listRowsForInf = list?.rows as InfcontrolLayerBinV3Row[] | undefined;
-
-  const openInfFromDrill = useCallback(
-    (d: DrillState, clickedKey: string) => {
-      if (!queryLotRequired(form)) return;
-      const ctx = resolveInfCtxFromDrill(
-        d.parentDimKey,
-        d.parentDimVal,
-        d.subDim,
-        clickedKey,
-        form,
-        listRowsForInf,
-        infDutAnchorFromDrill(d),
-        d.groups
-      );
-      if (ctx) setInfCtx(ctx);
-    },
-    [form, listRowsForInf]
-  );
-
-  const closeInfDut = useCallback(() => setInfCtx(null), []);
+  const closeInfDut = useCallback(() => {
+    setInfCtx(null);
+    setDetailSelectedListIndices(new Set());
+    setDrillBarSelectedKeys({});
+    setSelectionHint(null);
+  }, []);
 
   /** 关闭下钻面板时，若 DUT 由该下钻打开则一并关闭 */
   const closeDrillPanel = useCallback((parentDimKey: string, before?: () => void) => {
     before?.();
     setDrills((prev) => {
+      const n = { ...prev };
+      delete n[parentDimKey];
+      return n;
+    });
+    setDrillBarSelectedKeys((prev) => {
       const n = { ...prev };
       delete n[parentDimKey];
       return n;
@@ -1525,7 +1470,10 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                   onSubDimChange={(d) =>
                     fetchDrill("lot", drills["lot"]!.parentDimVal, d, form)
                   }
-                  onBarClick={(key) => openInfFromDrill(drills["lot"]!, key)}
+                  multiSelect={drills["lot"]!.subDim === "slot"}
+                  selectedKeys={drillBarSelectedKeys["lot"]}
+                  onBarToggle={(key) => toggleDrillBarKey("lot", drills["lot"]!, key)}
+                  interactive={drills["lot"]!.subDim === "slot"}
                   onClose={() => closeDrillPanel("lot", () => setSelectedLotLabel(null))}
                 />
               ) : null
@@ -1595,7 +1543,12 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                       onSubDimChange={(d) =>
                         fetchDrill("device", drills["device"]!.parentDimVal, d, form)
                       }
-                      onBarClick={(key) => openInfFromDrill(drills["device"]!, key)}
+                      multiSelect={drills["device"]!.subDim === "slot"}
+                      selectedKeys={drillBarSelectedKeys["device"]}
+                      onBarToggle={(key) =>
+                        toggleDrillBarKey("device", drills["device"]!, key)
+                      }
+                      interactive={drills["device"]!.subDim === "slot"}
                       onClose={() => closeDrillPanel("device", () => setSelectedDevice(null))}
                     />
                   ) : null
@@ -1706,7 +1659,12 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                           onSubDimChange={(d) =>
                             fetchDrill("probeCardType", drills["probeCardType"]!.parentDimVal, d, form)
                           }
-                          onBarClick={(key) => openInfFromDrill(drills["probeCardType"]!, key)}
+                          multiSelect={drills["probeCardType"]!.subDim === "slot"}
+                          selectedKeys={drillBarSelectedKeys["probeCardType"]}
+                          onBarToggle={(key) =>
+                            toggleDrillBarKey("probeCardType", drills["probeCardType"]!, key)
+                          }
+                          interactive={drills["probeCardType"]!.subDim === "slot"}
                           onClose={() =>
                             closeDrillPanel("probeCardType", () => setSelectedCardType(null))
                           }
@@ -1760,15 +1718,26 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                           setSelectedSlot(params.name);
                           fetchDrill("slot", slotNum, "bin", form);
                           const slotN = parseSlotFromDrillBarLabel(params.name);
-                          if (slotN !== null) {
-                            const ctx = buildInfCtxForSlot(
-                              form,
-                              listRowsForInf,
-                              slotN,
-                              {
-                                anchor: { source: "chartsGrid", block: "jbSlot" },
-                              }
-                            );
+                          if (slotN !== null && queryLotRequired(form)) {
+                            setDetailSelectedListIndices(new Set());
+                            const barKey = params.name;
+                            const keys = new Set([barKey]);
+                            setDrillBarSelectedKeys((prev) => ({
+                              ...prev,
+                              slot: keys,
+                            }));
+                            const ctx = buildInfDutCtxFromDrillBarKeys({
+                              parentDimKey: "slot",
+                              parentDimVal: String(slotN),
+                              subDim: "slot",
+                              selectedKeys: keys,
+                              drillGroups: drills["slot"]?.groups ?? [],
+                              formLot: form.lot,
+                              formDevice: form.device,
+                              formPassId: form.passId,
+                              listRows: listRowsForInf,
+                              anchor: { source: "chartsGrid", block: "jbSlot" },
+                            });
                             if (ctx) setInfCtx(ctx);
                           }
                         },
@@ -1792,7 +1761,10 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                       onSubDimChange={(d) =>
                         fetchDrill("slot", drills["slot"]!.parentDimVal, d, form)
                       }
-                      onBarClick={(key) => openInfFromDrill(drills["slot"]!, key)}
+                      multiSelect={drills["slot"]!.subDim === "slot"}
+                      selectedKeys={drillBarSelectedKeys["slot"]}
+                      onBarToggle={(key) => toggleDrillBarKey("slot", drills["slot"]!, key)}
+                      interactive={drills["slot"]!.subDim === "slot"}
                       onClose={() => closeDrillPanel("slot", () => setSelectedSlot(null))}
                     />
                   ) : null
@@ -1877,13 +1849,27 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
             onClick={() => setShowDetail((s) => !s)}
           >
             <span style={{ fontSize: 10, opacity: 0.6 }}>{showDetail ? "▼" : "▶"}</span>
-            共 {list?.count ?? 0} 条（含 PROBECARDTYPE / Yield%）· 点击行查看 DUT 分布
+            共 {list?.count ?? 0} 条（含 PROBECARDTYPE / Yield%）· 勾选多行叠加 DUT 分布（须同一 Device + LOT）
+            {detailSelectedListIndices.size > 0 ? (
+              <span style={{ marginLeft: 8, color: "#58a6ff" }}>
+                已选 {detailSelectedListIndices.size} 行
+              </span>
+            ) : null}
           </div>
+          {selectionHint ? (
+            <p className="field-hint" style={{ color: "#f85149", margin: "0 0 8px" }}>
+              {selectionHint}
+            </p>
+          ) : null}
           {showDetail && (
             <DataTable
               rows={detailRows}
               maxHeight={400}
-              selectedRowIndex={detailSelectedRowIndex}
+              multiSelect
+              selectedRowKeys={detailSelectedListIndices}
+              getRowKey={(row) => Number(row[JB_DETAIL_LIST_INDEX])}
+              onToggleRowKey={(key) => toggleDetailListKey(Number(key))}
+              onToggleAllVisible={toggleDetailAllVisible}
               omitKeys={[JB_DETAIL_LIST_INDEX, JB_DETAIL_GOOD_BINS]}
               columnOrder={[
                 "TESTEND",
@@ -1895,27 +1881,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                 "PASSID",
                 "Yield%",
               ]}
-              onRowClick={(row) => {
-                const device = String(row["DEVICE"] ?? "").trim();
-                const lot    = String(row["LOT"]    ?? "").trim();
-                const slot   = parseInt(String(row["SLOT"]   ?? ""), 10);
-                const passId = parseInt(String(row["PASSID"] ?? ""), 10);
-                const cardId = String(row["CARDID"] ?? "").trim() || undefined;
-                if (device && lot && Number.isFinite(slot)) {
-                  const passIds = Number.isFinite(passId) ? [passId] : [1, 3, 5];
-                  const listIdx = Number(row[JB_DETAIL_LIST_INDEX]);
-                  const ctx = buildInfCtxForSlot(form, listRowsForInf, slot, {
-                    device,
-                    lot,
-                    passIds,
-                    cardId,
-                    detailRowIndex: Number.isInteger(listIdx) ? listIdx : undefined,
-                    anchor: { source: "detail" },
-                    extraGoodBinNumbers: goodBinNumbersFromDetailRow(row),
-                  });
-                  if (ctx) setInfCtx(ctx);
-                }
-              }}
             />
           )}
         </div>
@@ -1966,7 +1931,10 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                   onSubDimChange={(d) =>
                     fetchDrill("bin", drills["bin"]!.parentDimVal, d, form)
                   }
-                  onBarClick={(key) => openInfFromDrill(drills["bin"]!, key)}
+                  multiSelect={drills["bin"]!.subDim === "slot"}
+                  selectedKeys={drillBarSelectedKeys["bin"]}
+                  onBarToggle={(key) => toggleDrillBarKey("bin", drills["bin"]!, key)}
+                  interactive={drills["bin"]!.subDim === "slot"}
                   onClose={() => closeDrillPanel("bin", () => setSelectedBin(null))}
                 />
               ) : null
@@ -2014,10 +1982,14 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     showTree,
     list,
     detailRows,
-    detailSelectedRowIndex,
+    detailSelectedListIndices,
+    drillBarSelectedKeys,
+    selectionHint,
     showDetail,
     layoutEpoch,
-    openInfFromDrill,
+    toggleDetailListKey,
+    toggleDetailAllVisible,
+    toggleDrillBarKey,
     closeInfDut,
     closeDrillPanel,
     listRowsForInf,
@@ -2066,6 +2038,16 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
               />
             </label>
           ))}
+
+          <label>
+            <span>BIN 编号（逗号分隔）</span>
+            <input
+              type="text"
+              value={form.bins}
+              onChange={(e) => setField("bins", e.target.value)}
+              placeholder="8, 11, 131（BINn 列有 die）"
+            />
+          </label>
 
           <label>
             <span>Tester Type</span>

@@ -27,8 +27,13 @@ type Props = {
   onClose: () => void;
   /** Called when user clicks a bar — key is the group's key string */
   onBarClick?: (key: string) => void;
+  /** Toggle bar in multi-select mode */
+  onBarToggle?: (key: string) => void;
   /** Highlight this key as selected (deepened color) */
   selectedKey?: string | null;
+  /** Multi-select bar keys (checkbox-style toggle on click) */
+  selectedKeys?: ReadonlySet<string> | null;
+  multiSelect?: boolean;
   /** Side-by-side with parent chart (right column) vs stacked below */
   layout?: "below" | "side";
   /** Rendered at the bottom of this panel (e.g. DUT distribution after picking a probe card) */
@@ -78,7 +83,10 @@ export function DrillDownPanel({
   onSubDimChange,
   onClose,
   onBarClick,
+  onBarToggle,
   selectedKey,
+  selectedKeys,
+  multiSelect = false,
   layout = "below",
   footer,
   compact = false,
@@ -108,18 +116,25 @@ export function DrillDownPanel({
     series: [
       {
         type: "bar",
-        data: sorted.map((g) => ({
-          value: g.count,
-          itemStyle: {
-            color:
-              g.key === selectedKey
+        data: sorted.map((g) => {
+          const picked = multiSelect
+            ? selectedKeys?.has(g.key) === true
+            : g.key === selectedKey;
+          const anyPicked = multiSelect
+            ? (selectedKeys?.size ?? 0) > 0
+            : selectedKey != null;
+          return {
+            value: g.count,
+            itemStyle: {
+              color: picked
                 ? COL_PANEL_B
-                : selectedKey != null
+                : anyPicked
                 ? COL_PANEL_D
                 : COL_PANEL,
-            borderRadius: [0, 4, 4, 0],
-          },
-        })),
+              borderRadius: [0, 4, 4, 0],
+            },
+          };
+        }),
         label: {
           show: true,
           position: "right",
@@ -157,6 +172,11 @@ export function DrillDownPanel({
       >
         <span style={{ fontSize: 12, color: "#58a6ff", fontWeight: 600 }}>
           ↳ {title}
+          {multiSelect && (selectedKeys?.size ?? 0) > 0 ? (
+            <span style={{ marginLeft: 8, color: "#8b949e", fontWeight: 400 }}>
+              已选 {selectedKeys!.size} 项
+            </span>
+          ) : null}
         </span>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {subDimOptions.map((opt) => (
@@ -220,7 +240,15 @@ export function DrillDownPanel({
             option={option}
             height={drillBarChartHeight(sorted.length, 10, barHeightVariant)}
             onEvents={
-              onBarClick
+              multiSelect && onBarToggle
+                ? {
+                    click: (p: unknown) => {
+                      const idx = (p as { dataIndex?: number }).dataIndex;
+                      if (idx == null || idx < 0 || idx >= sorted.length) return;
+                      onBarToggle(sorted[idx]!.key);
+                    },
+                  }
+                : onBarClick
                 ? {
                     click: (p: unknown) => {
                       const idx = (p as { dataIndex?: number }).dataIndex;

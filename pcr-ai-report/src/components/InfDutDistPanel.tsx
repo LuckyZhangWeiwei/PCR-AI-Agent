@@ -7,17 +7,18 @@ import type { SiteBinByLotResponse, SiteBinPass } from "../api/types";
 import { DarkChart } from "./DarkChart";
 import { buildInfPath } from "../utils/buildInfPath";
 import { filterSiteBinPassBadOnly, goodBinNumbersKey, normalizeGoodBinSet, isGoodBinLabel } from "../utils/infGoodBins";
+import { mergeSiteBinPasses } from "../utils/mergeSiteBinPasses";
+import type { InfDutWaferSpec } from "../utils/infDutSelection";
 import {
   baseChartOption,
   chartAxisColor,
 } from "../theme/chartTheme";
 
 type Props = {
+  wafers: InfDutWaferSpec[];
   device: string;
   lot: string;
-  slot: number;
-  passIds: number[];
-  cardId?: string;
+  selectionSummary?: string;
   focusBin?: string;
   /** JB 行推导的良品 bin 编号；图中不展示这些 bin */
   goodBinNumbers?: ReadonlySet<number>;
@@ -459,12 +460,20 @@ function buildDutChartOption(
   };
 }
 
+function wafersFetchKey(wafers: InfDutWaferSpec[]): string {
+  return wafers
+    .map(
+      (w) =>
+        `${w.device}|${w.lot}|${w.slot}|${[...w.passIds].sort((a, b) => a - b).join(",")}`
+    )
+    .join(";");
+}
+
 export function InfDutDistPanel({
+  wafers,
   device,
   lot,
-  slot,
-  passIds,
-  cardId,
+  selectionSummary,
   focusBin,
   goodBinNumbers,
   apiBase,
@@ -472,39 +481,59 @@ export function InfDutDistPanel({
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<SiteBinByLotResponse | null>(null);
+  const [mergedPasses, setMergedPasses] = useState<SiteBinPass[] | null>(null);
+  const [fetchPaths, setFetchPaths] = useState<string[]>([]);
 
-  const infPath = buildInfPath(device, lot, slot);
+  const waferKey = wafersFetchKey(wafers);
 
   useEffect(() => {
     let cancelled = false;
+    if (wafers.length === 0) {
+      setLoading(false);
+      setError(null);
+      setMergedPasses(null);
+      setFetchPaths([]);
+      return;
+    }
+
     setLoading(true);
     setError(null);
-    setData(null);
+    setMergedPasses(null);
+    setFetchPaths(wafers.map((w) => buildInfPath(w.device, w.lot, w.slot)));
 
-    const params: Record<string, string | number | boolean | undefined | null> = {
-      infPath,
-      passId: passIds.join(","),
-    };
-
-    apiGetJson<SiteBinByLotResponse>(apiBase, SITE_BIN_BY_LOT_PATH, params)
-      .then((res) => {
-        if (!cancelled) setData(res);
-      })
-      .catch((e: unknown) => {
-        if (!cancelled)
+    void (async () => {
+      try {
+        const results = await Promise.all(
+          wafers.map((w) => {
+            const infPath = buildInfPath(w.device, w.lot, w.slot);
+            return apiGetJson<SiteBinByLotResponse>(apiBase, SITE_BIN_BY_LOT_PATH, {
+              infPath,
+              passId: w.passIds.join(","),
+            });
+          })
+        );
+        if (cancelled) return;
+        const passes = mergeSiteBinPasses(results.map((r) => r.passes));
+        setMergedPasses(passes);
+        setError(null);
+      } catch (e: unknown) {
+        if (!cancelled) {
           setError(e instanceof Error ? e.message : String(e));
-      })
-      .finally(() => {
+          setMergedPasses(null);
+        }
+      } finally {
         if (!cancelled) setLoading(false);
-      });
+      }
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [apiBase, infPath, passIds.join(",")]);
+  }, [apiBase, waferKey, wafers]);
 
-  const meta = `LOT ${lot} · Slot ${slot}${cardId ? ` · 卡 ${cardId}` : ""} · Device ${device}`;
+  const meta =
+    selectionSummary ??
+    `LOT ${lot} · ${wafers.length} 片 · Device ${device}`;
 
   return (
     <div className="inf-dut-dist-panel">
@@ -540,20 +569,24 @@ export function InfDutDistPanel({
       {!loading && error && (
         <div style={{ color: "#f85149", fontSize: 13 }}>
           <div>读取失败：{error}</div>
-          <div style={{ marginTop: 4, fontSize: 11, color: "#6e7681" }}>
-            路径：{infPath}
-          </div>
+          {fetchPaths.length > 0 && (
+            <div style={{ marginTop: 4, fontSize: 11, color: "#6e7681" }}>
+              {fetchPaths.map((p) => (
+                <div key={p}>{p}</div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
-      {!loading && !error && data && (
+      {!loading && !error && mergedPasses && (
         <div>
-          {data.passes.length === 0 && (
+          {mergedPasses.length === 0 && (
             <div style={{ color: "#8b949e", fontSize: 13 }}>
-              未找到匹配的 pass 数据（infPath: {infPath}）
+              未找到匹配的 pass 数据
             </div>
           )}
-          {data.passes.map((pass) => {
+          {mergedPasses.map((pass) => {
             const passBad = filterPassBadBinsOnly(pass, goodBinNumbers);
             return (
             <div key={pass.passId} style={{ marginBottom: 10 }}>
