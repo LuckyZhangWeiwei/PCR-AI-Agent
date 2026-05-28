@@ -46,6 +46,7 @@ import {
 import {
   buildInfDutCtxFromDetailListIndices,
   buildInfDutCtxFromDrillBarKeys,
+  normalizeBinToken,
   parseSlotFromDrillBarLabel,
   sameDeviceLot,
   waferSpecFromJbRow,
@@ -539,10 +540,6 @@ function drillSubDimKeysForFetch(parentDimKey: string, subDim: string): string[]
     return jbAggregateGroupBy("lot", "slot").split(",");
   }
   return jbAggregateGroupBy(...parts).split(",");
-}
-
-function normalizeBinToken(raw: string): string {
-  return raw.replace(/^bin\s*/i, "").trim();
 }
 
 export function InfcontrolReport({ apiBase, listLimits }: Props) {
@@ -1330,7 +1327,12 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         listRows: listRowsForInf,
         anchor,
       });
-      setInfCtx(next.size > 0 ? ctx : null);
+      if (next.size === 0) {
+        setInfCtx(null);
+      } else if (ctx !== null) {
+        setInfCtx(ctx);
+        // If ctx is null (e.g. listRows not yet loaded), leave the existing panel open.
+      }
       setSelectionHint(null);
     },
     [drillBarSelectedKeys, form, listRowsForInf]

@@ -529,7 +529,11 @@ export function InfDutDistPanel({
     return () => {
       cancelled = true;
     };
-  }, [apiBase, waferKey, wafers]);
+  // waferKey is derived entirely from wafers content, so listing wafers (an array reference)
+  // alongside waferKey is redundant and causes spurious re-fetches when the parent rebuilds
+  // the array with identical content (different reference, same waferKey).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiBase, waferKey]);
 
   const meta =
     selectionSummary ??

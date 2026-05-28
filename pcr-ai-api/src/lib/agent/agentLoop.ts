@@ -82,7 +82,9 @@ const ORPHAN_INVOKE_ARG_TAIL_RE =
 
 // GLM 5.x (e.g. zai-org/GLM-5.1 via SiliconFlow) embeds tool calls as:
 //   <tool_call>generate_chart<arg_key>chartType</arg_key><arg_value>pie</arg_value>…</tool_call>
-const GLM_TOOL_CALL_START_RE = /<tool_call>/i;
+// Require a letter/underscore immediately after the tag so that literal `<tool_call>` in
+// model prose (code examples, error messages) is not mistaken for an actual tool invocation.
+const GLM_TOOL_CALL_START_RE = /<tool_call>[a-zA-Z_]/;
 const GLM_TOOL_CALL_END_RE = /<\/tool_call>/i;
 const GLM_ARG_KEY_RE = /<arg_key>([\s\S]*?)<\/arg_key>/gi;
 const GLM_ARG_VALUE_RE = /<arg_value>([\s\S]*?)<\/arg_value>/gi;
@@ -104,31 +106,24 @@ export function parseGlmToolCallBody(block: string): {
     firstArgKey >= 0 ? inner.slice(0, firstArgKey) : inner.replace(/<[\s\S]*$/, "")
   ).trim();
 
-  const keys: string[] = [];
-  const vals: string[] = [];
-  let km: RegExpExecArray | null;
-  GLM_ARG_KEY_RE.lastIndex = 0;
-  while ((km = GLM_ARG_KEY_RE.exec(inner)) !== null) {
-    keys.push(km[1].trim());
-  }
-  GLM_ARG_VALUE_RE.lastIndex = 0;
-  while ((km = GLM_ARG_VALUE_RE.exec(inner)) !== null) {
-    vals.push(km[1].trim());
-  }
-
+  // Match each <arg_key>…</arg_key> paired with the <arg_value>…</arg_value> that follows it,
+  // avoiding the positional-zip misalignment that occurs when value content contains XML-like tags.
   const args: Record<string, unknown> = {};
-  for (let i = 0; i < keys.length; i++) {
-    const raw = vals[i] ?? "";
-    const t = raw.trim();
-    if (t.startsWith("{") || t.startsWith("[")) {
+  const pairRe = /<arg_key>([\s\S]*?)<\/arg_key>[\s\S]*?<arg_value>([\s\S]*?)<\/arg_value>/gi;
+  let km: RegExpExecArray | null;
+  while ((km = pairRe.exec(inner)) !== null) {
+    const key = km[1].trim();
+    if (!key) continue;
+    const raw = km[2].trim();
+    if (raw.startsWith("{") || raw.startsWith("[")) {
       try {
-        args[keys[i]] = JSON.parse(t) as unknown;
+        args[key] = JSON.parse(raw) as unknown;
         continue;
       } catch {
         /* keep string */
       }
     }
-    args[keys[i]] = raw;
+    args[key] = raw;
   }
   return { name, args };
 }

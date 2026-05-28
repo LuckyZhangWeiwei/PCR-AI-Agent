@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-05-28 — Code Review 修复（GLM 正则、DUT 面板、selectionSummary）
+
+**完成内容：**
+- `pcr-ai-api/src/lib/agent/agentLoop.ts`：GLM `<tool_call>` 正则改为 `/<tool_call>[a-zA-Z_]/`，要求函数名首字母紧跟标签，避免模型正文中的字面量 `<tool_call>` 触发流式截断（Fix 1）。`parseGlmToolCallBody` 改用单个配对正则代替两个独立循环做位置 zip，消除嵌套 XML 标签导致的 key/value 错位（Fix 4）。
+- `pcr-ai-report/src/reports/InfcontrolReport.tsx`：`toggleDrillBarKey` 中 `setInfCtx(next.size > 0 ? ctx : null)` 改为 if/else if，当 `ctx` 为 null 但用户有选中项时保留现有面板（Fix 2）；移除本地 `normalizeBinToken` 函数，改从 `infDutSelection` 导入（Fix 6）。
+- `pcr-ai-report/src/components/InfDutDistPanel.tsx`：useEffect 依赖数组移除冗余的 `wafers` 引用，只保留 `waferKey`，避免父组件重建数组时触发多余 HTTP 请求（Fix 3）。
+- `pcr-ai-report/src/utils/infDutSelection.ts`：两处 `selectionSummary` 均改用 `wafers.length` 替代 `indexList.length`/`keys.length`，显示实际解析成功的片数（Fix 5）；`normalizeBinToken` 改为导出函数（Fix 6）。
+- `docs/HANDOFF_CODE_REVIEW_2026_05_28.md`：新增，记录全部 6 项修复的根因、diff 和未修复项说明。
+
+**测试：** 176 个测试，0 失败（2 skipped）；前端 tsc + vite build 通过
+
+---
+
 ## 2026-05-27 — 下钻 tab 中移除 Mask 选项
 
 **完成内容：**

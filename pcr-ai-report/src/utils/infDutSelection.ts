@@ -129,7 +129,7 @@ export function buildInfDutCtxFromDetailListIndices(
     goodBinNumbers,
     detailListIndices: indexList,
     anchor,
-    selectionSummary: `${indexList.length} 行 · Slot ${slots}`,
+    selectionSummary: `${wafers.length} 片 · Slot ${slots}`,
   };
 }
 
@@ -155,7 +155,7 @@ export function parseSlotFromDrillClick(
   return null;
 }
 
-function normalizeBinToken(raw: string): string {
+export function normalizeBinToken(raw: string): string {
   return raw.replace(/^bin\s*/i, "").trim();
 }
 
@@ -260,6 +260,6 @@ export function buildInfDutCtxFromDrillBarKeys(
     goodBinNumbers,
     focusBin,
     anchor: opts.anchor,
-    selectionSummary: `${keys.length} 项 · Slot ${slots}`,
+    selectionSummary: `${wafers.length} 片 · Slot ${slots}`,
   };
 }
