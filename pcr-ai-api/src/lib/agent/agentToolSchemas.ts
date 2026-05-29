@@ -67,7 +67,7 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "query_jb_bins",
       description:
-        "查询 JB STAR Layer Bins 数据列表（INFCONTROL ⋈ INFLAYERBINLIST）。返回 recentLotsByTestEnd（含 cardIds/hasCardChangeInLot）、cardChangesBySlot（同 slot 多 CARDID=换卡）、bin10Vs66ByLot、slotBadBinsCompact（按 slot+cardId 分组）、slotYieldSummary、distinctSlots。rows 可能省略。问最近 lot 或 by lot BIN10 vs BIN66 须用本工具，禁止 aggregate_jb_bins 代替。",
+        "查询 JB STAR Layer Bins 数据列表（INFCONTROL ⋈ INFLAYERBINLIST）。返回 cardByPassId（各 pass 用卡）、cardChangesBySlotPass（仅同 slot+同 pass 多 CARDID=中途换卡）、recentLotsByTestEnd、bin10Vs66ByLot、slotBadBinsCompact（slot+passId+cardId）、slotYieldSummary、distinctSlots。rows 可能省略。",
       parameters: {
         type: "object",
         properties: {

@@ -15,15 +15,26 @@ export type AgentJbBinEntry = {
 
 export type SlotBadBinsCompactEntry = {
   slot: number;
-  /** 该行/段测试使用的探针卡；同 slot 多卡时会有多条记录 */
+  /** PASSID：sort1→1，sort2→3，sort3→5 */
+  passId: number;
+  /** 该行/段测试使用的探针卡 */
   cardId: string;
   badBins: AgentJbBinEntry[];
 };
 
-export type CardChangeBySlotEntry = {
+/** 中途换卡：同一 (slot, passId) 内出现多个 CARDID。不同 pass 用不同卡不算换卡。 */
+export type CardChangeBySlotPassEntry = {
   slot: number;
+  passId: number;
   cardIds: string[];
-  /** 同一片 wafer（slot）在返回行内出现多个不同 CARDID */
+  hasCardChange: boolean;
+};
+
+/** lot 返回行内各 pass 出现的 CARDID（跨 slot 汇总，用于 sort1/2/3 各用哪张卡） */
+export type CardByPassIdEntry = {
+  passId: number;
+  cardIds: string[];
+  /** 任一 (slot, passId) 组内是否中途换卡 */
   hasCardChange: boolean;
 };
 
@@ -32,7 +43,7 @@ export type RecentLotByTestEndEntry = {
   device: string;
   /** 该 lot 在返回行内全部不同的 CARDID（升序） */
   cardIds: string[];
-  /** 该 lot 是否曾换卡（cardIds.length > 1） */
+  /** 该 lot 是否在任一 (slot, passId) 内中途换卡（非「pass1 与 pass3 各用一卡」） */
   hasCardChangeInLot: boolean;
   /** 最近一条 TESTEND 行上的 CARDID（勿单独当作整 lot 唯一卡号） */
   cardId: string;
@@ -54,13 +65,16 @@ const BIN_SCHEMA_HINT =
   "每条: bin=BINDie编号(通常较小), dieCount=该BIN的die颗数(可很大); 禁止写成 BIN{dieCount} {bin}颗";
 
 const SLOT_BAD_BINS_COMPACT_GUIDE =
-  "slotBadBinsCompact：按 slot、cardId 分组（同 slot 不同 CARDID=中途换卡，禁止合并）。同 (slot,cardId) 内 INTERRUPT/续测行同 bin dieCount 相加。问「每片 BIN7 颗数」须按对应 cardId 读，勿依赖 rows。";
+  "slotBadBinsCompact：按 (slot, passId, cardId) 分组。仅同一 pass 同片多 CARDID=中途换卡；pass1 与 pass3 不同卡正常，禁止合并。同组内 INTERRUPT/续测行 dieCount 相加。";
 
-const CARD_CHANGES_BY_SLOT_GUIDE =
-  "cardChangesBySlot：同 slot 出现多个 CARDID 时 hasCardChange=true；结论须分卡列出，禁止写「整批统一一张卡」。";
+const CARD_CHANGES_BY_SLOT_PASS_GUIDE =
+  "cardChangesBySlotPass：仅当同一 (slot, passId) 多 CARDID 时 hasCardChange=true。勿把 pass1=8041-08 与 pass3=8041-05 写成「24 片中途换卡」；读 cardByPassId。";
+
+const CARD_BY_PASS_ID_GUIDE =
+  "cardByPassId：各 passId 在返回行内的 CARDID 集合。常温 pass1 与高温 pass3 各用一卡为正常；结论须按 pass 写清卡号。";
 
 const RECENT_LOTS_GUIDE =
-  "recentLotsByTestEnd：按 lot 取 MAX(TESTEND) 后降序，默认 top 5；含 cardIds 与 hasCardChangeInLot。cardId 仅为最近一行卡号，整 lot 以 cardIds 为准；禁止用 aggregate_jb_bins（聚合按坏 die 排序，不是测试时间）。";
+  "recentLotsByTestEnd：按 lot MAX(TESTEND) 降序 top5；hasCardChangeInLot 仅表示同 (slot,pass) 中途换卡，非多 pass 各一卡。cardIds 为行集内全部卡号；禁止用 aggregate 代替。";
 
 const BIN10_VS66_BY_LOT_GUIDE =
   "bin10Vs66ByLot：按 lot 汇总全部匹配行（跨 slot/pass 相加）的 BIN10 与 BIN66 dieCount 及 diff=bin10−bin66。问「by lot BIN10 是否多于 BIN66」时读此字段；禁止用 aggregate 表格里单列 BIN66 代表整 lot。";
@@ -76,29 +90,76 @@ function cardIdFromRow(row: Record<string, unknown>): string {
   return String(row["CARDID"] ?? row["cardid"] ?? "").trim();
 }
 
-/** 同 slot 内 CARDID 是否不一致（中途换卡）。 */
-export function buildCardChangesBySlot(
+function passIdFromRow(row: Record<string, unknown>): number {
+  const n = Number(row["PASSID"] ?? row["passId"] ?? row["passid"]);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function slotPassKey(slot: number, passId: number): string {
+  return `${slot}\0${passId}`;
+}
+
+/** 同一 (slot, passId) 内多 CARDID → 中途换卡。 */
+export function buildCardChangesBySlotPass(
   rows: Record<string, unknown>[]
-): CardChangeBySlotEntry[] {
-  const bySlot = new Map<number, Set<string>>();
+): CardChangeBySlotPassEntry[] {
+  const bySlotPass = new Map<string, Set<string>>();
   for (const row of rows) {
     const slot = Number(row["SLOT"] ?? row["slot"]);
     if (!Number.isFinite(slot) || slot <= 0) continue;
+    const passId = passIdFromRow(row);
     const cid = cardIdFromRow(row);
     if (!cid) continue;
-    if (!bySlot.has(slot)) bySlot.set(slot, new Set());
-    bySlot.get(slot)!.add(cid);
+    const key = slotPassKey(slot, passId);
+    if (!bySlotPass.has(key)) bySlotPass.set(key, new Set());
+    bySlotPass.get(key)!.add(cid);
   }
-  const out: CardChangeBySlotEntry[] = [];
-  for (const slot of [...bySlot.keys()].sort((a, b) => a - b)) {
-    const cardIds = [...bySlot.get(slot)!].sort((a, b) => a.localeCompare(b));
+  const out: CardChangeBySlotPassEntry[] = [];
+  for (const key of [...bySlotPass.keys()].sort()) {
+    const [slotStr, passStr] = key.split("\0");
+    const slot = Number(slotStr);
+    const passId = Number(passStr);
+    const cardIds = [...bySlotPass.get(key)!].sort((a, b) => a.localeCompare(b));
     out.push({
       slot,
+      passId,
       cardIds,
       hasCardChange: cardIds.length > 1,
     });
   }
-  return out;
+  return out.sort(
+    (a, b) => a.slot - b.slot || a.passId - b.passId
+  );
+}
+
+/** 各 passId 在返回行内出现的 CARDID（跨 slot）。 */
+export function buildCardByPassId(
+  rows: Record<string, unknown>[]
+): CardByPassIdEntry[] {
+  const slotPassChanges = buildCardChangesBySlotPass(rows);
+  const byPass = new Map<number, Set<string>>();
+  const passHasChange = new Map<number, boolean>();
+  for (const row of rows) {
+    const passId = passIdFromRow(row);
+    const cid = cardIdFromRow(row);
+    if (!cid) continue;
+    if (!byPass.has(passId)) byPass.set(passId, new Set());
+    byPass.get(passId)!.add(cid);
+  }
+  for (const { passId, hasCardChange } of slotPassChanges) {
+    if (hasCardChange) passHasChange.set(passId, true);
+  }
+  return [...byPass.keys()]
+    .sort((a, b) => a - b)
+    .map((passId) => ({
+      passId,
+      cardIds: [...byPass.get(passId)!].sort((a, b) => a.localeCompare(b)),
+      hasCardChange: passHasChange.get(passId) ?? false,
+    }));
+}
+
+function lotHasMidRunCardChange(rows: Record<string, unknown>[]): boolean {
+  return buildCardChangesBySlotPass(rows).some((e) => e.hasCardChange);
 }
 
 /** 按 lot 聚合最近 TESTEND，降序取 topN（用于「7747-01 最近五个 lot」类问题）。 */
@@ -150,7 +211,7 @@ export function buildRecentLotsByTestEnd(
       return {
         ...rest,
         cardIds,
-        hasCardChangeInLot: cardIds.length > 1,
+        hasCardChangeInLot: lotHasMidRunCardChange(rows),
         cardId: rest.cardId || (cardIds[cardIds.length - 1] ?? ""),
       };
     });
@@ -223,36 +284,42 @@ export function normalizeBinsForAgent(bins: unknown): AgentJbBinEntry[] {
   return out;
 }
 
-/** 按 (slot, cardId) 汇总坏 bin（同 slot 换卡不合并）。 */
+/** 按 (slot, passId, cardId) 汇总坏 bin。 */
 export function buildSlotBadBinsCompact(
   rows: Record<string, unknown>[]
 ): SlotBadBinsCompactEntry[] {
-  const bySlotCard = new Map<string, Map<number, number>>();
-  const slotCardOrder: Array<{ slot: number; cardId: string }> = [];
+  const byKey = new Map<string, Map<number, number>>();
+  const order: Array<{ slot: number; passId: number; cardId: string }> = [];
   for (const row of rows) {
     const slot = Number(row["SLOT"] ?? row["slot"]);
     if (!Number.isFinite(slot) || slot <= 0) continue;
+    const passId = passIdFromRow(row);
     const cardId = cardIdFromRow(row) || "(unknown)";
-    const key = `${slot}\0${cardId}`;
-    if (!bySlotCard.has(key)) {
-      bySlotCard.set(key, new Map());
-      slotCardOrder.push({ slot, cardId });
+    const key = `${slot}\0${passId}\0${cardId}`;
+    if (!byKey.has(key)) {
+      byKey.set(key, new Map());
+      order.push({ slot, passId, cardId });
     }
-    const binMap = bySlotCard.get(key)!;
+    const binMap = byKey.get(key)!;
     const all = normalizeBinsForAgent(row["bins"]);
     for (const { bin, dieCount, isGoodBin } of all) {
       if (isGoodBin) continue;
       binMap.set(bin, (binMap.get(bin) ?? 0) + dieCount);
     }
   }
-  slotCardOrder.sort((a, b) => a.slot - b.slot || a.cardId.localeCompare(b.cardId));
+  order.sort(
+    (a, b) =>
+      a.slot - b.slot ||
+      a.passId - b.passId ||
+      a.cardId.localeCompare(b.cardId)
+  );
   const out: SlotBadBinsCompactEntry[] = [];
-  for (const { slot, cardId } of slotCardOrder) {
-    const binMap = bySlotCard.get(`${slot}\0${cardId}`)!;
+  for (const { slot, passId, cardId } of order) {
+    const binMap = byKey.get(`${slot}\0${passId}\0${cardId}`)!;
     const badBins: AgentJbBinEntry[] = [...binMap.entries()]
       .sort((a, b) => a[0] - b[0])
       .map(([bin, dieCount]) => ({ bin, dieCount, isGoodBin: false }));
-    out.push({ slot, cardId, badBins });
+    out.push({ slot, passId, cardId, badBins });
   }
   return out;
 }
@@ -282,7 +349,8 @@ export function wrapJbQueryResultForAgent(
   const distinctSlots = [...slotSet].sort((a, b) => a - b);
   const slotYieldSummary = buildSlotYieldSummary(rows);
   const slotBadBinsCompact = buildSlotBadBinsCompact(rows);
-  const cardChangesBySlot = buildCardChangesBySlot(rows);
+  const cardChangesBySlotPass = buildCardChangesBySlotPass(rows);
+  const cardByPassId = buildCardByPassId(rows);
   const recentLotsByTestEnd = buildRecentLotsByTestEnd(rows, 5);
   const bin10Vs66ByLot = buildBin10Vs66ByLot(rows);
   const distinctLotCount = new Set(
@@ -294,7 +362,8 @@ export function wrapJbQueryResultForAgent(
     _binFieldGuide: BIN_SCHEMA_HINT,
     _slotYieldGuide: slotYieldSummaryFieldGuide(),
     _slotBadBinsCompactGuide: SLOT_BAD_BINS_COMPACT_GUIDE,
-    _cardChangesBySlotGuide: CARD_CHANGES_BY_SLOT_GUIDE,
+    _cardChangesBySlotPassGuide: CARD_CHANGES_BY_SLOT_PASS_GUIDE,
+    _cardByPassIdGuide: CARD_BY_PASS_ID_GUIDE,
     _recentLotsGuide: RECENT_LOTS_GUIDE,
     _bin10Vs66ByLotGuide: BIN10_VS66_BY_LOT_GUIDE,
     count: rows.length,
@@ -302,7 +371,8 @@ export function wrapJbQueryResultForAgent(
     distinctLotCount,
     recentLotsByTestEnd,
     bin10Vs66ByLot,
-    cardChangesBySlot,
+    cardChangesBySlotPass,
+    cardByPassId,
     slotYieldSummary,
     slotBadBinsCompact,
     rows: formatJbRowsForAgent(rows),
@@ -323,17 +393,17 @@ function fitsLimit(obj: unknown, maxChars: number): string | null {
   return null;
 }
 
-/** "slot:cardId" → { bin号字符串: dieCount }；同 slot 多卡不覆盖。 */
+/** "slot:passId:cardId" → { bin号字符串: dieCount }。 */
 export function buildBinBySlotMap(
   compact: SlotBadBinsCompactEntry[]
 ): Record<string, Record<string, number>> {
   const out: Record<string, Record<string, number>> = {};
-  for (const { slot, cardId, badBins } of compact) {
+  for (const { slot, passId, cardId, badBins } of compact) {
     const m: Record<string, number> = {};
     for (const { bin, dieCount } of badBins) {
       if (dieCount > 0) m[String(bin)] = dieCount;
     }
-    out[`${slot}:${cardId}`] = m;
+    out[`${slot}:${passId}:${cardId}`] = m;
   }
   return out;
 }
@@ -374,7 +444,7 @@ export function serializeJbQueryResultForAgent(
   withoutRows["rowsOmitted"] = true;
   withoutRows["rowCount"] = rowCount;
   withoutRows["_rowsNote"] =
-    "明细 rows 已省略以控制体积；请用 recentLotsByTestEnd、cardChangesBySlot、bin10Vs66ByLot、slotBadBinsCompact、binBySlot、slotYieldSummary、distinctSlots";
+    "明细 rows 已省略以控制体积；请用 recentLotsByTestEnd、cardByPassId、cardChangesBySlotPass、bin10Vs66ByLot、slotBadBinsCompact、binBySlot、slotYieldSummary、distinctSlots";
 
   const slim = fitsLimit(withoutRows, maxChars);
   if (slim) return slim;
@@ -382,7 +452,8 @@ export function serializeJbQueryResultForAgent(
   const ultra: Record<string, unknown> = {
     _binFieldGuide: wrapped["_binFieldGuide"],
     _slotBadBinsCompactGuide: wrapped["_slotBadBinsCompactGuide"],
-    _cardChangesBySlotGuide: wrapped["_cardChangesBySlotGuide"],
+    _cardChangesBySlotPassGuide: wrapped["_cardChangesBySlotPassGuide"],
+    _cardByPassIdGuide: wrapped["_cardByPassIdGuide"],
     _recentLotsGuide: wrapped["_recentLotsGuide"],
     _bin10Vs66ByLotGuide: wrapped["_bin10Vs66ByLotGuide"],
     _rowsNote: withoutRows["_rowsNote"],
@@ -392,7 +463,8 @@ export function serializeJbQueryResultForAgent(
     distinctSlots: wrapped["distinctSlots"],
     distinctLotCount: wrapped["distinctLotCount"],
     recentLotsByTestEnd: wrapped["recentLotsByTestEnd"],
-    cardChangesBySlot: wrapped["cardChangesBySlot"],
+    cardChangesBySlotPass: wrapped["cardChangesBySlotPass"],
+    cardByPassId: wrapped["cardByPassId"],
     bin10Vs66ByLot: wrapped["bin10Vs66ByLot"],
     binBySlot: compact ? buildBinBySlotMap(compact) : {},
     slotYieldSummary: yieldSummary

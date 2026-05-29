@@ -1,7 +1,7 @@
-# AI Agent 交接：JB 同 slot 中途换卡（CARDID）
+# AI Agent 交接：JB 中途换卡（CARDID × passId）
 
-**日期：** 2026-05-29  
-**背景：** Agent 回答 lot **DR45459.1A** 时写「整批 5 片 wafer 统一探针卡 6093-01」，仅依据 `recentLotsByTestEnd` 最近 TESTEND 行的 `cardId`，未识别同 slot 多行 **CARDID** 不同（中途换卡）。用户规则：**同一 slot 若 CARDID 列不同 = 中途换卡**；坏 bin 与 INF DUT 须挂到对应卡，禁止跨卡合并。
+**日期：** 2026-05-29（修订：同 pass 才算换卡）  
+**背景：** Agent 将 **pass1 用 8041-08、pass3 用 8041-05** 误判为「24 片 wafer 均在测试中途换卡」。用户规则：**中途换卡** = **同一 pass、同一片 wafer（slot）** 用了 **不同 CARDID**；**不同 pass 用不同卡** 属于正常流程，**不算**换卡。
 
 ---
 
@@ -9,50 +9,48 @@
 
 | 场景 | 规则 |
 | --- | --- |
-| **换卡判定** | 同一 **(lot, slot)** 在 `query_jb_bins` 返回的多行中，**CARDID**（trim 后）若出现 **≥2 个不同值** → 该 slot **中途换卡**（与 INTERRUPT/续测无关，只看 CARDID） |
-| **坏 bin** | 按 **(slot, cardId)** 分别汇总；同 (slot, cardId) 内 INTERRUPT/续测行仍 **同 bin dieCount 相加** |
-| **INF DUT** | `query_inf_site_bin_by_dut` 的 **cardId** 必须与 **该段 JB 行** 的 CARDID 一致；换卡后须 **分卡** 再调 INF |
-| **禁止** | 用 `recentLotsByTestEnd.cardId`（仅最近 TESTEND 一行）推断「整 lot / 整批统一一张卡」 |
-| **lot 级** | `recentLotsByTestEnd.cardIds` 为返回行集内该 lot 全部不同 CARDID；`hasCardChangeInLot: true` 表示 lot 内曾出现多张卡（可能不同 slot 各用一卡，也可能同 slot 换卡） |
+| **中途换卡** | 同一 **(slot, passId)** 在 `query_jb_bins` 返回行内 **CARDID**（trim）出现 **≥2 个不同值** |
+| **正常（非换卡）** | **pass1（sort1/常温）** 与 **pass3（sort2/高温）** 各用一张卡，例如 pass1=**8041-08**、pass3=**8041-05** — **禁止**写成「整批中途换卡」或把两 pass 的卡号对调 |
+| **坏 bin** | 按 **(slot, passId, cardId)** 读 `slotBadBinsCompact`；同组内 INTERRUPT/续测行 dieCount 相加 |
+| **INF DUT** | `query_inf_site_bin_by_dut` 的 **passId + cardId** 须与 **该段 JB 行** 一致 |
+| **禁止** | 用「同 slot 多 CARDID」「`cardIds.length > 1`」单独判定换卡 |
 
-**与中断续测区分：** INTERRUPT / PASSNUM / TESTEND 拆半片见 [`HANDOFF_JB_INTERRUPT_YIELD.md`](HANDOFF_JB_INTERRUPT_YIELD.md)。换卡与半片可并存：先按 CARDID 分段，再在每段内按中断规则看良率。
+**典型误判（勿重复）：**
+
+> ❌ 「所有 24 片 wafer 均在测试中途换卡（前 18 片从 8041-05 换成 8041-08…）」  
+> ✅ **常温 pass1**：**8041-08**；**高温 pass3**：**8041-05**（不同 pass 各一卡，**无**同 pass 中途换卡，除非 `cardChangesBySlotPass` 有 `hasCardChange:true`）
+
+**与中断续测：** 先按 **(slot, passId)** 看换卡，再在同一 (slot, passId, cardId) 段内按 INTERRUPT/PASSNUM 拆半片 → [`HANDOFF_JB_INTERRUPT_YIELD.md`](HANDOFF_JB_INTERRUPT_YIELD.md)。
 
 ---
 
 ## 2. `query_jb_bins` 工具回传字段
 
-**文件：** `pcr-ai-api/src/lib/agent/agentJbBinFormat.ts` → `wrapJbQueryResultForAgent`
+**文件：** `pcr-ai-api/src/lib/agent/agentJbBinFormat.ts`
 
-| 字段 | 形状 / 说明 |
+| 字段 | 说明 |
 | --- | --- |
-| **`cardChangesBySlot`** | `[{ slot, cardIds[], hasCardChange }]` — 快速列出哪些片换卡 |
-| **`slotBadBinsCompact`** | `[{ slot, cardId, badBins[] }]` — **按 (slot, cardId) 分组**，同 slot 多卡为多条 |
-| **`recentLotsByTestEnd`** | 每 lot：`cardIds[]`、`hasCardChangeInLot`、`cardId`（最近一行）、`testEnd`、… |
-| **`binBySlot`** | 体积降级时：`{ "slot:cardId": { "7": 124 } }`（键含卡号，同 slot 不覆盖） |
-| **`_cardChangesBySlotGuide`** 等 | 与上表对应的 `_…Guide` 字符串，供模型读 |
-
-**序列化：** `serializeJbQueryResultForAgent` 超限时仍保留 `cardChangesBySlot`、`recentLotsByTestEnd`、`slotBadBinsCompact`（或 `binBySlot`）。
+| **`cardByPassId`** | `[{ passId, cardIds[], hasCardChange }]` — 各 sort/pass 用了哪些卡（跨 slot 汇总） |
+| **`cardChangesBySlotPass`** | `[{ slot, passId, cardIds[], hasCardChange }]` — **仅** `hasCardChange:true` 为中途换卡 |
+| **`slotBadBinsCompact`** | `[{ slot, passId, cardId, badBins[] }]` |
+| **`recentLotsByTestEnd`** | `hasCardChangeInLot` = 是否存在任一 (slot,pass) 中途换卡（**非**多 pass 各一卡） |
+| **`binBySlot`** | 降级键：`"slot:passId:cardId"` → `{ "7": 124 }` |
 
 ---
 
 ## 3. Agent prompt / schema
 
-| 文件 | 改动 |
-| --- | --- |
-| **`agentPrompt.ts`** | 层级图改为 lot → slot → CARDID；换卡、BIN、INF 分卡规则；`recentLotsByTestEnd` 以 **cardIds** 为准 |
-| **`agentToolSchemas.ts`** | `query_jb_bins` description 列出 `cardChangesBySlot`、按 slot+cardId 的 compact |
+- **`agentPrompt.ts`**：中途换卡定义、8041-08/8041-05 反例、读 `cardByPassId`  
+- **`agentToolSchemas.ts`**：`query_jb_bins` 描述同步  
 
 ---
 
-## 4. 已知未改范围（勿误以为已分卡）
+## 4. 已知未改范围
 
-| 字段 / 能力 | 现状 |
+| 字段 | 现状 |
 | --- | --- |
-| **`bin10Vs66ByLot`** | 仍按 **lot** 跨 slot、**跨 CARDID** 相加 BIN10/BIN66 |
-| **`slotYieldSummary`** | 仍按 **(slot, passId)** 良率，**未**按 cardId 拆段 |
-| **`buildBinTotalsByLot`** | 同上，lot 级坏 bin 合计 |
-
-若用户问「某 lot 在某张卡上的 BIN10 vs BIN66」，应用 **`query_jb_bins(cardId=…, lot=…)`** 或看 **`slotBadBinsCompact`** / **`rows`**，不要单独信 `bin10Vs66ByLot` 在换卡 lot 上的含义。
+| **`bin10Vs66ByLot`** | 仍 lot 级跨 pass、跨卡合计 |
+| **`slotYieldSummary`** | 仍 (slot, passId) 良率，未按 cardId 拆段 |
 
 ---
 
@@ -60,48 +58,30 @@
 
 ```bash
 cd pcr-ai-api
-npm ci
-npm test                    # 含 test/agentJbBinFormat.test.ts
-npm run typecheck
-npm run build
-npm run pm2:reload          # 生产
+npm test -- test/agentJbBinFormat.test.ts
+npm run typecheck && npm run build && npm run pm2:reload
 ```
 
-**单测要点（`agentJbBinFormat.test.ts`）：**
+**单测：**
 
-- 同 slot 两 CARDID → `slotBadBinsCompact` 两条、不合并 dieCount  
-- `buildCardChangesBySlot` → `hasCardChange: true`  
-- 同 lot 两 CARDID → `recentLotsByTestEnd[0].cardIds` 含两张、`hasCardChangeInLot: true`  
-- `serializeJbQueryResultForAgent` 降级 → `binBySlot["23:8041-05"]`
-
-**联调示例：**
-
-```http
-POST /api/v4/agent/chat
-# 或直连列表
-GET /api/v4/infcontrol-layer-bins/v4?lot=DR45459.1A&limit=200
-```
-
-核对：同 slot 各行 **CARDID** 是否一致；工具 JSON 中 **`cardChangesBySlot`** 与 **`slotBadBinsCompact[].cardId`**。
+- 同 (slot, passId) 两 CARDID → `hasCardChange: true`  
+- 同 slot、pass1=8041-08、pass3=8041-05 → `hasCardChange: false`，`cardByPassId` 两条  
 
 ---
 
 ## 6. 源码索引
 
-| 文件 | 职责 |
+| 文件 | 函数 |
 | --- | --- |
-| `pcr-ai-api/src/lib/agent/agentJbBinFormat.ts` | `buildCardChangesBySlot`、`buildSlotBadBinsCompact`、`buildRecentLotsByTestEnd`、`buildBinBySlotMap` |
-| `pcr-ai-api/src/lib/agent/agentPrompt.ts` | 探针卡层级、INF 前置、最近 lot 读法 |
-| `pcr-ai-api/src/lib/agent/agentToolSchemas.ts` | `query_jb_bins` 工具描述 |
-| `pcr-ai-api/test/agentJbBinFormat.test.ts` | 回归 |
-
-**相关：** [`HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md`](HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md)（逐片 BIN 体积）、[`HANDOFF_JB_INTERRUPT_YIELD.md`](HANDOFF_JB_INTERRUPT_YIELD.md)（半片良率）、[`SITE_BIN_BY_LOT_INTEGRATION.md`](SITE_BIN_BY_LOT_INTEGRATION.md)（INF DUT）。
+| `agentJbBinFormat.ts` | `buildCardChangesBySlotPass`、`buildCardByPassId`、`buildSlotBadBinsCompact` |
+| `agentPrompt.ts` | 换卡 + pass 规则 |
+| `test/agentJbBinFormat.test.ts` | 回归 |
 
 ---
 
-## 7. Agent 结论模板（换卡 lot）
+## 7. Agent 结论模板
 
-> Lot **{lot}** 在返回数据中出现探针卡：**{cardIds 列表}**（`hasCardChangeInLot` / 按 slot：`cardChangesBySlot`）。  
-> **Slot {n}**：{卡 A} … / {卡 B} …（坏 bin 与 DUT 分卡写，勿写「整批统一 {单卡}」）。
-
-逐行核对：读工具 **`rows`** 每行的 **CARDID、TESTEND、PASSNUM、PASSTYPE**。
+> **常温 sort1（passId=1）**：探针卡 **8041-08**  
+> **高温 sort2（passId=3）**：探针卡 **8041-05**  
+> （不同 pass 各用一卡，**不属于**中途换卡。）  
+> 若 `cardChangesBySlotPass` 存在 `hasCardChange:true`：列出 **slot X、passId Y** 从卡 A 换到卡 B。

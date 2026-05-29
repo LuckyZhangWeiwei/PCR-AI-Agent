@@ -2,7 +2,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildBin10Vs66ByLot,
-  buildCardChangesBySlot,
+  buildCardByPassId,
+  buildCardChangesBySlotPass,
   buildRecentLotsByTestEnd,
   buildSlotBadBinsCompact,
   formatJbRowsForAgent,
@@ -117,6 +118,7 @@ describe("agentJbBinFormat", () => {
     assert.deepEqual(compact, [
       {
         slot: 23,
+        passId: 0,
         cardId: "(unknown)",
         badBins: [
           { bin: 3, dieCount: 5, isGoodBin: false },
@@ -125,21 +127,24 @@ describe("agentJbBinFormat", () => {
       },
       {
         slot: 24,
+        passId: 0,
         cardId: "(unknown)",
         badBins: [{ bin: 7, dieCount: 134, isGoodBin: false }],
       },
     ]);
   });
 
-  it("buildSlotBadBinsCompact does not merge different CARDID on same slot", () => {
+  it("buildSlotBadBinsCompact does not merge different CARDID on same slot and pass", () => {
     const rows = [
       {
         SLOT: 1,
+        PASSID: 1,
         CARDID: "6093-01",
         bins: [{ n: 7, value: 10, isGoodBin: false }],
       },
       {
         SLOT: 1,
+        PASSID: 1,
         CARDID: "6095-02",
         bins: [{ n: 7, value: 20, isGoodBin: false }],
       },
@@ -147,18 +152,49 @@ describe("agentJbBinFormat", () => {
     assert.deepEqual(buildSlotBadBinsCompact(rows), [
       {
         slot: 1,
+        passId: 1,
         cardId: "6093-01",
         badBins: [{ bin: 7, dieCount: 10, isGoodBin: false }],
       },
       {
         slot: 1,
+        passId: 1,
         cardId: "6095-02",
         badBins: [{ bin: 7, dieCount: 20, isGoodBin: false }],
       },
     ]);
-    assert.deepEqual(buildCardChangesBySlot(rows), [
-      { slot: 1, cardIds: ["6093-01", "6095-02"], hasCardChange: true },
+    assert.deepEqual(buildCardChangesBySlotPass(rows), [
+      { slot: 1, passId: 1, cardIds: ["6093-01", "6095-02"], hasCardChange: true },
     ]);
+  });
+
+  it("different passId with different CARDID is not mid-run card change", () => {
+    const rows = [
+      {
+        SLOT: 1,
+        PASSID: 1,
+        CARDID: "8041-08",
+        LOT: "L1",
+        bins: [{ n: 7, value: 10, isGoodBin: false }],
+      },
+      {
+        SLOT: 1,
+        PASSID: 3,
+        CARDID: "8041-05",
+        LOT: "L1",
+        bins: [{ n: 7, value: 20, isGoodBin: false }],
+      },
+    ] as Record<string, unknown>[];
+    assert.deepEqual(buildCardChangesBySlotPass(rows), [
+      { slot: 1, passId: 1, cardIds: ["8041-08"], hasCardChange: false },
+      { slot: 1, passId: 3, cardIds: ["8041-05"], hasCardChange: false },
+    ]);
+    assert.deepEqual(buildCardByPassId(rows), [
+      { passId: 1, cardIds: ["8041-08"], hasCardChange: false },
+      { passId: 3, cardIds: ["8041-05"], hasCardChange: false },
+    ]);
+    const [lot] = buildRecentLotsByTestEnd(rows, 5);
+    assert.equal(lot!.hasCardChangeInLot, false);
   });
 
   it("wrapJbQueryResultForAgent includes slotBadBinsCompact guide", () => {
@@ -208,12 +244,13 @@ describe("agentJbBinFormat", () => {
     ]);
   });
 
-  it("buildRecentLotsByTestEnd lists all cardIds when lot changed probe card", () => {
+  it("buildRecentLotsByTestEnd hasCardChangeInLot only for same (slot,pass) multi CARDID", () => {
     const rows = [
       {
         LOT: "DR45459.1A",
         DEVICE: "WA02N27G",
         CARDID: "6093-01",
+        PASSID: 1,
         TESTEND: "2026-05-29T15:04:11.000Z",
         SLOT: 5,
       },
@@ -221,13 +258,14 @@ describe("agentJbBinFormat", () => {
         LOT: "DR45459.1A",
         DEVICE: "WA02N27G",
         CARDID: "6095-02",
+        PASSID: 3,
         TESTEND: "2026-05-28T10:00:00.000Z",
         SLOT: 1,
       },
     ] as Record<string, unknown>[];
     const [lot] = buildRecentLotsByTestEnd(rows, 5);
     assert.equal(lot!.lot, "DR45459.1A");
-    assert.equal(lot!.hasCardChangeInLot, true);
+    assert.equal(lot!.hasCardChangeInLot, false);
     assert.deepEqual(lot!.cardIds, ["6093-01", "6095-02"]);
     assert.equal(lot!.cardId, "6093-01");
   });
@@ -328,7 +366,7 @@ describe("agentJbBinFormat", () => {
       );
     } else {
       assert.equal(Object.keys(binBySlot).length, 30);
-      assert.equal(binBySlot["23:8041-05"]?.["7"], 55);
+      assert.equal(binBySlot["23:1:8041-05"]?.["7"], 55);
     }
   });
 });

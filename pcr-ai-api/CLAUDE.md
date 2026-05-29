@@ -22,7 +22,7 @@
 | 1d | [`../docs/HANDOFF_SITE_BIN_BY_LOT_AGG.md`](../docs/HANDOFF_SITE_BIN_BY_LOT_AGG.md) | **Lot/Device 聚合交接**：`topN` 最新 lot、`TESTEND` 窗、`siteBinByLotDeviceTopN.ts` / `siteBinByLotTestEndWindow.ts`、Git 纪要 |
 | 1d | [`../docs/HANDOFF_JB_INTERRUPT_YIELD.md`](../docs/HANDOFF_JB_INTERRUPT_YIELD.md) | **JB 中断 slot 良率**：`slotYieldSummary` 半片字段、整片正片规则、Agent 输出顺序（整片→前半→后半，0% 必写） |
 | 1e | [`../docs/HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md`](../docs/HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md) | **Agent JB 逐片 BIN + 工具结果体积**：`slotBadBinsCompact` / `binBySlot`、`toolResultMaxChars`（Settings 默认 12000） |
-| 1e2 | [`../docs/HANDOFF_AGENT_JB_PROBE_CARD_CHANGE.md`](../docs/HANDOFF_AGENT_JB_PROBE_CARD_CHANGE.md) | **Agent JB 同 slot 换卡**：`cardChangesBySlot`、`recentLotsByTestEnd.cardIds`、BIN/INF 分卡 |
+| 1e2 | [`../docs/HANDOFF_AGENT_JB_PROBE_CARD_CHANGE.md`](../docs/HANDOFF_AGENT_JB_PROBE_CARD_CHANGE.md) | **Agent JB 中途换卡**：仅同 **(slot, passId)** 多 CARDID；`cardByPassId`（pass1≠pass3 用不同卡为正常） |
 | 1f | [`../docs/HANDOFF_AGENT_GENERATE_CHART.md`](../docs/HANDOFF_AGENT_GENERATE_CHART.md) | **Agent generate_chart**：GLM `<tool_call>` 解析、空参合并、`inferGenerateChartArgsFromHistory`（DUT 占比 pie） |
 | 2 | [`docs/API_V3.md`](docs/API_V3.md) | **v3 列表**完整 SQL（由 `npm run docs:api-v3` 从 `dist` 再生） |
 | 3 | [`.env.example`](.env.example) | 环境变量与 Dummy 开关说明 |
@@ -266,9 +266,9 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
    - **`agentPrompt.ts`** 专节「按 lot 对比两个 BIN」；**`agentToolSchemas.ts`** 同步。
    - **单次 `query_jb_bins` limit≤200**：`bin10Vs66ByLot` 仅覆盖返回行内 lot 子集；全卡对比见交接 **§9.1**（v4 `groupBy=bin` aggregate）。
    - 交接 [`../docs/HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md`](../docs/HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md) **§9**；回归 **`test/agentJbBinFormat.test.ts`**。
-18. **Agent JB 同 slot 换卡 CARDID（2026-05-29）**：
-   - **现象**：lot 回答「整批统一一张探针卡」，忽略同 slot 多行 CARDID 不同。
-   - **改后**：**`cardChangesBySlot`**、**`slotBadBinsCompact`** 按 **(slot, cardId)**、**`recentLotsByTestEnd.cardIds`** / **`hasCardChangeInLot`**；**`binBySlot`** 键 **`slot:cardId`**。
+18. **Agent JB 中途换卡 CARDID × passId（2026-05-29）**：
+   - **现象**：将 pass1=8041-08 与 pass3=8041-05 误判为「24 片中途换卡」；或忽略同 (slot,pass) 换卡。
+   - **改后**：**`cardChangesBySlotPass`**（仅同 slot+同 pass 多 CARDID）、**`cardByPassId`**、**`slotBadBinsCompact`** 含 **passId**；**`binBySlot`** 键 **`slot:passId:cardId`**。
    - **交接**：[`../docs/HANDOFF_AGENT_JB_PROBE_CARD_CHANGE.md`](../docs/HANDOFF_AGENT_JB_PROBE_CARD_CHANGE.md)。回归 **`test/agentJbBinFormat.test.ts`**。
 19. **Agent generate_chart 空参数 / DUT 占比图（2026-05-28）**：
    - **现象**：`generate_chart` 报错「收到参数键: (空)」；用户要 dut2 占比 pie。
