@@ -6,7 +6,6 @@ import {
   isInterruptPasstype,
   passNumFromJbRow,
   slotYieldSummaryFieldGuide,
-  splitPassGroupIntoHalves,
   type SlotYieldSummaryEntry,
 } from "../jbYieldCalc.js";
 
@@ -144,9 +143,10 @@ export function buildCardChangesBySlotPass(
     const { cardIds: cardSet, group } = bySlotPass.get(key)!;
     const cardIds = [...cardSet].sort((a, b) => a.localeCompare(b));
     const hasCardChange = cardIds.length > 1;
-    const hasTestInterrupt = hasCardChange
-      ? groupHasExplicitTestInterrupt(group)
-      : splitPassGroupIntoHalves(group).segmented;
+    // Fix: always use groupHasExplicitTestInterrupt (INTERRUPT row or PASSNUM increase).
+    // splitPassGroupIntoHalves.segmented fires on any 2+ TEST rows at the same PASSNUM,
+    // producing false hasTestInterrupt:true on normal multi-row groups with no card change.
+    const hasTestInterrupt = groupHasExplicitTestInterrupt(group);
     const item: CardChangeBySlotPassEntry = {
       slot,
       passId,
@@ -201,7 +201,7 @@ export function buildRecentLotsByTestEnd(
 ): RecentLotByTestEndEntry[] {
   const byLot = new Map<
     string,
-    RecentLotByTestEndEntry & { _testEndMs: number; _cardIdSet: Set<string> }
+    RecentLotByTestEndEntry & { _testEndMs: number; _cardIdSet: Set<string>; _initialized: boolean; _lotRows: Record<string, unknown>[] }
   >();
   for (const row of rows) {
     const lot = String(row["LOT"] ?? row["lot"] ?? "").trim();
@@ -219,13 +219,19 @@ export function buildRecentLotsByTestEnd(
         testEnd: null,
         _testEndMs: 0,
         _cardIdSet: new Set(),
+        _initialized: false,
+        _lotRows: [],
       };
       byLot.set(lot, entry);
     }
     if (cid) entry._cardIdSet.add(cid);
+    entry._lotRows.push(row);
     const teRaw = row["TESTEND"] ?? row["testEnd"];
     const testEnd = teRaw != null && teRaw !== "" ? String(teRaw) : null;
-    if (!entry._testEndMs || ms > entry._testEndMs) {
+    // Fix: use _initialized flag so null-TESTEND rows (ms=0) only set values on
+    // the first row — preventing subsequent null-TESTEND rows from overwriting.
+    if (!entry._initialized || (ms > 0 && ms > entry._testEndMs)) {
+      entry._initialized = true;
       const tester = String(row["TESTERID"] ?? row["testerId"] ?? "").trim();
       entry.device = String(row["DEVICE"] ?? row["device"] ?? "").trim() || entry.device;
       entry.cardId = cid;
@@ -239,11 +245,12 @@ export function buildRecentLotsByTestEnd(
     .slice(0, topN)
     .map((e) => {
       const cardIds = [...e._cardIdSet].sort((a, b) => a.localeCompare(b));
-      const { _testEndMs: _omitMs, _cardIdSet: _omitSet, ...rest } = e;
+      const { _testEndMs: _omitMs, _cardIdSet: _omitSet, _initialized: _omitInit, _lotRows: _omitLotRows, ...rest } = e;
       return {
         ...rest,
         cardIds,
-        hasCardChangeInLot: lotHasMidRunCardChange(rows),
+        // Fix: pass only this lot's rows so multi-lot queries don't contaminate each other.
+        hasCardChangeInLot: lotHasMidRunCardChange(_omitLotRows),
         cardId: rest.cardId || (cardIds[cardIds.length - 1] ?? ""),
       };
     });

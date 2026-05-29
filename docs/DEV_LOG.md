@@ -2,6 +2,18 @@
 
 ---
 
+## 2026-05-29 — Code Review 修复（JB 换卡检测三项 Bug）
+
+**完成内容：**
+- `pcr-ai-api/src/lib/agent/agentJbBinFormat.ts`：修复 `buildRecentLotsByTestEnd` 中 `hasCardChangeInLot` 多 lot 污染——原代码 `lotHasMidRunCardChange(rows)` 扫描全量 rows，任何一个 lot 换卡就让所有 lot 都被标记 `true`；改为在积累阶段每个 lot entry 收集 `_lotRows`，map 时仅传当前 lot 的行。
+- `pcr-ai-api/src/lib/agent/agentJbBinFormat.ts`：修复 `buildCardChangesBySlotPass` 中 `hasTestInterrupt` 误报——`hasCardChange=false` 时原用 `splitPassGroupIntoHalves(group).segmented`，该函数对任意 2+ TEST 行（同 PASSNUM）均返回 `segmented:true`，导致正常多行测试被标为中断；两个分支统一改为 `groupHasExplicitTestInterrupt(group)`（仅检测 INTERRUPT 行和 PASSNUM 递增），并移除不再需要的 `splitPassGroupIntoHalves` import。
+- `pcr-ai-api/src/lib/agent/agentJbBinFormat.ts`：修复 null TESTEND 时最后行覆盖问题——`!entry._testEndMs` 在 ms=0 时永远为 true，使每行都覆盖 cardId/device（last-row-wins）；改用 `_initialized` 标志，首行无条件设置，后续行需 `ms > 0 && ms > entry._testEndMs` 才覆盖，恢复旧代码 first-row-wins 语义。
+- `pcr-ai-api/test/agentJbBinFormat.test.ts`：新增三条回归测试覆盖上述三个 bug。
+
+**测试：** 183 个测试，0 失败
+
+---
+
 ## 2026-05-28 — Code Review 修复（GLM 正则、DUT 面板、selectionSummary）
 
 **完成内容：**

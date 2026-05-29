@@ -301,6 +301,46 @@ describe("agentJbBinFormat", () => {
     assert.equal(lot!.cardId, "6093-01");
   });
 
+  it("buildRecentLotsByTestEnd hasCardChangeInLot is per-lot, not contaminated by other lots", () => {
+    // Bug regression: lotHasMidRunCardChange(rows) used to scan ALL rows, so any lot
+    // with a card change would set hasCardChangeInLot=true for every lot in the result.
+    const rows = [
+      // Lot A: same slot+pass, two different CARDIDs → mid-run card change
+      { LOT: "A", SLOT: 1, PASSID: 1, CARDID: "6093-01", PASSTYPE: "INTERRUPT", TESTEND: "2026-05-29T10:00:00.000Z", bins: [] },
+      { LOT: "A", SLOT: 1, PASSID: 1, CARDID: "6095-02", PASSTYPE: "TEST",      TESTEND: "2026-05-29T11:00:00.000Z", bins: [] },
+      // Lot B: single card, no change
+      { LOT: "B", SLOT: 1, PASSID: 1, CARDID: "7747-01", PASSTYPE: "TEST",      TESTEND: "2026-05-28T10:00:00.000Z", bins: [] },
+    ] as Record<string, unknown>[];
+    const result = buildRecentLotsByTestEnd(rows, 5);
+    const lotA = result.find((x) => x.lot === "A")!;
+    const lotB = result.find((x) => x.lot === "B")!;
+    assert.equal(lotA.hasCardChangeInLot, true, "lot A should have card change");
+    assert.equal(lotB.hasCardChangeInLot, false, "lot B must NOT be contaminated by lot A");
+  });
+
+  it("buildRecentLotsByTestEnd uses first-row values when all TESTEND are null", () => {
+    // Bug regression: !entry._testEndMs was always true when ms=0, so every row
+    // overwrote cardId/device — last-row-wins instead of first-row-wins.
+    const rows = [
+      { LOT: "X", DEVICE: "D1", CARDID: "first-card", PASSTYPE: "TEST", bins: [] },
+      { LOT: "X", DEVICE: "D2", CARDID: "second-card", PASSTYPE: "TEST", bins: [] },
+    ] as Record<string, unknown>[];
+    const [lot] = buildRecentLotsByTestEnd(rows, 5);
+    assert.equal(lot!.cardId, "first-card", "first row should win when TESTEND is absent");
+  });
+
+  it("buildCardChangesBySlotPass hasTestInterrupt false for normal multi-TEST same-PASSNUM group", () => {
+    // Bug regression: splitPassGroupIntoHalves.segmented returns true for 2+ TEST rows
+    // at the same PASSNUM even with no interrupt, causing a false hasTestInterrupt.
+    const rows = [
+      { SLOT: 3, PASSID: 1, CARDID: "7747-01", PASSTYPE: "TEST", PASSNUM: 1, bins: [] },
+      { SLOT: 3, PASSID: 1, CARDID: "7747-01", PASSTYPE: "TEST", PASSNUM: 1, bins: [] },
+    ] as Record<string, unknown>[];
+    const [entry] = buildCardChangesBySlotPass(rows);
+    assert.equal(entry!.hasCardChange, false);
+    assert.equal(entry!.hasTestInterrupt, false, "normal multi-TEST rows must not be flagged as interrupted");
+  });
+
   it("wrapJbQueryResultForAgent includes recentLotsByTestEnd", () => {
     const out = wrapJbQueryResultForAgent([
       { LOT: "A", DEVICE: "D", CARDID: "7747-01", TESTEND: "2026-05-01T00:00:00.000Z", SLOT: 1, bins: [] },
