@@ -10,6 +10,7 @@
 | 场景 | 规则 |
 | --- | --- |
 | **中途换卡** | 同一 **(slot, passId)** 在 `query_jb_bins` 返回行内 **CARDID**（trim）出现 **≥2 个不同值** |
+| **换卡必有中断** | 同 pass、同 wafer 一旦发生中途换卡，**一定有**该层测试中断（`PASSTYPE=INTERRUPT` 和/或续测 `PASSNUM`/多行）；Agent 须**同时**写换卡前后卡号与中断/续测，并对照 `hasTestInterrupt`、`slotYieldSummary` |
 | **正常（非换卡）** | **pass1（sort1/常温）** 与 **pass3（sort2/高温）** 各用一张卡，例如 pass1=**8041-08**、pass3=**8041-05** — **禁止**写成「整批中途换卡」或把两 pass 的卡号对调 |
 | **坏 bin** | 按 **(slot, passId, cardId)** 读 `slotBadBinsCompact`；同组内 INTERRUPT/续测行 dieCount 相加 |
 | **INF DUT** | `query_inf_site_bin_by_dut` 的 **passId + cardId** 须与 **该段 JB 行** 一致 |
@@ -31,7 +32,7 @@
 | 字段 | 说明 |
 | --- | --- |
 | **`cardByPassId`** | `[{ passId, cardIds[], hasCardChange }]` — 各 sort/pass 用了哪些卡（跨 slot 汇总） |
-| **`cardChangesBySlotPass`** | `[{ slot, passId, cardIds[], hasCardChange }]` — **仅** `hasCardChange:true` 为中途换卡 |
+| **`cardChangesBySlotPass`** | 含 `hasTestInterrupt`；`hasCardChange:true` 时应有中断；`cardChangeWithoutInterrupt:true` 表示多卡但未检出中断行（可能 limit 缺行） |
 | **`slotBadBinsCompact`** | `[{ slot, passId, cardId, badBins[] }]` |
 | **`recentLotsByTestEnd`** | `hasCardChangeInLot` = 是否存在任一 (slot,pass) 中途换卡（**非**多 pass 各一卡） |
 | **`binBySlot`** | 降级键：`"slot:passId:cardId"` → `{ "7": 124 }` |
@@ -64,7 +65,8 @@ npm run typecheck && npm run build && npm run pm2:reload
 
 **单测：**
 
-- 同 (slot, passId) 两 CARDID → `hasCardChange: true`  
+- 同 (slot, passId) 两 CARDID + INTERRUPT 行 → `hasCardChange` 与 `hasTestInterrupt` 均为 true  
+- 同 (slot, passId) 两 CARDID 无 INTERRUPT → `cardChangeWithoutInterrupt: true`  
 - 同 slot、pass1=8041-08、pass3=8041-05 → `hasCardChange: false`，`cardByPassId` 两条  
 
 ---
@@ -84,4 +86,4 @@ npm run typecheck && npm run build && npm run pm2:reload
 > **常温 sort1（passId=1）**：探针卡 **8041-08**  
 > **高温 sort2（passId=3）**：探针卡 **8041-05**  
 > （不同 pass 各用一卡，**不属于**中途换卡。）  
-> 若 `cardChangesBySlotPass` 存在 `hasCardChange:true`：列出 **slot X、passId Y** 从卡 A 换到卡 B。
+> 若 `cardChangesBySlotPass` 存在 `hasCardChange:true`：列出 **slot X、passId Y** 测试**中断**后从卡 A 换到卡 B 续测（须与 `hasTestInterrupt` / `slotYieldSummary` 一致）。

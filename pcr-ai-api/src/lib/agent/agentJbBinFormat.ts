@@ -3,7 +3,10 @@
 
 import {
   buildSlotYieldSummary,
+  isInterruptPasstype,
+  passNumFromJbRow,
   slotYieldSummaryFieldGuide,
+  splitPassGroupIntoHalves,
   type SlotYieldSummaryEntry,
 } from "../jbYieldCalc.js";
 
@@ -28,6 +31,12 @@ export type CardChangeBySlotPassEntry = {
   passId: number;
   cardIds: string[];
   hasCardChange: boolean;
+  /** 该 (slot,passId) 组内是否有测试中断/续测（INTERRUPT、PASSNUM 递增或同 PASSNUM 多行） */
+  hasTestInterrupt: boolean;
+  /**
+   * 业务上换卡必伴随中断；为 true 表示数据里有多卡但未检出中断（可能 limit 截断缺行）
+   */
+  cardChangeWithoutInterrupt?: boolean;
 };
 
 /** lot 返回行内各 pass 出现的 CARDID（跨 slot 汇总，用于 sort1/2/3 各用哪张卡） */
@@ -68,7 +77,7 @@ const SLOT_BAD_BINS_COMPACT_GUIDE =
   "slotBadBinsCompact：按 (slot, passId, cardId) 分组。仅同一 pass 同片多 CARDID=中途换卡；pass1 与 pass3 不同卡正常，禁止合并。同组内 INTERRUPT/续测行 dieCount 相加。";
 
 const CARD_CHANGES_BY_SLOT_PASS_GUIDE =
-  "cardChangesBySlotPass：仅当同一 (slot, passId) 多 CARDID 时 hasCardChange=true。勿把 pass1=8041-08 与 pass3=8041-05 写成「24 片中途换卡」；读 cardByPassId。";
+  "cardChangesBySlotPass：仅同一 (slot,passId) 多 CARDID=中途换卡；业务上换卡必有测试中断(hasTestInterrupt)。hasCardChange 时须同时写中断/续测与前后卡号，读 slotYieldSummary。cardChangeWithoutInterrupt=true 表示缺 INTERRUPT 行。";
 
 const CARD_BY_PASS_ID_GUIDE =
   "cardByPassId：各 passId 在返回行内的 CARDID 集合。常温 pass1 与高温 pass3 各用一卡为正常；结论须按 pass 写清卡号。";
@@ -99,33 +108,56 @@ function slotPassKey(slot: number, passId: number): string {
   return `${slot}\0${passId}`;
 }
 
-/** 同一 (slot, passId) 内多 CARDID → 中途换卡。 */
+/** 换卡场景须能看到的「测试中断」：INTERRUPT 行和/或 PASSNUM 递增（不含仅同 PASSNUM 多行 TEST）。 */
+function groupHasExplicitTestInterrupt(
+  group: Record<string, unknown>[]
+): boolean {
+  if (group.some(isInterruptPasstype)) return true;
+  if (group.length < 2) return false;
+  const passNums = group.map(passNumFromJbRow);
+  return Math.max(...passNums) > Math.min(...passNums);
+}
+
+/** 同一 (slot, passId) 内多 CARDID → 中途换卡；换卡组内应能检出测试中断。 */
 export function buildCardChangesBySlotPass(
   rows: Record<string, unknown>[]
 ): CardChangeBySlotPassEntry[] {
-  const bySlotPass = new Map<string, Set<string>>();
+  const bySlotPass = new Map<string, { cardIds: Set<string>; group: Record<string, unknown>[] }>();
   for (const row of rows) {
     const slot = Number(row["SLOT"] ?? row["slot"]);
     if (!Number.isFinite(slot) || slot <= 0) continue;
     const passId = passIdFromRow(row);
     const cid = cardIdFromRow(row);
-    if (!cid) continue;
     const key = slotPassKey(slot, passId);
-    if (!bySlotPass.has(key)) bySlotPass.set(key, new Set());
-    bySlotPass.get(key)!.add(cid);
+    if (!bySlotPass.has(key)) {
+      bySlotPass.set(key, { cardIds: new Set(), group: [] });
+    }
+    const entry = bySlotPass.get(key)!;
+    entry.group.push(row);
+    if (cid) entry.cardIds.add(cid);
   }
   const out: CardChangeBySlotPassEntry[] = [];
   for (const key of [...bySlotPass.keys()].sort()) {
     const [slotStr, passStr] = key.split("\0");
     const slot = Number(slotStr);
     const passId = Number(passStr);
-    const cardIds = [...bySlotPass.get(key)!].sort((a, b) => a.localeCompare(b));
-    out.push({
+    const { cardIds: cardSet, group } = bySlotPass.get(key)!;
+    const cardIds = [...cardSet].sort((a, b) => a.localeCompare(b));
+    const hasCardChange = cardIds.length > 1;
+    const hasTestInterrupt = hasCardChange
+      ? groupHasExplicitTestInterrupt(group)
+      : splitPassGroupIntoHalves(group).segmented;
+    const item: CardChangeBySlotPassEntry = {
       slot,
       passId,
       cardIds,
-      hasCardChange: cardIds.length > 1,
-    });
+      hasCardChange,
+      hasTestInterrupt,
+    };
+    if (hasCardChange && !hasTestInterrupt) {
+      item.cardChangeWithoutInterrupt = true;
+    }
+    out.push(item);
   }
   return out.sort(
     (a, b) => a.slot - b.slot || a.passId - b.passId

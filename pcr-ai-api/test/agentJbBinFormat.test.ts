@@ -140,12 +140,14 @@ describe("agentJbBinFormat", () => {
         SLOT: 1,
         PASSID: 1,
         CARDID: "6093-01",
+        PASSTYPE: "INTERRUPT",
         bins: [{ n: 7, value: 10, isGoodBin: false }],
       },
       {
         SLOT: 1,
         PASSID: 1,
         CARDID: "6095-02",
+        PASSTYPE: "TEST",
         bins: [{ n: 7, value: 20, isGoodBin: false }],
       },
     ] as Record<string, unknown>[];
@@ -164,8 +166,25 @@ describe("agentJbBinFormat", () => {
       },
     ]);
     assert.deepEqual(buildCardChangesBySlotPass(rows), [
-      { slot: 1, passId: 1, cardIds: ["6093-01", "6095-02"], hasCardChange: true },
+      {
+        slot: 1,
+        passId: 1,
+        cardIds: ["6093-01", "6095-02"],
+        hasCardChange: true,
+        hasTestInterrupt: true,
+      },
     ]);
+  });
+
+  it("flags cardChangeWithoutInterrupt when multi CARDID but no interrupt rows", () => {
+    const rows = [
+      { SLOT: 2, PASSID: 1, CARDID: "A-01", PASSTYPE: "TEST", bins: [] },
+      { SLOT: 2, PASSID: 1, CARDID: "B-02", PASSTYPE: "TEST", bins: [] },
+    ] as Record<string, unknown>[];
+    const [entry] = buildCardChangesBySlotPass(rows);
+    assert.equal(entry!.hasCardChange, true);
+    assert.equal(entry!.hasTestInterrupt, false);
+    assert.equal(entry!.cardChangeWithoutInterrupt, true);
   });
 
   it("different passId with different CARDID is not mid-run card change", () => {
@@ -186,8 +205,20 @@ describe("agentJbBinFormat", () => {
       },
     ] as Record<string, unknown>[];
     assert.deepEqual(buildCardChangesBySlotPass(rows), [
-      { slot: 1, passId: 1, cardIds: ["8041-08"], hasCardChange: false },
-      { slot: 1, passId: 3, cardIds: ["8041-05"], hasCardChange: false },
+      {
+        slot: 1,
+        passId: 1,
+        cardIds: ["8041-08"],
+        hasCardChange: false,
+        hasTestInterrupt: false,
+      },
+      {
+        slot: 1,
+        passId: 3,
+        cardIds: ["8041-05"],
+        hasCardChange: false,
+        hasTestInterrupt: false,
+      },
     ]);
     assert.deepEqual(buildCardByPassId(rows), [
       { passId: 1, cardIds: ["8041-08"], hasCardChange: false },
