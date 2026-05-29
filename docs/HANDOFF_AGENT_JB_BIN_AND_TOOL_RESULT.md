@@ -27,10 +27,11 @@
 
 | 字段 | 用途 |
 | --- | --- |
-| **`recentLotsByTestEnd`** | 每 lot 取 MAX(TESTEND) 降序 top5（「某卡最近 N 个 lot」） |
-| **`bin10Vs66ByLot`** | 每 lot 汇总 BIN10 / BIN66 / diff / bin10GtBin66（by lot 两 bin 对比） |
-| **`slotBadBinsCompact`** | `[{ slot, badBins: [{ bin, dieCount }] }]`，按 slot 升序；同 slot 跨 INTERRUPT/续测行 **dieCount 相加** |
-| **`binBySlot`** | 体积仍超限时由 `serializeJbQueryResultForAgent` 降级：`{ "23": { "7": 124 } }` |
+| **`recentLotsByTestEnd`** | 每 lot MAX(TESTEND) 降序 top5；含 **`cardIds`** / **`hasCardChangeInLot`**（`cardId` 仅为最近一行，见换卡交接） |
+| **`bin10Vs66ByLot`** | 每 lot 汇总 BIN10 / BIN66 / diff / bin10GtBin66（by lot 两 bin 对比；换卡 lot 仍为跨卡合计） |
+| **`slotBadBinsCompact`** | `[{ slot, cardId, badBins }]`，按 **(slot, cardId)** 分组；同 slot 不同 CARDID **不合并**（换卡见 [`HANDOFF_AGENT_JB_PROBE_CARD_CHANGE.md`](HANDOFF_AGENT_JB_PROBE_CARD_CHANGE.md)） |
+| **`cardChangesBySlot`** | `[{ slot, cardIds, hasCardChange }]` — 同 slot 多 CARDID 即换卡 |
+| **`binBySlot`** | 体积仍超限时降级：`{ "23:6093-01": { "7": 124 } }`（键为 `slot:cardId`） |
 | **`distinctSlots`** | 去重 slot 列表（枚举 wafer 片数） |
 | **`slotYieldSummary`** | 整片/中断良率（原有） |
 | **`rowsOmitted`** | 为控体积省略明细 `rows` 时为 `true`，**不影响**上述摘要完整性 |

@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildBin10Vs66ByLot,
+  buildCardChangesBySlot,
   buildRecentLotsByTestEnd,
   buildSlotBadBinsCompact,
   formatJbRowsForAgent,
@@ -116,6 +117,7 @@ describe("agentJbBinFormat", () => {
     assert.deepEqual(compact, [
       {
         slot: 23,
+        cardId: "(unknown)",
         badBins: [
           { bin: 3, dieCount: 5, isGoodBin: false },
           { bin: 7, dieCount: 124, isGoodBin: false },
@@ -123,8 +125,39 @@ describe("agentJbBinFormat", () => {
       },
       {
         slot: 24,
+        cardId: "(unknown)",
         badBins: [{ bin: 7, dieCount: 134, isGoodBin: false }],
       },
+    ]);
+  });
+
+  it("buildSlotBadBinsCompact does not merge different CARDID on same slot", () => {
+    const rows = [
+      {
+        SLOT: 1,
+        CARDID: "6093-01",
+        bins: [{ n: 7, value: 10, isGoodBin: false }],
+      },
+      {
+        SLOT: 1,
+        CARDID: "6095-02",
+        bins: [{ n: 7, value: 20, isGoodBin: false }],
+      },
+    ] as Record<string, unknown>[];
+    assert.deepEqual(buildSlotBadBinsCompact(rows), [
+      {
+        slot: 1,
+        cardId: "6093-01",
+        badBins: [{ bin: 7, dieCount: 10, isGoodBin: false }],
+      },
+      {
+        slot: 1,
+        cardId: "6095-02",
+        badBins: [{ bin: 7, dieCount: 20, isGoodBin: false }],
+      },
+    ]);
+    assert.deepEqual(buildCardChangesBySlot(rows), [
+      { slot: 1, cardIds: ["6093-01", "6095-02"], hasCardChange: true },
     ]);
   });
 
@@ -151,22 +184,52 @@ describe("agentJbBinFormat", () => {
       {
         lot: "TR13073.1Y",
         device: "WA01",
+        cardIds: ["7747-01"],
+        hasCardChangeInLot: false,
         cardId: "7747-01",
         testEnd: "2026-05-25T10:00:00.000Z",
       },
       {
         lot: "TR17367.1T",
         device: "WA02",
+        cardIds: ["7747-01"],
+        hasCardChangeInLot: false,
         cardId: "7747-01",
         testEnd: "2026-05-22T10:00:00.000Z",
       },
       {
         lot: "TR13069.1F",
         device: "WA01",
+        cardIds: ["7747-01"],
+        hasCardChangeInLot: false,
         cardId: "7747-01",
         testEnd: "2026-05-20T10:00:00.000Z",
       },
     ]);
+  });
+
+  it("buildRecentLotsByTestEnd lists all cardIds when lot changed probe card", () => {
+    const rows = [
+      {
+        LOT: "DR45459.1A",
+        DEVICE: "WA02N27G",
+        CARDID: "6093-01",
+        TESTEND: "2026-05-29T15:04:11.000Z",
+        SLOT: 5,
+      },
+      {
+        LOT: "DR45459.1A",
+        DEVICE: "WA02N27G",
+        CARDID: "6095-02",
+        TESTEND: "2026-05-28T10:00:00.000Z",
+        SLOT: 1,
+      },
+    ] as Record<string, unknown>[];
+    const [lot] = buildRecentLotsByTestEnd(rows, 5);
+    assert.equal(lot!.lot, "DR45459.1A");
+    assert.equal(lot!.hasCardChangeInLot, true);
+    assert.deepEqual(lot!.cardIds, ["6093-01", "6095-02"]);
+    assert.equal(lot!.cardId, "6093-01");
   });
 
   it("wrapJbQueryResultForAgent includes recentLotsByTestEnd", () => {
@@ -265,7 +328,7 @@ describe("agentJbBinFormat", () => {
       );
     } else {
       assert.equal(Object.keys(binBySlot).length, 30);
-      assert.equal(binBySlot["23"]?.["7"], 55);
+      assert.equal(binBySlot["23:8041-05"]?.["7"], 55);
     }
   });
 });
