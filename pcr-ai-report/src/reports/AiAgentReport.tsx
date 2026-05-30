@@ -727,7 +727,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
                       <button
                         type="button"
                         className="ai-plan-confirm"
-                        onClick={() => { setInput("确认"); inputRef.current?.focus(); }}
+                        onClick={() => { void submitAgentRequest({ text: "确认" }); }}
                       >
                         ✓ 确认执行
                       </button>
