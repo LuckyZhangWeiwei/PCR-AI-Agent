@@ -794,21 +794,29 @@ export async function runAgentLoop(
         if (toolCalls.length > 0) finishReason = "tool_calls";
       }
 
-      // Embedded calls: data tools → failed summary; conclusion tools → merge.
+      // Embedded calls: conclusion tools → merge; data tools → handle below.
       if (embeddedCalls.length > 0) {
         const allowedEmb = embeddedCalls.filter((ec) => isConclusionTool(ec.name));
         const blockedEmb = embeddedCalls.filter((ec) => !isConclusionTool(ec.name));
-        if (blockedEmb.length > 0 && allowedEmb.length === 0) {
-          emit({
-            type: "error",
-            message:
-              "模型未返回分析结论（工具数据已在上方）。请点「重试」，或缩小查询范围后重新提问。",
-          });
-          return;
-        }
+
         if (allowedEmb.length > 0 && toolCalls.length === 0) {
+          // generate_chart / ask_clarification embedded → merge and execute.
           toolCalls.push(...allowedEmb);
           finishReason = "tool_calls";
+        } else if (blockedEmb.length > 0 && allowedEmb.length === 0) {
+          // Data-fetch embedded call in summary round.
+          if (!textBuffer.trim()) {
+            // No usable text at all → error (model produced nothing).
+            emit({
+              type: "error",
+              message:
+                "模型未返回分析结论（工具数据已在上方）。请点「重试」，或缩小查询范围后重新提问。",
+            });
+            return;
+          }
+          // Has partial text (e.g. "JB 数据为空，让我换个方式：") → emit it as
+          // the answer rather than erroring; the blocked call is discarded.
+          // Fall through to the normal text-output path below.
         }
       }
     }
