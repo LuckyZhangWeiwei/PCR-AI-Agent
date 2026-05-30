@@ -63,6 +63,7 @@ import { buildInfPath } from "../buildInfPath.js";
 import {
   runOutputSiteBinByLot,
   parseSiteBinByLotJson,
+  type SiteBinPass,
 } from "../outputSiteBinByLot.js";
 import { tryResolveSiteBinByLotDummy } from "../outputSiteBinByLotDummy.js";
 
@@ -311,6 +312,63 @@ async function toolAggregateJbBins(
   return truncateResult({ totalRowsMatching: total, groups }, maxChars);
 }
 
+/**
+ * Compact INF DUT-distribution data before handing to the model.
+ *
+ * Without compaction a single wafer (78 DUTs × 50 bins × 3 passes) can
+ * exceed 100 KB of JSON, blowing past any reasonable toolResultMaxChars.
+ *
+ * Strategy:
+ *  - Good bins (avgDiePerDut > GOOD_BIN_THRESHOLD): replace the full DUT
+ *    array with a 5-field summary — model only needs min/max/total.
+ *  - Bad bins: keep top MAX_DUTS_PER_BIN DUTs sorted by dieCount desc;
+ *    append a "moreDuts" note for the remainder.
+ *  - Skip bins with totalDieCount = 0.
+ */
+const GOOD_BIN_AVG_THRESHOLD = 100; // avg dieCount/DUT above this ≈ good/passing bin
+const MAX_DUTS_PER_BAD_BIN = 20;
+
+function compactSiteBinPasses(passes: SiteBinPass[]): unknown[] {
+  return passes.map((pass) => ({
+    passId: pass.passId,
+    bins: pass.bins
+      .map((b) => {
+        const total = b.duts.reduce((s, d) => s + d.dieCount, 0);
+        if (total === 0) return null;
+        const dutCount = b.duts.length;
+        const avg = dutCount > 0 ? total / dutCount : 0;
+
+        if (avg > GOOD_BIN_AVG_THRESHOLD) {
+          // Good / passing bin — summarise only
+          const min = b.duts.reduce((m, d) => Math.min(m, d.dieCount), Infinity);
+          const max = b.duts.reduce((m, d) => Math.max(m, d.dieCount), 0);
+          return {
+            bin: b.bin,
+            isGoodBin: true,
+            dutCount,
+            totalDieCount: total,
+            minPerDut: min === Infinity ? 0 : min,
+            maxPerDut: max,
+          };
+        }
+
+        // Bad bin — top N DUTs by dieCount desc
+        const sorted = [...b.duts].sort((a, z) => z.dieCount - a.dieCount);
+        const top = sorted.slice(0, MAX_DUTS_PER_BAD_BIN);
+        const extra = sorted.length - top.length;
+        return {
+          bin: b.bin,
+          dutCount,
+          totalDieCount: total,
+          avgPerDut: Math.round(avg),
+          duts: top,
+          ...(extra > 0 ? { moreDuts: `另有 ${extra} 个 DUT 未展示（dieCount 较低）` } : {}),
+        };
+      })
+      .filter(Boolean),
+  }));
+}
+
 async function toolQueryInfSiteBinByDut(
   args: Record<string, unknown>,
   maxChars: number
@@ -338,7 +396,7 @@ async function toolQueryInfSiteBinByDut(
 
   const dummy = tryResolveSiteBinByLotDummy(infPath, passIds);
   if (dummy) {
-    const result = { cardId, device, lot, slot, infPath, passes: dummy.passes };
+    const result = { cardId, device, lot, slot, infPath, passes: compactSiteBinPasses(dummy.passes) };
     return truncateResult(result, maxChars);
   }
 
@@ -352,7 +410,8 @@ async function toolQueryInfSiteBinByDut(
   }
   try {
     const data = parseSiteBinByLotJson(stdout);
-    return truncateResult({ cardId, device, lot, slot, infPath, passes: data.passes }, maxChars);
+    const compacted = { cardId, device, lot, slot, infPath, passes: compactSiteBinPasses(data.passes) };
+    return truncateResult(compacted, maxChars);
   } catch (e) {
     return `INF 解析失败: ${e instanceof Error ? e.message : String(e)}`;
   }
