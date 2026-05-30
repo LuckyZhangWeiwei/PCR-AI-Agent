@@ -774,31 +774,42 @@ export async function runAgentLoop(
     }
 
     // ── Summary-round guard ──────────────────────────────────────────────────
-    // The summary round sends NO tool schema, so the model should only output
-    // text. Two failure modes must be caught here:
+    // After data tools run, the model must produce text OR call a conclusion
+    // tool (generate_chart / ask_clarification). Data-fetch tools are blocked
+    // to prevent infinite loops; conclusion tools are explicitly allowed.
     //
-    // Bug A — embedded calls (GLM/MiniMax/DSML): already blocked from merging
-    //   by !awaitingSummary above, but their presence means the model produced
-    //   an incomplete "让我再查一下…" response instead of a real conclusion.
-    //   Silently emitting that text as `done` would mislead the user.
-    //
-    // Bug B — structured tool_calls from the streaming API: providers sometimes
-    //   emit these even without a tool schema in the request. Without this guard
-    //   they fall through to tool execution, consuming rounds until maxRounds is
-    //   reached with no conclusion ever produced.
+    // Bug A — embedded data-fetch calls: model produced "让我再查一下…" text
+    //   + an embedded tool call. Silently emitting that as `done` misleads user.
+    // Bug B — structured data-fetch tool_calls: providers sometimes emit these
+    //   even without a tool schema, consuming rounds until maxRounds is reached.
     if (awaitingSummary) {
+      // generate_chart and ask_clarification are legitimate conclusion steps.
+      const isConclusionTool = (name: string) =>
+        name === "generate_chart" || name === "ask_clarification";
+
+      // Structured tool_calls: keep only conclusion tools, discard data tools.
       if (toolCalls.length > 0) {
-        // Discard structured calls; let the text-check below decide done/error.
-        toolCalls.length = 0;
+        const kept = toolCalls.filter((tc) => isConclusionTool(tc.name));
+        toolCalls.splice(0, toolCalls.length, ...kept);
+        if (toolCalls.length > 0) finishReason = "tool_calls";
       }
+
+      // Embedded calls: data tools → failed summary; conclusion tools → merge.
       if (embeddedCalls.length > 0) {
-        // Model tried to call more tools instead of summarising — failed summary.
-        emit({
-          type: "error",
-          message:
-            "模型未返回分析结论（工具数据已在上方）。请点「重试」，或缩小查询范围后重新提问。",
-        });
-        return;
+        const allowedEmb = embeddedCalls.filter((ec) => isConclusionTool(ec.name));
+        const blockedEmb = embeddedCalls.filter((ec) => !isConclusionTool(ec.name));
+        if (blockedEmb.length > 0 && allowedEmb.length === 0) {
+          emit({
+            type: "error",
+            message:
+              "模型未返回分析结论（工具数据已在上方）。请点「重试」，或缩小查询范围后重新提问。",
+          });
+          return;
+        }
+        if (allowedEmb.length > 0 && toolCalls.length === 0) {
+          toolCalls.push(...allowedEmb);
+          finishReason = "tool_calls";
+        }
       }
     }
 
