@@ -57,6 +57,10 @@ export type RecentLotByTestEndEntry = {
   cardId: string;
   testEnd: string | null;
   testerId?: string;
+  /** 该 lot 在返回行内的不同 slot 编号列表（升序） */
+  slots: number[];
+  /** 该 lot 在返回行内的不同 slot 数（= slots.length） */
+  slotCount: number;
 };
 
 export type LotBinPairCompareEntry = {
@@ -82,7 +86,7 @@ const CARD_BY_PASS_ID_GUIDE =
   "cardByPassId：各 passId 在返回行内的 CARDID 集合。常温 pass1 与高温 pass3 各用一卡为正常；结论须按 pass 写清卡号。";
 
 const RECENT_LOTS_GUIDE =
-  "recentLotsByTestEnd：按 lot MAX(TESTEND) 降序 top5；hasCardChangeInLot 仅表示同 (slot,pass) 中途换卡，非多 pass 各一卡。cardIds 为行集内全部卡号；禁止用 aggregate 代替。";
+  "recentLotsByTestEnd：按 lot MAX(TESTEND) 降序 top20（返回行集内）；每 lot 含 slotCount（该 lot 下不同 slot 数）、slots（slot 编号列表）、cardIds（全部卡号）、hasCardChangeInLot（同 slot+pass 中途换卡，非多 pass 各一卡）。wafer 总数用 distinctLotSlotCount（跨 lot 正确），禁止用 distinctSlots.length（同 slot 编号跨 lot 只计一次）。";
 
 const BIN10_VS66_BY_LOT_GUIDE =
   "bin10Vs66ByLot：按 lot 汇总全部匹配行（跨 slot/pass 相加）的 BIN10 与 BIN66 dieCount 及 diff=bin10−bin66。问「by lot BIN10 是否多于 BIN66」时读此字段；禁止用 aggregate 表格里单列 BIN66 代表整 lot。";
@@ -201,13 +205,14 @@ export function buildRecentLotsByTestEnd(
 ): RecentLotByTestEndEntry[] {
   const byLot = new Map<
     string,
-    RecentLotByTestEndEntry & { _testEndMs: number; _cardIdSet: Set<string>; _initialized: boolean; _lotRows: Record<string, unknown>[] }
+    RecentLotByTestEndEntry & { _testEndMs: number; _cardIdSet: Set<string>; _slotSet: Set<number>; _initialized: boolean; _lotRows: Record<string, unknown>[] }
   >();
   for (const row of rows) {
     const lot = String(row["LOT"] ?? row["lot"] ?? "").trim();
     if (!lot) continue;
     const ms = testEndMsFromRow(row);
     const cid = cardIdFromRow(row);
+    const slotN = Number(row["SLOT"] ?? row["slot"]);
     let entry = byLot.get(lot);
     if (!entry) {
       entry = {
@@ -217,14 +222,18 @@ export function buildRecentLotsByTestEnd(
         hasCardChangeInLot: false,
         cardId: "",
         testEnd: null,
+        slots: [],
+        slotCount: 0,
         _testEndMs: 0,
         _cardIdSet: new Set(),
+        _slotSet: new Set(),
         _initialized: false,
         _lotRows: [],
       };
       byLot.set(lot, entry);
     }
     if (cid) entry._cardIdSet.add(cid);
+    if (Number.isFinite(slotN) && slotN > 0) entry._slotSet.add(slotN);
     entry._lotRows.push(row);
     const teRaw = row["TESTEND"] ?? row["testEnd"];
     const testEnd = teRaw != null && teRaw !== "" ? String(teRaw) : null;
@@ -245,10 +254,13 @@ export function buildRecentLotsByTestEnd(
     .slice(0, topN)
     .map((e) => {
       const cardIds = [...e._cardIdSet].sort((a, b) => a.localeCompare(b));
-      const { _testEndMs: _omitMs, _cardIdSet: _omitSet, _initialized: _omitInit, _lotRows: _omitLotRows, ...rest } = e;
+      const slots = [...e._slotSet].sort((a, b) => a - b);
+      const { _testEndMs: _omitMs, _cardIdSet: _omitSet, _slotSet: _omitSlotSet, _initialized: _omitInit, _lotRows: _omitLotRows, ...rest } = e;
       return {
         ...rest,
         cardIds,
+        slots,
+        slotCount: slots.length,
         // Fix: pass only this lot's rows so multi-lot queries don't contaminate each other.
         hasCardChangeInLot: lotHasMidRunCardChange(_omitLotRows),
         cardId: rest.cardId || (cardIds[cardIds.length - 1] ?? ""),
@@ -380,17 +392,25 @@ export function wrapJbQueryResultForAgent(
   rows: Record<string, unknown>[]
 ): Record<string, unknown> {
   const slotSet = new Set<number>();
+  const lotSlotPairs = new Set<string>();
   for (const r of rows) {
+    const lot = String(r["LOT"] ?? r["lot"] ?? "").trim();
     const v = r["SLOT"] ?? r["slot"];
     const n = Number(v);
-    if (Number.isFinite(n) && n > 0) slotSet.add(n);
+    if (Number.isFinite(n) && n > 0) {
+      slotSet.add(n);
+      if (lot) lotSlotPairs.add(`${lot}|${n}`);
+    }
   }
   const distinctSlots = [...slotSet].sort((a, b) => a - b);
+  // Correct wafer count: distinct (lot, slot) pairs — not just slot numbers.
+  // distinctSlots.length undercounts when different lots share the same slot number.
+  const distinctLotSlotCount = lotSlotPairs.size;
   const slotYieldSummary = buildSlotYieldSummary(rows);
   const slotBadBinsCompact = buildSlotBadBinsCompact(rows);
   const cardChangesBySlotPass = buildCardChangesBySlotPass(rows);
   const cardByPassId = buildCardByPassId(rows);
-  const recentLotsByTestEnd = buildRecentLotsByTestEnd(rows, 5);
+  const recentLotsByTestEnd = buildRecentLotsByTestEnd(rows, 20);
   const bin10Vs66ByLot = buildBin10Vs66ByLot(rows);
   const distinctLotCount = new Set(
     rows
@@ -408,6 +428,7 @@ export function wrapJbQueryResultForAgent(
     count: rows.length,
     distinctSlots,
     distinctLotCount,
+    distinctLotSlotCount,
     recentLotsByTestEnd,
     bin10Vs66ByLot,
     cardChangesBySlotPass,
@@ -483,7 +504,7 @@ export function serializeJbQueryResultForAgent(
   withoutRows["rowsOmitted"] = true;
   withoutRows["rowCount"] = rowCount;
   withoutRows["_rowsNote"] =
-    "明细 rows 已省略以控制体积；请用 recentLotsByTestEnd、cardByPassId、cardChangesBySlotPass、bin10Vs66ByLot、slotBadBinsCompact、binBySlot、slotYieldSummary、distinctSlots";
+    "明细 rows 已省略以控制体积；请用 recentLotsByTestEnd、cardByPassId、cardChangesBySlotPass、bin10Vs66ByLot、slotBadBinsCompact、binBySlot、slotYieldSummary、distinctLotSlotCount、distinctSlots";
 
   const slim = fitsLimit(withoutRows, maxChars);
   if (slim) return slim;
@@ -501,6 +522,7 @@ export function serializeJbQueryResultForAgent(
     count: wrapped["count"],
     distinctSlots: wrapped["distinctSlots"],
     distinctLotCount: wrapped["distinctLotCount"],
+    distinctLotSlotCount: wrapped["distinctLotSlotCount"],
     recentLotsByTestEnd: wrapped["recentLotsByTestEnd"],
     cardChangesBySlotPass: wrapped["cardChangesBySlotPass"],
     cardByPassId: wrapped["cardByPassId"],
