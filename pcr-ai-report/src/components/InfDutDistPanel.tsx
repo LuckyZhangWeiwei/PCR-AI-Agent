@@ -144,10 +144,10 @@ function dutDistChartHeight(
   binCount: number,
   xLabelBottom = 20
 ): number {
-  const gridTop = 32;
-  const minPlot = 128;
-  const byBins = binCount * 14 + gridTop + 36 + xLabelBottom;
-  return Math.max(gridTop + xLabelBottom + minPlot, byBins, 160);
+  const gridTop = 24;
+  const minPlot = 80;
+  const byBins = binCount * 10 + gridTop + 24 + xLabelBottom;
+  return Math.max(gridTop + xLabelBottom + minPlot, byBins, 120);
 }
 
 /** 与 ECharts 默认色板一致，供柱图与底部 HTML 图例共用 */

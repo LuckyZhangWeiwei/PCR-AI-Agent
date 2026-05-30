@@ -498,6 +498,9 @@ export function DraggableReportBlocks(props: DraggableReportBlocksProps) {
 const TOP_SECTION_LABELS: Record<string, string> = {
   binDist: "坏 Bin 全局分布",
   kpi: "关键指标",
+  funnel: "多级钻取漏斗",
+  device: "Device 不良分析",
+  pcType: "ProbeCard Type 不良对比",
   timeTrend: "每日触发量趋势",
   lotYield: "LOT Yield% 最差 Top 10",
   chartsGrid: "图表矩阵",

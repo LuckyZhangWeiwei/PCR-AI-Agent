@@ -817,6 +817,20 @@ button.chip:hover {
 .filter-grid .span-2        { grid-column: span 2; }
 .preset-chips-wrap          { grid-column: span 2; }
 
+.filter-grid-more-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: #8b949e;
+  font-size: 12px;
+  -webkit-user-select: none;
+  user-select: none;
+  margin-top: 2px;
+}
+.filter-grid-more-toggle:hover { color: #c9d1d9; }
+.filter-grid-more-arrow { font-size: 10px; }
+
 @media (max-width: 720px) {
   .filter-grid .span-2      { grid-column: span 1; }
   .preset-chips-wrap        { grid-column: span 1; }
@@ -1328,6 +1342,113 @@ button.chip:hover {
 
 .report-reorder-body > .inf-dut-standalone-row {
   margin-top: 10px;
+}
+
+/* ── Funnel drill-down section ────────────────────────────────────────────── */
+.funnel-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.funnel-steps {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.funnel-arrow {
+  color: #484f58;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+
+.funnel-step {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: 1px solid #30363d;
+  background: #161b22;
+  cursor: default;
+  text-align: left;
+  min-width: 96px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.funnel-step--done {
+  border-color: var(--step-color, #58a6ff);
+  cursor: pointer;
+}
+.funnel-step--done:hover {
+  background: rgba(88, 166, 255, 0.08);
+}
+.funnel-step--active {
+  border-color: var(--step-color, #58a6ff);
+  border-width: 2px;
+  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.10);
+}
+.funnel-step--future {
+  opacity: 0.3;
+}
+
+.funnel-step-name {
+  font-size: 10px;
+  color: #6e7681;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  line-height: 1;
+}
+.funnel-step-val {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--step-color, #e6edf3);
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.3;
+}
+.funnel-step--active .funnel-step-name {
+  color: var(--step-color, #8b949e);
+}
+.funnel-step-selecting {
+  font-size: 9px;
+  color: var(--step-color, #8b949e);
+  opacity: 0.75;
+  line-height: 1;
+}
+
+.funnel-chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.funnel-chart-title {
+  font-size: 12px;
+  color: #8b949e;
+}
+.funnel-back-btn {
+  background: none;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #8b949e;
+  font-size: 12px;
+  padding: 5px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+.funnel-back-btn:hover {
+  color: #e6edf3;
+  border-color: #58a6ff;
 }
 
 .inf-dut-dist-panel-meta {
