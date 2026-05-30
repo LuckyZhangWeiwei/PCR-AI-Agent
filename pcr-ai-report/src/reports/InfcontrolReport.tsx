@@ -204,10 +204,10 @@ const DRILL_FROM_CARD: { label: string; value: string }[] = [
 
 
 const DRILL_FROM_LOT: { label: string; value: string }[] = [
-  { label: "CardId",       value: "cardId"       },
-  { label: "ProbeCardType",value: "probeCardType"},
-  { label: "Slot",         value: "slot"         },
-  { label: "Bin",          value: "bin"          },
+  { label: "CardId",  value: "cardId"  },
+  { label: "Slot",    value: "slot"    },
+  { label: "Bin",     value: "bin"     },
+  { label: "PassId",  value: "passId"  },
 ];
 
 
