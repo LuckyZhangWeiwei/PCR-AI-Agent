@@ -24,7 +24,7 @@ export const RUNTIME_CONFIG_DEFAULTS: RuntimeConfig = {
   toolResultMaxChars: 12000,
   toolResultMaxHistoryChars: 6000,
   listDefaultLimit: 300,
-  listMaxLimit: 500,
+  listMaxLimit: 1000,
 };
 
 const CONFIG_PATH = resolve(process.cwd(), "runtime-config.json");

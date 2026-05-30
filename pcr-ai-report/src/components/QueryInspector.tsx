@@ -59,11 +59,11 @@ export function QueryInspector({
         </p>
         <div className="query-inspector-actions">
           <button type="button" className="btn secondary" onClick={copyUrl}>
-            {copied ? "已复制" : "复制本次查询链接"}
+            {copied ? "✓ 已复制" : "📋 复制本次查询链接"}
           </button>
           {appliedFilters ? (
             <button type="button" className="btn ghost" onClick={copyJson}>
-              复制筛选参数（JSON）
+              📋 复制筛选参数（JSON）
             </button>
           ) : null}
         </div>

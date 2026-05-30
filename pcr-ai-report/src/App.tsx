@@ -8,13 +8,12 @@ import { useServerConfig, SERVER_CONFIG_DEFAULTS } from "./hooks/useServerConfig
 import { AiAgentReport } from "./reports/AiAgentReport";
 import { InfcontrolReport } from "./reports/InfcontrolReport";
 import { OverviewReport } from "./reports/OverviewReport";
-import { TableRowsReport } from "./reports/TableRowsReport";
 import { YieldMonitorReport } from "./reports/YieldMonitorReport";
 import "./index.css";
 
 const D = SERVER_CONFIG_DEFAULTS;
 
-type Tab = "yield" | "infcontrol" | "ai" | "table" | "settings";
+type Tab = "yield" | "infcontrol" | "ai" | "settings";
 
 export default function App() {
   const [apiBase, setApiBase, resetApiBase] = usePersistedApiBase();
@@ -53,6 +52,9 @@ export default function App() {
   useEffect(() => { setApiBaseInput(apiBase); }, [apiBase]);
 
   const [tab, setTab] = useState<Tab>("yield");
+  const [settingsUnlocked, setSettingsUnlocked] = useState(false);
+  const [settingsPwInput, setSettingsPwInput] = useState("");
+  const [settingsPwError, setSettingsPwError] = useState(false);
 
   /** 切换 tab 时子面板从隐藏变为可见，通知图表重新计算尺寸（ECharts） */
   useLayoutEffect(() => {
@@ -105,7 +107,7 @@ export default function App() {
         <div className="app-title-block">
           <div className="app-brand-row">
             <span className="app-brand-badge">NXP</span>
-            <h1 className="app-title-main">ATTJ WaferTest PCR Dashboard</h1>
+            <h1 className="app-title-main">ATTJ Prober PCR Dashboard</h1>
             <div className="app-feature-chips">
               <span className="app-chip">Probe Card Yield Monitor</span>
               <span className="app-chip">Layer BIN Analysis</span>
@@ -143,13 +145,6 @@ export default function App() {
         )}
         <button
           type="button"
-          className={`tab ${tab === "table" ? "active" : ""}`}
-          onClick={() => setTab("table")}
-        >
-          📋 Table Browser
-        </button>
-        <button
-          type="button"
           className={`tab tab-settings ${tab === "settings" ? "active" : ""}`}
           onClick={() => setTab("settings")}
         >
@@ -166,10 +161,41 @@ export default function App() {
       <div className="tab-panel tab-panel--agent" hidden={tab !== "ai"}>
         <AiAgentReport apiBase={apiBase} agentConfig={agentConfig} />
       </div>
-      <div className="tab-panel" hidden={tab !== "table"}>
-        <TableRowsReport apiBase={apiBase} listLimits={listLimits} />
-      </div>
       <div className="tab-panel" hidden={tab !== "settings"}>
+        {!settingsUnlocked ? (
+          <div className="settings-lock-gate">
+            <div className="settings-lock-box">
+              <div className="settings-lock-icon">🔒</div>
+              <p className="settings-lock-label">请输入访问密码</p>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (settingsPwInput === "!QA2ws3e9") {
+                    setSettingsUnlocked(true);
+                    setSettingsPwInput("");
+                    setSettingsPwError(false);
+                  } else {
+                    setSettingsPwError(true);
+                    setSettingsPwInput("");
+                  }
+                }}
+                className="settings-lock-form"
+              >
+                <input
+                  type="password"
+                  value={settingsPwInput}
+                  onChange={(e) => { setSettingsPwInput(e.target.value); setSettingsPwError(false); }}
+                  className={`settings-lock-input${settingsPwError ? " settings-lock-input--error" : ""}`}
+                  placeholder="密码"
+                  autoFocus
+                  autoComplete="off"
+                />
+                {settingsPwError && <p className="settings-lock-error">密码错误</p>}
+                <button type="submit" className="settings-lock-submit">🔓 确认</button>
+              </form>
+            </div>
+          </div>
+        ) : (
         <div className="settings-panel">
           <h2 className="settings-title">⚙ 设置</h2>
           <div className="api-panel">
@@ -206,10 +232,10 @@ export default function App() {
             </span>
             <div className="api-panel-actions">
               <button type="button" className="btn ghost" onClick={resetApiBase}>
-                恢复默认地址
+                ↺ 恢复默认地址
               </button>
               <button type="button" className="btn secondary" onClick={probe}>
-                检查连接
+                🔗 检查连接
               </button>
             </div>
             <div className="status-row">
@@ -434,7 +460,7 @@ export default function App() {
                     toolResultMaxHistoryChars: D.toolResultMaxHistoryChars,
                   })}
                 >
-                  恢复默认
+                  ↺ 恢复默认
                 </button>
               </div>
             </div>
@@ -447,6 +473,7 @@ export default function App() {
             <OverviewReport apiBase={apiBase} embedded />
           </section>
         </div>
+        )}
       </div>
     </div>
   );

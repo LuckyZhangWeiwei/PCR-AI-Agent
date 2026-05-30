@@ -23,7 +23,7 @@ export const SERVER_CONFIG_DEFAULTS: ServerConfig = {
   toolResultMaxChars: 12000,
   toolResultMaxHistoryChars: 6000,
   listDefaultLimit: 300,
-  listMaxLimit: 500,
+  listMaxLimit: 1000,
 };
 
 function resolveBase(apiBase: string): string {

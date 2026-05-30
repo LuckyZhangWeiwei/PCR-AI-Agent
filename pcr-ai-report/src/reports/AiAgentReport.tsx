@@ -17,25 +17,27 @@ const AGENT_MARKDOWN_COMPONENTS = {
 
 function RobotAvatar() {
   return (
-    <svg viewBox="0 0 24 24" width="22" height="22" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <svg viewBox="0 0 24 24" width="20" height="20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
       {/* antenna */}
-      <line x1="12" y1="1.5" x2="12" y2="4.5" stroke="#7ab0e8" strokeWidth="1.2" strokeLinecap="round"/>
-      <circle cx="12" cy="1.2" r="1.1" fill="#5bc8f5"/>
+      <line x1="12" y1="1.5" x2="12" y2="4.5" stroke="#ff6d00" strokeWidth="1.5" strokeLinecap="round"/>
+      <circle cx="12" cy="1.0" r="1.4" fill="#ff3d00"/>
       {/* head */}
-      <rect x="4" y="4.5" width="16" height="13" rx="3" fill="#162540" stroke="#3d7ab8" strokeWidth="0.8"/>
+      <rect x="3" y="4.5" width="18" height="14.5" rx="3.5" fill="#06091a" stroke="#448aff" strokeWidth="1.3"/>
+      {/* face panel */}
+      <rect x="5" y="7" width="14" height="9.5" rx="2.5" fill="#0a1428"/>
       {/* left eye */}
-      <circle cx="9" cy="10" r="2.2" fill="#0a1e35"/>
-      <circle cx="9" cy="10" r="1.4" fill="#5bc8f5" opacity="0.9"/>
-      <circle cx="9.6" cy="9.3" r="0.5" fill="white" opacity="0.8"/>
+      <circle cx="9" cy="11.5" r="2.2" fill="#020b18"/>
+      <circle cx="9" cy="11.5" r="1.5" fill="#18ffff"/>
+      <circle cx="9.7" cy="10.6" r="0.52" fill="white" opacity="0.9"/>
       {/* right eye */}
-      <circle cx="15" cy="10" r="2.2" fill="#0a1e35"/>
-      <circle cx="15" cy="10" r="1.4" fill="#5bc8f5" opacity="0.9"/>
-      <circle cx="15.6" cy="9.3" r="0.5" fill="white" opacity="0.8"/>
-      {/* mouth */}
-      <path d="M8.5 14.5 Q12 17 15.5 14.5" stroke="#5bc8f5" strokeWidth="1.1" fill="none" strokeLinecap="round"/>
+      <circle cx="15" cy="11.5" r="2.2" fill="#020b18"/>
+      <circle cx="15" cy="11.5" r="1.5" fill="#18ffff"/>
+      <circle cx="15.7" cy="10.6" r="0.52" fill="white" opacity="0.9"/>
+      {/* smile */}
+      <path d="M8.5 15 Q12 17 15.5 15" stroke="#18ffff" strokeWidth="1.2" fill="none" strokeLinecap="round"/>
       {/* ear bolts */}
-      <circle cx="4" cy="11" r="1" fill="#2a5a9a" stroke="#3d7ab8" strokeWidth="0.5"/>
-      <circle cx="20" cy="11" r="1" fill="#2a5a9a" stroke="#3d7ab8" strokeWidth="0.5"/>
+      <circle cx="3" cy="11.5" r="1.3" fill="#ea80fc"/>
+      <circle cx="21" cy="11.5" r="1.3" fill="#ea80fc"/>
     </svg>
   );
 }
@@ -141,7 +143,7 @@ interface Props {
 
 const WELCOME: AiMessage = {
   kind: "ai",
-  text: "NXP ATTJ WaferTest 数据分析助手。可问：最近 7 天 WA03P02G 触发次数 / 按 probeCardType 分析 JB STAR 坏 bin / 某批次 lot yield 趋势",
+  text: "有什么可以帮你分析的？",
   streaming: false,
 };
 
@@ -472,6 +474,18 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
     await submitAgentRequest({ retry: true });
   }, [submitAgentRequest]);
 
+  const cancelRequest = useCallback(() => {
+    if (!abortRef.current) return;
+    const ctrl = abortRef.current;
+    abortRef.current = null; // null BEFORE abort → finally stale-null path cleans up loading
+    ctrl.abort();
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.kind === "ai" && m.streaming ? { ...m, streaming: false } : m
+      )
+    );
+  }, []);
+
   const lastMsg = messages[messages.length - 1];
   const canRetryFromError =
     lastMsg?.kind === "error" &&
@@ -503,6 +517,8 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
     setInput("");
     setFeedbackState({});
     setFeedbackModal(null);
+    atBottomRef.current = true;
+    if (messagesRef.current) messagesRef.current.scrollTop = 0;
     inputRef.current?.focus();
   };
 
@@ -566,12 +582,18 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
       <div className="ai-agent-toolbar">
         <span className="ai-agent-title">🤖 AI Agent — Wafer Test Data Analytics</span>
         <button type="button" className="ai-agent-btn-new" onClick={newSession}>
-          New Chat
+          ＋ New Chat
         </button>
       </div>
 
       <div className="ai-agent-messages" ref={messagesRef} onScroll={handleMessagesScroll}>
-        {messages.map((msg, i) => {
+        {(() => {
+          // Only the most recent conclusive AI message shows the feedback/regenerate bar.
+          const lastFeedbackIdx = messages.reduce(
+            (last, m, idx) => (m.kind === "ai" && m.showFeedback === true ? idx : last),
+            -1
+          );
+          return messages.map((msg, i) => {
           if (msg.kind === "user") {
             return (
               <div key={i} className="ai-msg ai-msg--user">
@@ -586,6 +608,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
               !loading &&
               !msg.streaming &&
               msg.showFeedback === true &&
+              i === lastFeedbackIdx &&
               msg.text.trim().length > 0 &&
               findLastUserText(messages.slice(0, i)) !== undefined;
             return (
@@ -709,7 +732,8 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
             );
           }
           return null;
-        })}
+        });
+        })()}
       </div>
 
       {loading && (
@@ -732,25 +756,26 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
           rows={2}
           disabled={loading && !showRetrySubmit}
         />
-        <button
-          type="button"
-          className={`ai-agent-send${showRetrySubmit ? " ai-agent-send--retry" : ""}`}
-          onClick={handleSubmit}
-          disabled={!input.trim() && !showRetrySubmit}
-          title={
-            showRetrySubmit
-              ? "从上次进度继续，无需重新输入"
-              : loading
-                ? "AI 正在处理中，请稍候"
-                : undefined
-          }
-        >
-          {loading && !showRetrySubmit
-            ? "处理中"
-            : showRetrySubmit
-              ? "重试"
-              : "发送"}
-        </button>
+        {loading && !showRetrySubmit ? (
+          <button
+            type="button"
+            className="ai-agent-send ai-agent-send--cancel"
+            onClick={cancelRequest}
+            title="停止当前回答"
+          >
+            ✕ 取消
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={`ai-agent-send${showRetrySubmit ? " ai-agent-send--retry" : ""}`}
+            onClick={handleSubmit}
+            disabled={!input.trim() && !showRetrySubmit}
+            title={showRetrySubmit ? "从上次进度继续，无需重新输入" : undefined}
+          >
+            {showRetrySubmit ? "↻ 重试" : "▶ 发送"}
+          </button>
+        )}
       </div>
       {feedbackModal && (
         <FeedbackModal

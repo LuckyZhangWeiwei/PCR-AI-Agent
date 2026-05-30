@@ -2128,7 +2128,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
               disabled={loadingList || loadingAgg}
               onClick={query}
             >
-              {loadingList || loadingAgg ? "查询中…" : "查询"}
+              {loadingList || loadingAgg ? "🔍 查询中…" : "🔍 查询"}
             </button>
             <button
               type="button"
@@ -2136,7 +2136,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
               disabled={loadingList || loadingAgg}
               onClick={clearAll}
             >
-              清空
+              ✕ 清空
             </button>
             {hasData ? (
               <ReportLayoutResetButton onReset={resetReportLayout} />

@@ -52,7 +52,7 @@ export function ReportListLimitsSettings({ limits, onChange, onReset }: Props) {
         </div>
         <div className="api-panel-actions">
           <button type="button" className="btn ghost" onClick={onReset}>
-            恢复默认（{REPORT_LIST_LIMITS_DEFAULT.defaultLimit} /{" "}
+            ↺ 恢复默认（{REPORT_LIST_LIMITS_DEFAULT.defaultLimit} /{" "}
             {REPORT_LIST_LIMITS_DEFAULT.maxLimit}）
           </button>
         </div>

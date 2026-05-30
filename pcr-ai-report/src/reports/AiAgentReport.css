@@ -78,8 +78,8 @@
 .ai-avatar--ai {
   width: 34px;
   height: 34px;
-  background: #0d1e36;
-  border: 1px solid #3d7ab8;
+  background: linear-gradient(145deg, #2a0a45 0%, #071540 100%);
+  border: 1.5px solid #7c4dff;
   order: -1;
 }
 
@@ -381,6 +381,17 @@
 .ai-agent-send--retry:hover:not(:disabled) {
   background: #4a2828;
   color: #ffd0d0;
+}
+
+.ai-agent-send--cancel {
+  background: #2a1a1a;
+  border-color: #6a2a2a;
+  color: #f87171;
+}
+
+.ai-agent-send--cancel:hover {
+  background: #3a2020;
+  color: #fca5a5;
 }
 
 .ai-agent-send:disabled {
