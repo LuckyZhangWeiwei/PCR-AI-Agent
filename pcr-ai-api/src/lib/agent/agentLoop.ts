@@ -723,12 +723,22 @@ export async function runAgentLoop(
       emit({ type: "status", message: "正在生成分析结论…" });
     }
 
+    // In the summary round, send tool schema with tool_choice:"none" so models
+    // that need schema context (MiniMax, GLM…) still understand which tools
+    // exist, but the API-level constraint prevents any tool call.
+    // Also append an explicit user-role instruction because some models
+    // (especially MiniMax via SiliconFlow) under-weight system-only nudges.
+    const summaryUserNudge: ChatMessage = {
+      role: "user",
+      content: "请立即用中文给出上述查询数据的分析结论与关键数字，不要调用任何工具。",
+    };
     await streamSiliconFlow(
       awaitingSummary
         ? {
-            // No tools in summary round — model cannot call them, no tool_choice needed.
             model: agentConfig.model,
-            messages,
+            messages: [...messages, summaryUserNudge],
+            tools: TOOL_SCHEMAS as unknown as unknown[],
+            tool_choice: "none",
           }
         : {
             model: agentConfig.model,
