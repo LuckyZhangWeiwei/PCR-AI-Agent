@@ -3,10 +3,30 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { FeedbackModal } from "../components/FeedbackModal.js";
 import type { AgentConfig } from "../hooks/usePersistedAgentConfig.js";
 import { DarkChart } from "../components/DarkChart.js";
-import type { EChartsOption } from "echarts";
+import type { ECharts, EChartsOption } from "echarts";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { sanitizeAgentMarkdownForDisplay } from "../utils/sanitizeAgentMarkdown.js";
+function downloadMarkdown(text: string, title: string): void {
+  const safe = title.slice(0, 50).replace(/[^\w一-龥.\-]/g, "_").trim() || "answer";
+  const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${safe}.md`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadChartPng(instance: ECharts, title: string): void {
+  const safe = title.slice(0, 40).replace(/[^\w一-龥.\-]/g, "_").trim() || "chart";
+  const dataUrl = instance.getDataURL({ type: "png", pixelRatio: 2, backgroundColor: "#141414" });
+  const a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = `${safe}.png`;
+  a.click();
+}
+
 const AGENT_MARKDOWN_COMPONENTS = {
   img: ({ alt }: { alt?: string }) => (
     <span className="ai-img-placeholder">[{alt}]</span>
@@ -198,6 +218,7 @@ function genId(): string {
 
 export function AiAgentReport({ apiBase, agentConfig }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME]);
+  const chartInstancesRef = useRef<Map<number, ECharts>>(new Map());
   const [input, setInput] = useState("");
   const [sessionId, setSessionId] = useState(genId);
   const [loading, setLoading] = useState(false);
@@ -732,20 +753,35 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
                         ✓ 确认执行
                       </button>
                     )}
-                    {showFeedbackBar && (
+                    {/* Export + feedback bar */}
+                    {!msg.streaming && msg.text && (
                       <div className="ai-feedback-bar">
-                        {feedbackState[i] !== undefined ? (
+                        {/* Markdown export — always shown for completed messages */}
+                        <button
+                          type="button"
+                          className="ai-feedback-btn ai-export-btn"
+                          title="导出为 Markdown 文件"
+                          onClick={() => downloadMarkdown(
+                            msg.text,
+                            findLastUserText(messages.slice(0, i)) ?? `answer_${i}`
+                          )}
+                        >
+                          ⬇ 导出
+                        </button>
+                        {showFeedbackBar && feedbackState[i] !== undefined ? (
                           <span className="ai-feedback-thanks">感谢反馈</span>
-                        ) : (
+                        ) : showFeedbackBar ? (
                           <>
                             <button type="button" className="ai-feedback-btn"
                               onClick={() => void handleGoodFeedback(i, msg)} title="这条回答有用">👍</button>
                             <button type="button" className="ai-feedback-btn"
                               onClick={() => handleOpenBadFeedback(i, msg)} title="这条回答有问题">👎</button>
                           </>
+                        ) : null}
+                        {showFeedbackBar && (
+                          <button type="button" className="ai-feedback-btn ai-feedback-btn--regen"
+                            onClick={() => void handleRegenerate(i)} title="重新生成这条回答">🔄</button>
                         )}
-                        <button type="button" className="ai-feedback-btn ai-feedback-btn--regen"
-                          onClick={() => void handleRegenerate(i)} title="重新生成这条回答">🔄</button>
                       </div>
                     )}
                   </div>
@@ -771,10 +807,29 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
             }
 
             if (msg.kind === "chart") {
+              const chartIdx = i;
+              const chartTitle = findLastUserText(messages.slice(0, i)) ?? `chart_${i}`;
               rendered.push(
                 <div key={i} className="ai-msg ai-msg--chart">
                   <div className="ai-chart-wrap">
-                    <DarkChart option={msg.option} height={320} />
+                    <DarkChart
+                      option={msg.option}
+                      height={320}
+                      onChartReady={(inst) => { chartInstancesRef.current.set(chartIdx, inst); }}
+                    />
+                  </div>
+                  <div className="ai-chart-actions">
+                    <button
+                      type="button"
+                      className="ai-chart-dl-btn"
+                      title="下载图表为 PNG"
+                      onClick={() => {
+                        const inst = chartInstancesRef.current.get(chartIdx);
+                        if (inst) downloadChartPng(inst, chartTitle);
+                      }}
+                    >
+                      ⬇ 下载图片
+                    </button>
                   </div>
                 </div>
               );
