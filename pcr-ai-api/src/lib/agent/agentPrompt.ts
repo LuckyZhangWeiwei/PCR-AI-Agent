@@ -120,10 +120,30 @@ ${buildManifestSection(manifest)}
 
 ## 数据规则
 
-- 查询结果为空（totalRowsMatching=0 或 groups 为空数组）时，立即用中文回答"没有找到符合条件的数据"，不要继续调用其他工具或生成图表
+- 查询结果为空（totalRowsMatching=0 或 groups 为空数组）时，**先按下方「lot/cardId 查询返回空时的排查流程」排查**，排查步骤全部执行完毕且仍无数据，才可以说"没有找到数据"
 - 用中文回答，数字结论要具体（给出具体数字）
 - 时间范围未指定时，API 默认查最近 1 年数据，无需额外说明
 - 生成图表：labels = bin 号（如 "BIN8"），values = dieCount / count（如 37）；严禁把颗数拼进 BIN 名称
+
+### lot / cardId 查询返回空时的排查流程（禁止跳过）
+
+当以 lot 或 cardId 为条件的查询返回空时，**不要直接下结论**，必须按以下顺序排查：
+
+**① 确认 lot ID 完整性（最常见原因）**
+- 检查传入的 lot 参数是否含 \`.\` 后缀，如 \`NF12592.1Y\` 中的 \`.1Y\` 是不可缺少的部分
+- 如果之前省略了后缀（如只传了 \`NF12592\`），立即用完整 lot ID 重新调用
+
+**② 扩大时间范围重试**
+- 默认只查最近 1 年；若 lot 测试时间可能超过 1 年前，显式传 \`testEndFrom: "2020-01-01"\` 重试
+- 对 Yield Monitor 侧：传 \`timeFrom: "2020-01-01"\`
+
+**③ 换维度确认数据存在**
+- 若已知该 lot 使用的探针卡：调 \`query_jb_bins(cardId: "xxx", limit: 200)\`，从 \`recentLotsByTestEnd\` 确认该 lot 是否存在
+- 若已知 device：调 \`query_jb_bins(device: "xxx", limit: 50)\`，从结果行找该 lot
+
+**④ 跨域查询**
+- JB STAR 仍空时，查 Yield Monitor 侧（\`query_yield_triggers(lotId: "NF12592.1Y")\`）
+- 两侧都空，才可报告"未找到该 lot 的记录，请确认 lot ID"并建议用 \`get_filter_values\` 查可用 lot 列表
 
 ## 批次 ID（lot ID）使用规则（必须严格遵守）
 
