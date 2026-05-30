@@ -22,6 +22,21 @@ This is a two-package monorepo (no shared workspace tooling — each package has
 
 ---
 
+## Hard rules (always apply)
+
+These are enforced by `pcr-ai-api/.cursor/rules/` and by build-time checks — treat them as invariants, not guidelines.
+
+**1. Oracle path and Dummy path must stay in sync (`dummy-parity`)**  
+Any change to WHERE clauses, filter parsing, sort order, limit, aggregation dimensions, or response shape must be made simultaneously in both the Oracle path (`parse*Query`, `build*Sql`, `api.ts`) and the corresponding `*Dummy.ts` file. Running `npm test` exercises both paths. Drift between them is the highest-priority bug class in this codebase.
+
+**2. Never add `undici` to `pcr-ai-api` (`no-undici`)**  
+SiliconFlow outbound calls use Node built-in `fetch` (strict TLS) or `node:https` (skip cert). `npm run build` runs `scripts/verify-dist-no-undici.mjs` and fails if `undici` appears in `dist/lib/siliconflowChat.js`. If the server reports `Cannot find package 'undici'`, rebuild (`npm ci && npm run build && pm2 reload`) — never install `undici` to fix it.
+
+**3. `oracledb` is pinned at 5.5.0 — do not upgrade to 6.x**  
+v6 requires Oracle Instant Client ≥ 18.1. Production hosts run 11g clients and cannot be upgraded. See `pcr-ai-api/CLAUDE.md` §8 before touching `package.json`.
+
+---
+
 ## Commands
 
 ### pcr-ai-api (backend)
@@ -106,3 +121,20 @@ Browser (pcr-ai-report)
 ```
 
 All API calls are read-only GETs. The frontend never writes to the backend.
+
+### AI Agent loop (`pcr-ai-api/src/lib/agent/`)
+
+The agent is a ReAct loop in `agentLoop.ts` (max `agentConfig.maxRounds` rounds, default 5). Understanding the summary-round invariant is essential before touching this code:
+
+**Normal round**: history does NOT end with `role: "tool"` → request is sent with full `TOOL_SCHEMAS` and `tool_choice: "auto"`. Model may call tools or produce text.
+
+**Summary round** (`historyAwaitingToolSummary(history) === true`): last history entry is `role: "tool"` → request is sent **without** tool schema, with `SUMMARIZE_NUDGE` appended to system prompt. The model must conclude.
+
+In the summary round the guard (`agentLoop.ts`) enforces:
+- **Data-fetch tools** (`query_*`, `aggregate_*`, `get_filter_values`, `query_inf_site_bin_by_dut`) — **blocked**. Structured `tool_calls` are discarded; embedded calls with no text trigger an error.
+- **Conclusion tools** (`generate_chart`, `ask_clarification`) — **allowed**. Embedded calls are merged into `toolCalls` and executed normally.
+- **Partial text + blocked embedded call** — emits `done` with the partial text (not an error), so the user sees whatever analysis the model produced before it tried to re-query.
+
+`createDeepSeekFilter` (inline in `agentLoop.ts`) strips embedded tool markup (GLM `<tool_call>`, MiniMax `<minimax:tool_call>`, DSML `<｜DSML｜tool_calls>`, DeepSeek `<｜tool▁`) from the streamed text before it reaches the UI. It also parses those embedded calls so they can be executed like structured `tool_calls`.
+
+Key files: `agentLoop.ts` (ReAct loop + filter) → `agentToolHandlers.ts` (tool dispatch) → `agentStream.ts` (SiliconFlow SSE with idle timeout) → `agentPrompt.ts` (system prompt + domain rules) → `agentToolSchemas.ts` (tool JSON schemas).
