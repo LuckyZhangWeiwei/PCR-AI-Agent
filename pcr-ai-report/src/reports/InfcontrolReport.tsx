@@ -190,7 +190,6 @@ const DRILL_FROM_DEVICE_JB: { label: string; value: string }[] = [
 const DRILL_FROM_CARDTYPE: { label: string; value: string }[] = [
   { label: "CardId", value: "cardId" },
   { label: "Device", value: "device" },
-  { label: "Slot",   value: "slot"   },
   { label: "Bin",    value: "bin"    },
   { label: "Lot",    value: "lot"    },
 ];
