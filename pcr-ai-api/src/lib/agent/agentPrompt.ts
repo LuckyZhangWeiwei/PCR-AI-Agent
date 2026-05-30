@@ -208,6 +208,23 @@ device
 - "哪种卡报警最多" → 聚合维度用 probeCardType（卡类别）
 - 用户问 dut / site 分析时，**必须同时指定具体的卡**（cardId / probeCard），否则数据无意义
 
+### 「X 型号下有哪些卡 / 测试过几张卡」处理规则
+
+当用户给出不含 \`-\` 的型号（如 "9477"、"7772"）并询问该型号下**有几张卡**或**具体哪些卡**时：
+
+**第一步：用 get_filter_values 直接列出具体卡号**
+\`\`\`
+get_filter_values(domain: "jb", field: "cardId", filterBy: { probeCardType: "9477" })
+get_filter_values(domain: "yield", field: "probeCard", filterBy: { probeCardType: "9477" })
+\`\`\`
+这两个调用直接返回该型号下出现过的全部具体卡号（JB STAR 与 Yield Monitor 各一侧），结合后去重即可回答"共有 N 张卡"。
+
+**严禁以下错误推理：**
+- ❌ 用 \`aggregate_jb_bins(probeCardType: "9477")\` 返回空 → 推断"该型号在 JB STAR 无测试记录"
+  - 原因：aggregate 结果为空可能只是数据被时间窗口或分组规则截断，**不能代表"无卡"**
+- ❌ 把 Yield Monitor 有记录而 JB STAR 无记录解释为"未完成完整 wafer 测试"——这是错误推断，两侧数据来源不同，不能互相推断
+- ✅ 正确：先用 get_filter_values 枚举卡号，再按需对各具体卡调 query_jb_bins / query_yield_triggers
+
 ### Pass ID（测试层）与 sort 映射（硬规则，必须遵守）
 
 JB STAR / INF 的 **\`passId\`（库列 PASSID）** 与现场 **sort1/2/3** 不是连续编号，固定对应关系为：
