@@ -753,10 +753,10 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
                         ✓ 确认执行
                       </button>
                     )}
-                    {/* Export + feedback bar */}
-                    {!msg.streaming && msg.text && (
+                    {/* Feedback bar — only on conclusive (showFeedback) messages */}
+                    {showFeedbackBar && (
                       <div className="ai-feedback-bar">
-                        {/* Markdown export — always shown for completed messages */}
+                        {/* Export icon — conclusive messages only */}
                         <button
                           type="button"
                           className="ai-feedback-btn ai-export-btn"
@@ -766,22 +766,20 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
                             findLastUserText(messages.slice(0, i)) ?? `answer_${i}`
                           )}
                         >
-                          ⬇ 导出
+                          ⬇
                         </button>
-                        {showFeedbackBar && feedbackState[i] !== undefined ? (
+                        {feedbackState[i] !== undefined ? (
                           <span className="ai-feedback-thanks">感谢反馈</span>
-                        ) : showFeedbackBar ? (
+                        ) : (
                           <>
                             <button type="button" className="ai-feedback-btn"
                               onClick={() => void handleGoodFeedback(i, msg)} title="这条回答有用">👍</button>
                             <button type="button" className="ai-feedback-btn"
                               onClick={() => handleOpenBadFeedback(i, msg)} title="这条回答有问题">👎</button>
                           </>
-                        ) : null}
-                        {showFeedbackBar && (
-                          <button type="button" className="ai-feedback-btn ai-feedback-btn--regen"
-                            onClick={() => void handleRegenerate(i)} title="重新生成这条回答">🔄</button>
                         )}
+                        <button type="button" className="ai-feedback-btn ai-feedback-btn--regen"
+                          onClick={() => void handleRegenerate(i)} title="重新生成这条回答">🔄</button>
                       </div>
                     )}
                   </div>
@@ -822,13 +820,13 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
                     <button
                       type="button"
                       className="ai-chart-dl-btn"
-                      title="下载图表为 PNG"
+                      title="下载图表 PNG"
                       onClick={() => {
                         const inst = chartInstancesRef.current.get(chartIdx);
                         if (inst) downloadChartPng(inst, chartTitle);
                       }}
                     >
-                      ⬇ 下载图片
+                      ⬇
                     </button>
                   </div>
                 </div>
