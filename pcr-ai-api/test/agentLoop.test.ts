@@ -363,3 +363,53 @@ test("historyAwaitingToolSummary is false after assistant text reply", () => {
   ];
   assert.equal(historyAwaitingToolSummary(history), false);
 });
+
+// ── Summary-round guard regression tests ────────────────────────────────────
+// These tests document the invariants enforced by the guard added to runAgentLoop:
+//
+// Bug A: embedded calls (GLM/MiniMax) in summary round — model produced
+//   "让我换一种聚合方式：" text + embedded tool markup. Previously the
+//   incomplete text was emitted as `done`. Fix: emit error instead.
+//
+// Bug B: structured tool_calls from the streaming API in summary round —
+//   model emits tool_calls despite no tool schema. Previously they executed,
+//   consuming rounds until maxRounds with no conclusion. Fix: discard them.
+//
+// The guard condition is: historyAwaitingToolSummary(history) === true
+// (last message is role "tool"), which is the entry condition for the summary
+// round. We verify historyAwaitingToolSummary correctly identifies all cases.
+
+test("historyAwaitingToolSummary is true after two consecutive tool results (multi-tool round)", () => {
+  // Simulates a round where the model called two tools; both results are in
+  // history. The summary round guard must fire to prevent further tool calls.
+  const history: ChatMessage[] = [
+    { role: "user", content: "最近一周测试最差的卡" },
+    {
+      role: "assistant",
+      content: "正在查询…",
+      tool_calls: [
+        { id: "c1", type: "function", function: { name: "aggregate_yield_triggers", arguments: '{"dimensions":"probeCard"}' } },
+        { id: "c2", type: "function", function: { name: "aggregate_jb_bins", arguments: '{"groupBy":"bin,cardId"}' } },
+      ],
+    },
+    { role: "tool", tool_call_id: "c1", name: "aggregate_yield_triggers", content: '{"groups":[]}' },
+    { role: "tool", tool_call_id: "c2", name: "aggregate_jb_bins", content: '{"groups":[]}' },
+  ];
+  assert.equal(historyAwaitingToolSummary(history), true);
+});
+
+test("historyAwaitingToolSummary is false when assistant already replied after tool", () => {
+  // After the summary round produces text, history ends with assistant —
+  // next user turn starts fresh (no summary guard).
+  const history: ChatMessage[] = [
+    { role: "user", content: "最近一周测试最差的卡" },
+    {
+      role: "assistant",
+      content: null,
+      tool_calls: [{ id: "c1", type: "function", function: { name: "aggregate_yield_triggers", arguments: "{}" } }],
+    },
+    { role: "tool", tool_call_id: "c1", name: "aggregate_yield_triggers", content: '{"groups":[{"probeCard":"7772-A1","count":12}]}' },
+    { role: "assistant", content: "7772-A1 报警最多（12 次），建议检查该卡。" },
+  ];
+  assert.equal(historyAwaitingToolSummary(history), false);
+});

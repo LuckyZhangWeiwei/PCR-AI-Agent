@@ -15,29 +15,71 @@ const AGENT_MARKDOWN_COMPONENTS = {
   s: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
 };
 
+/** Hidden SVG defs rendered once; all RobotAvatar instances share these paint servers. */
+function RobotAvatarDefs() {
+  return (
+    <svg className="rav-defs" aria-hidden="true">
+      <defs>
+        <radialGradient id="rav-bg" cx="50%" cy="42%" r="58%">
+          <stop offset="0%" stopColor="#ddeeff"/>
+          <stop offset="100%" stopColor="#b8d4f0"/>
+        </radialGradient>
+        <radialGradient id="rav-head" cx="38%" cy="28%" r="72%">
+          <stop offset="0%" stopColor="#ffffff"/>
+          <stop offset="100%" stopColor="#ddf0ff"/>
+        </radialGradient>
+        <radialGradient id="rav-eye" cx="38%" cy="32%" r="68%">
+          <stop offset="0%" stopColor="#e8f6ff"/>
+          <stop offset="45%" stopColor="#90caf9"/>
+          <stop offset="100%" stopColor="#1976d2"/>
+        </radialGradient>
+        <filter id="rav-glow" x="-30%" y="-30%" width="160%" height="160%">
+          <feGaussianBlur stdDeviation="1.4" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+    </svg>
+  );
+}
+
 function RobotAvatar() {
   return (
-    <svg viewBox="0 0 24 24" width="20" height="20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      {/* antenna */}
-      <line x1="12" y1="1.5" x2="12" y2="4.5" stroke="#ff6d00" strokeWidth="1.5" strokeLinecap="round"/>
-      <circle cx="12" cy="1.0" r="1.4" fill="#ff3d00"/>
+    <svg viewBox="0 0 100 100" width="32" height="32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      {/* background circle */}
+      <circle cx="50" cy="50" r="50" fill="url(#rav-bg)"/>
+      {/* antenna stick */}
+      <rect x="47" y="7" width="6" height="15" rx="3" fill="#90caf9"/>
+      {/* antenna ball */}
+      <circle cx="50" cy="6" r="7" fill="#2196f3"/>
+      <circle cx="47.5" cy="3.5" r="2.8" fill="white" opacity="0.65"/>
       {/* head */}
-      <rect x="3" y="4.5" width="18" height="14.5" rx="3.5" fill="#06091a" stroke="#448aff" strokeWidth="1.3"/>
-      {/* face panel */}
-      <rect x="5" y="7" width="14" height="9.5" rx="2.5" fill="#0a1428"/>
+      <rect x="11" y="19" width="78" height="65" rx="17" fill="url(#rav-head)" stroke="#c5e0f8" strokeWidth="1.5"/>
+      {/* head top shine */}
+      <ellipse cx="37" cy="24" rx="17" ry="5" fill="white" opacity="0.55"/>
+      {/* ear joints */}
+      <circle cx="11" cy="53" r="10" fill="#90caf9" stroke="white" strokeWidth="2.5"/>
+      <circle cx="8.5" cy="49.5" r="3.5" fill="white" opacity="0.62"/>
+      <circle cx="89" cy="53" r="10" fill="#90caf9" stroke="white" strokeWidth="2.5"/>
+      <circle cx="86.5" cy="49.5" r="3.5" fill="white" opacity="0.62"/>
+      {/* face screen */}
+      <rect x="19" y="27" width="62" height="44" rx="12" fill="#0c1825"/>
       {/* left eye */}
-      <circle cx="9" cy="11.5" r="2.2" fill="#020b18"/>
-      <circle cx="9" cy="11.5" r="1.5" fill="#18ffff"/>
-      <circle cx="9.7" cy="10.6" r="0.52" fill="white" opacity="0.9"/>
+      <circle cx="36" cy="44" r="11" fill="#061018"/>
+      <circle cx="36" cy="44" r="9" fill="url(#rav-eye)" filter="url(#rav-glow)"/>
+      <circle cx="36" cy="44" r="5" fill="#1565c0"/>
+      <circle cx="38.8" cy="40" r="3.5" fill="white" opacity="0.92"/>
+      <circle cx="33.5" cy="45" r="1.3" fill="white" opacity="0.42"/>
       {/* right eye */}
-      <circle cx="15" cy="11.5" r="2.2" fill="#020b18"/>
-      <circle cx="15" cy="11.5" r="1.5" fill="#18ffff"/>
-      <circle cx="15.7" cy="10.6" r="0.52" fill="white" opacity="0.9"/>
+      <circle cx="64" cy="44" r="11" fill="#061018"/>
+      <circle cx="64" cy="44" r="9" fill="url(#rav-eye)" filter="url(#rav-glow)"/>
+      <circle cx="64" cy="44" r="5" fill="#1565c0"/>
+      <circle cx="66.8" cy="40" r="3.5" fill="white" opacity="0.92"/>
+      <circle cx="61.5" cy="45" r="1.3" fill="white" opacity="0.42"/>
       {/* smile */}
-      <path d="M8.5 15 Q12 17 15.5 15" stroke="#18ffff" strokeWidth="1.2" fill="none" strokeLinecap="round"/>
-      {/* ear bolts */}
-      <circle cx="3" cy="11.5" r="1.3" fill="#ea80fc"/>
-      <circle cx="21" cy="11.5" r="1.3" fill="#ea80fc"/>
+      <path d="M29 58 Q50 70 71 58" stroke="#90caf9" strokeWidth="3.2" fill="none" strokeLinecap="round"/>
+      {/* blush */}
+      <circle cx="21" cy="57" r="7" fill="#f48fb1" opacity="0.38"/>
+      <circle cx="79" cy="57" r="7" fill="#f48fb1" opacity="0.38"/>
     </svg>
   );
 }
@@ -579,6 +621,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
 
   return (
     <div className="ai-agent-report">
+      <RobotAvatarDefs />
       <div className="ai-agent-toolbar">
         <span className="ai-agent-title">🤖 AI Agent — Wafer Test Data Analytics</span>
         <button type="button" className="ai-agent-btn-new" onClick={newSession}>
@@ -593,146 +636,181 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
             (last, m, idx) => (m.kind === "ai" && m.showFeedback === true ? idx : last),
             -1
           );
-          return messages.map((msg, i) => {
-          if (msg.kind === "user") {
-            return (
-              <div key={i} className="ai-msg ai-msg--user">
-                <div className="ai-msg-bubble">{msg.text}</div>
-                <div className="ai-avatar ai-avatar--user">我</div>
-              </div>
-            );
-          }
-          if (msg.kind === "ai") {
-            const planMatch = !msg.streaming && msg.text.match(/\[PLAN\]([\s\S]*?)\[\/PLAN\]/);
-            const showFeedbackBar =
-              !loading &&
-              !msg.streaming &&
-              msg.showFeedback === true &&
-              i === lastFeedbackIdx &&
-              msg.text.trim().length > 0 &&
-              findLastUserText(messages.slice(0, i)) !== undefined;
-            return (
-              <div key={i} className="ai-msg ai-msg--ai">
-                <div className="ai-avatar ai-avatar--ai"><RobotAvatar /></div>
-                <div className="ai-msg-content">
-                  <div className="ai-msg-bubble ai-msg-bubble--md">
-                    {msg.text ? (
-                      <ReactMarkdown
-                        remarkPlugins={[[remarkGfm, { singleTilde: false }]]}
-                        components={AGENT_MARKDOWN_COMPONENTS}
-                      >
-                        {sanitizeAgentMarkdownForDisplay(msg.text)}
-                      </ReactMarkdown>
-                    ) : (
-                      msg.streaming
-                        ? <span className="ai-status-hint">{statusHint || "正在思考…"}</span>
-                        : ""
+
+          // Group each AI message with its immediately-following tool messages so
+          // tool chips render inside the same visual block as the robot avatar.
+          type ToolEntry = { idx: number; msg: ToolMessage };
+          const rendered: React.ReactNode[] = [];
+          let i = 0;
+          while (i < messages.length) {
+            const msg = messages[i];
+
+            if (msg.kind === "user") {
+              rendered.push(
+                <div key={i} className="ai-msg ai-msg--user">
+                  <div className="ai-msg-bubble">{msg.text}</div>
+                  <div className="ai-avatar ai-avatar--user">我</div>
+                </div>
+              );
+              i++;
+              continue;
+            }
+
+            if (msg.kind === "ai") {
+              // Collect consecutive tool messages that follow this AI turn.
+              const tools: ToolEntry[] = [];
+              let j = i + 1;
+              while (j < messages.length && messages[j].kind === "tool") {
+                tools.push({ idx: j, msg: messages[j] as ToolMessage });
+                j++;
+              }
+
+              const planMatch = !msg.streaming && msg.text.match(/\[PLAN\]([\s\S]*?)\[\/PLAN\]/);
+              const showFeedbackBar =
+                !loading &&
+                !msg.streaming &&
+                msg.showFeedback === true &&
+                i === lastFeedbackIdx &&
+                msg.text.trim().length > 0 &&
+                findLastUserText(messages.slice(0, i)) !== undefined;
+
+              rendered.push(
+                <div key={i} className="ai-msg ai-msg--ai">
+                  <div className="ai-avatar ai-avatar--ai"><RobotAvatar /></div>
+                  <div className="ai-msg-content">
+
+                    {/* Tool chips row — shown inline with the avatar */}
+                    {tools.length > 0 && (
+                      <div className="ai-tool-chips-row">
+                        <span className="ai-tool-chips-label">
+                          {msg.streaming ? "查询中" : "已查询"}
+                        </span>
+                        {tools.map(({ idx: ti, msg: t }) => (
+                          <button
+                            key={ti}
+                            type="button"
+                            className="ai-tool-toggle"
+                            onClick={() => toggleTool(ti)}
+                          >
+                            🔧 {t.name} {t.open ? "▲" : "▼"}
+                          </button>
+                        ))}
+                        {msg.streaming && <span className="ai-cursor ai-cursor--inline" />}
+                      </div>
                     )}
-                    {msg.streaming && <span className="ai-cursor" />}
-                  </div>
-                  {planMatch && (
-                    <button
-                      type="button"
-                      className="ai-plan-confirm"
-                      onClick={() => {
-                        setInput("确认");
-                        inputRef.current?.focus();
-                      }}
-                    >
-                      ✓ 确认执行
-                    </button>
-                  )}
-                  {showFeedbackBar && (
-                    <div className="ai-feedback-bar">
-                      {feedbackState[i] !== undefined ? (
-                        <span className="ai-feedback-thanks">感谢反馈</span>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            className="ai-feedback-btn"
-                            onClick={() => void handleGoodFeedback(i, msg)}
-                            title="这条回答有用"
+
+                    {/* Expanded tool details */}
+                    {tools.map(({ idx: ti, msg: t }) =>
+                      t.open && t.summary ? (
+                        <div key={`detail-${ti}`} className="ai-tool-detail">{t.summary}</div>
+                      ) : null
+                    )}
+
+                    {/* Text bubble — omit when empty with tools already shown */}
+                    {(msg.text || (msg.streaming && tools.length === 0)) && (
+                      <div className="ai-msg-bubble ai-msg-bubble--md">
+                        {msg.text ? (
+                          <ReactMarkdown
+                            remarkPlugins={[[remarkGfm, { singleTilde: false }]]}
+                            components={AGENT_MARKDOWN_COMPONENTS}
                           >
-                            👍
-                          </button>
-                          <button
-                            type="button"
-                            className="ai-feedback-btn"
-                            onClick={() => handleOpenBadFeedback(i, msg)}
-                            title="这条回答有问题"
-                          >
-                            👎
-                          </button>
-                        </>
-                      )}
+                            {sanitizeAgentMarkdownForDisplay(msg.text)}
+                          </ReactMarkdown>
+                        ) : (
+                          <span className="ai-status-hint">{statusHint || "正在思考…"}</span>
+                        )}
+                        {msg.streaming && <span className="ai-cursor" />}
+                      </div>
+                    )}
+
+                    {planMatch && (
                       <button
                         type="button"
-                        className="ai-feedback-btn ai-feedback-btn--regen"
-                        onClick={() => void handleRegenerate(i)}
-                        title="重新生成这条回答"
+                        className="ai-plan-confirm"
+                        onClick={() => { setInput("确认"); inputRef.current?.focus(); }}
                       >
-                        🔄
+                        ✓ 确认执行
                       </button>
-                    </div>
+                    )}
+                    {showFeedbackBar && (
+                      <div className="ai-feedback-bar">
+                        {feedbackState[i] !== undefined ? (
+                          <span className="ai-feedback-thanks">感谢反馈</span>
+                        ) : (
+                          <>
+                            <button type="button" className="ai-feedback-btn"
+                              onClick={() => void handleGoodFeedback(i, msg)} title="这条回答有用">👍</button>
+                            <button type="button" className="ai-feedback-btn"
+                              onClick={() => handleOpenBadFeedback(i, msg)} title="这条回答有问题">👎</button>
+                          </>
+                        )}
+                        <button type="button" className="ai-feedback-btn ai-feedback-btn--regen"
+                          onClick={() => void handleRegenerate(i)} title="重新生成这条回答">🔄</button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+
+              i = j; // skip absorbed tool messages
+              continue;
+            }
+
+            if (msg.kind === "tool") {
+              // Orphan tool message (not preceded by an ai message) — rare fallback.
+              rendered.push(
+                <div key={i} className="ai-msg ai-msg--tool">
+                  <button type="button" className="ai-tool-toggle" onClick={() => toggleTool(i)}>
+                    🔧 {msg.name} {msg.open ? "▲" : "▼"}
+                  </button>
+                  {msg.open && msg.summary && <div className="ai-tool-detail">{msg.summary}</div>}
+                </div>
+              );
+              i++;
+              continue;
+            }
+
+            if (msg.kind === "chart") {
+              rendered.push(
+                <div key={i} className="ai-msg ai-msg--chart">
+                  <div className="ai-chart-wrap">
+                    <DarkChart option={msg.option} height={320} />
+                  </div>
+                </div>
+              );
+              i++;
+              continue;
+            }
+
+            if (msg.kind === "error") {
+              rendered.push(
+                <div key={i} className="ai-msg ai-msg--error">
+                  <div className="ai-error-text">⚠ {msg.message}</div>
+                  {msg.retryable && (
+                    <button type="button" className="ai-error-retry" onClick={() => void retryLastRequest()}>
+                      ↻ 重试
+                    </button>
                   )}
                 </div>
-              </div>
-            );
-          }
-          if (msg.kind === "tool") {
-            return (
-              <div key={i} className="ai-msg ai-msg--tool">
-                <button
-                  type="button"
-                  className="ai-tool-toggle"
-                  onClick={() => toggleTool(i)}
-                >
-                  🔧 {msg.name} {msg.open ? "▲" : "▼"}
-                </button>
-                {msg.open && msg.summary && (
-                  <div className="ai-tool-detail">{msg.summary}</div>
-                )}
-              </div>
-            );
-          }
-          if (msg.kind === "chart") {
-            return (
-              <div key={i} className="ai-msg ai-msg--chart">
-                <div className="ai-chart-wrap">
-                  <DarkChart option={msg.option} height={320} />
+              );
+              i++;
+              continue;
+            }
+
+            if (msg.kind === "clarification") {
+              rendered.push(
+                <div key={i} className="ai-msg ai-msg--clarification">
+                  <div className="ai-avatar ai-avatar--ai"><RobotAvatar /></div>
+                  <div className="ai-clarification-bubble">❓ {msg.question}</div>
                 </div>
-              </div>
-            );
+              );
+              i++;
+              continue;
+            }
+
+            i++;
           }
-          if (msg.kind === "error") {
-            return (
-              <div key={i} className="ai-msg ai-msg--error">
-                <div className="ai-error-text">⚠ {msg.message}</div>
-                {msg.retryable ? (
-                  <button
-                    type="button"
-                    className="ai-error-retry"
-                    onClick={() => void retryLastRequest()}
-                  >
-                    ↻ 重试
-                  </button>
-                ) : null}
-              </div>
-            );
-          }
-          if (msg.kind === "clarification") {
-            return (
-              <div key={i} className="ai-msg ai-msg--clarification">
-                <div className="ai-avatar ai-avatar--ai"><RobotAvatar /></div>
-                <div className="ai-clarification-bubble">
-                  ❓ {msg.question}
-                </div>
-              </div>
-            );
-          }
-          return null;
-        });
+          return rendered;
         })()}
       </div>
 

@@ -59,6 +59,13 @@
   justify-content: flex-end;
 }
 
+.rav-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
 /* Avatars */
 .ai-avatar {
   width: 28px;
@@ -78,9 +85,11 @@
 .ai-avatar--ai {
   width: 34px;
   height: 34px;
-  background: linear-gradient(145deg, #2a0a45 0%, #071540 100%);
-  border: 1.5px solid #7c4dff;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
   order: -1;
+  filter: drop-shadow(0 1px 4px rgba(33, 150, 243, 0.35));
 }
 
 .ai-avatar--user {
@@ -253,20 +262,52 @@
   max-width: 90%;
 }
 
+/* Tool chips row — rendered inside the AI message block */
+.ai-tool-chips-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.ai-tool-chips-label {
+  font-size: 11px;
+  color: #5a7a9a;
+  font-style: italic;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.ai-cursor--inline {
+  display: inline-block;
+  width: 6px;
+  height: 13px;
+  background: #5a8aaa;
+  border-radius: 1px;
+  animation: blink 1s step-start infinite;
+  vertical-align: middle;
+  margin-left: 2px;
+  flex-shrink: 0;
+}
+
 .ai-tool-toggle {
-  background: #2a2a2a;
-  border: 1px solid #444;
-  color: #888;
-  font-size: 12px;
-  padding: 4px 8px;
-  border-radius: 4px;
+  background: #1e2a38;
+  border: 1px solid #2d4a62;
+  color: #7ab3d4;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 12px;
   cursor: pointer;
   text-align: left;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
 }
 
 .ai-tool-toggle:hover {
-  color: #aaa;
-  background: #333;
+  background: #243344;
+  border-color: #4a7aaa;
+  color: #aad0f0;
 }
 
 .ai-tool-detail {

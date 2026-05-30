@@ -105,7 +105,7 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "aggregate_jb_bins",
       description:
-        "对 JB STAR 数据按维度聚合统计坏 bin 的 die 数量（UNPIVOT BIN0-BIN255）。按合计坏 die 降序取 top，不是 TESTEND 时间序。禁止用于「某卡最近 N 个 lot」（须 query_jb_bins.recentLotsByTestEnd）或「by lot 对比 BIN10 vs BIN66」（须 query_jb_bins.bin10Vs66ByLot）。",
+        "对 JB STAR 数据按维度聚合统计坏 bin 的 die 数量（UNPIVOT BIN0-BIN255）。结果始终含 bin 维度：每行为 (bin, 其他维度, count)——不是某卡/某 lot 的总坏 die。若需「哪张卡总坏 die 最多」，须对同一 cardId 的所有 bin 行 count 求和（groupTop 设 50 再手动汇总），或优先用 aggregate_yield_triggers(dimensions:'probeCard') 按报警次数排名。禁止用于「某卡最近 N 个 lot」（须 query_jb_bins.recentLotsByTestEnd）或「by lot 对比 BIN10 vs BIN66」（须 query_jb_bins.bin10Vs66ByLot）。",
       parameters: {
         type: "object",
         properties: {

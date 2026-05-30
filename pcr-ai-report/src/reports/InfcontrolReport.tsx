@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import ReactECharts from "echarts-for-react";
 import { apiGetJson } from "../api/client";
 import { INFCONTROL_AGGREGATE_PATH, INFCONTROL_COMBINED_PATH } from "../api/paths";
@@ -47,11 +47,11 @@ import {
   buildInfDutCtxFromDetailListIndices,
   buildInfDutCtxFromDrillBarKeys,
   normalizeBinToken,
-  parseSlotFromDrillBarLabel,
   sameDeviceLot,
   waferSpecFromJbRow,
   type InfDutAnchor,
   type InfDutSelectionCtx,
+  type InfDutWaferSpec,
 } from "../utils/infDutSelection";
 import {
   buildTree,
@@ -167,24 +167,24 @@ function activeChips(
 
 
 const JB_REPORT_SECTION_ORDER = [
-  "binDist",
   "kpi",
+  "funnel",
+  "device",
   "lotYield",
-  "chartsGrid",
+  "pcType",
   "tree",
   "detail",
 ] as const;
 
-const JB_KPI_BLOCK_ORDER = ["jbWafer", "jbYieldPct", "jbWorstType", "jbTopBin"] as const;
+const JB_KPI_BLOCK_ORDER = ["jbDevice", "jbLot", "jbWorstType", "jbWorstCard", "jbTopBin"] as const;
 
-const JB_CHART_BLOCK_ORDER = ["jbPcType", "jbDevice", "jbMask", "jbSlot"] as const;
 
 // Sub-dimension options per parent drill
 const DRILL_FROM_DEVICE_JB: { label: string; value: string }[] = [
-  { label: "LOT",    value: "lot"    },
-  { label: "Pass",   value: "passId" },
-  { label: "CardId", value: "cardId" },
-  { label: "Slot",   value: "slot"   },
+  { label: "LOT",      value: "lot"      },
+  { label: "CardId",   value: "cardId"   },
+  { label: "BinNo#",   value: "bin"      },
+  { label: "Hostname", value: "testerId" },
 ];
 
 const DRILL_FROM_CARDTYPE: { label: string; value: string }[] = [
@@ -202,19 +202,6 @@ const DRILL_FROM_CARD: { label: string; value: string }[] = [
   { label: "Lot",    value: "lot"    },
 ];
 
-const DRILL_FROM_SLOT: { label: string; value: string }[] = [
-  { label: "Bin",    value: "bin"    },
-  { label: "CardId", value: "cardId" },
-  { label: "Device", value: "device" },
-  { label: "Lot",    value: "lot"    },
-];
-
-const DRILL_FROM_BIN: { label: string; value: string }[] = [
-  { label: "CardId", value: "cardId" },
-  { label: "Device", value: "device" },
-  { label: "Lot",    value: "lot"    },
-  { label: "Slot",   value: "slot"   },
-];
 
 const DRILL_FROM_LOT: { label: string; value: string }[] = [
   { label: "CardId",       value: "cardId"       },
@@ -223,13 +210,6 @@ const DRILL_FROM_LOT: { label: string; value: string }[] = [
   { label: "Bin",          value: "bin"          },
 ];
 
-const DRILL_FROM_MASK: { label: string; value: string }[] = [
-  { label: "Bin",    value: "bin"    },
-  { label: "Device", value: "device" },
-  { label: "Lot",    value: "lot"    },
-  { label: "CardId", value: "cardId" },
-  { label: "Slot",   value: "slot"   },
-];
 
 type DrillState = {
   parentDimKey: string;
@@ -542,13 +522,385 @@ function drillSubDimKeysForFetch(parentDimKey: string, subDim: string): string[]
   return jbAggregateGroupBy(...parts).split(",");
 }
 
+/**
+ * API always returns (dim, bin) pairs because infcontrol aggregate requires bin.
+ * When the user's intended sub-dim doesn't include bin, sum across all bins
+ * so each bar represents the total for that dimension value.
+ */
+function reAggByUserDims(groups: AggregateGroup[], userDims: string[]): AggregateGroup[] {
+  if (userDims.includes("bin") || userDims.length === 0) return groups;
+  const sums = new Map<string, number>();
+  const partsMap = new Map<string, Record<string, string>>();
+  for (const g of groups) {
+    const sub: Record<string, string> = {};
+    for (const k of userDims) sub[k] = g.parts[k] ?? "";
+    const key = userDims.map(k => sub[k]).join("\x00");
+    sums.set(key, (sums.get(key) ?? 0) + g.count);
+    if (!partsMap.has(key)) partsMap.set(key, sub);
+  }
+  return [...sums.entries()]
+    .map(([key, count]) => ({ key, count, parts: partsMap.get(key)! }))
+    .sort((a, b) => b.count - a.count);
+}
+
+// ── Funnel drill-down ─────────────────────────────────────────────────────────
+
+type FunnelChainStep = { level: string; value: string };
+
+const FUNNEL_LEVEL_DEFS: ReadonlyArray<{ key: string; label: string; color: string }> = [
+  { key: "mask",   label: "Mask",      color: "#79c0ff" },
+  { key: "device", label: "Device",    color: "#d2a8ff" },
+  { key: "lot",    label: "Lot",       color: "#3fb950" },
+  { key: "slot",   label: "Wafer ID",  color: "#e6b450" },
+  { key: "passId", label: "Pass",      color: "#ff7b72" },
+  { key: "cardId", label: "ProbeCard", color: "#58a6ff" },
+];
+
+function funnelBadDie(row: InfcontrolLayerBinV3Row): number {
+  if (!Array.isArray(row.bins)) return 0;
+  return row.bins.reduce((s, b) => (b.isGoodBin ? s : s + (b.value ?? 0)), 0);
+}
+
+function funnelFilter(
+  rows: InfcontrolLayerBinV3Row[],
+  chain: FunnelChainStep[],
+): InfcontrolLayerBinV3Row[] {
+  return chain.reduce<InfcontrolLayerBinV3Row[]>((acc, { level, value }) => {
+    switch (level) {
+      case "mask":   return acc.filter(r => (jbRowDimValue(r, "mask") ?? "") === value);
+      case "device": return acc.filter(r => String(r.DEVICE ?? "").trim() === value);
+      case "lot":    return acc.filter(r => String(r.LOT ?? "").trim() === value);
+      case "slot":   return acc.filter(r => String(r.SLOT ?? "") === value);
+      case "passId": return acc.filter(r => String(r.PASSID ?? "") === value);
+      case "cardId": return acc.filter(r => String(r.CARDID ?? "").trim() === value);
+      default:       return acc;
+    }
+  }, rows);
+}
+
+type FunnelBarItem = { value: string; badDie: number; waferCount: number; extraLabel: string };
+
+function computeFunnelBars(rows: InfcontrolLayerBinV3Row[], levelKey: string): FunnelBarItem[] {
+  const groups = new Map<string, InfcontrolLayerBinV3Row[]>();
+  for (const row of rows) {
+    let key: string | undefined;
+    switch (levelKey) {
+      case "mask":   key = jbRowDimValue(row, "mask"); break;
+      case "device": key = String(row.DEVICE ?? "").trim() || undefined; break;
+      case "lot":    key = String(row.LOT ?? "").trim() || undefined; break;
+      case "slot":   key = row.SLOT != null ? String(row.SLOT) : undefined; break;
+      case "passId": key = row.PASSID != null ? String(row.PASSID) : undefined; break;
+      case "cardId": key = String(row.CARDID ?? "").trim() || undefined; break;
+    }
+    if (!key) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(row);
+  }
+  return [...groups.entries()]
+    .map(([value, gRows]) => {
+      const badDie = gRows.reduce((s, r) => s + funnelBadDie(r), 0);
+      const keynums = new Set(gRows.map(r => r.KEYNUMBER).filter((n): n is number => n != null));
+      let extraLabel = "";
+      if (levelKey === "lot") {
+        const testers = [...new Set(gRows.map(r => String(r.TESTERID ?? "").trim()).filter(Boolean))];
+        extraLabel = testers.join(" / ") || "—";
+      } else if (levelKey === "slot") {
+        const yp = computeYieldPct(gRows);
+        extraLabel = yp != null ? `${yp.toFixed(1)}%` : "—";
+      } else if (levelKey === "passId") {
+        const cards = new Set(gRows.map(r => String(r.CARDID ?? "").trim()).filter(Boolean));
+        extraLabel = `${cards.size} card${cards.size !== 1 ? "s" : ""}`;
+      } else if (levelKey === "cardId") {
+        const binBad = new Map<string, number>();
+        for (const r of gRows) {
+          if (!Array.isArray(r.bins)) continue;
+          for (const b of r.bins) {
+            if (b.isGoodBin) continue;
+            const n = String(b.n ?? ""); if (!n) continue;
+            binBad.set(n, (binBad.get(n) ?? 0) + (b.value ?? 0));
+          }
+        }
+        if (binBad.size > 0) {
+          const top = [...binBad.entries()].sort((a, b) => b[1] - a[1])[0][0];
+          extraLabel = `Top BIN${top}`;
+        }
+      }
+      return { value, badDie, waferCount: keynums.size, extraLabel };
+    })
+    .sort((a, b) => b.badDie - a.badDie);
+}
+
+// FUNNEL_LEVEL_DEFS index at which a fresh DB fetch is used instead of list.rows
+const FUNNEL_DB_FETCH_FROM = 3; // slot (index 3) and deeper
+
+function FunnelDrillSection({
+  rows, chain, onChainChange, apiBase,
+  lotRows, lotLoading, lotError,
+}: {
+  rows: InfcontrolLayerBinV3Row[];
+  chain: FunnelChainStep[];
+  onChainChange: (chain: FunnelChainStep[]) => void;
+  apiBase: string;
+  lotRows: InfcontrolLayerBinV3Row[] | null;
+  lotLoading: boolean;
+  lotError: string | null;
+}) {
+  const isDut = chain.length >= FUNNEL_LEVEL_DEFS.length;
+  const levelDef = isDut ? undefined : FUNNEL_LEVEL_DEFS[chain.length];
+
+  // For slot/passId/probecard levels: use freshly-fetched lotRows (all wafers, no limit).
+  // For mask/device/lot levels: derive from existing list.rows.
+  const filteredRows = useMemo(() => {
+    if (chain.length >= FUNNEL_DB_FETCH_FROM && lotRows !== null) {
+      // lotRows already filtered to device+lot by the API call;
+      // apply only the slot/passId/cardId steps from the chain
+      return funnelFilter(lotRows, chain.slice(FUNNEL_DB_FETCH_FROM));
+    }
+    return funnelFilter(rows, chain);
+  }, [rows, lotRows, chain]);
+
+  const bars = useMemo(
+    () => {
+      if (isDut || !levelDef) return [];
+      if (chain.length >= FUNNEL_DB_FETCH_FROM && (lotLoading || lotError)) return [];
+      return computeFunnelBars(filteredRows, levelDef.key);
+    },
+    [filteredRows, levelDef, isDut, chain.length, lotLoading, lotError],
+  );
+
+  const { chartOption, displayItems } = useMemo((): { chartOption: EChartsOption; displayItems: FunnelBarItem[] } => {
+    if (!levelDef || !bars.length) return { chartOption: {}, displayItems: [] };
+    const color = levelDef.color;
+
+    if (levelDef.key === "slot") {
+      const sorted = [...bars].sort((a, b) => Number(a.value) - Number(b.value));
+      return {
+        displayItems: sorted,
+        chartOption: {
+          ...horizontalBarChartBase(),
+          grid: verticalBarChartGrid,
+          tooltip: {
+            trigger: "axis",
+            backgroundColor: "#161b22",
+            borderColor: "#30363d",
+            textStyle: { color: "#e6edf3", fontSize: 12 },
+            formatter: (p: unknown) => {
+              const d = sorted[(p as Array<{ dataIndex: number }>)[0].dataIndex];
+              return d ? `Wafer ID: <b>${d.value}</b><br/>Bad die: <b>${d.badDie}</b><br/>Yield: ${d.extraLabel}` : "";
+            },
+          },
+          xAxis: {
+            type: "category",
+            data: sorted.map(d => d.value),
+            axisLabel: { color: chartAxisColor, fontSize: 10, rotate: 30 },
+          },
+          yAxis: {
+            type: "value",
+            axisLabel: { color: chartAxisColor },
+            splitLine: { lineStyle: { color: chartSplitLine } },
+          },
+          series: [{
+            type: "bar",
+            data: sorted.map(d => ({ value: d.badDie, itemStyle: { color, borderRadius: [4, 4, 0, 0] as unknown as number } })),
+            animationDuration: 600,
+          }],
+        },
+      };
+    }
+
+    const sorted = [...bars].sort((a, b) => a.badDie - b.badDie).slice(-20);
+    const extraKey = levelDef.key === "lot" ? "机台"
+      : levelDef.key === "passId" ? "Cards"
+      : levelDef.key === "cardId" ? "Top Bin"
+      : undefined;
+    return {
+      displayItems: sorted,
+      chartOption: {
+        ...horizontalBarChartBase(),
+        tooltip: {
+          trigger: "axis",
+          backgroundColor: "#161b22",
+          borderColor: "#30363d",
+          textStyle: { color: "#e6edf3", fontSize: 12 },
+          formatter: (p: unknown) => {
+            const d = sorted[(p as Array<{ dataIndex: number }>)[0].dataIndex];
+            if (!d) return "";
+            const lines = [
+              `${levelDef.label}: <b>${d.value}</b>`,
+              `Bad die: <b>${d.badDie}</b>`,
+              `Wafers: ${d.waferCount}`,
+            ];
+            if (d.extraLabel && extraKey) lines.push(`${extraKey}: ${d.extraLabel}`);
+            return lines.join("<br/>");
+          },
+        },
+        xAxis: {
+          type: "value",
+          axisLabel: { color: chartAxisColor },
+          splitLine: { lineStyle: { color: chartSplitLine } },
+        },
+        yAxis: {
+          type: "category",
+          data: sorted.map(d => d.value),
+          axisLabel: { ...horizontalBarCategoryAxisLabel, interval: 0 },
+        },
+        series: [{
+          type: "bar",
+          data: sorted.map(d => ({ value: d.badDie, itemStyle: { color, borderRadius: [0, 4, 4, 0] as unknown as number } })),
+          label: { show: true, position: "right", color: chartAxisColor, fontSize: 10 },
+          animationDuration: 600,
+        }],
+      },
+    };
+  }, [bars, levelDef]);
+
+  const handleBarClick = useCallback(
+    (params: { dataIndex: number }) => {
+      if (isDut || !levelDef) return;
+      const item = displayItems[params.dataIndex];
+      if (!item) return;
+      onChainChange([...chain, { level: levelDef.key, value: item.value }]);
+    },
+    [displayItems, chain, isDut, levelDef, onChainChange],
+  );
+
+  const { dutWafers, dutDevice, dutLot, dutGoodBins } = useMemo(() => {
+    const empty = { dutWafers: [] as InfDutWaferSpec[], dutDevice: "", dutLot: "", dutGoodBins: new Set<number>([HARD_GOOD_BIN]) };
+    if (!isDut || !filteredRows.length) return empty;
+    const deviceStep = chain.find(s => s.level === "device");
+    const lotStep    = chain.find(s => s.level === "lot");
+    if (!deviceStep || !lotStep) return empty;
+    const waferMap = new Map<string, InfDutWaferSpec>();
+    const goodBins = new Set<number>([HARD_GOOD_BIN]);
+    for (const row of filteredRows) {
+      const spec = waferSpecFromJbRow(row);
+      if (!spec) continue;
+      const key = `${spec.device}|${spec.lot}|${spec.slot}`;
+      const ex = waferMap.get(key);
+      if (!ex) {
+        waferMap.set(key, { ...spec, passIds: [...spec.passIds] });
+      } else {
+        for (const p of spec.passIds) { if (!ex.passIds.includes(p)) ex.passIds.push(p); }
+      }
+      for (const n of collectGoodBinNumbersFromJbRow(row)) goodBins.add(n);
+    }
+    return { dutWafers: [...waferMap.values()], dutDevice: deviceStep.value, dutLot: lotStep.value, dutGoodBins: goodBins };
+  }, [isDut, filteredRows, chain]);
+
+  const chartHeight = !levelDef ? 0
+    : levelDef.key === "slot"
+      ? JB_SLOT_TREND_CHART_HEIGHT
+      : rankBarChartHeight(Math.min(bars.length, 20), 20, "medium");
+
+  return (
+    <div className="funnel-section">
+      {/* Step chain */}
+      <div className="funnel-steps">
+        {FUNNEL_LEVEL_DEFS.map((def, idx) => {
+          const step = chain[idx];
+          const isCurrent  = idx === chain.length && !isDut;
+          const isCompleted = idx < chain.length;
+          const isFuture   = !isCompleted && !isCurrent;
+          return (
+            <Fragment key={def.key}>
+              {idx > 0 && <span className="funnel-arrow">›</span>}
+              <button
+                type="button"
+                className={
+                  "funnel-step" +
+                  (isCompleted ? " funnel-step--done"   : "") +
+                  (isCurrent   ? " funnel-step--active" : "") +
+                  (isFuture    ? " funnel-step--future" : "")
+                }
+                style={(isCompleted || isCurrent) ? ({ "--step-color": def.color } as CSSProperties) : undefined}
+                onClick={isCompleted ? () => onChainChange(chain.slice(0, idx)) : undefined}
+                disabled={isFuture}
+              >
+                <span className="funnel-step-name">{def.label}</span>
+                {step && <span className="funnel-step-val">{step.value}</span>}
+                {isCurrent && !step && <span className="funnel-step-selecting">▼ 选择中</span>}
+              </button>
+            </Fragment>
+          );
+        })}
+        {isDut && (
+          <Fragment key="dut">
+            <span className="funnel-arrow">›</span>
+            <button type="button" className="funnel-step funnel-step--active" style={{ "--step-color": "#ff9500" } as CSSProperties} disabled>
+              <span className="funnel-step-name">DUT × BIN</span>
+            </button>
+          </Fragment>
+        )}
+      </div>
+
+      {/* Header row */}
+      <div className="funnel-chart-header">
+        <span className="funnel-chart-title">
+          {isDut
+            ? `DUT × BIN — ${chain.map(s => s.value).join(" › ")}`
+            : chain.length === 0
+              ? "点击条形开始钻取"
+              : `${chain.map(s => s.value).join(" › ")} — 选择 ${levelDef?.label ?? ""}`
+          }
+        </span>
+        {chain.length > 0 && (
+          <button type="button" className="funnel-back-btn" onClick={() => onChainChange(chain.slice(0, -1))}>
+            ← 返回上一级
+          </button>
+        )}
+      </div>
+
+      {/* Chart */}
+      {!isDut && levelDef && (
+        chain.length >= FUNNEL_DB_FETCH_FROM && lotLoading ? (
+          <p className="muted small" style={{ margin: "12px 0" }}>正在从数据库加载批次所有 Wafer…</p>
+        ) : chain.length >= FUNNEL_DB_FETCH_FROM && !!lotError ? (
+          <p style={{ color: "#ff7b72", fontSize: 12, margin: "12px 0" }}>{lotError}</p>
+        ) : displayItems.length > 0 ? (
+          <div className="report-chart-panel">
+            <ReactECharts
+              option={chartOption}
+              style={{ height: chartHeight, width: "100%" }}
+              opts={{ renderer: "canvas" }}
+              notMerge
+              lazyUpdate
+              onEvents={{ click: handleBarClick }}
+            />
+          </div>
+        ) : (
+          <p className="muted small" style={{ margin: "12px 0" }}>当前筛选下无数据</p>
+        )
+      )}
+
+      {/* DUT panel */}
+      {isDut && dutWafers.length > 0 && (
+        <div className="inf-dut-standalone-row">
+          <InfDutDistPanel
+            wafers={dutWafers}
+            device={dutDevice}
+            lot={dutLot}
+            selectionSummary={chain.map(s => s.value).join(" › ")}
+            goodBinNumbers={dutGoodBins}
+            apiBase={apiBase}
+            onClose={() => onChainChange(chain.slice(0, -1))}
+          />
+        </div>
+      )}
+      {isDut && dutWafers.length === 0 && (
+        <p className="muted small" style={{ margin: "12px 0" }}>无法构建 DUT 上下文（需要 device 及 lot 路径）</p>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function InfcontrolReport({ apiBase, listLimits }: Props) {
   const [form, setForm] = useState<FormState>(initialForm);
   const [list,        setList]        = useState<InfcontrolLayerBinsV3Response | null>(null);
   const [aggBin,      setAggBin]      = useState<InfcontrolAggregateBlock | null>(null);
   // probeCardType,bin aggregate — chart shows type-level; cardId accessed via drill
   const [aggCardType, setAggCardType] = useState<InfcontrolAggregateBlock | null>(null);
-  const [aggSlot,     setAggSlot]     = useState<InfcontrolAggregateBlock | null>(null);
   const [aggTree,     setAggTree]     = useState<InfcontrolAggregateBlock | null>(null);
   const [aggDevice,   setAggDevice]   = useState<InfcontrolAggregateBlock | null>(null);
 
@@ -564,11 +916,8 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
   const [showTree,   setShowTree]   = useState(false);
   const [showDetail, setShowDetail] = useState(false);
   const [selectedLotLabel, setSelectedLotLabel] = useState<string | null>(null);
-  const [selectedBin,      setSelectedBin]      = useState<string | null>(null);
   const [selectedCardType, setSelectedCardType] = useState<string | null>(null);
-  const [selectedSlot,     setSelectedSlot]     = useState<string | null>(null);
   const [selectedDevice,   setSelectedDevice]   = useState<string | null>(null);
-  const [selectedMask,     setSelectedMask]     = useState<string | null>(null);
   const [infCtx, setInfCtx] = useState<InfCtx>(null);
   const [detailSelectedListIndices, setDetailSelectedListIndices] = useState<
     Set<number>
@@ -578,6 +927,11 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
   >({});
   const [selectionHint, setSelectionHint] = useState<string | null>(null);
   const [layoutEpoch, setLayoutEpoch] = useState(0);
+  const [showMore, setShowMore] = useState(false);
+  const [funnelChain, setFunnelChain] = useState<FunnelChainStep[]>([]);
+  const [funnelLotRows,    setFunnelLotRows]    = useState<InfcontrolLayerBinV3Row[] | null>(null);
+  const [funnelLotLoading, setFunnelLotLoading] = useState(false);
+  const [funnelLotError,   setFunnelLotError]   = useState<string | null>(null);
 
   const resetReportLayout = useCallback(() => {
     resetReportLayoutStorage(JB_START_LAYOUT_STORAGE_KEYS);
@@ -603,17 +957,13 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     setList(null);
     setAggBin(null);
     setAggCardType(null);
-    setAggSlot(null);
     setAggTree(null);
     setAggDevice(null);
     setDrills({});
     drillCacheRef.current = {};
     setSelectedLotLabel(null);
-    setSelectedBin(null);
     setSelectedCardType(null);
-    setSelectedSlot(null);
     setSelectedDevice(null);
-    setSelectedMask(null);
     setInfCtx(null);
     setDetailSelectedListIndices(new Set());
     setDrillBarSelectedKeys({});
@@ -622,7 +972,44 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     setErrorAgg(null);
     setLoadingList(false);
     setLoadingAgg(false);
+    setFunnelChain([]);
+    setFunnelLotRows(null);
+    setFunnelLotLoading(false);
+    setFunnelLotError(null);
   }, []);
+
+  // Extract device+lot from funnel chain so the effect only re-runs when they actually change
+  const funnelDeviceVal = useMemo(
+    () => funnelChain.find(s => s.level === "device")?.value,
+    [funnelChain],
+  );
+  const funnelLotVal = useMemo(
+    () => funnelChain.find(s => s.level === "lot")?.value,
+    [funnelChain],
+  );
+
+  // Fetch all rows for the selected device+lot from DB (no limit) when drilling to slot level
+  useEffect(() => {
+    if (!funnelDeviceVal || !funnelLotVal) {
+      setFunnelLotRows(null);
+      setFunnelLotError(null);
+      setFunnelLotLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setFunnelLotLoading(true);
+    setFunnelLotError(null);
+    setFunnelLotRows(null);
+    apiGetJson<InfcontrolLayerBinsV3Response>(apiBase, INFCONTROL_COMBINED_PATH, {
+      device: funnelDeviceVal,
+      lot: funnelLotVal,
+      limit: 2000,
+    })
+      .then(res => { if (!cancelled) setFunnelLotRows((res.rows ?? []) as InfcontrolLayerBinV3Row[]); })
+      .catch(e  => { if (!cancelled) setFunnelLotError(e instanceof Error ? e.message : String(e)); })
+      .finally(() => { if (!cancelled) setFunnelLotLoading(false); });
+    return () => { cancelled = true; };
+  }, [funnelDeviceVal, funnelLotVal, apiBase]);
 
   const applyDateShortcut = useCallback((fn: () => [string, string]) => {
     const [from, to] = fn();
@@ -637,6 +1024,9 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       currentForm: FormState
     ) => {
       const subDimKeys = drillSubDimKeysForFetch(parentDimKey, subDim);
+      // User-intended dimensions (without the API-forced bin).
+      // Used to re-aggregate (dim,bin) pairs into totals per dim.
+      const userDims = subDim.split(",").map(s => s.trim()).filter(Boolean);
       const listRows = (list?.rows ?? []) as InfcontrolLayerBinV3Row[];
 
       setDrillBarSelectedKeys((prev) => ({
@@ -671,7 +1061,10 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         TREE_DRILL_DIMS.has(parentDimKey) &&
         subDimKeys.every((k) => TREE_DRILL_DIMS.has(k))
       ) {
-        const groups = drillFromTree(treeGroups, parentDimKey, parentDimVal, subDimKeys);
+        const groups = reAggByUserDims(
+          drillFromTree(treeGroups, parentDimKey, parentDimVal, subDimKeys),
+          userDims,
+        );
         if (groups.length > 0) {
           storeDrillTab(parentDimKey, parentDimVal, subDim, groups, drillCacheRef, setDrills);
           return;
@@ -681,11 +1074,9 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
 
       // ── In-memory path: derive from cached list rows (no Oracle call) ─────────
       if (listRows.length > 0) {
-        const fromList = drillFromJbListRows(
-          listRows,
-          parentDimKey,
-          parentDimVal,
-          subDimKeys
+        const fromList = reAggByUserDims(
+          drillFromJbListRows(listRows, parentDimKey, parentDimVal, subDimKeys),
+          userDims,
         );
         if (fromList.length > 0) {
           storeDrillTab(
@@ -765,13 +1156,11 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         }
 
         if (groups.length === 0 && listRows.length > 0) {
-          groups = drillFromJbListRows(
-            listRows,
-            parentDimKey,
-            parentDimVal,
-            subDimKeys
-          );
+          groups = drillFromJbListRows(listRows, parentDimKey, parentDimVal, subDimKeys);
         }
+
+        // Re-aggregate: sum (dim, bin) pairs into totals per user-intended dim
+        groups = reAggByUserDims(groups, userDims);
 
         setDrills((prev) => {
           const d = prev[parentDimKey];
@@ -801,13 +1190,10 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     setDrills({});
     drillCacheRef.current = {};
     setSelectedLotLabel(null);
-    setSelectedBin(null);
     setSelectedCardType(null);
-    setSelectedSlot(null);
     setList(null);
     setAggBin(null);
     setAggCardType(null);
-    setAggSlot(null);
     setAggTree(null);
     setAggDevice(null);
     setSelectedDevice(null);
@@ -825,7 +1211,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
           aggs: [
             `${jbAggregateGroupBy("bin")}:30`,
             `${jbAggregateGroupBy("probeCardType")}:25`,
-            `${jbAggregateGroupBy("slot")}:50`,
             `${jbAggregateGroupBy("device", "lot", "probeCardType", "cardId")}:1000`,
             `${jbAggregateGroupBy("device")}:30`,
           ].join("|"),
@@ -834,7 +1219,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       setList(res);
       setAggBin(res.aggregates[jbAggregateGroupBy("bin")] ?? null);
       setAggCardType(res.aggregates[jbAggregateGroupBy("probeCardType")] ?? null);
-      setAggSlot(res.aggregates[jbAggregateGroupBy("slot")] ?? null);
       setAggTree(
         res.aggregates[jbAggregateGroupBy("device", "lot", "probeCardType", "cardId")] ?? null
       );
@@ -852,23 +1236,23 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
 
   // ── KPI derivations ──────────────────────────────────────────────────────
 
-  const totalWafers = useMemo(() => {
-    const rawRows = list?.rows;
-    if (!rawRows?.length) return aggBin?.totalRowsMatching ?? null;
-    const rows = rawRows as InfcontrolLayerBinV3Row[];
-    const seen = new Set<number>();
-    for (const row of rows) {
-      if (row.KEYNUMBER != null && String(row.PASSTYPE ?? "").toUpperCase().trim() !== "INTERRUPT") {
-        seen.add(row.KEYNUMBER);
-      }
-    }
-    return seen.size > 0 ? seen.size : (aggBin?.totalRowsMatching ?? null);
-  }, [list?.rows, aggBin?.totalRowsMatching]);
-
-  const overallYield = useMemo(() => {
+  const deviceSummary = useMemo(() => {
     if (!list?.rows?.length) return null;
-    return computeYieldPct(list.rows as InfcontrolLayerBinV3Row[]);
-  }, [list]);
+    const rows = list.rows as InfcontrolLayerBinV3Row[];
+    const devices = new Set(rows.map((r) => String(r.DEVICE ?? "").trim()).filter(Boolean));
+    if (devices.size === 0) return null;
+    if (devices.size === 1) return [...devices][0];
+    return `${devices.size} devices`;
+  }, [list?.rows]);
+
+  const lotSummary = useMemo(() => {
+    if (!list?.rows?.length) return null;
+    const rows = list.rows as InfcontrolLayerBinV3Row[];
+    const lots = new Set(rows.map((r) => String(r.LOT ?? "").trim()).filter(Boolean));
+    if (lots.size === 0) return null;
+    if (lots.size === 1) return [...lots][0];
+    return `${lots.size} lots`;
+  }, [list?.rows]);
 
   // Worst probeCardType by total bad-die count
   const worstCardType = useMemo(() => {
@@ -887,6 +1271,19 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     if (!groups.length) return null;
     return `Bin ${groups[0].parts.bin ?? groups[0].key}`;
   }, [aggBin]);
+
+  const worstCardId = useMemo(() => {
+    const groups = aggTree?.groups ?? [];
+    if (!groups.length) return null;
+    const cardBad = new Map<string, number>();
+    for (const g of groups) {
+      const c = g.parts.cardId;
+      if (!c) continue;
+      cardBad.set(c, (cardBad.get(c) ?? 0) + g.count);
+    }
+    if (cardBad.size === 0) return null;
+    return [...cardBad.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  }, [aggTree]);
 
   // ── Chart options ────────────────────────────────────────────────────────
 
@@ -966,48 +1363,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     };
   }, [lotYieldData, selectedLotLabel]);
 
-  const binRankOption = useMemo((): EChartsOption => {
-    const sorted = [...(aggBin?.groups ?? [])]
-      .sort((a, b) => a.count - b.count)
-      .slice(-10);
-    const COL = "#ff7b72", COL_B = "#ff5050", COL_D = "rgba(255,123,114,0.3)";
-    return {
-      ...horizontalBarChartBase(),
-      xAxis: {
-        type: "value",
-        axisLabel: { color: chartAxisColor },
-        splitLine: { lineStyle: { color: chartSplitLine } },
-      },
-      yAxis: {
-        type: "category",
-        data: sorted.map((g) => `Bin ${g.parts.bin ?? g.key}`),
-        axisLabel: { ...horizontalBarCategoryAxisLabel, interval: 0 },
-      },
-      series: [
-        {
-          type: "bar",
-          data: sorted.map((g) => {
-            const key = `Bin ${g.parts.bin ?? g.key}`;
-            const isSel = selectedBin !== null && key === `Bin ${selectedBin}`;
-            return {
-              value: g.count,
-              itemStyle: {
-                color: isSel ? COL_B : selectedBin !== null ? COL_D : COL,
-                borderRadius: [0, 4, 4, 0] as unknown as number,
-              },
-            };
-          }),
-          label: {
-            show: true,
-            position: "right",
-            color: chartAxisColor,
-            fontSize: 10,
-          },
-          animationDuration: 600,
-        },
-      ],
-    };
-  }, [aggBin, selectedBin]);
 
   // ProbeCard Type — sum bad-die per type (aggregate over bin dimension)
   const cardTypeOption = useMemo((): EChartsOption => {
@@ -1055,48 +1410,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     };
   }, [aggCardType, selectedCardType]);
 
-  const slotOption = useMemo((): EChartsOption => {
-    const slotBad = new Map<string, number>();
-    for (const g of aggSlot?.groups ?? []) {
-      const s = g.parts.slot ?? "—";
-      slotBad.set(s, (slotBad.get(s) ?? 0) + g.count);
-    }
-    const sorted = [...slotBad.entries()]
-      .sort((a, b) => Number(a[0]) - Number(b[0]))
-      .slice(0, 10);
-    const COL = "#79c0ff", COL_B = "#4da6ff", COL_D = "rgba(121,192,255,0.3)";
-    return {
-      ...horizontalBarChartBase(),
-      grid: verticalBarChartGrid,
-      xAxis: {
-        type: "category",
-        data: sorted.map(([s]) => `Slot ${s}`),
-        axisLabel: { color: chartAxisColor, fontSize: 10, rotate: 30 },
-      },
-      yAxis: {
-        type: "value",
-        axisLabel: { color: chartAxisColor },
-        splitLine: { lineStyle: { color: chartSplitLine } },
-      },
-      series: [
-        {
-          type: "bar",
-          data: sorted.map(([s, v]) => {
-            const key = `Slot ${s}`;
-            const isSel = selectedSlot !== null && key === selectedSlot;
-            return {
-              value: v,
-              itemStyle: {
-                color: isSel ? COL_B : selectedSlot !== null ? COL_D : COL,
-                borderRadius: [4, 4, 0, 0] as unknown as number,
-              },
-            };
-          }),
-          animationDuration: 600,
-        },
-      ],
-    };
-  }, [aggSlot, selectedSlot]);
 
   const deviceOption = useMemo((): EChartsOption => {
     const devBad = new Map<string, number>();
@@ -1143,50 +1456,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     };
   }, [aggDevice, selectedDevice]);
 
-  const maskOption = useMemo((): EChartsOption => {
-    const maskBad = new Map<string, number>();
-    for (const g of aggDevice?.groups ?? []) {
-      const m = g.parts.mask ?? "—";
-      maskBad.set(m, (maskBad.get(m) ?? 0) + g.count);
-    }
-    const sorted = [...maskBad.entries()].sort((a, b) => a[1] - b[1]).slice(-10);
-    const COL = "#d2a8ff", COL_B = "#bf8fff", COL_D = "rgba(210,168,255,0.3)";
-    return {
-      ...horizontalBarChartBase(),
-      xAxis: {
-        type: "value",
-        axisLabel: { color: chartAxisColor },
-        splitLine: { lineStyle: { color: chartSplitLine } },
-      },
-      yAxis: {
-        type: "category",
-        data: sorted.map(([m]) => m),
-        axisLabel: { ...horizontalBarCategoryAxisLabel, interval: 0 },
-      },
-      series: [
-        {
-          type: "bar",
-          data: sorted.map(([m, v]) => {
-            const isSel = selectedMask !== null && m === selectedMask;
-            return {
-              value: v,
-              itemStyle: {
-                color: isSel ? COL_B : selectedMask !== null ? COL_D : COL,
-                borderRadius: [0, 4, 4, 0] as unknown as number,
-              },
-            };
-          }),
-          label: {
-            show: true,
-            position: "right",
-            color: chartAxisColor,
-            fontSize: 10,
-          },
-          animationDuration: 600,
-        },
-      ],
-    };
-  }, [aggDevice, selectedMask]);
 
   // ── Tree: Mask → Device → LOT → ProbeCard Type → CardId ─────────────────
 
@@ -1381,34 +1650,34 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         axis="x"
         groupClassName="report-reorder-group--kpis"
         labels={{
-          jbWafer: "匹配 Wafer 数",
-          jbYieldPct: "综合 Yield%",
+          jbDevice: "Device",
+          jbLot: "Lot",
           jbWorstType: "最差探针卡类型",
           jbTopBin: "Top 不良 Bin",
+          jbWorstCard: "坏 die 最多的卡",
         }}
         sections={{
-          jbWafer: (
-            <KpiCard label="匹配 Wafer 数" value={totalWafers} color="blue" subtext="匹配 Wafer 数" showLabel={false} />
+          jbDevice: (
+            <KpiCard label="Device" value={deviceSummary} color="blue" subtext="匹配设备" showLabel={false} />
           ),
-          jbYieldPct: (
-            <KpiCard
-              label="综合 Yield%"
-              value={overallYield !== null ? `${overallYield.toFixed(1)}%` : null}
-              color={
-                overallYield !== null
-                  ? overallYield >= 95 ? "green" : overallYield >= 80 ? "yellow" : "red"
-                  : "white"
-              }
-              subtext="好品率"
-              showLabel={false}
-            />
+          jbLot: (
+            <KpiCard label="Lot" value={lotSummary} color="green" subtext="匹配批次" showLabel={false} />
           ),
           jbWorstType: (
             <KpiCard
               label="最差探针卡类型"
               value={worstCardType}
-              color="red"
+              color="yellow"
               subtext="坏 die 最多"
+              showLabel={false}
+            />
+          ),
+          jbWorstCard: (
+            <KpiCard
+              label="坏 die 最多的卡"
+              value={worstCardId}
+              color="red"
+              subtext="实测最差 CardId"
               showLabel={false}
             />
           ),
@@ -1416,7 +1685,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
             <KpiCard
               label="Top 不良 Bin"
               value={topBin}
-              color="yellow"
+              color="white"
               subtext="全量最高"
               showLabel={false}
             />
@@ -1491,298 +1760,92 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         </>
       ) : null;
 
-    const chartsGridSection = (
-      <DraggableReportBlocks
-        storageKey="pcr-ai-report:jb-start-chart-blocks"
-        defaultOrder={JB_CHART_BLOCK_ORDER}
-        layoutEpoch={layoutEpoch}
-        axis="grid"
-        fullRowIds={["jbPcType", "jbDevice", "jbMask", "jbSlot"]}
-        groupClassName="report-reorder-group--chartgrid"
-        labels={{
-          jbPcType: "ProbeCard Type 不良对比",
-          jbDevice: "Device 不良分析",
-          jbMask: "Mask 不良分析",
-          jbSlot: "Slot 趋势（Wafer 间）",
-        }}
-        sections={{
-          jbDevice: (
-            <>
-            <div className="report-chart-panel">
-              <ChartDrillSplit
-                hint="点击 Device 钻取"
-                chart={
-                  aggDevice ? (
-                    <ReactECharts
-                      option={deviceOption}
-                      style={{
-                        height: rankBarChartHeight(aggDevice.groups?.length ?? 0, 10, "medium"),
-                        width: "100%",
-                      }}
-                      opts={{ renderer: "canvas" }}
-                      notMerge
-                      lazyUpdate
-                      onEvents={{
-                        click: (params: { name: string }) => {
-                          setSelectedDevice(params.name);
-                          fetchDrill("device", params.name, "lot", form);
-                        },
-                      }}
-                    />
-                  ) : null
-                }
-                drill={
-                  drills["device"] != null ? (
+    const pcTypeSection = (
+      <>
+        <div className="report-chart-panel">
+          <ChartDrillSplit
+            hint="点击类型 → 钻取具体 CardId"
+            chart={
+              aggCardType ? (
+                <ReactECharts
+                  option={cardTypeOption}
+                  style={{
+                    height: rankBarChartHeight(
+                      new Map(
+                        aggCardType.groups?.map((g) => [g.parts.probeCardType, 1]) ?? []
+                      ).size,
+                      10,
+                      "medium"
+                    ),
+                    width: "100%",
+                  }}
+                  opts={{ renderer: "canvas" }}
+                  notMerge
+                  lazyUpdate
+                  onEvents={{
+                    click: (params: { name: string }) => {
+                      setSelectedCardType(params.name);
+                      fetchDrill("probeCardType", params.name, "cardId", form);
+                    },
+                  }}
+                />
+              ) : null
+            }
+            drill={
+              drills["probeCardType"] != null || drills["cardId"] != null ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, height: "100%" }}>
+                  {drills["probeCardType"] != null ? (
                     <DrillDownPanel
                       chartSize="medium"
                       layout="side"
-                      title={`Device: ${drills["device"]!.parentDimVal} · 下钻：按 ${drills["device"]!.subDim}`}
-                      groups={drills["device"]!.groups}
-                      loading={drills["device"]!.loading}
-                      error={drills["device"]!.error}
-                      activeSubDim={drills["device"]!.subDim}
-                      subDimOptions={DRILL_FROM_DEVICE_JB}
+                      title={`Type: ${drills["probeCardType"]!.parentDimVal} · 下钻：按 ${drills["probeCardType"]!.subDim}`}
+                      groups={drills["probeCardType"]!.groups}
+                      loading={drills["probeCardType"]!.loading}
+                      error={drills["probeCardType"]!.error}
+                      activeSubDim={drills["probeCardType"]!.subDim}
+                      subDimOptions={DRILL_FROM_CARDTYPE}
                       onSubDimChange={(d) =>
-                        fetchDrill("device", drills["device"]!.parentDimVal, d, form)
+                        fetchDrill("probeCardType", drills["probeCardType"]!.parentDimVal, d, form)
                       }
-                      multiSelect={drills["device"]!.subDim === "slot"}
-                      selectedKeys={drillBarSelectedKeys["device"]}
+                      multiSelect={drills["probeCardType"]!.subDim === "slot"}
+                      selectedKeys={drillBarSelectedKeys["probeCardType"]}
                       onBarToggle={(key) =>
-                        toggleDrillBarKey("device", drills["device"]!, key)
+                        toggleDrillBarKey("probeCardType", drills["probeCardType"]!, key)
                       }
-                      interactive={drills["device"]!.subDim === "slot"}
-                      onClose={() => closeDrillPanel("device", () => setSelectedDevice(null))}
+                      interactive={drills["probeCardType"]!.subDim === "slot"}
+                      onClose={() =>
+                        closeDrillPanel("probeCardType", () => setSelectedCardType(null))
+                      }
                     />
-                  ) : null
-                }
-              />
-              </div>
-              <InfDutAnchorRow
-                infCtx={infCtx}
-                match={(a) => a.source === "chartsGrid" && a.block === "jbDevice"}
-                apiBase={apiBase}
-                onClose={closeInfDut}
-              />
-            </>
-          ),
-          jbMask: (
-            <div className="report-chart-panel">
-              <ChartDrillSplit
-                hint="点击 Mask 钻取"
-                chart={
-                  aggDevice && (new Set((aggDevice.groups ?? []).map(g => g.parts.mask ?? "")).size) > 0 ? (
-                    <ReactECharts
-                      option={maskOption}
-                      style={{
-                        height: rankBarChartHeight(
-                          new Set((aggDevice.groups ?? []).map(g => g.parts.mask ?? "")).size,
-                          10,
-                          "medium"
-                        ),
-                        width: "100%",
-                      }}
-                      opts={{ renderer: "canvas" }}
-                      notMerge
-                      lazyUpdate
-                      onEvents={{
-                        click: (params: { name: string }) => {
-                          setSelectedMask(params.name);
-                          fetchDrill("mask", params.name, "bin", form);
-                        },
-                      }}
-                    />
-                  ) : null
-                }
-                drill={
-                  drills["mask"] != null ? (
+                  ) : null}
+                  {drills["cardId"] != null ? (
                     <DrillDownPanel
                       chartSize="medium"
                       layout="side"
-                      title={`Mask: ${drills["mask"]!.parentDimVal} · 下钻：按 ${drills["mask"]!.subDim}`}
-                      groups={drills["mask"]!.groups}
-                      loading={drills["mask"]!.loading}
-                      error={drills["mask"]!.error}
-                      activeSubDim={drills["mask"]!.subDim}
-                      subDimOptions={DRILL_FROM_MASK}
+                      title={`CardId: ${drills["cardId"]!.parentDimVal} · 下钻：按 ${drills["cardId"]!.subDim}`}
+                      groups={drills["cardId"]!.groups}
+                      loading={drills["cardId"]!.loading}
+                      error={drills["cardId"]!.error}
+                      activeSubDim={drills["cardId"]!.subDim}
+                      subDimOptions={DRILL_FROM_CARD}
                       onSubDimChange={(d) =>
-                        fetchDrill("mask", drills["mask"]!.parentDimVal, d, form)
+                        fetchDrill("cardId", drills["cardId"]!.parentDimVal, d, form)
                       }
-                      onClose={() => closeDrillPanel("mask", () => setSelectedMask(null))}
+                      onClose={() => setDrills((prev) => { const n = { ...prev }; delete n["cardId"]; return n; })}
                     />
-                  ) : null
-                }
-              />
-            </div>
-          ),
-          jbPcType: (
-            <>
-            <div className="report-chart-panel">
-              <ChartDrillSplit
-                hint="点击类型 → 钻取具体 CardId"
-                chart={
-                  aggCardType ? (
-                    <ReactECharts
-                      option={cardTypeOption}
-                      style={{
-                        height: rankBarChartHeight(
-                          new Map(
-                            aggCardType.groups?.map((g) => [g.parts.probeCardType, 1]) ?? []
-                          ).size,
-                          10,
-                          "medium"
-                        ),
-                        width: "100%",
-                      }}
-                      opts={{ renderer: "canvas" }}
-                      notMerge
-                      lazyUpdate
-                      onEvents={{
-                        click: (params: { name: string }) => {
-                          setSelectedCardType(params.name);
-                          fetchDrill("probeCardType", params.name, "cardId", form);
-                        },
-                      }}
-                    />
-                  ) : null
-                }
-                drill={
-                  drills["probeCardType"] != null || drills["cardId"] != null ? (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8, height: "100%" }}>
-                      {drills["probeCardType"] != null ? (
-                        <DrillDownPanel
-                          chartSize="medium"
-                          layout="side"
-                          title={`Type: ${drills["probeCardType"]!.parentDimVal} · 下钻：按 ${drills["probeCardType"]!.subDim}`}
-                          groups={drills["probeCardType"]!.groups}
-                          loading={drills["probeCardType"]!.loading}
-                          error={drills["probeCardType"]!.error}
-                          activeSubDim={drills["probeCardType"]!.subDim}
-                          subDimOptions={DRILL_FROM_CARDTYPE}
-                          onSubDimChange={(d) =>
-                            fetchDrill("probeCardType", drills["probeCardType"]!.parentDimVal, d, form)
-                          }
-                          multiSelect={drills["probeCardType"]!.subDim === "slot"}
-                          selectedKeys={drillBarSelectedKeys["probeCardType"]}
-                          onBarToggle={(key) =>
-                            toggleDrillBarKey("probeCardType", drills["probeCardType"]!, key)
-                          }
-                          interactive={drills["probeCardType"]!.subDim === "slot"}
-                          onClose={() =>
-                            closeDrillPanel("probeCardType", () => setSelectedCardType(null))
-                          }
-                        />
-                      ) : null}
-                      {drills["cardId"] != null ? (
-                        <DrillDownPanel
-                          chartSize="medium"
-                          layout="side"
-                          title={`CardId: ${drills["cardId"]!.parentDimVal} · 下钻：按 ${drills["cardId"]!.subDim}`}
-                          groups={drills["cardId"]!.groups}
-                          loading={drills["cardId"]!.loading}
-                          error={drills["cardId"]!.error}
-                          activeSubDim={drills["cardId"]!.subDim}
-                          subDimOptions={DRILL_FROM_CARD}
-                          onSubDimChange={(d) =>
-                            fetchDrill("cardId", drills["cardId"]!.parentDimVal, d, form)
-                          }
-                          onClose={() => setDrills((prev) => { const n = { ...prev }; delete n["cardId"]; return n; })}
-                        />
-                      ) : null}
-                    </div>
-                  ) : null
-                }
-              />
-              </div>
-              <InfDutAnchorRow
-                infCtx={infCtx}
-                match={(a) => a.source === "chartsGrid" && a.block === "jbPcType"}
-                apiBase={apiBase}
-                onClose={closeInfDut}
-              />
-            </>
-          ),
-          jbSlot: (
-            <>
-            <div className="report-chart-panel">
-              <ChartDrillSplit
-                hint="点击 Slot 钻取；查看 DUT 分布须先在查询条件填写 Lot"
-                chart={
-                  aggSlot && (aggSlot.groups?.length ?? 0) > 0 ? (
-                    <ReactECharts
-                      option={slotOption}
-                      style={{ height: JB_SLOT_TREND_CHART_HEIGHT, width: "100%" }}
-                      opts={{ renderer: "canvas" }}
-                      notMerge
-                      lazyUpdate
-                      onEvents={{
-                        click: (params: { name: string }) => {
-                          const slotNum = params.name.replace(/^Slot /i, "").trim();
-                          setSelectedSlot(params.name);
-                          fetchDrill("slot", slotNum, "bin", form);
-                          const slotN = parseSlotFromDrillBarLabel(params.name);
-                          if (slotN !== null && queryLotRequired(form)) {
-                            setDetailSelectedListIndices(new Set());
-                            const barKey = params.name;
-                            const keys = new Set([barKey]);
-                            setDrillBarSelectedKeys((prev) => ({
-                              ...prev,
-                              slot: keys,
-                            }));
-                            const ctx = buildInfDutCtxFromDrillBarKeys({
-                              parentDimKey: "slot",
-                              parentDimVal: String(slotN),
-                              subDim: "slot",
-                              selectedKeys: keys,
-                              drillGroups: drills["slot"]?.groups ?? [],
-                              formLot: form.lot,
-                              formDevice: form.device,
-                              formPassId: form.passId,
-                              listRows: listRowsForInf,
-                              anchor: { source: "chartsGrid", block: "jbSlot" },
-                            });
-                            if (ctx) setInfCtx(ctx);
-                          }
-                        },
-                      }}
-                    />
-                  ) : aggSlot ? (
-                    <p className="muted small">当前筛选下无 Slot 聚合数据</p>
-                  ) : null
-                }
-                drill={
-                  drills["slot"] != null ? (
-                    <DrillDownPanel
-                      chartSize="medium"
-                      layout="side"
-                      title={`Slot ${drills["slot"]!.parentDimVal} · 下钻：按 ${drills["slot"]!.subDim}`}
-                      groups={drills["slot"]!.groups}
-                      loading={drills["slot"]!.loading}
-                      error={drills["slot"]!.error}
-                      activeSubDim={drills["slot"]!.subDim}
-                      subDimOptions={DRILL_FROM_SLOT}
-                      onSubDimChange={(d) =>
-                        fetchDrill("slot", drills["slot"]!.parentDimVal, d, form)
-                      }
-                      multiSelect={drills["slot"]!.subDim === "slot"}
-                      selectedKeys={drillBarSelectedKeys["slot"]}
-                      onBarToggle={(key) => toggleDrillBarKey("slot", drills["slot"]!, key)}
-                      interactive={drills["slot"]!.subDim === "slot"}
-                      onClose={() => closeDrillPanel("slot", () => setSelectedSlot(null))}
-                    />
-                  ) : null
-                }
-              />
-              </div>
-              <InfDutAnchorRow
-                infCtx={infCtx}
-                match={(a) => a.source === "chartsGrid" && a.block === "jbSlot"}
-                apiBase={apiBase}
-                onClose={closeInfDut}
-              />
-            </>
-          ),
-        }}
-      />
+                  ) : null}
+                </div>
+              ) : null
+            }
+          />
+        </div>
+        <InfDutAnchorRow
+          infCtx={infCtx}
+          match={(a) => a.source === "chartsGrid" && a.block === "jbPcType"}
+          apiBase={apiBase}
+          onClose={closeInfDut}
+        />
+      </>
     );
 
     const treeSection =
@@ -1895,49 +1958,53 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         </>
       ) : null;
 
-    const binDistSection = aggBin?.groups?.length ? (
+
+    const deviceSection = (
       <>
         <div className="report-chart-panel">
           <ChartDrillSplit
-            hint="点击钻取"
+            hint="点击 Device 钻取"
             chart={
-              <ReactECharts
-                option={binRankOption}
-                style={{
-                  height: rankBarChartHeight(aggBin.groups.length, 10, "medium"),
-                  width: "100%",
-                }}
-                opts={{ renderer: "canvas" }}
-                notMerge
-                lazyUpdate
-                onEvents={{
-                  click: (params: { name: string }) => {
-                    const bin = params.name.replace(/^Bin /, "");
-                    setSelectedBin(bin);
-                    fetchDrill("bin", bin, "cardId", form);
-                  },
-                }}
-              />
+              aggDevice ? (
+                <ReactECharts
+                  option={deviceOption}
+                  style={{
+                    height: rankBarChartHeight(aggDevice.groups?.length ?? 0, 10, "medium"),
+                    width: "100%",
+                  }}
+                  opts={{ renderer: "canvas" }}
+                  notMerge
+                  lazyUpdate
+                  onEvents={{
+                    click: (params: { name: string }) => {
+                      setSelectedDevice(params.name);
+                      fetchDrill("device", params.name, "lot", form);
+                    },
+                  }}
+                />
+              ) : null
             }
             drill={
-              drills["bin"] != null ? (
+              drills["device"] != null ? (
                 <DrillDownPanel
                   chartSize="medium"
                   layout="side"
-                  title={`Bin ${drills["bin"]!.parentDimVal} · 下钻：按 ${drills["bin"]!.subDim}`}
-                  groups={drills["bin"]!.groups}
-                  loading={drills["bin"]!.loading}
-                  error={drills["bin"]!.error}
-                  activeSubDim={drills["bin"]!.subDim}
-                  subDimOptions={DRILL_FROM_BIN}
+                  title={`Device: ${drills["device"]!.parentDimVal} · 下钻：按 ${drills["device"]!.subDim}`}
+                  groups={drills["device"]!.groups}
+                  loading={drills["device"]!.loading}
+                  error={drills["device"]!.error}
+                  activeSubDim={drills["device"]!.subDim}
+                  subDimOptions={DRILL_FROM_DEVICE_JB}
                   onSubDimChange={(d) =>
-                    fetchDrill("bin", drills["bin"]!.parentDimVal, d, form)
+                    fetchDrill("device", drills["device"]!.parentDimVal, d, form)
                   }
-                  multiSelect={drills["bin"]!.subDim === "slot"}
-                  selectedKeys={drillBarSelectedKeys["bin"]}
-                  onBarToggle={(key) => toggleDrillBarKey("bin", drills["bin"]!, key)}
-                  interactive={drills["bin"]!.subDim === "slot"}
-                  onClose={() => closeDrillPanel("bin", () => setSelectedBin(null))}
+                  multiSelect={drills["device"]!.subDim === "slot"}
+                  selectedKeys={drillBarSelectedKeys["device"]}
+                  onBarToggle={(key) =>
+                    toggleDrillBarKey("device", drills["device"]!, key)
+                  }
+                  interactive={drills["device"]!.subDim === "slot"}
+                  onClose={() => closeDrillPanel("device", () => setSelectedDevice(null))}
                 />
               ) : null
             }
@@ -1945,38 +2012,48 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         </div>
         <InfDutAnchorRow
           infCtx={infCtx}
-          match={(a) => a.source === "binDist"}
+          match={(a) => a.source === "chartsGrid" && a.block === "jbDevice"}
           apiBase={apiBase}
           onClose={closeInfDut}
         />
       </>
-    ) : null;
+    );
+
+    const funnelSection = (
+      <FunnelDrillSection
+        rows={(list?.rows ?? []) as InfcontrolLayerBinV3Row[]}
+        chain={funnelChain}
+        onChainChange={setFunnelChain}
+        apiBase={apiBase}
+        lotRows={funnelLotRows}
+        lotLoading={funnelLotLoading}
+        lotError={funnelLotError}
+      />
+    );
 
     return {
-      binDist: binDistSection,
       kpi: kpiSection,
+      funnel: funnelSection,
+      device: deviceSection,
       lotYield: lotYieldSection,
-      chartsGrid: chartsGridSection,
+      pcType: pcTypeSection,
       tree: treeSection,
       detail: detailSection,
     };
   }, [
     hasData,
-    totalWafers,
-    overallYield,
+    deviceSummary,
+    lotSummary,
     worstCardType,
     topBin,
+    worstCardId,
     lotYieldData,
     lotYieldOption,
     drills,
     form,
     fetchDrill,
-    aggBin,
-    binRankOption,
     aggCardType,
     cardTypeOption,
-    aggSlot,
-    slotOption,
     aggDevice,
     deviceOption,
     selectedDevice,
@@ -1997,6 +2074,10 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     listRowsForInf,
     infCtx,
     apiBase,
+    funnelChain,
+    funnelLotRows,
+    funnelLotLoading,
+    funnelLotError,
   ]);
 
   return (
@@ -2019,15 +2100,12 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         <div className="filter-grid">
           {(
             [
+              ["Mask", "mask"],
               ["Device", "device"],
-              ["Mask (后4位)", "mask"],
               ["Lot", "lot"],
-              ["Slot", "slot"],
-              ["ProbeCard Type", "probeCardType"],
-              ["CardId", "cardId"],
-              ["TesterID", "testerId"],
-              ["PassID", "passId"],
-              ["MES Slot", "meslot"],
+              ["ProbecardType", "probeCardType"],
+              ["Probecard", "cardId"],
+              ["TesterId", "testerId"],
             ] as [string, keyof FormState][]
           ).map(([label, key]) => (
             <label key={key}>
@@ -2042,22 +2120,12 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
           ))}
 
           <label>
-            <span>BIN 编号（逗号分隔）</span>
-            <input
-              type="text"
-              value={form.bins}
-              onChange={(e) => setField("bins", e.target.value)}
-              placeholder="8, 11, 131（BINn 列有 die）"
-            />
-          </label>
-
-          <label>
-            <span>Tester Type</span>
+            <span>Platform</span>
             <select
               value={form.tstype}
               onChange={(e) => setField("tstype", e.target.value)}
             >
-              <option value="">全部</option>
+              <option value="">All</option>
               {TSTYPE_OPTIONS.map((o) => (
                 <option key={o} value={o}>
                   {o}
@@ -2067,41 +2135,96 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
           </label>
 
           <label className="span-2">
-            <span>测试结束时间（testEnd）</span>
+            <span>Test Finish Time</span>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input
-              type="datetime-local"
-              value={form.testEndFrom}
-              onChange={(e) => setField("testEndFrom", e.target.value)}
-              style={{ flex: 1 }}
-            />
-            <span style={{ color: "#8b949e", fontSize: 12 }}>→</span>
-            <input
-              type="datetime-local"
-              value={form.testEndTo}
-              onChange={(e) => setField("testEndTo", e.target.value)}
-              style={{ flex: 1 }}
-            />
+              <input
+                type="datetime-local"
+                value={form.testEndFrom}
+                onChange={(e) => setField("testEndFrom", e.target.value)}
+                style={{ flex: 1 }}
+              />
+              <span style={{ color: "#8b949e", fontSize: 12 }}>→</span>
+              <input
+                type="datetime-local"
+                value={form.testEndTo}
+                onChange={(e) => setField("testEndTo", e.target.value)}
+                style={{ flex: 1 }}
+              />
+            </div>
+            <div className="preset-chips" style={{ marginTop: 6 }}>
+              {(
+                [
+                  ["Today", dateShortcutToday],
+                  ["Last 7 days", dateShortcutLast7Days],
+                  ["This month", dateShortcutThisMonth],
+                ] as const
+              ).map(([lbl, fn]) => (
+                <button
+                  key={lbl}
+                  type="button"
+                  className="chip"
+                  onClick={() => applyDateShortcut(fn)}
+                >
+                  {lbl}
+                </button>
+              ))}
+            </div>
+          </label>
+
+          <div
+            className="span-2 filter-grid-more-toggle"
+            onClick={() => setShowMore((s) => !s)}
+          >
+            <span className="filter-grid-more-arrow">{showMore ? "▼" : "▶"}</span>
+            more
           </div>
-          <div className="preset-chips" style={{ marginTop: 6 }}>
-            {(
-              [
-                ["今天", dateShortcutToday],
-                ["近7天", dateShortcutLast7Days],
-                ["本月", dateShortcutThisMonth],
-              ] as const
-            ).map(([lbl, fn]) => (
-              <button
-                key={lbl}
-                type="button"
-                className="chip"
-                onClick={() => applyDateShortcut(fn)}
-              >
-                {lbl}
-              </button>
-            ))}
-          </div>
-        </label>
+
+          {showMore && (
+            <>
+              <label>
+                <span>Wafer ID</span>
+                <select
+                  value={form.slot}
+                  onChange={(e) => setField("slot", e.target.value)}
+                >
+                  <option value="">All</option>
+                  {Array.from({ length: 25 }, (_, i) => i + 1).map((n) => (
+                    <option key={n} value={String(n)}>{n}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>PassId</span>
+                <select
+                  value={form.passId}
+                  onChange={(e) => setField("passId", e.target.value)}
+                >
+                  <option value="">All</option>
+                  {Array.from({ length: 5 }, (_, i) => i + 1).map((n) => (
+                    <option key={n} value={String(n)}>{n}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="span-2">
+                <span>BinNo#</span>
+                <input
+                  type="text"
+                  value={form.bins}
+                  onChange={(e) => setField("bins", e.target.value)}
+                  placeholder="8, 11, 131 (comma-separated)"
+                />
+              </label>
+              <label>
+                <span>MesLotId</span>
+                <input
+                  type="text"
+                  value={form.meslot}
+                  onChange={(e) => setField("meslot", e.target.value)}
+                  placeholder="留空不筛"
+                />
+              </label>
+            </>
+          )}
         </div>
         }
         footer={
