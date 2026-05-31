@@ -16,12 +16,12 @@ export interface ServerConfig {
 export const SERVER_CONFIG_DEFAULTS: ServerConfig = {
   agentEnabled: true,
   agentApiBase: "https://api.siliconflow.cn/v1",
-  agentModel: "deepseek-ai/DeepSeek-V3",
-  maxRounds: 5,
-  streamTimeoutSec: 150,
-  clientTimeoutSec: 180,
-  toolResultMaxChars: 12000,
-  toolResultMaxHistoryChars: 12000,
+  agentModel: "deepseek-ai/DeepSeek-V4-Pro",
+  maxRounds: 8,
+  streamTimeoutSec: 120,
+  clientTimeoutSec: 240,
+  toolResultMaxChars: 20000,
+  toolResultMaxHistoryChars: 8000,
   listDefaultLimit: 300,
   listMaxLimit: 1000,
 };

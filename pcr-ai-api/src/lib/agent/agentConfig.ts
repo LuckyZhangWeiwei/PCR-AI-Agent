@@ -14,20 +14,20 @@ export interface AgentConfig {
 }
 
 const DEFAULT_API_BASE = "https://api.siliconflow.cn/v1";
-const DEFAULT_MODEL = "deepseek-ai/DeepSeek-V3";
-export const DEFAULT_MAX_ROUNDS = 5;
+const DEFAULT_MODEL = "deepseek-ai/DeepSeek-V4-Pro";
+export const DEFAULT_MAX_ROUNDS = 8;
 const MIN_MAX_ROUNDS = 1;
 const MAX_MAX_ROUNDS = 20;
 
-export const DEFAULT_STREAM_TIMEOUT_SEC = 150;
+export const DEFAULT_STREAM_TIMEOUT_SEC = 120;
 const MIN_STREAM_TIMEOUT_SEC = 30;
 const MAX_STREAM_TIMEOUT_SEC = 600;
 
-export const DEFAULT_TOOL_RESULT_MAX_CHARS = 12000;
+export const DEFAULT_TOOL_RESULT_MAX_CHARS = 20000;
 const MIN_TOOL_RESULT_MAX_CHARS = 6000;
 const MAX_TOOL_RESULT_MAX_CHARS = 30000;
 
-export const DEFAULT_TOOL_RESULT_MAX_HISTORY_CHARS = 12000;
+export const DEFAULT_TOOL_RESULT_MAX_HISTORY_CHARS = 8000;
 const MIN_TOOL_RESULT_MAX_HISTORY_CHARS = 1000;
 const MAX_TOOL_RESULT_MAX_HISTORY_CHARS = 12000;
 
