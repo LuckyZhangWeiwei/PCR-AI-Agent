@@ -75,6 +75,8 @@ export type RunToolOptions = {
   toolResultMaxChars?: number;
   /** Recent session turns — used to infer generate_chart data when model omits args. */
   history?: ChatMessage[];
+  /** query_jb_bins：serialize 前写入完整 markdown 缓存（总结轮直出表）。 */
+  onJbBinsWrapped?: (wrapped: Record<string, unknown>) => void;
 };
 
 const TOOL_LIST_LIMIT = 50;
@@ -240,7 +242,8 @@ function jbQueryHasTimeFilter(args: Record<string, unknown>): boolean {
 
 async function toolQueryJbBins(
   args: Record<string, unknown>,
-  maxChars: number
+  maxChars: number,
+  options?: RunToolOptions
 ): Promise<string> {
   const limit = clampLimit(args["limit"], TOOL_LIST_LIMIT, TOOL_LIST_LIMIT_MAX);
   const lotScoped = isJbLotScopedAgentQuery(args);
@@ -256,10 +259,11 @@ async function toolQueryJbBins(
     const rows = (lotScoped ? matching : filterInfcontrolLayerBinV3DummyRows(parsed.applied, limit)).map(
       (r) => enrichJbRow(r as Record<string, unknown>)
     );
-    return serializeJbQueryResultForAgent(
-      wrapJbQueryResultForAgent(rows, { lotScopedFullRows: lotScoped }),
-      maxChars
-    );
+    const wrapped = wrapJbQueryResultForAgent(rows, {
+      lotScopedFullRows: lotScoped,
+    });
+    options?.onJbBinsWrapped?.(wrapped);
+    return serializeJbQueryResultForAgent(wrapped, maxChars);
   }
 
   const sql = lotScoped
@@ -274,10 +278,11 @@ async function toolQueryJbBins(
     return (result.rows ?? []) as Record<string, unknown>[];
   });
   const enriched = rows.map(enrichJbRow);
-  return serializeJbQueryResultForAgent(
-    wrapJbQueryResultForAgent(enriched, { lotScopedFullRows: lotScoped }),
-    maxChars
-  );
+  const wrapped = wrapJbQueryResultForAgent(enriched, {
+    lotScopedFullRows: lotScoped,
+  });
+  options?.onJbBinsWrapped?.(wrapped);
+  return serializeJbQueryResultForAgent(wrapped, maxChars);
 }
 
 function aggregateJbBinsHasScopeFilter(args: Record<string, unknown>): boolean {
@@ -489,7 +494,7 @@ export async function runTool(
     case "aggregate_yield_triggers":
       return toolAggregateYieldTriggers(args, maxChars);
     case "query_jb_bins":
-      return toolQueryJbBins(args, maxChars);
+      return toolQueryJbBins(args, maxChars, options);
     case "aggregate_jb_bins":
       return toolAggregateJbBins(args, maxChars);
     case "generate_chart": {

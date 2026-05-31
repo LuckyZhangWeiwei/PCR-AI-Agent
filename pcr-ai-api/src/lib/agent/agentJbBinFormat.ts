@@ -735,3 +735,64 @@ export function serializeJbQueryResultForAgent(
     yieldByPassIdMarkdown: wrapped["yieldByPassIdMarkdown"],
   });
 }
+
+/**
+ * 总结轮专用：在 serialize 截断之前缓存 markdown / 摘要（不含 rows）。
+ * 避免 toolResult 超限时丢失 lotYieldOverviewMarkdown / badBinSlotTrends。
+ */
+export function buildJbSessionCacheJson(wrapped: Record<string, unknown>): string {
+  const lotScoped = Boolean(wrapped["lotQueryFullRows"]);
+  const summary = wrapped["slotYieldSummary"] as
+    | SlotYieldSummaryEntry[]
+    | undefined;
+  const rows = wrapped["rows"] as Record<string, unknown>[] | undefined;
+  const lot = String(wrapped["lot"] ?? "").trim() || undefined;
+  const device = String(wrapped["device"] ?? "").trim() || undefined;
+  const topBadBins = wrapped["topBadBins"] as
+    | Array<{ bin: number; dieCount: number }>
+    | undefined;
+
+  const cache: Record<string, unknown> = {
+    ...jbYieldCoreFields(wrapped),
+    _jbSessionCacheVersion: 2,
+  };
+
+  if (summary?.length) {
+    cache["slotYieldSummary"] = minimalSlotYieldSummary(summary);
+  }
+
+  if (lotScoped && summary?.length) {
+    const overview = formatLotYieldOverviewMarkdown({
+      ...wrapped,
+      slotYieldSummary: summary,
+    });
+    if (overview) cache["lotYieldOverviewMarkdown"] = overview;
+  }
+
+  if (lotScoped && rows?.length && topBadBins?.length) {
+    cache["badBinSlotTrends"] = buildBadBinSlotTrends(
+      rows,
+      topBadBins,
+      lot,
+      device
+    );
+  }
+
+  const binTrends = cache["badBinSlotTrends"] as
+    | Array<{ bin: number; passId: number; markdown: string }>
+    | undefined;
+  cache["agentTablesDigest"] = {
+    lotOverview:
+      typeof cache["lotYieldOverviewMarkdown"] === "string"
+        ? cache["lotYieldOverviewMarkdown"]
+        : undefined,
+    binTrends: binTrends?.map(({ bin, passId, markdown }) => ({
+      bin,
+      passId,
+      markdown,
+    })),
+    passIdsPresent: cache["passIdsPresent"],
+  };
+
+  return JSON.stringify(cache);
+}

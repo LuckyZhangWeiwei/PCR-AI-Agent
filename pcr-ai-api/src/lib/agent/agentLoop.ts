@@ -17,6 +17,7 @@ import { fetchOrCacheManifest } from "./agentManifest.js";
 import { generateChartArgsHaveData } from "./agentChartTool.js";
 import { streamSiliconFlow, type CollectedToolCall } from "./agentStream.js";
 import { buildFeedbackInjection } from "./agentFeedback.js";
+import { buildJbSessionCacheJson } from "./agentJbBinFormat.js";
 import {
   compactJbBinsForHistory,
   formatLotYieldOverviewMarkdown,
@@ -666,6 +667,7 @@ async function tryRunDeterministicJbSummary(
   if (!tables?.trim()) return false;
 
   const tablesBlock = `${DETERMINISTIC_TABLES_HEADER}\n\n${tables}`;
+  emit({ type: "status", message: "正在输出服务端预计算表…" });
   emitTextInChunks(tablesBlock, emit);
 
   emit({ type: "status", message: "正在生成数据解读与专业建议…" });
@@ -1080,6 +1082,9 @@ export async function runAgentLoop(
         const toolResult = await runTool(tc.name, parsedArgs, {
           toolResultMaxChars: agentConfig.toolResultMaxChars,
           history: getHistory(sessionId),
+          onJbBinsWrapped: (wrapped) => {
+            storeJbToolRawJson(sessionId, buildJbSessionCacheJson(wrapped));
+          },
         });
         if (
           typeof toolResult === "object" &&
@@ -1101,9 +1106,6 @@ export async function runAgentLoop(
             typeof toolResult === "string"
               ? toolResult
               : JSON.stringify(toolResult);
-          if (tc.name === "query_jb_bins") {
-            storeJbToolRawJson(sessionId, rawContent);
-          }
           historyContent = toolResultForHistory(
             tc.name,
             rawContent,

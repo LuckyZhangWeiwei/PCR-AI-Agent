@@ -234,7 +234,19 @@ npm ci
 npm run build   # 或 pack:dist
 ```
 
-报表：**New Chat** 清 session；旧会话无 `storeJbToolRawJson` 缓存时确定性路径仍可用 `lastTool.content` 解析。
+报表：**New Chat** 清 session后再测。
+
+### 11.1 部署后「没作用」排查
+
+| 检查 | 期望 |
+| --- | --- |
+| `GET /health` | 含 **`agentJbDeterministicSummary": true`**、**`agentJbCacheVersion": 2`** |
+| 总结轮首段 | 出现「**以下表格由服务端根据 JB STAR 实测数据生成**」 |
+| 状态提示 | 「**正在输出服务端预计算表…**」 |
+| 问题须带 **`lot`** | `query_jb_bins(lot=…)` 才会 `lotQueryFullRows` + 预计算表 |
+| API 必须 **build 后 pm2 reload** | 勿只 `git pull` 不编译 `dist/` |
+
+**根因（2026-05 修复）：** 旧版把 **serialize 截断后** 的 JSON 写入 session 缓存，大 lot 会丢掉 `lotYieldOverviewMarkdown` / `badBinSlotTrends`，`tryRunDeterministicJbSummary` 直接失败并回退纯 LLM。新版在 **`onJbBinsWrapped`** 中用 `buildJbSessionCacheJson` 在截断**之前**写入缓存。
 
 ---
 

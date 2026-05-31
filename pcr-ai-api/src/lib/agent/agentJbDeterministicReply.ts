@@ -139,7 +139,30 @@ export function buildDeterministicJbTables(
     }
   }
 
-  return null;
+  return rebuildDeterministicTablesFallback(toolPayload);
+}
+
+/** serialize 截断后仍可用 yield/interrupt/overview 片段拼表。 */
+function rebuildDeterministicTablesFallback(
+  toolPayload: Record<string, unknown>
+): string | null {
+  const overview = formatLotYieldOverviewMarkdown(toolPayload)?.trim();
+  if (overview) return overview;
+
+  const parts: string[] = [];
+  const interruptMd = toolPayload["slotYieldInterruptMarkdown"];
+  if (typeof interruptMd === "string" && interruptMd.trim()) {
+    parts.push(interruptMd.trim());
+  }
+  const yieldMd = toolPayload["yieldByPassIdMarkdown"];
+  if (typeof yieldMd === "string" && yieldMd.trim()) {
+    parts.push(yieldMd.trim());
+  }
+  const pivotMd = toolPayload["slotYieldPivotMarkdown"];
+  if (typeof pivotMd === "string" && pivotMd.trim()) {
+    parts.push(pivotMd.trim());
+  }
+  return parts.length ? parts.join("\n\n") : null;
 }
 
 export const DETERMINISTIC_TABLES_HEADER =
