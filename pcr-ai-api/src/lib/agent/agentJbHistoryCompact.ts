@@ -95,7 +95,23 @@ function appendSegmentRows(
   );
 }
 
-/** 有 INTERRUPT/续测的 (slot,passId)：固定顺序 整片正片 → 前半 → 后半。 */
+/** 有中断：先各中断/续测段，再合并整片（前半 → 后半 → 整片正片）。 */
+export function appendInterruptYieldSegmentRows(
+  lines: string[],
+  slot: number,
+  sortLabel: string,
+  whole: JbYieldMetrics,
+  interruptHalf: JbYieldMetrics,
+  completionHalf?: JbYieldMetrics
+): void {
+  appendSegmentRows(lines, slot, sortLabel, "前半段", interruptHalf);
+  if (completionHalf) {
+    appendSegmentRows(lines, slot, sortLabel, "后半段", completionHalf);
+  }
+  appendSegmentRows(lines, slot, sortLabel, "整片正片（合并）", whole);
+}
+
+/** 有 INTERRUPT/续测的 (slot,passId)：固定顺序 前半 → 后半 → 整片正片（合并）。 */
 export function formatSlotYieldInterruptMarkdown(
   summary: SlotYieldSummaryEntry[],
   lot?: string,
@@ -105,24 +121,27 @@ export function formatSlotYieldInterruptMarkdown(
   if (!rows.length) return "";
 
   const title = lot
-    ? `**${lot}**${device ? `（${device}）` : ""} 测试中断 slot 良率（整片 + 前半 + 后半）`
-    : "**测试中断 slot 良率（整片 + 前半 + 后半）**";
+    ? `**${lot}**${device ? `（${device}）` : ""} 测试中断 wafer 良率（前半→后半→整片合并）`
+    : "**测试中断 wafer 良率（前半→后半→整片合并）**";
 
   const lines = [
     title,
     "",
-    `共 **${rows.length}** 个 (slot×测试层) 有中断/续测；每段均须列出，良率 **0% 也写**。`,
+    `共 **${rows.length}** 个 (waferId×pass) 有中断/续测；**先逐段**（前半、后半），**再整片合并**；良率 **0% 也写**。`,
     "",
     "| Slot | 测试层 | 段 | 总die | 好die | 坏die | 良率% |",
     "|---:|---|---:|---:|---:|---:|---:|",
   ];
 
   for (const r of rows) {
-    appendSegmentRows(lines, r.slot, r.sortLabel, "整片正片", r.wholeWafer);
-    appendSegmentRows(lines, r.slot, r.sortLabel, "前半段", r.interruptHalf);
-    if (r.completionHalf) {
-      appendSegmentRows(lines, r.slot, r.sortLabel, "后半段", r.completionHalf);
-    }
+    appendInterruptYieldSegmentRows(
+      lines,
+      r.slot,
+      r.sortLabel,
+      r.wholeWafer,
+      r.interruptHalf,
+      r.completionHalf
+    );
   }
   return lines.join("\n");
 }
@@ -186,7 +205,7 @@ export function formatSlotYieldPivotMarkdown(
   const lines = [
     title,
     "",
-    "有中断的格子为 **整片/前半/后半** 良率（缩写：整/前/后）。",
+    "有中断的格子为 **前/后/整（合并）** 良率（按测试时间：前半→后半→整片）。",
     "",
     header,
     sep,
@@ -203,7 +222,7 @@ export function formatSlotYieldPivotMarkdown(
         const second = e.completionHalf
           ? formatPct(e.completionHalf.yieldPct)
           : "—";
-        return ` ${whole}整/${first}前/${second}后 |`;
+        return ` ${first}前/${second}后/${whole}整 |`;
       }
       const y =
         c.yieldPct === null ? "—" : `${roundYieldPct(c.yieldPct)}%`;
@@ -295,16 +314,19 @@ function formatSlotYieldFlatTable(
   )) {
     const sortLabel = passSortLabel(e.passId);
     if (e.hasInterrupt && e.interruptHalf) {
-      appendSegmentRows(lines, e.slot, sortLabel, "整片正片", {
-        grossDie: e.grossDie,
-        badDie: e.badDie,
-        goodDie: e.goodDie,
-        yieldPct: e.yieldPct,
-      });
-      appendSegmentRows(lines, e.slot, sortLabel, "前半段", e.interruptHalf);
-      if (e.completionHalf) {
-        appendSegmentRows(lines, e.slot, sortLabel, "后半段", e.completionHalf);
-      }
+      appendInterruptYieldSegmentRows(
+        lines,
+        e.slot,
+        sortLabel,
+        {
+          grossDie: e.grossDie,
+          badDie: e.badDie,
+          goodDie: e.goodDie,
+          yieldPct: e.yieldPct,
+        },
+        e.interruptHalf,
+        e.completionHalf
+      );
     } else {
       appendSegmentRows(lines, e.slot, sortLabel, "整片", {
         grossDie: e.grossDie,

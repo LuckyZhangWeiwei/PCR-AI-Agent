@@ -1,7 +1,8 @@
 # AI Agent 交接：JB 逐片 BIN 查询 + 工具结果体积上限
 
 **日期：** 2026-05-27  
-**背景：** 用户问「某 lot 1–25 片 BIN7 颗数 / BIN7 趋势」时，Agent 多次调 `query_jb_bins` 后声称「API 截断、无法给全量」，只列出 slot 23–25 三条。
+**术语：** JB `slot` = **waferId**（对用户写 waferId）；INF `dut` = **DUT**（= site，对用户写 DUT）。见 [`HANDOFF_AGENT_JB_DETERMINISTIC_SUMMARY.md`](HANDOFF_AGENT_JB_DETERMINISTIC_SUMMARY.md) §0、`agentPrompt.ts`。  
+**背景：** 用户问「某 lot 1–25 片 BIN7 颗数 / BIN7 趋势」时，Agent 多次调 `query_jb_bins` 后声称「API 截断、无法给全量」，只列出 waferId 23–25 三条。
 
 ---
 

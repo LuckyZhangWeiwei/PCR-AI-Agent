@@ -59,12 +59,13 @@ describe("jb agent lot-scoped full rows", () => {
     assert.deepEqual(wrapped.passIdsPresent, [1, 3, 5]);
     const byPass = wrapped.yieldByPassId as Array<{ passId: number }>;
     assert.equal(byPass.length, 3);
-    assert.ok(String(wrapped.yieldByPassIdMarkdown).includes("sort1/常温"));
-    assert.ok(String(wrapped.yieldByPassIdMarkdown).includes("sort2/高温"));
-    assert.ok(String(wrapped.yieldByPassIdMarkdown).includes("sort3/低温"));
+    assert.ok(String(wrapped.yieldByPassIdMarkdown).includes("pass1"));
+    assert.ok(String(wrapped.yieldByPassIdMarkdown).includes("pass3"));
+    assert.ok(String(wrapped.yieldByPassIdMarkdown).includes("pass5"));
+    assert.ok(!String(wrapped.yieldByPassIdMarkdown).includes("常温"));
     assert.equal(wrapped.lotQueryFullRows, true);
     const summary = wrapped.slotYieldSummary as unknown[];
     assert.equal(summary.length, 75);
-    assert.ok(String(wrapped.cardByPassIdMarkdown).includes("sort1/常温"));
+    assert.ok(String(wrapped.cardByPassIdMarkdown).includes("pass1"));
   });
 });

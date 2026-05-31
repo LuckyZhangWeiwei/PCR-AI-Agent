@@ -474,10 +474,11 @@ export function lotYieldRankFieldGuide(): string {
   return LOT_YIELD_RANK_GUIDE;
 }
 
+/** 服务端 markdown / 表头用 pass1|pass3|pass5（不含常温/高温/低温字样）。 */
 export function passIdSortLabel(passId: number): string {
-  if (passId === 1) return "sort1/常温";
-  if (passId === 3) return "sort2/高温";
-  if (passId === 5) return "sort3/低温";
+  if (passId === 1) return "pass1";
+  if (passId === 3) return "pass3";
+  if (passId === 5) return "pass5";
   if (passId === 0) return "pass未知";
   return `pass${passId}`;
 }
@@ -587,7 +588,7 @@ export function slotYieldPivotFieldGuide(): string {
 }
 
 const SLOT_YIELD_INTERRUPT_GUIDE =
-  "slotYieldInterruptMarkdown：有中断 (slot,passId) 良率三行：整片→前半→后半（0%也写）。查 BIN 时 badBinSlotTrends 含前半/后半/合计颗数及良率；禁止只报后半。";
+  "slotYieldInterruptMarkdown：有中断 (waferId,passId) 良率三行：前半→后半→整片正片（合并）（0%也写）。查 BIN 见 badBinSlotTrends（同序）；禁止只报后半。";
 
 export function slotYieldInterruptFieldGuide(): string {
   return SLOT_YIELD_INTERRUPT_GUIDE;

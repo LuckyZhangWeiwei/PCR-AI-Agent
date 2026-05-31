@@ -97,7 +97,7 @@ function appendBinSegmentRows(
   );
 }
 
-/** 有中断的 (slot,passId)：BIN 与良率均按 整片→前半→后半 三行。 */
+/** 有中断的 (slot,passId)：BIN 与良率均按 前半→后半→整片合并 三行。 */
 export function formatInterruptBinYieldMarkdown(
   rows: Record<string, unknown>[],
   summary: SlotYieldSummaryEntry[],
@@ -119,7 +119,7 @@ export function formatInterruptBinYieldMarkdown(
   const lines = [
     title,
     "",
-    "有测试中断的 slot：**BIN 颗数与良率均须写整片正片、前半段、后半段**（0 也写）。",
+    "有测试中断的 wafer：**先写前半段、后半段（各中断/续测段），再写整片正片（合并）**（0 也写）。",
     "",
     `| Slot | 测试层 | 段 | BIN${bin} | 总die | 好die | 坏die | 良率% |`,
     "|---:|---|---:|---:|---:|---:|---:|---:|",
@@ -128,24 +128,8 @@ export function formatInterruptBinYieldMarkdown(
   for (const e of interruptEntries.sort((a, b) => a.slot - b.slot)) {
     const group = groupRowsForSlotPass(rows, e.slot, passId);
     const split = splitPassGroupIntoHalves(group);
-    const wholeBin = binDieByHalvesForGroup(group, bin).total;
-    appendBinSegmentRows(
-      lines,
-      e.slot,
-      sortLabel,
-      "整片正片",
-      bin,
-      wholeBin,
-      {
-        grossDie: e.grossDie,
-        badDie: e.badDie,
-        goodDie: e.goodDie,
-        yieldPct: e.yieldPct,
-      }
-    );
-    const firstBin = split.segmented
-      ? binDieByHalvesForGroup(group, bin).firstHalf
-      : 0;
+    const binHalves = binDieByHalvesForGroup(group, bin);
+    const firstBin = split.segmented ? binHalves.firstHalf : 0;
     appendBinSegmentRows(
       lines,
       e.slot,
@@ -156,9 +140,7 @@ export function formatInterruptBinYieldMarkdown(
       e.interruptHalf!
     );
     if (e.completionHalf) {
-      const secondBin = split.segmented
-        ? binDieByHalvesForGroup(group, bin).secondHalf
-        : 0;
+      const secondBin = split.segmented ? binHalves.secondHalf : 0;
       appendBinSegmentRows(
         lines,
         e.slot,
@@ -169,13 +151,27 @@ export function formatInterruptBinYieldMarkdown(
         e.completionHalf
       );
     }
+    appendBinSegmentRows(
+      lines,
+      e.slot,
+      sortLabel,
+      "整片正片（合并）",
+      bin,
+      binHalves.total,
+      {
+        grossDie: e.grossDie,
+        badDie: e.badDie,
+        goodDie: e.goodDie,
+        yieldPct: e.yieldPct,
+      }
+    );
   }
   return lines.join("\n");
 }
 
 /**
  * BIN 按 slot 趋势表（固定 passId）。
- * 无中断：合计 BIN + 整片良率；有中断：合计/前半/后半 BIN + 整片/前半/后半良率。
+ * 无中断：合计 BIN + 整片良率；有中断：前半/后半/合计 BIN + 前半/后半/整片良率（列顺序同输出逻辑）。
  */
 export function formatBinSlotTrendMarkdown(
   rows: Record<string, unknown>[],
@@ -201,9 +197,9 @@ export function formatBinSlotTrendMarkdown(
   const lines = [
     title,
     "",
-    "有中断：**BIN 与良率均分列前半/后半/整片**；无中断仅合计列。禁止写「无数据」若该层有测试行。",
+    "有中断：**先前半/后半各段，再合计与整片良率**；无中断仅合计列。禁止写「无数据」若该层有测试行。",
     "",
-    `| Slot | BIN${bin}合计 | BIN${bin}前半 | BIN${bin}后半 | 整片良率% | 前半良率% | 后半良率% | 中断 | 较上片Δ |`,
+    `| Slot | BIN${bin}前半 | BIN${bin}后半 | BIN${bin}合计 | 前半良率% | 后半良率% | 整片良率% | 中断 | 较上片Δ |`,
     "|---:|---:|---:|---:|---:|---:|---:|---|---|",
   ];
 
@@ -220,12 +216,11 @@ export function formatBinSlotTrendMarkdown(
     const binH = binDieByHalvesForGroup(group, bin);
     const interrupt = s?.hasInterrupt ?? false;
 
-    const binTotal = String(binH.total);
     const binFirst = interrupt ? String(binH.firstHalf) : "—";
     const binSecond =
       interrupt && binH.segmented ? String(binH.secondHalf) : "—";
+    const binTotal = String(binH.total);
 
-    const yWhole = formatPct(s?.yieldPct);
     const yFirst = interrupt ? formatPct(s?.interruptHalf?.yieldPct) : "—";
     const ySecond =
       interrupt && s?.completionHalf
@@ -233,6 +228,7 @@ export function formatBinSlotTrendMarkdown(
         : interrupt
           ? "—"
           : "—";
+    const yWhole = formatPct(s?.yieldPct);
 
     let delta = "—";
     if (prevTotal !== null) {
@@ -240,7 +236,7 @@ export function formatBinSlotTrendMarkdown(
       delta = d > 0 ? `↑${d}` : d < 0 ? `↓${-d}` : "0";
     }
     lines.push(
-      `| ${slot} | ${binTotal} | ${binFirst} | ${binSecond} | ${yWhole} | ${yFirst} | ${ySecond} | ${interrupt ? "是" : "否"} | ${delta} |`
+      `| ${slot} | ${binFirst} | ${binSecond} | ${binTotal} | ${yFirst} | ${ySecond} | ${yWhole} | ${interrupt ? "是" : "否"} | ${delta} |`
     );
     prevTotal = binH.total;
   }
@@ -305,7 +301,7 @@ export function buildBadBinSlotTrends(
 }
 
 export const SLOTS_BY_PASS_GUIDE =
-  "slotsByPassId：各 passId 下有测试行的 slot 列表（含 INTERRUPT）。slot 在列表中则禁止写「无常温/无 sort1 数据」。";
+  "slotsByPassId：各 passId 下有测试行的 waferId(slot) 列表（含 INTERRUPT）。在列表中则禁止写「无 pass1 数据」。";
 
 export const BAD_BIN_SLOT_TRENDS_GUIDE =
-  "badBinSlotTrends：BIN 按 slot 表含合计/前半/后半颗数与整片/前半/后半良率；有中断片另附三行明细表。禁止只报后半段。";
+  "badBinSlotTrends：有中断时先前半/后半段 BIN 与良率，再合计与整片合并；明细表三行顺序：前半→后半→整片正片（合并）。禁止只报后半段。";

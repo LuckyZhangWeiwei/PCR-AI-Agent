@@ -4,6 +4,8 @@
 **读者：** Claude Code / Cursor Agent 接手本仓库时优先阅读。  
 **相关代码：** `pcr-ai-api/src/lib/jbYieldCalc.ts`、`agent/agentPrompt.ts`、`agent/agentJbBinFormat.ts`
 
+**术语：** JB 字段 **`slot`** = **waferId**（第几片 wafer）；对用户回复用 **waferId**，API 仍传 `slot`。见 `agentPrompt.ts`「术语」节。
+
 ---
 
 ## 1. 背景与问题
@@ -12,9 +14,9 @@
 
 需求：
 
-1. API `query_jb_bins` 的 **`slotYieldSummary`** 在有中断时拆出 **`interruptHalf`**（前半）、**`completionHalf`**（后半），顶层仍为**整片正片**。
-2. Agent **输出顺序固定**：**整片正片 → 前半段 → 后半段**（按测试时间先后）。
-3. **良率为 0% 的段也必须写出**（total / 好 / 坏 / 0%），禁止因无良品省略前半段。
+1. API `query_jb_bins` 的 **`slotYieldSummary`** 在有中断时拆出 **`interruptHalf`**（前半）、**`completionHalf`**（后半），顶层 **`grossDie/yieldPct`** 为**整片正片（合并）**。
+2. Agent / 服务端 markdown **输出顺序固定**：**前半段 → 后半段 → 整片正片（合并）**（先逐段列出每次中断/续测，再合并一片 wafer，最后 lot 整体见 `yieldByPassId`）。
+3. **良率为 0% 的段也必须写出**；禁止只报后半段或只报合并整片而省略前半段。
 
 ---
 
@@ -53,8 +55,8 @@
 
 在 **「测试中断（INTERRUPT）」** 与 **「枚举 lot 内 wafer」** 两节已写明：
 
-- `hasInterrupt:true` → 每 slot 三行：**整片正片 → 前半段 → 后半段**。
-- **0% 也要输出**；禁止只报后半段或顺序写成「前半→后半→整片」。
+- `hasInterrupt:true` → 每 wafer×pass 三行：**前半段 → 后半段 → 整片正片（合并）**。
+- **0% 也要输出**；禁止只报后半段或顺序写成「整片→前半→后半」。
 - **回复质量** ① 关键数字：有中断 slot 三段各写一行。
 
 **pass/sort（同分支较早 commit）：** `pass1=sort1→passId 1`，`pass3=sort2→3`，`pass5=sort3→5`，禁止 2/4。见 `agentToolSchemas.ts` 中 `passId` 描述。

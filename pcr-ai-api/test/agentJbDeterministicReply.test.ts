@@ -78,6 +78,7 @@ describe("agentJbDeterministicReply", () => {
     assert.ok(msg.includes("Wafer Test"));
     assert.ok(msg.includes("Probe Card"));
     assert.ok(msg.includes("DUT"));
+    assert.ok(msg.includes("waferId") || msg.includes("术语"));
     const ctx = buildEngineeringContextFromPayload({
       passIdsPresent: [1, 3],
       cardChangesBySlotPass: [{ slot: 1, passId: 1, hasCardChange: true, hasTestInterrupt: true }],

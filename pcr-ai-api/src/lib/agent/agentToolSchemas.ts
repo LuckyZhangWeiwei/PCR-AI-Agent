@@ -81,7 +81,7 @@ export const TOOL_SCHEMAS = [
           passId: {
             type: "number",
             description:
-              "测试层 PASSID：sort1/pass1→1，sort2/pass3→3，sort3/pass5→5（勿用2/4）",
+              "测试层 PASSID：pass1/sort1/常温→1，pass3/sort2/高温→3，pass5/sort3/低温→5（勿用2/4）；回复用 pass1/3/5",
           },
           meslot: { type: "string", description: "MES 槽位" },
           testEndFrom: {
@@ -128,7 +128,7 @@ export const TOOL_SCHEMAS = [
           passId: {
             type: "number",
             description:
-              "测试层 PASSID：sort1→1，sort2→3，sort3→5（pass1/3/5；勿用2/4）",
+              "测试层 PASSID：pass1/常温/sort1→1，pass3/高温/sort2→3，pass5/低温/sort3→5（勿用2/4）",
           },
           meslot: { type: "string" },
           testEndFrom: { type: "string" },
@@ -257,11 +257,11 @@ export const TOOL_SCHEMAS = [
         properties: {
           device:   { type: "string", description: "产品代码，必填" },
           lot:      { type: "string", description: "批次 ID，含 '.' 后缀，必填" },
-          slot:     { type: "number", description: "wafer 槽位 SLOT，必填" },
+          slot:     { type: "number", description: "waferId（JB 字段名 slot / INFCONTROL.SLOT），必填" },
           passId: {
             type: "number",
             description:
-              "PASS_ID：sort1→1，sort2→3，sort3→5（pass1/3/5；禁止写成2/4）",
+              "PASS_ID：pass1/常温/sort1→1，pass3/高温/sort2→3，pass5/低温/sort3→5（禁止2/4）",
           },
           passIds: {
             type: "array",

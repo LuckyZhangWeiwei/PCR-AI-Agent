@@ -20,7 +20,7 @@
 | 1b | [`docs/SITE_BIN_BY_LOT_API.md`](docs/SITE_BIN_BY_LOT_API.md) | **site-bin-bylot 用法**：curl / Dummy URL / `fetch` 示例 |
 | 1c | [`../docs/SITE_BIN_BY_LOT_INTEGRATION.md`](../docs/SITE_BIN_BY_LOT_INTEGRATION.md) | **INF map × bin × DUT**：`buildInfPath`、报表下钻、Agent 工具/prompt（UI/Agent 待做） |
 | 1d | [`../docs/HANDOFF_SITE_BIN_BY_LOT_AGG.md`](../docs/HANDOFF_SITE_BIN_BY_LOT_AGG.md) | **Lot/Device 聚合交接**：`topN` 最新 lot、`TESTEND` 窗、`siteBinByLotDeviceTopN.ts` / `siteBinByLotTestEndWindow.ts`、Git 纪要 |
-| 1d | [`../docs/HANDOFF_JB_INTERRUPT_YIELD.md`](../docs/HANDOFF_JB_INTERRUPT_YIELD.md) | **JB 中断 slot 良率**：`slotYieldSummary` 半片字段、整片正片规则、Agent 输出顺序（整片→前半→后半，0% 必写） |
+| 1d | [`../docs/HANDOFF_JB_INTERRUPT_YIELD.md`](../docs/HANDOFF_JB_INTERRUPT_YIELD.md) | **JB 中断 wafer 良率**：半片字段、输出顺序（前半→后半→整片合并→lot 整体，0% 必写） |
 | 1e | [`../docs/HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md`](../docs/HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md) | **Agent JB 逐片 BIN + 工具结果体积**：`slotBadBinsCompact` / `binBySlot`、`toolResultMaxChars`（Settings 默认 12000） |
 | 1e1 | [`../docs/HANDOFF_AGENT_JB_DETERMINISTIC_SUMMARY.md`](../docs/HANDOFF_AGENT_JB_DETERMINISTIC_SUMMARY.md) | **Agent JB 确定性总结**：lot 全量查询、预计算 markdown、`tryRunDeterministicJbSummary`、数据解读 + Wafer Test/Probe Card/DUT 专业建议 |
 | 1e2 | [`../docs/HANDOFF_AGENT_JB_PROBE_CARD_CHANGE.md`](../docs/HANDOFF_AGENT_JB_PROBE_CARD_CHANGE.md) | **Agent JB 中途换卡**：仅同 **(slot, passId)** 多 CARDID；`cardByPassId`（pass1≠pass3 用不同卡为正常） |

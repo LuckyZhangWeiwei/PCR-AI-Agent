@@ -7,13 +7,36 @@
 
 ---
 
+## 0. 术语（对用户 / Agent 回复用词）
+
+| API / 库字段 | 同义 | **对用户、解读、专业建议优先用词** |
+| --- | --- | --- |
+| JB `slot`、Yield `wafer`、INF `r_1-{slot}` | **waferId**（晶圆片序号） | **waferId** 或「第 N 片 wafer」；`slot` 仅出现在工具参数、JSON、表头 |
+| INF `dut`、map **site** | 探针卡测试触点 | **DUT**；避免写「site N」（口语易与机台 site 混淆） |
+
+- 代码与 Oracle 列名**不变**（仍为 `SLOT`、`dut` 等）。
+- Agent 系统提示：`agentPrompt.ts` 顶部「术语」节；确定性解读：`BRIEF_COMMENTARY_SYSTEM`（`agentJbDeterministicReply.ts`）。
+
+**测试层用词：**
+
+| 用户输入 | passId | 回复 / 服务端表头 |
+| --- | --- | --- |
+| 常温 / sort1 / pass1 | 1 | **pass1** |
+| 高温 / sort2 / pass3 | 3 | **pass3** |
+| 低温 / sort3 / pass5 | 5 | **pass5** |
+
+- `jbYieldCalc.passIdSortLabel` → markdown 列名为 `pass1`/`pass3`/`pass5`（无「常温/高温/低温」）。
+- LLM 结论、数据解读、专业建议**禁止**写常温/高温/低温（用户原文引用除外）。
+
+---
+
 ## 1. 背景与症状
 
 用户反馈 Agent 在 **lot 概况 / BIN 趋势 / INTERRUPT 半片** 场景下：
 
 | 症状 | 根因 |
 | --- | --- |
-| 只报 sort2 良率、称「无常温 sort1」 | `limit:200` + `TESTEND DESC` 截掉较早 pass1 行；或默认 1 年窗 |
+| 只报 pass3 良率、称「无 pass1」 | `limit:200` + `TESTEND DESC` 截掉较早 pass1 行；或默认 1 年窗 |
 | 合并 pass3+pass5 报「整体 99.93%」 | 总结轮 LLM 自行平均，未用 `yieldByPassId` |
 | INTERRUPT slot 只写下半片 | 模型忽略 `slotYieldInterruptMarkdown` / `badBinSlotTrends` 半片列 |
 | BIN7 趋势缺 slot1 pass1 | 同上截断 + 历史压缩丢 `badBinSlotTrends` |
@@ -70,7 +93,7 @@ flowchart TD
 | **`passIdsPresent`** | 本 lot 实测出现的 passId（1/3/5）；禁止臆造「无 sort1」 |
 | **`yieldByPassId` / `yieldByPassIdMarkdown`** | 分 sort 良率；禁止合并为单一 overall |
 | **`lotYieldOverviewMarkdown`** | lot 概况表（确定性 `lot_overview` 模式） |
-| **`slotYieldInterruptMarkdown`** | 有 INTERRUPT 的 slot：整片→前半→后半（0% 必写） |
+| **`slotYieldInterruptMarkdown`** | 有 INTERRUPT：前半→后半→整片合并（0% 必写）；再 lot 整体 |
 | **`slotsByPassId`** | 各 passId 下有数据的 slot 列表（含 INTERRUPT） |
 | **`badBinSlotTrends`** | `[{ bin, passId, markdown }]` — BIN 趋势表含整片/前半/后半 BIN 颗数与良率 |
 | **`agentTablesDigest`** | `{ lotOverview, binTrends, passIdsPresent }` — 历史压缩时保留选表依据 |
@@ -107,7 +130,7 @@ flowchart TD
 ### 专业建议
 1. **晶圆测试（Wafer Test）** …
 2. **探针卡（Probe Card）** …
-3. **DUT / Site 维护** …
+3. **DUT 维护**（= map site，对用户不写 site）…
 ```
 
 **工程上下文：** `buildEngineeringContextFromPayload` — passId、换卡/中断 slot、testerId。  

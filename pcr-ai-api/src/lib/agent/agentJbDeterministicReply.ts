@@ -146,17 +146,18 @@ export const DETERMINISTIC_TABLES_HEADER =
   "以下表格由服务端根据 JB STAR 实测数据生成，**数字与下表一致**；请勿自行合并 sort 或改写半片良率/BIN 颗数。";
 
 export const BRIEF_COMMENTARY_SYSTEM =
-  "你是资深晶圆测试（Wafer Test）与探针卡（Probe Card）可靠性工程师，熟悉 JB STAR、Yield Monitor、INF map 与 DUT/site 维护。" +
+  "你是资深晶圆测试（Wafer Test）与探针卡（Probe Card）可靠性工程师，熟悉 JB STAR、Yield Monitor、INF map 与 DUT 维护。" +
+  "术语：JB 字段 slot = waferId（第几片 wafer，对用户写 waferId）；INF 字段 dut = 探针卡触点（对用户写 DUT，勿写 site）。" +
   "用户消息含【实测数据表】，表中数字为最终结论，禁止修改、平均或合并 sort/半片。" +
   "你必须用中文输出以下两个小节（不要其它大表）：\n\n" +
   "### 数据解读\n" +
-  "3–5 句：仅解读表内数字（分 sort、INTERRUPT 半片、BIN 集中度、slot 异常）；禁止复述整表。\n\n" +
+  "3–5 句：仅解读表内数字；有 INTERRUPT 时须体现「各中断段→整片合并→批次整体」逻辑，勿只报合并整片或只报后半；禁止复述整表。\n\n" +
   "### 专业建议\n" +
   "三个要点，每点 1–2 句，极度专业、可执行、简短，用工程术语：\n" +
-  "1. **晶圆测试（Wafer Test）**：温区/sort、INTERRUPT 与续测、tester 稳定性、工艺批次 vs 测试机因素。\n" +
+  "1. **晶圆测试（Wafer Test）**：pass1/3/5 各层、INTERRUPT 与续测、tester 稳定性、工艺批次 vs 测试机因素；禁止写常温/高温/低温。\n" +
   "2. **探针卡（Probe Card）**：CARDID、清卡/针压/overdrive、中途换卡与污染、bin 模式指向测试项还是接触。\n" +
-  "3. **DUT / Site 维护**：针尖磨损/氧化、单 site vs 邻域 vs 全卡贬损、align/清针/换卡；无 Yield Monitor 依据时写明建议补查 delta_diff 或 INF DUT map。\n" +
-  "禁止编造表中未出现的现象；无依据写「建议补查 Yield Monitor / INF site-bin」。";
+  "3. **DUT 维护**：针尖磨损/氧化、单 DUT vs 邻域 vs 全卡贬损、align/清针/换卡；无 Yield Monitor 依据时写明建议补查 delta_diff 或 INF DUT map。\n" +
+  "禁止编造表中未出现的现象；无依据写「建议补查 Yield Monitor / INF site-bin-bylot」。";
 
 /** 从 JB 工具 JSON 提取工程上下文，供解读/建议引用（非数字）。 */
 export function buildEngineeringContextFromPayload(
@@ -181,7 +182,7 @@ export function buildEngineeringContextFromPayload(
     const bad = changes.filter((c) => c.hasCardChange || c.hasTestInterrupt);
     if (bad.length) {
       lines.push(
-        `中途换卡/中断 (slot,passId)：${bad
+        `中途换卡/中断 (waferId/slot,passId)：${bad
           .map((c) => `${c.slot}/pass${c.passId}`)
           .slice(0, 8)
           .join(", ")}${bad.length > 8 ? "…" : ""}`
@@ -213,6 +214,7 @@ export function buildBriefCommentaryUserMessage(
     `【实测数据表 — 禁止改数字，勿重复粘贴全表】\n\n${tablesMarkdown}\n\n` +
     `---\n\n【工程上下文】\n${ctx || "（见上表）"}${ym}\n\n` +
     `【用户问题】\n${userQuestion}\n\n` +
-    `请按 system 要求输出「### 数据解读」与「### 专业建议」两节；专业建议须覆盖 Wafer Test、Probe Card、DUT 维护，极度专业且简短。`
+    `请按 system 要求输出「### 数据解读」与「### 专业建议」两节；专业建议须覆盖 Wafer Test、Probe Card、DUT 维护，极度专业且简短。` +
+    `正文用 waferId 指代片号（表头 slot 列除外）、用 DUT 指代触点（勿写 site）；测试层用 pass1/3/5，禁止常温/高温/低温。`
   );
 }

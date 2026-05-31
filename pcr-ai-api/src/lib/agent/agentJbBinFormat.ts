@@ -108,7 +108,7 @@ const CARD_CHANGES_BY_SLOT_PASS_GUIDE =
   "cardChangesBySlotPass：仅同一 (slot,passId) 多 CARDID=中途换卡；业务上换卡必有测试中断(hasTestInterrupt)。hasCardChange 时须同时写中断/续测与前后卡号，读 slotYieldSummary。cardChangeWithoutInterrupt=true 表示缺 INTERRUPT 行。";
 
 const CARD_BY_PASS_ID_GUIDE =
-  "cardByPassId：各 passId 在返回行内的 CARDID 集合。常温 pass1 与高温 pass3 各用一卡为正常；结论须按 pass 写清卡号。";
+  "cardByPassId：各 passId 在返回行内的 CARDID 集合。pass1 与 pass3 各用一卡为正常；结论用 pass1/3/5，禁止写常温/高温/低温。";
 
 const RECENT_LOTS_GUIDE =
   "recentLotsByTestEnd：按 lot MAX(TESTEND) 降序 top20（返回行集内）；每 lot 含 slotCount（该 lot 下不同 slot 数）、slots（slot 编号列表）、cardIds（全部卡号）、hasCardChangeInLot（同 slot+pass 中途换卡，非多 pass 各一卡）。wafer 总数用 distinctLotSlotCount（跨 lot 正确），禁止用 distinctSlots.length（同 slot 编号跨 lot 只计一次）。";
@@ -439,7 +439,7 @@ export function formatJbRowsForAgent(
 }
 
 const PASS_IDS_PRESENT_GUIDE =
-  "passIdsPresent：本批返回行内出现的全部 PASSID（1=sort1，3=sort2，5=sort3）。禁止在未出现 passId=1 时写「无 sort1」；有则必须写 sort1 良率（读 yieldByPassId）。";
+  "passIdsPresent：本批返回行内出现的全部 PASSID（1=pass1，3=pass3，5=pass5）。禁止在未出现 1 时写「无 pass1」；有则必须写 pass1 良率（读 yieldByPassId）。用户说常温/高温/低温时映射到 1/3/5，回复勿写温区字眼。";
 
 const LOT_QUERY_FULL_ROWS_GUIDE =
   "指定 lot 查询已拉取该 lot 全部匹配行（不限 200、默认 TESTEND 自 2020 起）；整体良率须读 lotYieldOverviewMarkdown / yieldByPassIdMarkdown（每层 sort 一行），禁止把多层 die 相加成一个「整体良率」。";

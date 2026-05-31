@@ -77,8 +77,9 @@ describe("agentJbHistoryCompact", () => {
     assert.equal(byPass[1]!.passId, 5);
     const pivot = wrapped.slotYieldPivot as { passIds: number[] };
     assert.deepEqual(pivot.passIds, [3, 5]);
-    assert.ok(String(wrapped.slotYieldPivotMarkdown).includes("sort2/高温"));
-    assert.ok(String(wrapped.slotYieldPivotMarkdown).includes("sort3/低温"));
+    assert.ok(String(wrapped.slotYieldPivotMarkdown).includes("pass3"));
+    assert.ok(String(wrapped.slotYieldPivotMarkdown).includes("pass5"));
+    assert.ok(!String(wrapped.slotYieldPivotMarkdown).includes("高温"));
     const summary = wrapped.slotYieldSummary as unknown[];
     assert.equal(summary.length, 50);
   });
@@ -110,15 +111,15 @@ describe("agentJbHistoryCompact", () => {
     const md = formatSlotYieldInterruptMarkdown(summary, "NF12773.1H", "DEV");
     assert.ok(md.includes("测试中断"));
     assert.ok(md.includes("| 22 |"));
-    assert.ok(md.includes("整片正片"));
+    assert.ok(md.includes("整片正片（合并）"));
     assert.ok(md.includes("前半段"));
     assert.ok(md.includes("后半段"));
-    const wholeIdx = md.indexOf("整片正片");
+    const wholeIdx = md.indexOf("整片正片（合并）");
     const firstIdx = md.indexOf("前半段");
     const secondIdx = md.indexOf("后半段");
-    assert.ok(wholeIdx < firstIdx && firstIdx < secondIdx);
+    assert.ok(firstIdx < secondIdx && secondIdx < wholeIdx);
     assert.ok(md.includes("| 0% |") || md.includes("| 0 |"));
-    assert.ok(String(wrapped.slotYieldInterruptMarkdown).includes("整片正片"));
+    assert.ok(String(wrapped.slotYieldInterruptMarkdown).includes("整片正片（合并）"));
   });
 
   it("compactJbBinsForHistory keeps passIdsPresent and overview markdown", () => {
