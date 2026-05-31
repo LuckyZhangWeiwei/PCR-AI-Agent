@@ -503,13 +503,15 @@ aggregate_jb_bins(cardId: "7772-01", groupBy: "lot", groupTop: 50)
 
 ## 按 slot 分析某一 BIN（如「1–25 片 BIN7 颗数」「BIN7 趋势」）
 
-- **一次** \`query_jb_bins(lot: "…", limit: 200)\`（lot 全量行；勿只查 passId=3 后推断「无 pass1」）
-- **首选** \`badBinSlotTrends\`：有中断时列顺序 **BIN前半→BIN后半→BIN合计**、**前半良率→后半良率→整片良率**；另附三行明细（前半→后半→整片合并）
-- 其次 \`slotsByPassId\`：若 passId=1 的 slots 含 waferId 1，**禁止**写「无 pass1 数据」；有 \`hasInterrupt\` 须注明中断并仍列出 BIN 颗数
-- 备用 \`slotBadBinsCompact\` / \`binBySlot\`（键 \`slot:passId:cardId\`）；多卡同层须分键后相加
-- 必须覆盖 **\`distinctSlots\` 全部 waferId**（通常 1–25），升序；无该层测试行才可写「—」
-- **禁止**用 pass3 良率代替 pass1 结论（例如 waferId 1 仅有 passId=3 时不能当作「无 pass1」）
-- 仅需 lot 级坏 bin 排名、不需逐 slot 时：\`aggregate_jb_bins(lot, groupBy: "slot,bin", groupTop: 50)\`（注意 groupTop 上限 50）
+- **一次** \`query_jb_bins(lot: "…", limit: 200)\`（**必须带 lot**；全量行 + 总结轮服务端直出表）
+- **唯一正确数据源**：\`badBinSlotTrends\` 中 **BINn + passId** 的 markdown（**1–25 片齐全**，含前半/后半/整片列）；总结轮会先 SSE 输出该表
+- **严禁**：
+  - 用 \`slotBadBinsCompact\` 列举逐片 BIN（体积大时 JSON **会被截断**，不得据此声称「slot 18–25 未显示」）
+  - 再调 \`aggregate_jb_bins\`「补全」BIN 趋势（聚合表不能替代逐片趋势表）
+  - 只读 \`rows\` 前几行推断
+- 未指定 pass 时默认 **pass1**；用户写 pass3/高温/sort2 时用 passId=3
+- \`distinctSlots\` / \`slotsByPassId\` 用于核对片数；有 \`hasInterrupt\` 须在表内看前半/后半/整片列
+- 仅需 lot 级坏 bin **排名**（不需逐片）时：读 \`topBadBins\`，勿与「BIN 趋势」混用
 
 ## 工程经验参考（诊断辅助，结合数据印证使用）
 

@@ -2,7 +2,7 @@
 /** 保留 query_jb_bins 总结轮缓存（serialize 前写入，含 markdown）。 */
 
 /** GET /health 的 agentJbCacheVersion，用于确认已部署新 API。 */
-export const AGENT_JB_CACHE_VERSION = 2;
+export const AGENT_JB_CACHE_VERSION = 3;
 
 const rawBySession = new Map<string, string>();
 

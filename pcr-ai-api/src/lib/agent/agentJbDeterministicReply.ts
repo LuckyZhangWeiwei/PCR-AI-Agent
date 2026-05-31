@@ -2,6 +2,7 @@
 /** 总结轮：服务端直出预计算表，LLM 仅写简短解读（禁止改数字）。 */
 
 import { formatLotYieldOverviewMarkdown } from "./agentJbHistoryCompact.js";
+import { buildBinSlotTrendMarkdownOnDemand } from "./agentJbBinTrend.js";
 
 export type BinTrendDigest = {
   bin: number;
@@ -17,14 +18,20 @@ export type AgentTablesDigest = {
 
 export type JbReplyMode = "lot_overview" | "bin_trend" | "generic";
 
-/** 从用户问题识别 BIN 编号（BIN7 / bin 7）。 */
+/** 从用户问题识别 BIN 编号（BIN7 / bin7 / bin 7）。 */
 export function extractBinFromUserText(text: string): number | null {
-  const m =
-    text.match(/\bBIN\s*[#:]?\s*(\d{1,3})\b/i) ??
-    text.match(/\bbin\s*[#:]?\s*(\d{1,3})\b/i);
-  if (!m) return null;
-  const n = Number(m[1]);
-  return Number.isFinite(n) && n >= 0 && n <= 255 ? n : null;
+  const patterns = [
+    /\bBIN\s*[#:]?\s*(\d{1,3})\b/i,
+    /\bbin\s*[#:]?\s*(\d{1,3})\b/i,
+    /(?:BIN|bin)(\d{1,3})\b/i,
+  ];
+  for (const p of patterns) {
+    const m = text.match(p);
+    if (!m) continue;
+    const n = Number(m[1]);
+    if (Number.isFinite(n) && n >= 0 && n <= 255) return n;
+  }
+  return null;
 }
 
 /** 是否 lot 整体/概况类问题（非单一 BIN 趋势）。 */
@@ -93,7 +100,9 @@ function pickPassIdForBinTrend(
   const inTrends = [...new Set(trends.map((t) => t.passId))].sort((a, b) => a - b);
   if (inTrends.length === 1) return inTrends[0]!;
   if (passIdsPresent?.includes(1) && inTrends.includes(1)) return 1;
-  return inTrends[0] ?? null;
+  if (inTrends.length) return inTrends[0] ?? null;
+  if (passIdsPresent?.includes(1)) return 1;
+  return passIdsPresent?.[0] ?? null;
 }
 
 /** 根据用户问题从工具 JSON 选出应直出的 markdown 表（不改写）。 */
@@ -106,22 +115,31 @@ export function buildDeterministicJbTables(
 
   if (mode === "bin_trend") {
     const bin = extractBinFromUserText(userMessage);
+    if (bin == null) return null;
     const trends = digest.binTrends ?? [];
-    if (bin == null || !trends.length) return null;
-    const matches = trends.filter((t) => t.bin === bin);
-    if (!matches.length) return null;
-    const passId = pickPassIdForBinTrend(
-      userMessage,
-      matches,
-      digest.passIdsPresent
+    const matches = trends.filter((t) => Number(t.bin) === bin);
+    if (matches.length) {
+      const passId = pickPassIdForBinTrend(
+        userMessage,
+        matches,
+        digest.passIdsPresent
+      );
+      const chosen =
+        passId != null
+          ? matches.filter((t) => t.passId === passId)
+          : matches;
+      if (chosen.length) {
+        if (chosen.length === 1) return chosen[0]!.markdown;
+        return chosen.map((t) => t.markdown).join("\n\n");
+      }
+    }
+    const onDemand = buildBinSlotTrendMarkdownOnDemand(
+      toolPayload,
+      bin,
+      userMessage
     );
-    const chosen =
-      passId != null
-        ? matches.filter((t) => t.passId === passId)
-        : matches;
-    if (!chosen.length) return null;
-    if (chosen.length === 1) return chosen[0]!.markdown;
-    return chosen.map((t) => t.markdown).join("\n\n");
+    if (onDemand?.trim()) return onDemand;
+    return null;
   }
 
   if (mode === "lot_overview" || mode === "generic") {

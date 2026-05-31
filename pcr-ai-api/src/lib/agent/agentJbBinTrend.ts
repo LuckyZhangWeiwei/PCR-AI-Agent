@@ -263,16 +263,105 @@ export function formatBinSlotTrendMarkdown(
   return lines.join("\n");
 }
 
-/** 为 top 坏 bin 在各出现的 passId 上生成 slot 趋势 markdown。 */
+function binsFieldForTrendRow(r: Record<string, unknown>): unknown {
+  if (r["bins"] != null) return r["bins"];
+  const bad = r["badBins"] as unknown[] | undefined;
+  const good = r["goodBins"] as unknown[] | undefined;
+  return [...(Array.isArray(bad) ? bad : []), ...(Array.isArray(good) ? good : [])];
+}
+
+/** 写入 session 缓存的精简行（仅供总结轮按需生成 BIN 趋势表）。 */
+export function slimRowsForBinTrend(
+  rows: Record<string, unknown>[]
+): Record<string, unknown>[] {
+  return rows.map((r) => ({
+    LOT: r["LOT"] ?? r["lot"],
+    DEVICE: r["DEVICE"] ?? r["device"],
+    SLOT: r["SLOT"] ?? r["slot"],
+    PASSID: passIdFromJbRow(r),
+    PASSNUM: r["PASSNUM"] ?? r["passNum"],
+    PASSTYPE: r["PASSTYPE"] ?? r["passType"],
+    GROSSDIE: r["GROSSDIE"] ?? r["grossDie"],
+    CARDID: r["CARDID"] ?? r["cardId"],
+    TESTEND: r["TESTEND"] ?? r["testEnd"],
+    bins: binsFieldForTrendRow(r),
+  }));
+}
+
+function passHasBinDie(
+  rows: Record<string, unknown>[],
+  bin: number,
+  passId: number
+): boolean {
+  for (const slot of distinctSlotsFromRows(rows)) {
+    const h = binDieByHalvesForGroup(
+      groupRowsForSlotPass(rows, slot, passId),
+      bin
+    );
+    if (h.total > 0) return true;
+  }
+  return false;
+}
+
+/** 用户指定 BIN 且未预生成 trend 时，从缓存行现场生成全 slot 表。 */
+export function buildBinSlotTrendMarkdownOnDemand(
+  payload: Record<string, unknown>,
+  bin: number,
+  userMessage: string
+): string | null {
+  const rows = payload["_trendRows"] as Record<string, unknown>[] | undefined;
+  if (!rows?.length) return null;
+  const lot = String(payload["lot"] ?? "").trim() || undefined;
+  const device = String(payload["device"] ?? "").trim() || undefined;
+  const passIds =
+    (payload["passIdsPresent"] as number[] | undefined) ?? [1, 3, 5];
+  const existing = (
+    (payload["badBinSlotTrends"] as BadBinSlotTrendEntry[] | undefined) ?? []
+  ).filter((t) => t.bin === bin);
+  const pref = pickPassIdFromUserText(userMessage, existing, passIds);
+  const order = [
+    ...(pref != null ? [pref] : []),
+    ...passIds.filter((p) => p !== pref),
+  ];
+  const parts: string[] = [];
+  for (const passId of order) {
+    if (!passHasBinDie(rows, bin, passId)) continue;
+    const md = formatBinSlotTrendMarkdown(rows, bin, passId, lot, device);
+    if (md?.trim()) parts.push(md);
+    if (pref != null) return md;
+  }
+  return parts.length ? parts.join("\n\n") : null;
+}
+
+function pickPassIdFromUserText(
+  userMessage: string,
+  existing: BadBinSlotTrendEntry[],
+  passIds: number[]
+): number | null {
+  if (/常温|sort\s*1|pass\s*1|passId\s*[=:]?\s*1/i.test(userMessage)) return 1;
+  if (/高温|sort\s*2|pass\s*3|passId\s*[=:]?\s*3/i.test(userMessage)) return 3;
+  if (/低温|sort\s*3|pass\s*5|passId\s*[=:]?\s*5/i.test(userMessage)) return 5;
+  const inTrends = [...new Set(existing.map((t) => t.passId))].sort(
+    (a, b) => a - b
+  );
+  if (inTrends.length === 1) return inTrends[0]!;
+  if (passIds.includes(1)) return 1;
+  return passIds[0] ?? null;
+}
+
+/** 为 top 坏 bin（最多 15 个）在各出现的 passId 上生成 slot 趋势 markdown。 */
 export function buildBadBinSlotTrends(
   rows: Record<string, unknown>[],
   topBins: Array<{ bin: number; dieCount: number }>,
   lot?: string,
   device?: string,
-  maxBins = 5
+  maxBins = 15
 ): BadBinSlotTrendEntry[] {
   const out: BadBinSlotTrendEntry[] = [];
-  for (const { bin } of topBins.slice(0, maxBins)) {
+  const binNums = [
+    ...new Set(topBins.slice(0, maxBins).map((t) => t.bin)),
+  ];
+  for (const bin of binNums) {
     const passIds = new Set<number>();
     for (const { passId, slots } of buildSlotsByPassId(rows)) {
       for (const slot of slots) {

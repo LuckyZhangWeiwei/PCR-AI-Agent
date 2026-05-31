@@ -29,6 +29,7 @@ import {
   BAD_BIN_SLOT_TRENDS_GUIDE,
   buildBadBinSlotTrends,
   buildSlotsByPassId,
+  slimRowsForBinTrend,
   SLOTS_BY_PASS_GUIDE,
 } from "./agentJbBinTrend.js";
 
@@ -102,7 +103,7 @@ const BIN_SCHEMA_HINT =
   "每条: bin=BINDie编号(通常较小), dieCount=该BIN的die颗数(可很大); 禁止写成 BIN{dieCount} {bin}颗";
 
 const SLOT_BAD_BINS_COMPACT_GUIDE =
-  "slotBadBinsCompact：按 (slot, passId, cardId) 分组。仅同一 pass 同片多 CARDID=中途换卡；pass1 与 pass3 不同卡正常，禁止合并。同组内 INTERRUPT/续测行 dieCount 相加。";
+  "slotBadBinsCompact：按 (slot, passId, cardId) 分组；JSON 过大时会被截断，**禁止**用于「BIN 按片趋势」（须读 badBinSlotTrends）。仅同一 pass 同片多 CARDID=中途换卡。";
 
 const CARD_CHANGES_BY_SLOT_PASS_GUIDE =
   "cardChangesBySlotPass：仅同一 (slot,passId) 多 CARDID=中途换卡；业务上换卡必有测试中断(hasTestInterrupt)。hasCardChange 时须同时写中断/续测与前后卡号，读 slotYieldSummary。cardChangeWithoutInterrupt=true 表示缺 INTERRUPT 行。";
@@ -495,7 +496,7 @@ export function wrapJbQueryResultForAgent(
         topBadBins,
         primaryLot || undefined,
         primaryDevice || undefined,
-        5
+        15
       )
     : [];
   const result: Record<string, unknown> = {
@@ -754,7 +755,7 @@ export function buildJbSessionCacheJson(wrapped: Record<string, unknown>): strin
 
   const cache: Record<string, unknown> = {
     ...jbYieldCoreFields(wrapped),
-    _jbSessionCacheVersion: 2,
+    _jbSessionCacheVersion: 3,
   };
 
   if (summary?.length) {
@@ -769,13 +770,17 @@ export function buildJbSessionCacheJson(wrapped: Record<string, unknown>): strin
     if (overview) cache["lotYieldOverviewMarkdown"] = overview;
   }
 
-  if (lotScoped && rows?.length && topBadBins?.length) {
-    cache["badBinSlotTrends"] = buildBadBinSlotTrends(
-      rows,
-      topBadBins,
-      lot,
-      device
-    );
+  if (lotScoped && rows?.length) {
+    cache["_trendRows"] = slimRowsForBinTrend(rows);
+    if (topBadBins?.length) {
+      cache["badBinSlotTrends"] = buildBadBinSlotTrends(
+        rows,
+        topBadBins,
+        lot,
+        device,
+        8
+      );
+    }
   }
 
   const binTrends = cache["badBinSlotTrends"] as

@@ -22,6 +22,11 @@ describe("agentJbDeterministicReply", () => {
       "lot_overview"
     );
     assert.equal(extractBinFromUserText("BIN7 按 slot"), 7);
+    assert.equal(extractBinFromUserText("NF12316.1X 中bin7 的趋势"), 7);
+    assert.equal(
+      detectJbReplyMode("NF12316.1X 中bin7 的趋势"),
+      "bin_trend"
+    );
   });
 
   it("buildDeterministicJbTables picks bin trend markdown", () => {
