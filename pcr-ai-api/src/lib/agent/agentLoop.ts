@@ -582,7 +582,11 @@ async function summarizeHistory(
   let summary = "";
   try {
     await streamSiliconFlow(
-      { model: agentConfig.model, messages: [{ role: "user", content: prompt }] },
+      {
+        model: agentConfig.model,
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 512,  // 400-char summary ≈ 300 tokens; cap avoids silent truncation
+      },
       agentConfig,
       (chunk) => {
         if (chunk.type === "delta") summary += chunk.text;
@@ -691,8 +695,8 @@ async function tryRunDeterministicJbSummary(
           }),
         },
       ],
-      tools: TOOL_SCHEMAS as unknown as unknown[],
-      tool_choice: "none",
+      // No tool schemas: commentary is text-only (数据解读 + 专业建议 ≈ 300-600 tokens)
+      max_tokens: 1024,
     },
     agentConfig,
     (chunk) => {
@@ -943,12 +947,19 @@ export async function runAgentLoop(
         ? {
             model: agentConfig.model,
             messages: [...messages, summaryUserNudge],
+            // Summary round is text-only; 4096 tokens ≈ 3000 Chinese words, enough
+            // for any analysis. Not setting this lets SiliconFlow use its own default
+            // which may be as low as 512 tokens and silently truncate long responses.
+            max_tokens: 4096,
           }
         : {
             model: agentConfig.model,
             messages,
             tools: TOOL_SCHEMAS as unknown as unknown[],
             tool_choice: "auto",
+            // 8192 for tool rounds: model may emit long tool arguments or interleave
+            // analysis text with tool calls.
+            max_tokens: 8192,
           },
       agentConfig,
       (chunk) => {

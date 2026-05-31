@@ -54,6 +54,7 @@ export interface LlmRequest {
   messages: unknown[];
   tools?: unknown[];
   tool_choice?: string;
+  max_tokens?: number;
 }
 
 export function streamSiliconFlow(
