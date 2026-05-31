@@ -31,6 +31,7 @@ import {
   buildSlotsByPassId,
   slimRowsForBinTrend,
   SLOTS_BY_PASS_GUIDE,
+  type BadBinSlotTrendEntry,
 } from "./agentJbBinTrend.js";
 
 export { jbYieldCoreFields } from "./agentJbYieldCore.js";
@@ -811,14 +812,11 @@ export function buildJbSessionCacheJson(wrapped: Record<string, unknown>): strin
 
   if (lotScoped && rows?.length) {
     cache["_trendRows"] = slimRowsForBinTrend(rows);
-    if (topBadBins?.length) {
-      cache["badBinSlotTrends"] = buildBadBinSlotTrends(
-        rows,
-        topBadBins,
-        lot,
-        device,
-        8
-      );
+    // Reuse the already-computed trends from wrapJbQueryResultForAgent (maxBins=15),
+    // sliced to 8 for the cache — avoids re-running the O(bins×passes×slots×rows) loop.
+    const existingTrends = wrapped["badBinSlotTrends"] as BadBinSlotTrendEntry[] | undefined;
+    if (existingTrends?.length) {
+      cache["badBinSlotTrends"] = existingTrends.slice(0, 8);
     }
   }
 

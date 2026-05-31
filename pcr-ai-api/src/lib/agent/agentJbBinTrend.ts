@@ -328,7 +328,7 @@ export function buildBinSlotTrendMarkdownOnDemand(
     if (!passHasBinDie(rows, bin, passId)) continue;
     const md = formatBinSlotTrendMarkdown(rows, bin, passId, lot, device);
     if (md?.trim()) parts.push(md);
-    if (pref != null) return md;
+    if (passId === pref) return md;
   }
   return parts.length ? parts.join("\n\n") : null;
 }

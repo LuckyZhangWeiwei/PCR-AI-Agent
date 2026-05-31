@@ -713,9 +713,10 @@ async function tryRunDeterministicJbSummary(
   const commentary = commFilter.cleanText.trim();
 
   let full = tablesBlock;
-  if (commentary && !streamError) {
+  if (commentary) {
     full += `\n\n---\n\n${commentary}`;
-  } else if (streamError && !commentary) {
+  }
+  if (streamError && !commentary) {
     full += `\n\n---\n\n*（解读与专业建议生成失败：${streamError.slice(0, 120)}；请以表格为准。）*`;
   }
 
@@ -743,7 +744,7 @@ function toolResultForHistory(
   jbCacheJson?: string
 ): string {
   if (toolName === "query_jb_bins") {
-    const cap = Math.max(maxHistoryChars, toolResultMaxChars ?? 0);
+    const cap = Math.min(maxHistoryChars, toolResultMaxChars ?? maxHistoryChars);
     if (jbCacheJson?.trim()) {
       return compactJbCacheForHistory(jbCacheJson, cap);
     }

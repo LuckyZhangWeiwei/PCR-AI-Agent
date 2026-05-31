@@ -102,7 +102,15 @@ export function getSummary(sessionId: string): string | undefined {
   return sessions.get(sessionId)?.summary;
 }
 
+const sessionCleanupHooks: Array<(id: string) => void> = [];
+
+/** Register a callback to be called whenever a session is deleted (TTL or explicit clear). */
+export function registerSessionCleanupHook(fn: (id: string) => void): void {
+  sessionCleanupHooks.push(fn);
+}
+
 export function clearHistory(sessionId: string): void {
+  for (const hook of sessionCleanupHooks) hook(sessionId);
   sessions.delete(sessionId);
 }
 
@@ -114,6 +122,7 @@ const cleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [id, s] of sessions) {
     if (now - s.lastActive > SESSION_TTL_MS) {
+      for (const hook of sessionCleanupHooks) hook(id);
       sessions.delete(id);
     }
   }
