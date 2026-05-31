@@ -36,7 +36,7 @@ describe("agentJbSessionCache", () => {
     assert.ok(serialized.length <= 4000);
     const cache = parseJbToolPayload(cacheJson);
     assert.ok(cache);
-    assert.equal(cache!._jbSessionCacheVersion, 3);
+    assert.equal(cache!._jbSessionCacheVersion, 4);
     assert.ok(Array.isArray(cache!._trendRows));
     assert.ok(
       typeof cache!.lotYieldOverviewMarkdown === "string" &&

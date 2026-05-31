@@ -1,5 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { enrichInfcontrolLayerBinRowV2 } from "../src/lib/passBinSemantics.js";
+import { badDieFromJbRow } from "../src/lib/jbYieldCalc.js";
 import {
   buildTopBadBins,
   buildBin10Vs66ByLot,
@@ -14,6 +16,21 @@ import {
 } from "../src/lib/agent/agentJbBinFormat.js";
 
 describe("agentJbBinFormat", () => {
+  it("enrichInfcontrolLayerBinRowV2 preserves v4 list bins[] (no BIN columns)", () => {
+    const row = {
+      LOT: "NF12316.1X",
+      PASSBIN: "1-55",
+      GROSSDIE: 2971,
+      bins: [
+        { n: 7, value: 113, isGoodBin: false },
+        { n: 1, value: 2500, isGoodBin: true },
+      ],
+    };
+    const out = enrichInfcontrolLayerBinRowV2(row);
+    assert.equal((out.bins as unknown[]).length, 2);
+    assert.equal(badDieFromJbRow(out), 113);
+  });
+
   it("maps n/value to bin/dieCount", () => {
     const bins = [
       { n: 8, value: 37, isGoodBin: false },

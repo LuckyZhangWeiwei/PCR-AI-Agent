@@ -20,6 +20,7 @@ import { buildFeedbackInjection } from "./agentFeedback.js";
 import { buildJbSessionCacheJson } from "./agentJbBinFormat.js";
 import {
   compactJbBinsForHistory,
+  compactJbCacheForHistory,
   formatLotYieldOverviewMarkdown,
   formatSlotYieldMarkdownFromToolJson,
 } from "./agentJbHistoryCompact.js";
@@ -29,7 +30,7 @@ import {
   buildDeterministicJbTables,
   buildEngineeringContextFromPayload,
   DETERMINISTIC_TABLES_HEADER,
-  parseJbToolPayload,
+  resolveJbToolPayload,
 } from "./agentJbDeterministicReply.js";
 import {
   getJbToolRawJson,
@@ -659,8 +660,10 @@ async function tryRunDeterministicJbSummary(
   const lastTool = lastToolMessage(history);
   if (lastTool?.name !== "query_jb_bins") return false;
 
-  const raw = getJbToolRawJson(sessionId) ?? String(lastTool.content ?? "");
-  const payload = parseJbToolPayload(raw);
+  const payload = resolveJbToolPayload(
+    sessionId,
+    String(lastTool.content ?? "")
+  );
   if (!payload) return false;
 
   const tables = buildDeterministicJbTables(userQuestion, payload);
@@ -736,10 +739,14 @@ function toolResultForHistory(
   toolName: string,
   rawContent: string,
   maxHistoryChars: number,
-  toolResultMaxChars?: number
+  toolResultMaxChars?: number,
+  jbCacheJson?: string
 ): string {
   if (toolName === "query_jb_bins") {
     const cap = Math.max(maxHistoryChars, toolResultMaxChars ?? 0);
+    if (jbCacheJson?.trim()) {
+      return compactJbCacheForHistory(jbCacheJson, cap);
+    }
     return compactJbBinsForHistory(rawContent, cap);
   }
   return rawContent.slice(0, maxHistoryChars);
@@ -751,8 +758,10 @@ function jbBinsYieldFallbackMessage(
   sessionId: string
 ): string | null {
   if (toolMsg.name !== "query_jb_bins") return null;
-  const raw = getJbToolRawJson(sessionId) ?? String(toolMsg.content ?? "");
-  const payload = parseJbToolPayload(raw);
+  const payload = resolveJbToolPayload(
+    sessionId,
+    String(toolMsg.content ?? "")
+  );
   if (payload) {
     const tables = buildDeterministicJbTables(userQuestion, payload);
     if (tables?.trim()) {
@@ -761,7 +770,25 @@ function jbBinsYieldFallbackMessage(
     const overview = formatLotYieldOverviewMarkdown(payload);
     if (overview) return `${DETERMINISTIC_TABLES_HEADER}\n\n${overview}`;
   }
-  return formatSlotYieldMarkdownFromToolJson(raw);
+  return formatSlotYieldMarkdownFromToolJson(String(toolMsg.content ?? ""));
+}
+
+/** 总结轮 LLM 空输出时：直出服务端表（无解读），避免「模型未返回分析结论」。 */
+function finishWithJbServerTablesFallback(
+  sessionId: string,
+  userQuestion: string,
+  emit: (event: AgentSseEvent) => void
+): boolean {
+  const lastTool = lastToolMessage(getHistory(sessionId));
+  const fallback = lastTool
+    ? jbBinsYieldFallbackMessage(lastTool, userQuestion, sessionId)
+    : null;
+  if (!fallback?.trim()) return false;
+  emit({ type: "status", message: "模型未生成文字，正在输出服务端预计算表…" });
+  emitTextInChunks(fallback, emit);
+  appendMessages(sessionId, { role: "assistant", content: fallback });
+  emit({ type: "done" });
+  return true;
 }
 
 function parseToolCallArgs(tc: CollectedToolCall): Record<string, unknown> {
@@ -993,7 +1020,11 @@ export async function runAgentLoop(
         } else if (blockedEmb.length > 0 && allowedEmb.length === 0) {
           // Data-fetch embedded call in summary round.
           if (!textBuffer.trim()) {
-            // No usable text at all → error (model produced nothing).
+            if (
+              finishWithJbServerTablesFallback(sessionId, userQuestion, emit)
+            ) {
+              return;
+            }
             emit({
               type: "error",
               message:
@@ -1026,18 +1057,7 @@ export async function runAgentLoop(
           emit({ type: "done" });
           return;
         }
-        const jbFallback =
-          lastTool != null
-            ? jbBinsYieldFallbackMessage(
-                lastTool,
-                lastUserMessageText(getHistory(sessionId), message),
-                sessionId
-              )
-            : null;
-        if (jbFallback) {
-          appendMessages(sessionId, { role: "assistant", content: jbFallback });
-          emit({ type: "text", delta: jbFallback });
-          emit({ type: "done" });
+        if (finishWithJbServerTablesFallback(sessionId, userQuestion, emit)) {
           return;
         }
         emit({
@@ -1078,12 +1098,14 @@ export async function runAgentLoop(
       emit({ type: "status", message: `正在执行工具 ${tc.name}…` });
 
       let historyContent: string;
+      let jbCacheForHistory: string | undefined;
       try {
         const toolResult = await runTool(tc.name, parsedArgs, {
           toolResultMaxChars: agentConfig.toolResultMaxChars,
           history: getHistory(sessionId),
           onJbBinsWrapped: (wrapped) => {
-            storeJbToolRawJson(sessionId, buildJbSessionCacheJson(wrapped));
+            jbCacheForHistory = buildJbSessionCacheJson(wrapped);
+            storeJbToolRawJson(sessionId, jbCacheForHistory);
           },
         });
         if (
@@ -1110,7 +1132,8 @@ export async function runAgentLoop(
             tc.name,
             rawContent,
             agentConfig.toolResultMaxHistoryChars,
-            agentConfig.toolResultMaxChars
+            agentConfig.toolResultMaxChars,
+            jbCacheForHistory
           );
         }
       } catch (err) {

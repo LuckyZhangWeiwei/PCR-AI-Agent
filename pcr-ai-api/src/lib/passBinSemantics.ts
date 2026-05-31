@@ -174,9 +174,19 @@ export type InfcontrolLayerBinV2BinEntry = {
 export function enrichInfcontrolLayerBinRowV2(
   row: Record<string, unknown>
 ): Record<string, unknown> {
+  const rest = { ...row };
+  const hasBinColumns = Object.keys(rest).some((k) => isBinColumnKey(k));
+  // v4 列表已带 bins[]、已剥离 BINn；勿再 enrich 成空数组（会导致良率误为 100%）。
+  if (
+    !hasBinColumns &&
+    Array.isArray(rest.bins) &&
+    (rest.bins as unknown[]).length > 0
+  ) {
+    return rest;
+  }
+
   const passBin = row.PASSBIN ?? row.passbin;
   const good = parsePassBinHyphenGoodBins(passBin);
-  const rest = { ...row };
   const bins: InfcontrolLayerBinV2BinEntry[] = [];
 
   for (const key of Object.keys(rest)) {

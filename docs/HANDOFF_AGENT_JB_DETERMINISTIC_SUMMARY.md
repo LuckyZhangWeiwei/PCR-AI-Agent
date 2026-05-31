@@ -1,6 +1,6 @@
 # Claude Code 交接：Agent JB 确定性总结 + 工程专业建议
 
-**日期：** 2026-05-30  
+**日期：** 2026-05-30（§13–§15 更新 2026-05-31）  
 **分支：** `report-refactor`（合并前以实际分支为准）  
 **读者：** Claude Code / Cursor Agent 接手 **AI Agent 生产准确度** 时优先阅读。  
 **前置阅读：** [`HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md`](HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md)、[`HANDOFF_JB_INTERRUPT_YIELD.md`](HANDOFF_JB_INTERRUPT_YIELD.md)、[`HANDOFF_AGENT_JB_PROBE_CARD_CHANGE.md`](HANDOFF_AGENT_JB_PROBE_CARD_CHANGE.md)
@@ -111,7 +111,11 @@ flowchart TD
 | **`lot_overview`** | 整体/概况/测试情况/重新计算 | `lotYieldOverviewMarkdown` |
 | **`generic`** | 其它 | 优先 overview，否则匹配 bin 趋势 |
 
-**会话缓存：** `agentJbSessionCache.ts` — `storeJbToolRawJson` / `getJbToolRawJson` 保存完整工具 JSON（总结轮选表 + fallback）。
+**会话缓存：** `agentJbSessionCache.ts` — `storeJbToolRawJson` / `getJbToolRawJson`；`AGENT_JB_CACHE_VERSION` **4**（`GET /health` → `agentJbCacheVersion`）。
+
+**BIN 趋势按需建表：** `buildBinSlotTrendMarkdownOnDemand`（`agentJbBinTrend.ts`）— 用户指定 BIN 且未在 top-N 预计算时，从缓存 `_trendRows` 生成 slot 1–25 表。`binsFieldForTrendRow` 合并 `badBins`/`goodBins`。
+
+**用户 BIN 识别：** `extractBinFromUserText` 支持 `bin7` / `BIN7`（无空格）。
 
 ---
 
@@ -147,7 +151,13 @@ flowchart TD
 | **`toolResultMaxChars`** | 12000 | 单次工具回传上限（Settings） |
 | **`toolResultMaxHistoryChars`** | 12000 | 写入 session 历史的上限（`agentConfig` + `runtimeConfig` + 报表 `useServerConfig.ts`） |
 
-**`compactJbBinsForHistory`**：保留 `jbYieldCoreFields` + `agentTablesDigest`；避免 6000 硬切丢半片/BIN 趋势。
+**`compactJbBinsForHistory`**：保留 `jbYieldCoreFields` + `agentTablesDigest` + `_trendRows`（tier 1）。
+
+**`compactJbCacheForHistory`**（2026-05-31）：`query_jb_bins` 写入 history 时优先用 **`buildJbSessionCacheJson`** 压缩（含 `_trendRows`），而非 serialize 截断串。`agentLoop.ts` → `toolResultForHistory(..., jbCacheForHistory)`。
+
+**`resolveJbToolPayload`**：内存缓存优先，否则解析 tool history JSON（总结轮 / fallback 共用）。
+
+**空总结回退：** `finishWithJbServerTablesFallback` — 总结轮 LLM 无正文或内嵌 `query_jb_bins` 被拦时，先 SSE 服务端表再 `done`，避免「模型未返回分析结论」。
 
 ---
 
@@ -157,9 +167,10 @@ flowchart TD
 | --- | --- |
 | `agentLoop.ts` | `tryRunDeterministicJbSummary`、`yieldMonitorNoteFromHistory` |
 | `agentJbDeterministicReply.ts` | 选表、commentary prompt、`BRIEF_COMMENTARY_SYSTEM` |
-| `agentJbSessionCache.ts` | 按 session 缓存 JB 工具原始 JSON |
-| `agentJbBinFormat.ts` | wrap / serialize / `agentTablesDigest` |
-| `agentJbBinTrend.ts` | `buildBadBinSlotTrends` |
+| `agentJbSessionCache.ts` | 按 session 缓存 JB 工具 JSON；`AGENT_JB_CACHE_VERSION` |
+| `agentJbBinFormat.ts` | wrap / serialize / `buildJbSessionCacheJson` |
+| `agentJbBinTrend.ts` | `buildBadBinSlotTrends`、`buildBinSlotTrendMarkdownOnDemand` |
+| `passBinSemantics.ts` | `enrichInfcontrolLayerBinRowV2`（见 §13） |
 | `agentJbHistoryCompact.ts` | overview / interrupt markdown |
 | `agentJbYieldCore.ts` | 总结轮必读字段列表 |
 | `agentToolHandlers.ts` | lot 全量 SQL + Dummy parity |
@@ -173,6 +184,15 @@ flowchart TD
 - `test/agentJbHistoryCompact.test.ts`
 - `test/jbAgentLotQuery.test.ts`
 - `test/agentJbBinFormat.test.ts`、`test/jbYieldCalc.test.ts`
+- `test/agentJbSessionCache.test.ts`、`test/agentJbBinTrendOnDemand.test.ts`
+
+**E2E 脚本（`pcr-ai-api/scripts/`，不提交 `e2e-*.txt` 输出）：**
+
+| 脚本 | 用途 |
+| --- | --- |
+| `e2e-agent-real.mjs` | `POST /api/v4/agent/chat` 生产 SSE 全链路 |
+| `e2e-agent-hybrid-real.mjs` | 生产 Oracle 列表 + 本机 dist 确定性表 + SiliconFlow 解读 |
+| `simulate-jb-bin7-agent.mjs` | 本地 mock 行验证确定性表（无 Oracle/LLM） |
 
 ---
 
@@ -193,18 +213,28 @@ flowchart TD
 
 ### 9.2 BIN 趋势 + INTERRUPT
 
-> NF12316.1X sort1 BIN7 趋势，1–25 片。
+> NF12316.1X 中 bin7 的趋势
 
 **期望：**
 
-- `badBinSlotTrends` 表含 slot1 pass1（若库里有 INTERRUPT，表含前半/后半列）
-- 有中断 slot 在解读中提及半片，专业建议可提续测/清卡/site
+- **禁止**读 `slotBadBinsCompact`、**禁止** `aggregate_jb_bins` 补全
+- 服务端 BIN7 表含 slot 1–25（pass1）；slot1/10 有 INTERRUPT 时含前半/后半列
+- 真库参考（2026-05 联调）：pass1 批次良率约 **92%**，slot20 BIN7 约 **113**（非 0、非 100% 全良）
 
-### 9.3 与 Yield Monitor 同轮
+### 9.3 每片良率
+
+> NF12316.1X 中 每一片的 yield
+
+**期望：**
+
+- `lotYieldOverviewMarkdown`：`yieldByPassId` + `slotYieldInterruptMarkdown` + `slotYieldPivotMarkdown`（无中断各片）
+- 数字与 JB 报表一致；**勿**对 v4 列表行二次 `enrichInfcontrolLayerBinRowV2`（见 §13）
+
+### 9.4 与 Yield Monitor 同轮
 
 先问 Yield Monitor 报警，再问同 lot JB。
 
-**期望：** 专业建议可引用「已查 Yield Monitor」；数字仍以 JB 表为准。
+**期望：** 专业建议可引用「已查 Yield Monitor」；数字仍以 JB 表为准。lot 良率问题以 JB 表为主，勿因 Yield 报警替代每片 yield 数字。
 
 ---
 
@@ -240,13 +270,15 @@ npm run build   # 或 pack:dist
 
 | 检查 | 期望 |
 | --- | --- |
-| `GET /health` | 含 **`agentJbDeterministicSummary": true`**、**`agentJbCacheVersion": 2`** |
+| `GET /health` | 含 **`agentJbDeterministicSummary": true`**、**`agentJbCacheVersion": 4`** |
 | 总结轮首段 | 出现「**以下表格由服务端根据 JB STAR 实测数据生成**」 |
 | 状态提示 | 「**正在输出服务端预计算表…**」 |
 | 问题须带 **`lot`** | `query_jb_bins(lot=…)` 才会 `lotQueryFullRows` + 预计算表 |
 | API 必须 **build 后 pm2 reload** | 勿只 `git pull` 不编译 `dist/` |
 
-**根因（2026-05 修复）：** 旧版把 **serialize 截断后** 的 JSON 写入 session 缓存，大 lot 会丢掉 `lotYieldOverviewMarkdown` / `badBinSlotTrends`，`tryRunDeterministicJbSummary` 直接失败并回退纯 LLM。新版在 **`onJbBinsWrapped`** 中用 `buildJbSessionCacheJson` 在截断**之前**写入缓存。
+**根因（2026-05 修复）：** 旧版把 **serialize 截断后** 的 JSON 写入 session 缓存，大 lot 会丢掉 `lotYieldOverviewMarkdown` / `badBinSlotTrends`，`tryRunDeterministicJbSummary` 直接失败并回退纯 LLM。新版在 **`onJbBinsWrapped`** 中用 `buildJbSessionCacheJson` 在截断**之前**写入内存缓存；history 用 **`compactJbCacheForHistory`** 保留 `_trendRows`。
+
+**根因（2026-05-31）：** 总结轮 LLM 空输出 + 内嵌二次 `query_jb_bins` 时，旧逻辑直接报错且不跑 `jbBinsYieldFallbackMessage` → 已改为 `finishWithJbServerTablesFallback`。
 
 ---
 
@@ -254,5 +286,51 @@ npm run build   # 或 pack:dist
 
 - 确定性路径仅当 **最后工具** 为 `query_jb_bins`；末工具为 `aggregate_*` 等仍走常规总结。
 - `generate_chart` 总结仍走 `chartToolFallbackMessage`，不走 JB 确定性表。
-- 若 `buildDeterministicJbTables` 返回 null（缺 digest），回退 LLM 全文总结 — 需保证 `agentTablesDigest` 在 compact 后仍存在。
-- Dual-tool（Yield + JB）专业建议对 Yield 仅为一句 context，无 Yield 数字表直出。
+- 若 `buildDeterministicJbTables` 返回 null（缺 digest / 该 BIN 真库无坏品），回退 LLM 或 `finishWithJbServerTablesFallback` 仅 overview。
+- Dual-tool（Yield + JB）时 prompt 仍可能先调 `query_yield_triggers`；lot 每片 yield 建议用户问题聚焦 JB 或部署后观察是否仍双工具。
+- 生产 **`/health` 无 `agentJbCacheVersion`** = 未部署本分支 `dist/`，表现与 2026-05-30 旧包相同。
+
+---
+
+## 13. `enrichInfcontrolLayerBinRowV2` 与 v4 列表行（必读）
+
+**症状：** 良率误为 **100%**、BIN7 误为 **0**、与 JB 报表完全不符。
+
+**原因：** `GET /infcontrol-layer-bins/v4` 响应行已含 **`bins: [{ n, value, isGoodBin }]`**，顶层 **`BINn` 已剥离**。若再对该行调用 `enrichInfcontrolLayerBinRowV2`（无 `BINn` 列），会生成 **`bins: []`**，后续 `badDieFromJbRow` → 0。
+
+**修复（`passBinSemantics.ts`）：** 无 `BINn` 列且已有非空 `bins[]` 时 **原样返回**。
+
+| 数据路径 | 是否安全 |
+| --- | --- |
+| Agent `query_jb_bins` → Oracle 原始行（含 BIN 列）→ `enrichJbRow` | ✅ |
+| HTTP v4 列表行 → 直接 `wrapJbQueryResultForAgent` | ✅ |
+| HTTP v4 列表行 → 再 `enrichInfcontrolLayerBinRowV2` | ❌（已防护） |
+
+**联调真值示例 `NF12316.1X`（52 行，pass1+pass3）：** pass1 **92.19%** / pass3 **99.85%**；slot20 pass1 BIN7 **113**。勿用顶层 `row.BIN7` 统计（列为 undefined）。
+
+---
+
+## 14. 真实 E2E 验收（2026-05-31）
+
+```bash
+cd pcr-ai-api && npm run build
+
+# 生产 Agent（需已部署 cache v4）
+node scripts/e2e-agent-real.mjs "NF12316.1X 中 每一片的 yield"
+
+# 生产 Oracle + 本机最新表逻辑 + LLM（部署前对照）
+node scripts/e2e-agent-hybrid-real.mjs "NF12316.1X 中 bin7 的趋势"
+```
+
+| 检查 | 通过标准 |
+| --- | --- |
+| `curl …/health` | `agentJbCacheVersion": 4` |
+| 每片 yield | 表含 pass1/pass3 分列；pass1 非 100% 假全良 |
+| bin7 趋势 | 服务端表 + slot20 BIN7≈113（以库为准） |
+| 无截断误报 | 不出现「slotYieldSummary 被省略」为主结论 |
+
+---
+
+## 15. 报表侧（同批）
+
+`pcr-ai-report` **`AiAgentReport.tsx`**：差评反馈弹窗关闭时恢复 thumbs 状态；反馈 API 失败不撤销已选 thumbs。

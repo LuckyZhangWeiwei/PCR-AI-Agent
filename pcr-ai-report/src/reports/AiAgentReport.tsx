@@ -642,14 +642,9 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
           code?: string;
         } | null;
         const detail = errBody?.error ?? `HTTP ${res.status}`;
-        throw new Error(detail);
+        setFeedbackHint(`反馈提交失败：${detail}`);
       }
     } catch (err) {
-      setFeedbackState((prev) => {
-        const next = { ...prev };
-        delete next[idx];
-        return next;
-      });
       const detail = err instanceof Error ? err.message : String(err);
       setFeedbackHint(`反馈提交失败：${detail}`);
     }
@@ -658,7 +653,19 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
   function handleOpenBadFeedback(idx: number, msg: AiMessage) {
     const question = findUserTextForAiMessage(messages, idx)?.trim();
     if (!question || !msg.text.trim()) return;
+    setFeedbackState((prev) => ({ ...prev, [idx]: "bad" }));
     setFeedbackModal({ msgIndex: idx, question, answer: msg.text });
+  }
+
+  function handleCloseBadFeedbackModal(restoreThumbs: boolean) {
+    if (restoreThumbs && feedbackModal) {
+      setFeedbackState((prev) => {
+        const next = { ...prev };
+        delete next[feedbackModal.msgIndex];
+        return next;
+      });
+    }
+    setFeedbackModal(null);
   }
 
   const handleRegenerate = useCallback(async (idx: number) => {
@@ -960,14 +967,8 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
           sessionId={sessionId}
           question={feedbackModal.question}
           answer={feedbackModal.answer}
-          onSubmit={() => {
-            setFeedbackState((prev) => ({
-              ...prev,
-              [feedbackModal.msgIndex]: "bad",
-            }));
-            setFeedbackModal(null);
-          }}
-          onClose={() => setFeedbackModal(null)}
+          onSubmit={() => handleCloseBadFeedbackModal(false)}
+          onClose={() => handleCloseBadFeedbackModal(true)}
         />
       )}
     </div>

@@ -3,6 +3,7 @@
 
 import { formatLotYieldOverviewMarkdown } from "./agentJbHistoryCompact.js";
 import { buildBinSlotTrendMarkdownOnDemand } from "./agentJbBinTrend.js";
+import { getJbToolRawJson } from "./agentJbSessionCache.js";
 
 export type BinTrendDigest = {
   bin: number;
@@ -68,6 +69,22 @@ export function parseJbToolPayload(
   } catch {
     return null;
   }
+}
+
+/** 内存缓存优先，否则解析工具 history（含 compact 后的 _trendRows）。 */
+export function resolveJbToolPayload(
+  sessionId: string,
+  toolContent?: string
+): Record<string, unknown> | null {
+  const cached = getJbToolRawJson(sessionId);
+  if (cached) {
+    const p = parseJbToolPayload(cached);
+    if (p) return p;
+  }
+  if (toolContent?.trim()) {
+    return parseJbToolPayload(toolContent);
+  }
+  return null;
 }
 
 function digestFromPayload(o: Record<string, unknown>): AgentTablesDigest {

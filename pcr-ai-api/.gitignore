@@ -11,3 +11,7 @@ data/feedback.json
 
 # AI agent session logs (runtime-generated, may contain user queries)
 session-logs/
+
+# E2E agent script outputs (local runs)
+scripts/e2e-last-*.txt
+scripts/e2e-hybrid-*.txt

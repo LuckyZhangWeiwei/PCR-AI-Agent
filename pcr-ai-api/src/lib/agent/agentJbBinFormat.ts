@@ -755,7 +755,7 @@ export function buildJbSessionCacheJson(wrapped: Record<string, unknown>): strin
 
   const cache: Record<string, unknown> = {
     ...jbYieldCoreFields(wrapped),
-    _jbSessionCacheVersion: 3,
+    _jbSessionCacheVersion: 4,
   };
 
   if (summary?.length) {

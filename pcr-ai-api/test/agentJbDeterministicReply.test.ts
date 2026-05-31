@@ -7,9 +7,20 @@ import {
   detectJbReplyMode,
   extractBinFromUserText,
   isBinTrendQuestion,
+  resolveJbToolPayload,
 } from "../src/lib/agent/agentJbDeterministicReply.js";
-import { wrapJbQueryResultForAgent } from "../src/lib/agent/agentJbBinFormat.js";
-import { serializeJbQueryResultForAgent } from "../src/lib/agent/agentJbBinFormat.js";
+import {
+  compactJbCacheForHistory,
+} from "../src/lib/agent/agentJbHistoryCompact.js";
+import {
+  clearJbToolRawJson,
+  storeJbToolRawJson,
+} from "../src/lib/agent/agentJbSessionCache.js";
+import {
+  buildJbSessionCacheJson,
+  serializeJbQueryResultForAgent,
+  wrapJbQueryResultForAgent,
+} from "../src/lib/agent/agentJbBinFormat.js";
 
 describe("agentJbDeterministicReply", () => {
   it("detects bin trend vs lot overview", () => {
@@ -27,6 +38,34 @@ describe("agentJbDeterministicReply", () => {
       detectJbReplyMode("NF12316.1X 中bin7 的趋势"),
       "bin_trend"
     );
+    assert.equal(
+      detectJbReplyMode("NF12316.1X 中bin7 的趋势 请重新计算"),
+      "bin_trend"
+    );
+  });
+
+  it("resolveJbToolPayload reads history when session cache cleared", () => {
+    const rows = [
+      {
+        LOT: "NF12316.1X",
+        SLOT: 1,
+        PASSID: 1,
+        PASSTYPE: "TEST",
+        bins: [{ n: 7, value: 12, isGoodBin: false }],
+      },
+    ] as Record<string, unknown>[];
+    const wrapped = wrapJbQueryResultForAgent(rows, { lotScopedFullRows: true });
+    const cacheJson = buildJbSessionCacheJson(wrapped);
+    const hist = compactJbCacheForHistory(cacheJson, 12000);
+    const sid = "test-resolve-jb-payload";
+    clearJbToolRawJson(sid);
+    const fromHist = resolveJbToolPayload(sid, hist);
+    assert.ok(fromHist);
+    assert.ok(Array.isArray(fromHist!._trendRows));
+    storeJbToolRawJson(sid, cacheJson);
+    const fromCache = resolveJbToolPayload(sid, hist);
+    assert.equal(fromCache!._jbSessionCacheVersion, 4);
+    clearJbToolRawJson(sid);
   });
 
   it("buildDeterministicJbTables picks bin trend markdown", () => {

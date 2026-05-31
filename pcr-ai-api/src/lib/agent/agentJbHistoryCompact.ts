@@ -363,6 +363,80 @@ function shrinkSlotSummaryForHistory(
   return coreOnly.length <= maxChars ? coreOnly : null;
 }
 
+/**
+ * 将 buildJbSessionCacheJson 写入 history：优先保留 _trendRows（BIN 趋势按需建表）。
+ */
+export function compactJbCacheForHistory(
+  cacheJson: string,
+  maxChars: number
+): string {
+  if (cacheJson.length <= maxChars) {
+    try {
+      JSON.parse(cacheJson);
+      return cacheJson;
+    } catch {
+      /* fall through */
+    }
+  }
+
+  let o: Record<string, unknown>;
+  try {
+    o = JSON.parse(cacheJson) as Record<string, unknown>;
+  } catch {
+    return cacheJson.slice(0, maxChars);
+  }
+
+  const trendRows = o["_trendRows"];
+  const tiers: Array<() => Record<string, unknown>> = [
+    () => o,
+    () => ({
+      _historyNote:
+        "JB 总结轮缓存；BIN 趋势读 badBinSlotTrends 或 _trendRows 按需生成；概况读 lotYieldOverviewMarkdown",
+      rowsOmitted: true,
+      ...jbYieldCoreFields(o),
+      _jbSessionCacheVersion: o["_jbSessionCacheVersion"],
+      _trendRows: trendRows,
+      slotYieldSummary: o["slotYieldSummary"],
+      agentTablesDigest: o["agentTablesDigest"],
+    }),
+    () => ({
+      _historyNote: "精简 JB 缓存；保留 _trendRows 供 BIN 趋势表",
+      rowsOmitted: true,
+      lot: o["lot"],
+      device: o["device"],
+      passIdsPresent: o["passIdsPresent"],
+      lotQueryFullRows: o["lotQueryFullRows"],
+      topBadBins: o["topBadBins"],
+      yieldByPassIdMarkdown: o["yieldByPassIdMarkdown"],
+      lotYieldOverviewMarkdown: o["lotYieldOverviewMarkdown"],
+      _jbSessionCacheVersion: o["_jbSessionCacheVersion"],
+      _trendRows: trendRows,
+    }),
+    () => ({
+      ...jbYieldCoreFields(o),
+      rowsOmitted: true,
+      _historyNote: "仅核心良率；BIN 趋势可能不可用",
+    }),
+  ];
+
+  for (const build of tiers) {
+    const s = JSON.stringify(build());
+    if (s.length <= maxChars) return s;
+  }
+
+  const shrunk = shrinkSlotSummaryForHistory(
+    (o["slotYieldSummary"] as SlotYieldSummaryEntry[] | undefined) ?? [],
+    maxChars,
+    jbYieldCoreFields(o)
+  );
+  if (shrunk) return shrunk;
+  return JSON.stringify({
+    ...jbYieldCoreFields(o),
+    _historyNote: "JB 缓存压缩极限",
+    rowsOmitted: true,
+  });
+}
+
 /** 保证写入 history 的 JSON 可解析且优先保留分 sort 良率核心字段。 */
 export function compactJbBinsForHistory(
   rawJson: string,
@@ -404,6 +478,9 @@ export function compactJbBinsForHistory(
       slotsByPassId: o["slotsByPassId"],
       badBinSlotTrends: o["badBinSlotTrends"],
       agentTablesDigest: o["agentTablesDigest"],
+      _trendRows: o["_trendRows"],
+      lotQueryFullRows: o["lotQueryFullRows"],
+      _jbSessionCacheVersion: o["_jbSessionCacheVersion"],
       slotYieldPivotMarkdown: o["slotYieldPivotMarkdown"],
       slotYieldSummary: slim,
     }),
