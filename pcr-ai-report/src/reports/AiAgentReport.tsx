@@ -735,17 +735,21 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
                 j++;
               }
 
+              // Capture i by value before mutating it (i = j below).
+              // Closures in the JSX would otherwise capture the mutated value.
+              const aiIdx = i;
+
               const planMatch = !msg.streaming && msg.text.match(/\[PLAN\]([\s\S]*?)\[\/PLAN\]/);
               const showFeedbackBar =
                 !msg.streaming &&
                 msg.showFeedback === true &&
                 msg.text.trim().length > 0 &&
-                findUserTextForAiMessage(messages, i) !== undefined;
+                findUserTextForAiMessage(messages, aiIdx) !== undefined;
               const showRegenerateButton =
-                showFeedbackBar && !loading && i === lastFeedbackIdx;
+                showFeedbackBar && !loading && aiIdx === lastFeedbackIdx;
 
               rendered.push(
-                <div key={i} className="ai-msg ai-msg--ai">
+                <div key={aiIdx} className="ai-msg ai-msg--ai">
                   <div className="ai-avatar ai-avatar--ai"><RobotAvatar /></div>
                   <div className="ai-msg-content">
 
@@ -812,7 +816,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
                           title="导出为 Markdown 文件"
                           onClick={() => downloadMarkdown(
                             msg.text,
-                            findUserTextForAiMessage(messages, i) ?? `answer_${i}`
+                            findUserTextForAiMessage(messages, aiIdx) ?? `answer_${aiIdx}`
                           )}
                         >
                           ⬇
@@ -822,14 +826,14 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
                         ) : (
                           <>
                             <button type="button" className="ai-feedback-btn"
-                              onClick={() => handleGoodFeedback(i, msg)} title="这条回答有用">👍</button>
+                              onClick={() => handleGoodFeedback(aiIdx, msg)} title="这条回答有用">👍</button>
                             <button type="button" className="ai-feedback-btn"
-                              onClick={() => handleOpenBadFeedback(i, msg)} title="这条回答有问题">👎</button>
+                              onClick={() => handleOpenBadFeedback(aiIdx, msg)} title="这条回答有问题">👎</button>
                           </>
                         )}
                         {showRegenerateButton && (
                           <button type="button" className="ai-feedback-btn ai-feedback-btn--regen"
-                            onClick={() => void handleRegenerate(i)} title="重新生成这条回答">🔄</button>
+                            onClick={() => void handleRegenerate(aiIdx)} title="重新生成这条回答">🔄</button>
                         )}
                       </div>
                     )}
