@@ -2,7 +2,10 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   badDieFromJbRow,
+  binDieByHalvesForGroup,
+  buildLotYieldRank,
   buildSlotYieldSummary,
+  buildYieldByPassId,
   computeJbYieldMetrics,
 } from "../src/lib/jbYieldCalc.js";
 
@@ -106,6 +109,32 @@ describe("jbYieldCalc", () => {
     assert.equal(summary[1]!.badDie, 10);
   });
 
+  it("binDieByHalvesForGroup sums bin on first and second half rows", () => {
+    const rows = [
+      {
+        SLOT: 1,
+        PASSID: 1,
+        PASSTYPE: "INTERRUPT",
+        bins: [{ n: 7, value: 10, isGoodBin: false }],
+      },
+      {
+        SLOT: 1,
+        PASSID: 1,
+        PASSNUM: 2,
+        PASSTYPE: "TEST",
+        bins: [
+          { n: 7, value: 80, isGoodBin: false },
+          { n: 1, value: 100, isGoodBin: true },
+        ],
+      },
+    ];
+    const h = binDieByHalvesForGroup(rows, 7);
+    assert.equal(h.segmented, true);
+    assert.equal(h.firstHalf, 10);
+    assert.equal(h.secondHalf, 80);
+    assert.equal(h.total, 90);
+  });
+
   it("buildSlotYieldSummary exposes upper, lower, and whole wafer for interrupt", () => {
     const rows = [
       {
@@ -169,6 +198,118 @@ describe("jbYieldCalc", () => {
     assert.equal(s.hasInterrupt, true);
     assert.equal(s.interruptHalf!.grossDie, 100);
     assert.equal(s.completionHalf!.grossDie, 200);
+  });
+
+  it("buildSlotYieldSummary emits separate entries per passId on same slot", () => {
+    const rows = [
+      {
+        SLOT: 1,
+        PASSID: 1,
+        GROSSDIE: 100,
+        PASSTYPE: "TEST",
+        bins: [
+          { n: 1, value: 95, isGoodBin: true },
+          { n: 5, value: 5, isGoodBin: false },
+        ],
+      },
+      {
+        SLOT: 1,
+        PASSID: 3,
+        GROSSDIE: 100,
+        PASSTYPE: "TEST",
+        bins: [
+          { n: 1, value: 70, isGoodBin: true },
+          { n: 5, value: 30, isGoodBin: false },
+        ],
+      },
+    ];
+    const summary = buildSlotYieldSummary(rows);
+    assert.equal(summary.length, 2);
+    const p1 = summary.find((x) => x.passId === 1)!;
+    const p3 = summary.find((x) => x.passId === 3)!;
+    assert.equal(p1.slot, 1);
+    assert.equal(p3.slot, 1);
+    assert.ok(p1.yieldPct !== null && Math.abs(p1.yieldPct - 95) < 0.1);
+    assert.ok(p3.yieldPct !== null && Math.abs(p3.yieldPct - 70) < 0.1);
+  });
+
+  it("buildYieldByPassId sums per passId not across passes", () => {
+    const rows = [
+      {
+        LOT: "L1",
+        SLOT: 1,
+        PASSID: 3,
+        GROSSDIE: 1000,
+        bins: [
+          { n: 1, value: 900, isGoodBin: true },
+          { n: 5, value: 100, isGoodBin: false },
+        ],
+      },
+      {
+        LOT: "L1",
+        SLOT: 1,
+        PASSID: 5,
+        GROSSDIE: 2000,
+        bins: [
+          { n: 1, value: 1800, isGoodBin: true },
+          { n: 5, value: 200, isGoodBin: false },
+        ],
+      },
+    ];
+    const byPass = buildYieldByPassId(rows);
+    assert.equal(byPass.length, 2);
+    assert.equal(byPass[0]!.passId, 3);
+    assert.equal(byPass[0]!.grossDie, 1000);
+    assert.equal(byPass[1]!.passId, 5);
+    assert.equal(byPass[1]!.grossDie, 2000);
+  });
+
+  it("buildLotYieldRank uses worst slot×pass yield per lot and sorts by testEnd desc", () => {
+    const rows = [
+      {
+        LOT: "LOT_A",
+        DEVICE: "WA01",
+        SLOT: 1,
+        PASSID: 1,
+        GROSSDIE: 100,
+        TESTEND: "2026-05-20T10:00:00.000Z",
+        bins: [
+          { n: 1, value: 90, isGoodBin: true },
+          { n: 5, value: 10, isGoodBin: false },
+        ],
+      },
+      {
+        LOT: "LOT_A",
+        DEVICE: "WA01",
+        SLOT: 2,
+        PASSID: 1,
+        GROSSDIE: 100,
+        TESTEND: "2026-05-20T11:00:00.000Z",
+        bins: [
+          { n: 1, value: 50, isGoodBin: true },
+          { n: 5, value: 50, isGoodBin: false },
+        ],
+      },
+      {
+        LOT: "LOT_B",
+        DEVICE: "WA01",
+        SLOT: 1,
+        PASSID: 1,
+        GROSSDIE: 100,
+        TESTEND: "2026-05-25T10:00:00.000Z",
+        bins: [
+          { n: 1, value: 98, isGoodBin: true },
+          { n: 5, value: 2, isGoodBin: false },
+        ],
+      },
+    ];
+    const rank = buildLotYieldRank(rows, 10);
+    assert.deepEqual(rank.map((x) => x.lot), ["LOT_B", "LOT_A"]);
+    const lotA = rank.find((x) => x.lot === "LOT_A")!;
+    assert.ok(lotA.yieldPct !== null && Math.abs(lotA.yieldPct - 50) < 0.1);
+    assert.equal(lotA.worstSlot, 2);
+    const lotB = rank.find((x) => x.lot === "LOT_B")!;
+    assert.ok(lotB.yieldPct !== null && Math.abs(lotB.yieldPct - 98) < 0.1);
   });
 
   it("resume: two TEST rows same PASSNUM split by TESTEND (NF12773 slot22 pattern)", () => {

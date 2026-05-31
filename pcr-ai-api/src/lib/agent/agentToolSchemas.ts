@@ -6,7 +6,7 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "query_yield_triggers",
       description:
-        "查询 Yield Monitor 触发记录列表（delta_diff 类型）。返回最近触发的原始记录。",
+        "查询 Yield Monitor 探针卡 DUT 不均衡报警记录（delta_diff），返回触发条数/时间，不是 die 良品率%。用户问良率/yield%/lot yield 时请用 query_jb_bins。",
       parameters: {
         type: "object",
         properties: {
@@ -35,7 +35,8 @@ export const TOOL_SCHEMAS = [
     type: "function",
     function: {
       name: "aggregate_yield_triggers",
-      description: "对 Yield Monitor 触发记录按维度聚合统计触发次数。",
+      description:
+        "对 Yield Monitor 报警按维度聚合统计触发次数（count），不是 die 良品率%。用户问良率/yield%/各 lot 良率排名时请用 query_jb_bins 并读 lotYieldRankByTestEnd。",
       parameters: {
         type: "object",
         properties: {
@@ -67,7 +68,7 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "query_jb_bins",
       description:
-        "查询 JB STAR Layer Bins 数据列表（INFCONTROL ⋈ INFLAYERBINLIST）。返回 cardByPassId、cardChangesBySlotPass（中途换卡须 hasTestInterrupt；换卡⇄中断）、slotYieldSummary、slotBadBinsCompact、recentLotsByTestEnd 等。rows 可能省略。",
+        "查询 JB STAR 实测数据（INFCONTROL ⋈ INFLAYERBINLIST）。单 lot 良率读 yieldByPassIdMarkdown（分 sort）与 slotYieldPivotMarkdown；passIdsPresent 列出实际 sort 层。指定 lot 时返回该 lot 全部匹配行（不限 limit）。另含 cardByPassId、slotYieldInterruptMarkdown 等。rows 可能省略。",
       parameters: {
         type: "object",
         properties: {
@@ -93,7 +94,7 @@ export const TOOL_SCHEMAS = [
           },
           limit: {
             type: "number",
-            description: "返回行数，默认 50，最大 200",
+            description: "返回行数，默认 50，最大 200；传 lot 时忽略（拉全量行以免漏 sort1）",
           },
         },
         required: [],
@@ -105,7 +106,7 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "aggregate_jb_bins",
       description:
-        "对 JB STAR 数据按维度聚合统计坏 bin 的 die 数量（UNPIVOT BIN0-BIN255）。结果始终含 bin 维度：每行为 (bin, 其他维度, count)——不是某卡/某 lot 的总坏 die。若需「哪张卡总坏 die 最多」，须对同一 cardId 的所有 bin 行 count 求和（groupTop 设 50 再手动汇总），或优先用 aggregate_yield_triggers(dimensions:'probeCard') 按报警次数排名。禁止用于「某卡最近 N 个 lot」（须 query_jb_bins.recentLotsByTestEnd）或「by lot 对比 BIN10 vs BIN66」（须 query_jb_bins.bin10Vs66ByLot）。",
+        "对 JB STAR 按维度聚合坏 bin die 数。**必填** lot/device/cardId/slot 之一作范围过滤，禁止无过滤调用（否则为全库数据）。用户已指定 lot 时必传 lot。单 lot 概况/坏 bin Top 排名：用 query_jb_bins(lot) 读 topBadBins，勿用本工具。禁止：最近 N lot（用 recentLotsByTestEnd）、BIN10 vs BIN66（用 bin10Vs66ByLot）。",
       parameters: {
         type: "object",
         properties: {

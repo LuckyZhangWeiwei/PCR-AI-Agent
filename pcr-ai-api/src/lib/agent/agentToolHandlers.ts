@@ -31,11 +31,13 @@ import {
 import {
   infcontrolLayerBinsUseDummy,
   filterInfcontrolLayerBinV3DummyRows,
+  filterInfcontrolLayerBinV3DummyRowsMatching,
   aggregateInfcontrolLayerBinV3DummyRows,
 } from "../infcontrolLayerBinDummy.js";
 import {
   buildYieldMonitorTriggersV3Sql,
   buildInfcontrolLayerBinsV3Sql,
+  buildInfcontrolLayerBinsV3SqlFullMatching,
 } from "../apiV3ListSql.js";
 import { probeCardTypeLeadingSegment } from "../probeCardTypeLeadingSegment.js";
 import { deviceMask } from "../deviceMask.js";
@@ -214,38 +216,96 @@ async function toolAggregateYieldTriggers(
   return truncateResult({ totalRowsMatching: total, groups }, maxChars);
 }
 
+/** 指定 lot 时须取全量行，否则 TESTEND DESC + limit 会丢掉较早的 sort1（passId=1）行。 */
+function isJbLotScopedAgentQuery(args: Record<string, unknown>): boolean {
+  return Boolean(String(args["lot"] ?? "").trim());
+}
+
+function jbQueryHasTimeFilter(args: Record<string, unknown>): boolean {
+  for (const k of [
+    "testStartBegin",
+    "testStartFrom",
+    "testStartEnd",
+    "testStartTo",
+    "testEndBegin",
+    "testEndFrom",
+    "testEndEnd",
+    "testEndTo",
+  ]) {
+    const v = args[k];
+    if (v !== undefined && v !== null && String(v).trim() !== "") return true;
+  }
+  return false;
+}
+
 async function toolQueryJbBins(
   args: Record<string, unknown>,
   maxChars: number
 ): Promise<string> {
   const limit = clampLimit(args["limit"], TOOL_LIST_LIMIT, TOOL_LIST_LIMIT_MAX);
-  const parsed = parseInfcontrolLayerBinsV3Query({ ...args, limit });
+  const lotScoped = isJbLotScopedAgentQuery(args);
+  const queryInput: Record<string, unknown> = { ...args, limit };
+  if (lotScoped && !jbQueryHasTimeFilter(args)) {
+    queryInput.testEndFrom = queryInput.testEndFrom ?? "2020-01-01";
+  }
+  const parsed = parseInfcontrolLayerBinsV3Query(queryInput);
   if (!parsed.ok) return `查询参数错误: ${parsed.error}`;
 
   if (infcontrolLayerBinsUseDummy()) {
-    const rows = filterInfcontrolLayerBinV3DummyRows(parsed.applied, limit).map(
+    const matching = filterInfcontrolLayerBinV3DummyRowsMatching(parsed.applied);
+    const rows = (lotScoped ? matching : filterInfcontrolLayerBinV3DummyRows(parsed.applied, limit)).map(
       (r) => enrichJbRow(r as Record<string, unknown>)
     );
-    return serializeJbQueryResultForAgent(wrapJbQueryResultForAgent(rows), maxChars);
+    return serializeJbQueryResultForAgent(
+      wrapJbQueryResultForAgent(rows, { lotScopedFullRows: lotScoped }),
+      maxChars
+    );
   }
 
-  const sql = buildInfcontrolLayerBinsV3Sql(parsed.whereAndSql);
+  const sql = lotScoped
+    ? buildInfcontrolLayerBinsV3SqlFullMatching(parsed.whereAndSql)
+    : buildInfcontrolLayerBinsV3Sql(parsed.whereAndSql);
   const rows = await withConnection(async (conn) => {
     const result = await conn.execute(
       sql,
-      { ...parsed.binds, lim: limit },
+      lotScoped ? parsed.binds : { ...parsed.binds, lim: limit },
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
     return (result.rows ?? []) as Record<string, unknown>[];
   });
   const enriched = rows.map(enrichJbRow);
-  return serializeJbQueryResultForAgent(wrapJbQueryResultForAgent(enriched), maxChars);
+  return serializeJbQueryResultForAgent(
+    wrapJbQueryResultForAgent(enriched, { lotScopedFullRows: lotScoped }),
+    maxChars
+  );
+}
+
+function aggregateJbBinsHasScopeFilter(args: Record<string, unknown>): boolean {
+  const lot = String(args["lot"] ?? "").trim();
+  const device = String(args["device"] ?? "").trim();
+  const cardId = String(args["cardId"] ?? "").trim();
+  const probeCardType = String(args["probeCardType"] ?? "").trim();
+  const testerId = String(args["testerId"] ?? "").trim();
+  const meslot = String(args["meslot"] ?? "").trim();
+  const slot = args["slot"];
+  const hasSlot = slot !== undefined && slot !== null && String(slot).trim() !== "";
+  return Boolean(
+    lot || device || cardId || probeCardType || testerId || meslot || hasSlot
+  );
 }
 
 async function toolAggregateJbBins(
   args: Record<string, unknown>,
   maxChars: number
 ): Promise<string> {
+  if (!aggregateJbBinsHasScopeFilter(args)) {
+    return (
+      "aggregate_jb_bins 错误：未传 lot / device / cardId / slot 等过滤条件，将统计全库数据而非用户指定的批次。" +
+      "用户已给出 lot ID 时须传 lot（完整含后缀，如 NF12827.1R）。" +
+      "单 lot「整体/概况/坏 bin 排名」请改用 query_jb_bins(lot, limit:200)，读 topBadBins、slotYieldSummary、cardByPassId；勿调用无过滤的本工具。"
+    );
+  }
+
   const groupByRaw = String(args["groupBy"] ?? "bin");
   const groupTop = clampLimit(args["groupTop"], 10, 50);
 

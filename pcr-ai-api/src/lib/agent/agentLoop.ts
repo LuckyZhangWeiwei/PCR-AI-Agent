@@ -17,6 +17,23 @@ import { fetchOrCacheManifest } from "./agentManifest.js";
 import { generateChartArgsHaveData } from "./agentChartTool.js";
 import { streamSiliconFlow, type CollectedToolCall } from "./agentStream.js";
 import { buildFeedbackInjection } from "./agentFeedback.js";
+import {
+  compactJbBinsForHistory,
+  formatLotYieldOverviewMarkdown,
+  formatSlotYieldMarkdownFromToolJson,
+} from "./agentJbHistoryCompact.js";
+import {
+  BRIEF_COMMENTARY_SYSTEM,
+  buildBriefCommentaryUserMessage,
+  buildDeterministicJbTables,
+  buildEngineeringContextFromPayload,
+  DETERMINISTIC_TABLES_HEADER,
+  parseJbToolPayload,
+} from "./agentJbDeterministicReply.js";
+import {
+  getJbToolRawJson,
+  storeJbToolRawJson,
+} from "./agentJbSessionCache.js";
 
 export type AgentSseEvent =
   | { type: "text"; delta: string }
@@ -593,6 +610,115 @@ function lastToolMessage(history: ChatMessage[]): ChatMessage | undefined {
   return undefined;
 }
 
+/** 同轮若已查 Yield Monitor，摘一句供专业建议引用。 */
+function yieldMonitorNoteFromHistory(history: ChatMessage[]): string | undefined {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i];
+    if (m.role !== "tool" || m.name !== "query_yield_triggers") continue;
+    const c = String(m.content ?? "");
+    if (c.includes("count") || c.includes("触发")) {
+      return "本会话已查询 Yield Monitor（delta_diff 探针卡 DUT 不均衡报警）；解读时可结合报警与 JB 坏 bin。";
+    }
+    return "本会话已查询 Yield Monitor；请结合报警条数/DUT 与 JB 表综合建议。";
+  }
+  return undefined;
+}
+
+function lastUserMessageText(
+  history: ChatMessage[],
+  fallback: string
+): string {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i];
+    if (m.role === "user" && m.content?.trim()) {
+      return String(m.content).trim();
+    }
+  }
+  return fallback.trim();
+}
+
+function emitTextInChunks(text: string, emit: (event: AgentSseEvent) => void): void {
+  const size = 500;
+  for (let i = 0; i < text.length; i += size) {
+    emit({ type: "text", delta: text.slice(i, i + size) });
+  }
+}
+
+/**
+ * 总结轮：先 SSE 直出服务端表，再让 LLM 只写 3–8 句解读（不改表中数字）。
+ * @returns true 表示已完整结束本轮（调用方应 return）。
+ */
+async function tryRunDeterministicJbSummary(
+  sessionId: string,
+  userQuestion: string,
+  agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void
+): Promise<boolean> {
+  const history = getHistory(sessionId);
+  const lastTool = lastToolMessage(history);
+  if (lastTool?.name !== "query_jb_bins") return false;
+
+  const raw = getJbToolRawJson(sessionId) ?? String(lastTool.content ?? "");
+  const payload = parseJbToolPayload(raw);
+  if (!payload) return false;
+
+  const tables = buildDeterministicJbTables(userQuestion, payload);
+  if (!tables?.trim()) return false;
+
+  const tablesBlock = `${DETERMINISTIC_TABLES_HEADER}\n\n${tables}`;
+  emitTextInChunks(tablesBlock, emit);
+
+  emit({ type: "status", message: "正在生成数据解读与专业建议…" });
+
+  const commFilter = createDeepSeekFilter(emit);
+  let streamError: string | undefined;
+
+  await streamSiliconFlow(
+    {
+      model: agentConfig.model,
+      messages: [
+        { role: "system", content: BRIEF_COMMENTARY_SYSTEM },
+        {
+          role: "user",
+          content: buildBriefCommentaryUserMessage(userQuestion, tables, {
+            engineeringContext: buildEngineeringContextFromPayload(payload),
+            yieldMonitorNote: yieldMonitorNoteFromHistory(history),
+          }),
+        },
+      ],
+      tools: TOOL_SCHEMAS as unknown as unknown[],
+      tool_choice: "none",
+    },
+    agentConfig,
+    (chunk) => {
+      switch (chunk.type) {
+        case "delta":
+          commFilter.push(chunk.text);
+          break;
+        case "error":
+          streamError = chunk.message;
+          break;
+        default:
+          break;
+      }
+    }
+  );
+
+  commFilter.finalize();
+  const commentary = commFilter.cleanText.trim();
+
+  let full = tablesBlock;
+  if (commentary && !streamError) {
+    full += `\n\n---\n\n${commentary}`;
+  } else if (streamError && !commentary) {
+    full += `\n\n---\n\n*（解读与专业建议生成失败：${streamError.slice(0, 120)}；请以表格为准。）*`;
+  }
+
+  appendMessages(sessionId, { role: "assistant", content: full });
+  emit({ type: "done" });
+  return true;
+}
+
 function chartToolFallbackMessage(toolMsg: ChatMessage): string {
   const c = String(toolMsg.content ?? "");
   if (c.startsWith("[图表已生成]")) {
@@ -602,6 +728,38 @@ function chartToolFallbackMessage(toolMsg: ChatMessage): string {
     return c;
   }
   return `图表生成未完成：${c.slice(0, 200)}`;
+}
+
+function toolResultForHistory(
+  toolName: string,
+  rawContent: string,
+  maxHistoryChars: number,
+  toolResultMaxChars?: number
+): string {
+  if (toolName === "query_jb_bins") {
+    const cap = Math.max(maxHistoryChars, toolResultMaxChars ?? 0);
+    return compactJbBinsForHistory(rawContent, cap);
+  }
+  return rawContent.slice(0, maxHistoryChars);
+}
+
+function jbBinsYieldFallbackMessage(
+  toolMsg: ChatMessage,
+  userQuestion: string,
+  sessionId: string
+): string | null {
+  if (toolMsg.name !== "query_jb_bins") return null;
+  const raw = getJbToolRawJson(sessionId) ?? String(toolMsg.content ?? "");
+  const payload = parseJbToolPayload(raw);
+  if (payload) {
+    const tables = buildDeterministicJbTables(userQuestion, payload);
+    if (tables?.trim()) {
+      return `${DETERMINISTIC_TABLES_HEADER}\n\n${tables}`;
+    }
+    const overview = formatLotYieldOverviewMarkdown(payload);
+    if (overview) return `${DETERMINISTIC_TABLES_HEADER}\n\n${overview}`;
+  }
+  return formatSlotYieldMarkdownFromToolJson(raw);
 }
 
 function parseToolCallArgs(tc: CollectedToolCall): Record<string, unknown> {
@@ -659,7 +817,7 @@ export function historyAwaitingToolSummary(history: ChatMessage[]): boolean {
 }
 
 const SUMMARIZE_NUDGE =
-  "【指令】工具查询已完成，结果已在上方 tool 消息中。请立即用中文给出分析结论与关键数字，禁止再调用任何工具。";
+  "【指令】工具查询已完成。请立即用中文总结，禁止再调工具。须含数据解读与 Wafer Test/Probe Card/DUT 维护专业建议（简短、极度专业）。";
 
 export async function runAgentLoop(
   message: string,
@@ -703,6 +861,17 @@ export async function runAgentLoop(
     const history = getHistory(sessionId);
     const summary = getSummary(sessionId);
     const awaitingSummary = historyAwaitingToolSummary(history);
+    const userQuestion = lastUserMessageText(history, message);
+
+    if (awaitingSummary) {
+      const handled = await tryRunDeterministicJbSummary(
+        sessionId,
+        userQuestion,
+        agentConfig,
+        emit
+      );
+      if (handled) return;
+    }
 
     // Inject nudge into the system prompt for the summary round — avoid a
     // trailing system message after tool turns, which is non-standard and can
@@ -855,6 +1024,20 @@ export async function runAgentLoop(
           emit({ type: "done" });
           return;
         }
+        const jbFallback =
+          lastTool != null
+            ? jbBinsYieldFallbackMessage(
+                lastTool,
+                lastUserMessageText(getHistory(sessionId), message),
+                sessionId
+              )
+            : null;
+        if (jbFallback) {
+          appendMessages(sessionId, { role: "assistant", content: jbFallback });
+          emit({ type: "text", delta: jbFallback });
+          emit({ type: "done" });
+          return;
+        }
         emit({
           type: "error",
           message:
@@ -918,7 +1101,15 @@ export async function runAgentLoop(
             typeof toolResult === "string"
               ? toolResult
               : JSON.stringify(toolResult);
-          historyContent = rawContent.slice(0, agentConfig.toolResultMaxHistoryChars);
+          if (tc.name === "query_jb_bins") {
+            storeJbToolRawJson(sessionId, rawContent);
+          }
+          historyContent = toolResultForHistory(
+            tc.name,
+            rawContent,
+            agentConfig.toolResultMaxHistoryChars,
+            agentConfig.toolResultMaxChars
+          );
         }
       } catch (err) {
         historyContent = `工具执行失败: ${err instanceof Error ? err.message : String(err)}`;

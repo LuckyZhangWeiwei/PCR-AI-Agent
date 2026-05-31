@@ -90,6 +90,57 @@ export function passNumFromJbRow(row: Record<string, unknown>): number {
   return Number.isFinite(v) && v > 0 ? Math.round(v) : 1;
 }
 
+/** 多行合计指定坏 bin 的 dieCount（含 INTERRUPT/续测各行）。 */
+export function sumBadBinDieOnRows(
+  rows: Record<string, unknown>[],
+  bin: number
+): number {
+  let total = 0;
+  for (const row of rows) {
+    const bins = row.bins;
+    if (!Array.isArray(bins)) continue;
+    const good = goodBinIndicesForJbRow(row);
+    for (const cell of bins) {
+      if (cell == null || typeof cell !== "object") continue;
+      const c = cell as BinCell;
+      const n = Number(c.n ?? (c as { bin?: number }).bin);
+      const v = Number(c.value ?? c.dieCount ?? 0);
+      if (!Number.isFinite(n) || n !== bin || !Number.isFinite(v) || v <= 0)
+        continue;
+      if (good.has(n)) continue;
+      total += v;
+    }
+  }
+  return total;
+}
+
+export type BinDieByHalves = {
+  total: number;
+  firstHalf: number;
+  secondHalf: number;
+  segmented: boolean;
+};
+
+/** 同 (slot,passId) 组：前半/后半/合计坏 bin dieCount。 */
+export function binDieByHalvesForGroup(
+  groupRows: Record<string, unknown>[],
+  bin: number
+): BinDieByHalves {
+  const split = splitPassGroupIntoHalves(groupRows);
+  if (!split.segmented) {
+    const total = sumBadBinDieOnRows(groupRows, bin);
+    return { total, firstHalf: 0, secondHalf: 0, segmented: false };
+  }
+  const firstHalf = sumBadBinDieOnRows(split.firstHalfRows, bin);
+  const secondHalf = sumBadBinDieOnRows(split.secondHalfRows, bin);
+  return {
+    total: firstHalf + secondHalf,
+    firstHalf,
+    secondHalf,
+    segmented: true,
+  };
+}
+
 /** 同 (slot, passId) 下是否应拆前后半（与 agentPrompt / HANDOFF 一致）。 */
 export function splitPassGroupIntoHalves(
   group: Record<string, unknown>[]
@@ -237,6 +288,8 @@ export function computeJbYieldMetrics(
 
 export type SlotYieldSummaryEntry = {
   slot: number;
+  /** PASSID：sort1→1，sort2→3，sort3→5 */
+  passId: number;
   /** 整片正片良率（用于结论主数字） */
   grossDie: number;
   badDie: number;
@@ -251,7 +304,10 @@ export type SlotYieldSummaryEntry = {
 };
 
 const SLOT_YIELD_GUIDE =
-  "slotYieldSummary：无分段时仅顶层整片。hasInterrupt:true=同 slot+passId 有 INTERRUPT，或 PASSNUM>1，或同 PASSNUM 多行(按 TESTEND 分前后半)。顺序：①整片正片 ②interruptHalf ③completionHalf；0% 也须写出。";
+  "slotYieldSummary：每条=一片 wafer 的一个测试层 (slot, passId)。有中断时 JSON 须含整片+interruptHalf+completionHalf 良率（0%也写）；查 BIN 见 badBinSlotTrends（前半/后半/合计颗数）。禁止把 pass3+pass5 的 die 相加成一个良率。";
+
+const LOT_YIELD_RANK_GUIDE =
+  "lotYieldRankByTestEnd：按 lot 汇总良率（该 lot 内所有 slot×passId 的 yieldPct 最小值=lot 代表良率，与报表 LOT Yield% 一致）。按 TESTEND 降序；用户要「良率最差 top N」时按 yieldPct 升序重排。";
 
 /** 拆出前半/后半；整片正片走 computeJbYieldMetrics。 */
 export function computeJbYieldBreakdown(rows: Record<string, unknown>[]): {
@@ -274,28 +330,42 @@ export function computeJbYieldBreakdown(rows: Record<string, unknown>[]): {
   };
 }
 
+function slotPassGroupKey(slot: number, passId: number): string {
+  return `${slot}\0${passId}`;
+}
+
 export function buildSlotYieldSummary(
   rows: Record<string, unknown>[]
 ): SlotYieldSummaryEntry[] {
-  const bySlot = new Map<number, Record<string, unknown>[]>();
+  const bySlotPass = new Map<string, Record<string, unknown>[]>();
   for (const row of rows) {
     const slot = Number(row.SLOT ?? row.slot);
     if (!Number.isFinite(slot) || slot <= 0) continue;
-    if (!bySlot.has(slot)) bySlot.set(slot, []);
-    bySlot.get(slot)!.push(row);
+    const passId = passIdFromJbRow(row);
+    const key = slotPassGroupKey(slot, passId);
+    if (!bySlotPass.has(key)) bySlotPass.set(key, []);
+    bySlotPass.get(key)!.push(row);
   }
   const out: SlotYieldSummaryEntry[] = [];
-  for (const slot of [...bySlot.keys()].sort((a, b) => a - b)) {
-    const slotRows = bySlot.get(slot)!;
-    const b = computeJbYieldBreakdown(slotRows);
+  for (const key of [...bySlotPass.keys()].sort((a, b) => {
+    const [s1, p1] = a.split("\0").map(Number);
+    const [s2, p2] = b.split("\0").map(Number);
+    return s1 - s2 || p1 - p2;
+  })) {
+    const [slotStr, passStr] = key.split("\0");
+    const slot = Number(slotStr);
+    const passId = Number(passStr);
+    const groupRows = bySlotPass.get(key)!;
+    const b = computeJbYieldBreakdown(groupRows);
     const entry: SlotYieldSummaryEntry = {
       slot,
+      passId,
       grossDie: b.wholeWafer.grossDie,
       badDie: b.wholeWafer.badDie,
       goodDie: b.wholeWafer.goodDie,
       yieldPct: b.wholeWafer.yieldPct,
       hasInterrupt: b.hasInterrupt,
-      rowCount: slotRows.length,
+      rowCount: groupRows.length,
     };
     if (b.hasInterrupt && b.interruptHalf) {
       entry.interruptHalf = b.interruptHalf;
@@ -308,6 +378,252 @@ export function buildSlotYieldSummary(
   return out;
 }
 
+export type LotYieldRankEntry = {
+  lot: string;
+  device: string;
+  /** 该 lot 内最差 (slot, passId) 良率 — 与报表 LOT Yield% 排名口径一致 */
+  yieldPct: number | null;
+  worstSlot: number | null;
+  worstPassId: number | null;
+  slotPassCount: number;
+  testEnd: string | null;
+};
+
+/** 按 lot 汇总良率，默认按 TESTEND 降序（最近 lot 在前）。 */
+export function buildLotYieldRank(
+  rows: Record<string, unknown>[],
+  topN = 20
+): LotYieldRankEntry[] {
+  const byLot = new Map<string, Record<string, unknown>[]>();
+  for (const row of rows) {
+    const lot = String(row.LOT ?? row.lot ?? "").trim();
+    if (!lot) continue;
+    if (!byLot.has(lot)) byLot.set(lot, []);
+    byLot.get(lot)!.push(row);
+  }
+
+  const out: LotYieldRankEntry[] = [];
+  for (const [lot, lotRows] of byLot.entries()) {
+    const slotPassYields: Array<{
+      slot: number;
+      passId: number;
+      yieldPct: number;
+    }> = [];
+    for (const entry of buildSlotYieldSummary(lotRows)) {
+      if (entry.yieldPct === null) continue;
+      slotPassYields.push({
+        slot: entry.slot,
+        passId: entry.passId,
+        yieldPct: entry.yieldPct,
+      });
+    }
+    const device = String(
+      lotRows[0]?.DEVICE ?? lotRows[0]?.device ?? ""
+    ).trim();
+    let testEnd: string | null = null;
+    let maxTestEndMs = 0;
+    for (const row of lotRows) {
+      const raw = row.TESTEND ?? row.testEnd ?? row.testend;
+      if (raw == null || raw === "") continue;
+      const ms = testEndMs(row);
+      if (ms >= maxTestEndMs) {
+        maxTestEndMs = ms;
+        testEnd = String(raw);
+      }
+    }
+
+    if (slotPassYields.length === 0) {
+      out.push({
+        lot,
+        device,
+        yieldPct: null,
+        worstSlot: null,
+        worstPassId: null,
+        slotPassCount: 0,
+        testEnd,
+      });
+      continue;
+    }
+    const worst = slotPassYields.reduce((a, b) =>
+      b.yieldPct < a.yieldPct ? b : a
+    );
+    out.push({
+      lot,
+      device,
+      yieldPct: worst.yieldPct,
+      worstSlot: worst.slot,
+      worstPassId: worst.passId,
+      slotPassCount: slotPassYields.length,
+      testEnd,
+    });
+  }
+
+  out.sort((a, b) => {
+    const ta = a.testEnd ? new Date(a.testEnd).getTime() : 0;
+    const tb = b.testEnd ? new Date(b.testEnd).getTime() : 0;
+    return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
+  });
+  return out.slice(0, topN);
+}
+
 export function slotYieldSummaryFieldGuide(): string {
   return SLOT_YIELD_GUIDE;
+}
+
+export function lotYieldRankFieldGuide(): string {
+  return LOT_YIELD_RANK_GUIDE;
+}
+
+export function passIdSortLabel(passId: number): string {
+  if (passId === 1) return "sort1/常温";
+  if (passId === 3) return "sort2/高温";
+  if (passId === 5) return "sort3/低温";
+  if (passId === 0) return "pass未知";
+  return `pass${passId}`;
+}
+
+export type YieldByPassEntry = {
+  passId: number;
+  sortLabel: string;
+  grossDie: number;
+  goodDie: number;
+  badDie: number;
+  yieldPct: number | null;
+  slotCount: number;
+};
+
+/** 按 passId 汇总当前行集（各 slot 该层良率之和），用于分 sort 批次良率。 */
+export function buildYieldByPassId(
+  rows: Record<string, unknown>[]
+): YieldByPassEntry[] {
+  const summary = buildSlotYieldSummary(rows);
+  const byPass = new Map<
+    number,
+    { grossDie: number; goodDie: number; badDie: number; slots: Set<number> }
+  >();
+  for (const e of summary) {
+    if (!byPass.has(e.passId)) {
+      byPass.set(e.passId, {
+        grossDie: 0,
+        goodDie: 0,
+        badDie: 0,
+        slots: new Set(),
+      });
+    }
+    const t = byPass.get(e.passId)!;
+    t.grossDie += e.grossDie;
+    t.goodDie += e.goodDie;
+    t.badDie += e.badDie;
+    t.slots.add(e.slot);
+  }
+  return [...byPass.keys()]
+    .sort((a, b) => a - b)
+    .map((passId) => {
+      const t = byPass.get(passId)!;
+      const yieldPct =
+        t.grossDie > 0 ? (t.goodDie / t.grossDie) * 100 : null;
+      return {
+        passId,
+        sortLabel: passIdSortLabel(passId),
+        grossDie: t.grossDie,
+        goodDie: t.goodDie,
+        badDie: t.badDie,
+        yieldPct,
+        slotCount: t.slots.size,
+      };
+    });
+}
+
+export type SlotYieldPivotCell = {
+  yieldPct: number | null;
+  grossDie: number;
+  badDie: number;
+  goodDie: number;
+};
+
+export type SlotYieldPivot = {
+  passIds: number[];
+  passLabels: string[];
+  slots: number[];
+  cells: Record<string, SlotYieldPivotCell>;
+};
+
+export function buildSlotYieldPivot(
+  summary: SlotYieldSummaryEntry[]
+): SlotYieldPivot {
+  const passIds = [...new Set(summary.map((e) => e.passId))].sort(
+    (a, b) => a - b
+  );
+  const slots = [...new Set(summary.map((e) => e.slot))].sort((a, b) => a - b);
+  const cells: Record<string, SlotYieldPivotCell> = {};
+  for (const e of summary) {
+    cells[`${e.slot}:${e.passId}`] = {
+      yieldPct: e.yieldPct,
+      grossDie: e.grossDie,
+      badDie: e.badDie,
+      goodDie: e.goodDie,
+    };
+  }
+  return {
+    passIds,
+    passLabels: passIds.map(passIdSortLabel),
+    slots,
+    cells,
+  };
+}
+
+const YIELD_BY_PASS_GUIDE =
+  "yieldByPassId：按测试层(passId)汇总良率，每层一行；多 sort 时禁止把不同 pass 的 die 相加成一个总良率。";
+
+const SLOT_YIELD_PIVOT_GUIDE =
+  "slotYieldPivot：各 slot 在每一 pass 的良率矩阵；汇报各片良率时优先用 slotYieldPivotMarkdown 或按 pass 分列，禁止只列 25 行单层。";
+
+export function yieldByPassFieldGuide(): string {
+  return YIELD_BY_PASS_GUIDE;
+}
+
+export function slotYieldPivotFieldGuide(): string {
+  return SLOT_YIELD_PIVOT_GUIDE;
+}
+
+const SLOT_YIELD_INTERRUPT_GUIDE =
+  "slotYieldInterruptMarkdown：有中断 (slot,passId) 良率三行：整片→前半→后半（0%也写）。查 BIN 时 badBinSlotTrends 含前半/后半/合计颗数及良率；禁止只报后半。";
+
+export function slotYieldInterruptFieldGuide(): string {
+  return SLOT_YIELD_INTERRUPT_GUIDE;
+}
+
+export type SlotYieldInterruptRow = {
+  slot: number;
+  passId: number;
+  sortLabel: string;
+  hasInterrupt: true;
+  wholeWafer: JbYieldMetrics;
+  interruptHalf: JbYieldMetrics;
+  completionHalf?: JbYieldMetrics;
+};
+
+/** 仅 hasInterrupt:true 的 (slot, passId)，供 Agent 中断良率表。 */
+export function buildSlotYieldInterruptRows(
+  summary: SlotYieldSummaryEntry[]
+): SlotYieldInterruptRow[] {
+  const out: SlotYieldInterruptRow[] = [];
+  for (const e of summary) {
+    if (!e.hasInterrupt || !e.interruptHalf) continue;
+    out.push({
+      slot: e.slot,
+      passId: e.passId,
+      sortLabel: passIdSortLabel(e.passId),
+      hasInterrupt: true,
+      wholeWafer: {
+        grossDie: e.grossDie,
+        badDie: e.badDie,
+        goodDie: e.goodDie,
+        yieldPct: e.yieldPct,
+      },
+      interruptHalf: e.interruptHalf,
+      completionHalf: e.completionHalf,
+    });
+  }
+  return out.sort((a, b) => a.slot - b.slot || a.passId - b.passId);
 }

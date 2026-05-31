@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildTopBadBins,
   buildBin10Vs66ByLot,
   buildCardByPassId,
   buildCardChangesBySlotPass,
@@ -81,6 +82,20 @@ describe("agentJbBinFormat", () => {
     assert.equal(s21.interruptHalf!.goodDie, 0);
     assert.equal(s21.interruptHalf!.yieldPct, 0);
     assert.ok(String(out._slotYieldGuide).includes("0%"));
+    const md = String(out.slotYieldInterruptMarkdown);
+    assert.ok(md.includes("整片正片"));
+    assert.ok(md.includes("前半段"));
+    assert.ok(md.includes("后半段"));
+    const ultra = serializeJbQueryResultForAgent(out, 8000);
+    const parsed = JSON.parse(ultra) as {
+      slotYieldInterruptMarkdown?: string;
+      slotYieldSummary?: Array<{ interruptHalf?: { yieldPct: number } }>;
+    };
+    if (parsed.slotYieldInterruptMarkdown) {
+      assert.ok(parsed.slotYieldInterruptMarkdown.includes("前半段"));
+    }
+    const slim = parsed.slotYieldSummary?.find((x) => x.slot === 21);
+    if (slim?.interruptHalf) assert.equal(slim.interruptHalf.yieldPct, 0);
   });
 
   it("wrapJbQueryResultForAgent computes distinctSlots sorted ascending", () => {
@@ -255,6 +270,8 @@ describe("agentJbBinFormat", () => {
         hasCardChangeInLot: false,
         cardId: "7747-01",
         testEnd: "2026-05-25T10:00:00.000Z",
+        slots: [2],
+        slotCount: 1,
       },
       {
         lot: "TR17367.1T",
@@ -263,6 +280,8 @@ describe("agentJbBinFormat", () => {
         hasCardChangeInLot: false,
         cardId: "7747-01",
         testEnd: "2026-05-22T10:00:00.000Z",
+        slots: [1],
+        slotCount: 1,
       },
       {
         lot: "TR13069.1F",
@@ -271,6 +290,8 @@ describe("agentJbBinFormat", () => {
         hasCardChangeInLot: false,
         cardId: "7747-01",
         testEnd: "2026-05-20T10:00:00.000Z",
+        slots: [1, 3],
+        slotCount: 2,
       },
     ]);
   });
@@ -352,6 +373,35 @@ describe("agentJbBinFormat", () => {
     assert.deepEqual(recent.map((x) => x.lot), ["B", "A"]);
   });
 
+  it("buildTopBadBins sums bad bins across rows in scope", () => {
+    const rows = [
+      {
+        LOT: "NF12827.1R",
+        SLOT: 1,
+        bins: [
+          { n: 8, value: 100, isGoodBin: false },
+          { n: 3, value: 10, isGoodBin: false },
+        ],
+      },
+      {
+        LOT: "NF12827.1R",
+        SLOT: 2,
+        bins: [
+          { n: 8, value: 50, isGoodBin: false },
+          { n: 15, value: 200, isGoodBin: false },
+        ],
+      },
+    ] as Record<string, unknown>[];
+    assert.deepEqual(buildTopBadBins(rows, 5), [
+      { bin: 15, dieCount: 200 },
+      { bin: 8, dieCount: 150 },
+      { bin: 3, dieCount: 10 },
+    ]);
+    const out = wrapJbQueryResultForAgent(rows);
+    assert.ok(String(out._topBadBinsGuide).includes("topBadBins"));
+    assert.deepEqual(out.topBadBins, buildTopBadBins(rows, 15));
+  });
+
   it("buildBin10Vs66ByLot sums per lot across slots", () => {
     const rows = [
       {
@@ -387,6 +437,39 @@ describe("agentJbBinFormat", () => {
     const t2 = out.find((x) => x.lot === "TR13073.1Y")!;
     assert.equal(t2.bin10, 0);
     assert.equal(t2.bin66, 5000);
+  });
+
+  it("wrapJbQueryResultForAgent includes lotYieldRankByTestEnd", () => {
+    const out = wrapJbQueryResultForAgent([
+      {
+        LOT: "L1",
+        DEVICE: "D",
+        SLOT: 1,
+        PASSID: 1,
+        GROSSDIE: 100,
+        TESTEND: "2026-05-02T00:00:00.000Z",
+        bins: [
+          { n: 1, value: 80, isGoodBin: true },
+          { n: 5, value: 20, isGoodBin: false },
+        ],
+      },
+      {
+        LOT: "L2",
+        DEVICE: "D",
+        SLOT: 1,
+        PASSID: 1,
+        GROSSDIE: 100,
+        TESTEND: "2026-05-03T00:00:00.000Z",
+        bins: [
+          { n: 1, value: 95, isGoodBin: true },
+          { n: 5, value: 5, isGoodBin: false },
+        ],
+      },
+    ] as Record<string, unknown>[]);
+    assert.ok(String(out._lotYieldRankGuide).includes("lotYieldRankByTestEnd"));
+    const rank = out.lotYieldRankByTestEnd as Array<{ lot: string; yieldPct: number }>;
+    assert.deepEqual(rank.map((x) => x.lot), ["L2", "L1"]);
+    assert.ok(Math.abs(rank[1]!.yieldPct - 80) < 0.1);
   });
 
   it("wrapJbQueryResultForAgent includes bin10Vs66ByLot", () => {
@@ -428,16 +511,24 @@ describe("agentJbBinFormat", () => {
     assert.equal(parsed.rowCount, 30);
     assert.equal(parsed.rows, undefined);
     assert.ok(!json.endsWith("…(truncated)"), "must remain valid JSON");
-    const binBySlot = parsed.binBySlot as Record<string, Record<string, number>>;
+    const summary = parsed.slotYieldSummary as Array<{ slot: number }> | undefined;
     const compact = parsed.slotBadBinsCompact as Array<{ slot: number }> | undefined;
+    const binBySlot = parsed.binBySlot as
+      | Record<string, Record<string, number>>
+      | undefined;
     if (compact) {
       assert.deepEqual(
         compact.map((x) => x.slot),
         Array.from({ length: 30 }, (_, i) => i + 1)
       );
-    } else {
+    } else if (summary?.length) {
+      assert.equal(summary.length, 30);
+      assert.equal(summary.find((x) => x.slot === 23)?.slot, 23);
+    } else if (binBySlot) {
       assert.equal(Object.keys(binBySlot).length, 30);
       assert.equal(binBySlot["23:1:8041-05"]?.["7"], 55);
+    } else {
+      assert.fail("expected slotBadBinsCompact, slotYieldSummary, or binBySlot");
     }
   });
 });

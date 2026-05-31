@@ -22,6 +22,7 @@
 | 1d | [`../docs/HANDOFF_SITE_BIN_BY_LOT_AGG.md`](../docs/HANDOFF_SITE_BIN_BY_LOT_AGG.md) | **Lot/Device 聚合交接**：`topN` 最新 lot、`TESTEND` 窗、`siteBinByLotDeviceTopN.ts` / `siteBinByLotTestEndWindow.ts`、Git 纪要 |
 | 1d | [`../docs/HANDOFF_JB_INTERRUPT_YIELD.md`](../docs/HANDOFF_JB_INTERRUPT_YIELD.md) | **JB 中断 slot 良率**：`slotYieldSummary` 半片字段、整片正片规则、Agent 输出顺序（整片→前半→后半，0% 必写） |
 | 1e | [`../docs/HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md`](../docs/HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md) | **Agent JB 逐片 BIN + 工具结果体积**：`slotBadBinsCompact` / `binBySlot`、`toolResultMaxChars`（Settings 默认 12000） |
+| 1e1 | [`../docs/HANDOFF_AGENT_JB_DETERMINISTIC_SUMMARY.md`](../docs/HANDOFF_AGENT_JB_DETERMINISTIC_SUMMARY.md) | **Agent JB 确定性总结**：lot 全量查询、预计算 markdown、`tryRunDeterministicJbSummary`、数据解读 + Wafer Test/Probe Card/DUT 专业建议 |
 | 1e2 | [`../docs/HANDOFF_AGENT_JB_PROBE_CARD_CHANGE.md`](../docs/HANDOFF_AGENT_JB_PROBE_CARD_CHANGE.md) | **Agent JB 中途换卡**：仅同 **(slot, passId)** 多 CARDID；`cardByPassId`（pass1≠pass3 用不同卡为正常） |
 | 1f | [`../docs/HANDOFF_AGENT_GENERATE_CHART.md`](../docs/HANDOFF_AGENT_GENERATE_CHART.md) | **Agent generate_chart**：GLM `<tool_call>` 解析、空参合并、`inferGenerateChartArgsFromHistory`（DUT 占比 pie） |
 | 2 | [`docs/API_V3.md`](docs/API_V3.md) | **v3 列表**完整 SQL（由 `npm run docs:api-v3` 从 `dist` 再生） |
@@ -277,6 +278,11 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
    - **`agentChartTool.ts`**：`normalizeGenerateChartArgs`（顶层 labels+values）、`inferGenerateChartArgsFromHistory`、`buildDutShareChartData`。
    - **`agentToolHandlers.ts`**：`RunToolOptions.history`；**`agentToolSchemas.ts`** `generate_chart` 不再强制 `data`。
    - **交接全文**：[`../docs/HANDOFF_AGENT_GENERATE_CHART.md`](../docs/HANDOFF_AGENT_GENERATE_CHART.md)。回归 **`test/agentLoop.test.ts`**。
+20. **Agent JB 确定性总结 + 工程专业建议（2026-05-30）**：
+   - **现象**：总结轮 LLM 合并 sort 良率、漏 INTERRUPT 前半、BIN 趋势缺 slot；数字与工具 JSON 不一致。
+   - **改后**：`query_jb_bins(lot)` 全量 SQL + 预计算 `yieldByPassId` / `badBinSlotTrends` / `agentTablesDigest`；总结轮 **`tryRunDeterministicJbSummary`** 先 SSE 直出表，再 LLM 仅写 **`### 数据解读`** + **`### 专业建议`**（Wafer Test / Probe Card / DUT）。
+   - **文件**：`agentJbDeterministicReply.ts`、`agentJbSessionCache.ts`、`agentJbYieldCore.ts`、`agentJbBinTrend.ts`、`agentJbHistoryCompact.ts`；lot 查询 **`agentToolHandlers.ts`**。
+   - **交接全文**：[`../docs/HANDOFF_AGENT_JB_DETERMINISTIC_SUMMARY.md`](../docs/HANDOFF_AGENT_JB_DETERMINISTIC_SUMMARY.md)。回归 **`test/agentJbDeterministicReply.test.ts`**、**`test/agentJbBinTrend.test.ts`**、**`test/jbAgentLotQuery.test.ts`**。
 
 ---
 

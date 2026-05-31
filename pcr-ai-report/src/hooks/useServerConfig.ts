@@ -21,7 +21,7 @@ export const SERVER_CONFIG_DEFAULTS: ServerConfig = {
   streamTimeoutSec: 150,
   clientTimeoutSec: 180,
   toolResultMaxChars: 12000,
-  toolResultMaxHistoryChars: 6000,
+  toolResultMaxHistoryChars: 12000,
   listDefaultLimit: 300,
   listMaxLimit: 1000,
 };

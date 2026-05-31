@@ -6,6 +6,7 @@ import { DarkChart } from "../components/DarkChart.js";
 import type { ECharts, EChartsOption } from "echarts";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { buildUrl } from "../api/client.js";
 import { sanitizeAgentMarkdownForDisplay } from "../utils/sanitizeAgentMarkdown.js";
 function downloadMarkdown(text: string, title: string): void {
   const safe = title.slice(0, 50).replace(/[^\w一-龥.\-]/g, "_").trim() || "answer";
@@ -196,6 +197,11 @@ function findLastUserText(msgs: ChatMessage[]): string | undefined {
     if (m.kind === "user") return m.text;
   }
   return undefined;
+}
+
+/** User prompt that produced the AI message at `aiIdx` (last user bubble before it). */
+function findUserTextForAiMessage(msgs: ChatMessage[], aiIdx: number): string | undefined {
+  return findLastUserText(msgs.slice(0, aiIdx));
 }
 
 interface Props {
@@ -595,34 +601,46 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
   };
 
   async function handleGoodFeedback(idx: number, msg: AiMessage) {
-    const question = findLastUserText(messages.slice(0, idx));
-    if (!question) return;
+    const question = findUserTextForAiMessage(messages, idx)?.trim();
+    const answer = msg.text.trim().slice(0, 1500);
+    if (!question || !answer) return;
     setFeedbackState((prev) => ({ ...prev, [idx]: "good" }));
     try {
-      await fetch(`${apiBase}/api/v4/agent/feedback`, {
+      const res = await fetch(buildUrl(apiBase, "/api/v4/agent/feedback"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sessionId,
           question,
-          answer: msg.text.slice(0, 1500),
+          answer,
           kind: "good",
         }),
       });
+      if (!res.ok) {
+        setFeedbackState((prev) => {
+          const next = { ...prev };
+          delete next[idx];
+          return next;
+        });
+      }
     } catch {
-      // non-critical: feedback failure must not surface to user
+      setFeedbackState((prev) => {
+        const next = { ...prev };
+        delete next[idx];
+        return next;
+      });
     }
   }
 
   function handleOpenBadFeedback(idx: number, msg: AiMessage) {
-    const question = findLastUserText(messages.slice(0, idx));
-    if (!question) return;
+    const question = findUserTextForAiMessage(messages, idx)?.trim();
+    if (!question || !msg.text.trim()) return;
     setFeedbackModal({ msgIndex: idx, question, answer: msg.text });
   }
 
   const handleRegenerate = useCallback(async (idx: number) => {
     if (loading) return;
-    const question = findLastUserText(messages.slice(0, idx));
+    const question = findUserTextForAiMessage(messages, idx)?.trim();
     if (!question) return;
     let userIdx = -1;
     for (let k = idx - 1; k >= 0; k--) {
@@ -652,7 +670,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
 
       <div className="ai-agent-messages" ref={messagesRef} onScroll={handleMessagesScroll}>
         {(() => {
-          // Only the most recent conclusive AI message shows the feedback/regenerate bar.
+          // Regenerate only on the most recent conclusive AI message; export/thumbs on all.
           const lastFeedbackIdx = messages.reduce(
             (last, m, idx) => (m.kind === "ai" && m.showFeedback === true ? idx : last),
             -1
@@ -691,9 +709,9 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
                 !loading &&
                 !msg.streaming &&
                 msg.showFeedback === true &&
-                i === lastFeedbackIdx &&
                 msg.text.trim().length > 0 &&
-                findLastUserText(messages.slice(0, i)) !== undefined;
+                findUserTextForAiMessage(messages, i) !== undefined;
+              const showRegenerateButton = showFeedbackBar && i === lastFeedbackIdx;
 
               rendered.push(
                 <div key={i} className="ai-msg ai-msg--ai">
@@ -763,7 +781,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
                           title="导出为 Markdown 文件"
                           onClick={() => downloadMarkdown(
                             msg.text,
-                            findLastUserText(messages.slice(0, i)) ?? `answer_${i}`
+                            findUserTextForAiMessage(messages, i) ?? `answer_${i}`
                           )}
                         >
                           ⬇
@@ -778,8 +796,10 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
                               onClick={() => handleOpenBadFeedback(i, msg)} title="这条回答有问题">👎</button>
                           </>
                         )}
-                        <button type="button" className="ai-feedback-btn ai-feedback-btn--regen"
-                          onClick={() => void handleRegenerate(i)} title="重新生成这条回答">🔄</button>
+                        {showRegenerateButton && (
+                          <button type="button" className="ai-feedback-btn ai-feedback-btn--regen"
+                            onClick={() => void handleRegenerate(i)} title="重新生成这条回答">🔄</button>
+                        )}
                       </div>
                     )}
                   </div>

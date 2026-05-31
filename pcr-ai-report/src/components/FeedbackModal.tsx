@@ -1,5 +1,6 @@
 import "./FeedbackModal.css";
 import { useState } from "react";
+import { buildUrl } from "../api/client.js";
 
 const CATEGORIES = [
   "回答不准确",
@@ -39,13 +40,13 @@ export function FeedbackModal({
     setSubmitting(true);
     setError("");
     try {
-      const res = await fetch(`${apiBase}/api/v4/agent/feedback`, {
+      const res = await fetch(buildUrl(apiBase, "/api/v4/agent/feedback"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sessionId,
-          question,
-          answer: answer.slice(0, 1500),
+          question: question.trim(),
+          answer: answer.trim().slice(0, 1500),
           kind: "bad",
           category,
           comment: comment.trim() || undefined,

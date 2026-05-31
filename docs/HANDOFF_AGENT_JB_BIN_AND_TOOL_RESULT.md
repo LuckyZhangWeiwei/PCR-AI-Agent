@@ -104,16 +104,22 @@
 
 ---
 
-## 5. 改口径时同步
+## 5. 相关交接（2026-05-30）
+
+Lot 概况 / BIN 趋势 / 总结轮 **服务端直出表** + **Wafer Test / Probe Card / DUT 专业建议**：[`HANDOFF_AGENT_JB_DETERMINISTIC_SUMMARY.md`](HANDOFF_AGENT_JB_DETERMINISTIC_SUMMARY.md)（`badBinSlotTrends`、`tryRunDeterministicJbSummary`、`toolResultMaxHistoryChars`）。
+
+---
+
+## 6. 改口径时同步
 
 1. `agentJbBinFormat.ts`（字段形状 / 压缩策略）  
 2. `agentPrompt.ts` + `agentToolSchemas.ts`  
 3. `agentConfig.ts` + `usePersistedAgentConfig.ts`（若改默认或范围）  
-4. 本文件 + `pcr-ai-api/CLAUDE.md` §11 条目 15 / 17  
+4. 本文件 + `pcr-ai-api/CLAUDE.md` §11 条目 15 / 17 / 20  
 
 ---
 
-## 6. 部署
+## 7. 部署
 
 ```bash
 cd pcr-ai-api && npm ci && npm run build && npm run pm2:reload
@@ -122,7 +128,7 @@ cd pcr-ai-report && npm ci && npm run build   # 或 pack:dist 部署静态资源
 
 ---
 
-## 7. MiniMax-M2.5 嵌入式工具调用（2026-05-27 补充）
+## 8. MiniMax-M2.5 嵌入式工具调用（2026-05-27 补充）
 
 **现象：** 回答区只出现 `cardId: "7747-01", limit: 1000 } </invoke></minimax:tool_call>`，数秒内 `done`，无中文结论。
 
@@ -139,7 +145,7 @@ cd pcr-ai-report && npm ci && npm run build   # 或 pack:dist 部署静态资源
 
 ---
 
-## 8. 「某卡最近 N 个 lot」勿用 aggregate（2026-05-27 补充）
+## 9. 「某卡最近 N 个 lot」勿用 aggregate（2026-05-27 补充）
 
 **现象：** 问「7747-01 最近五个 lot」时调 `aggregate_jb_bins`，按 BIN66 坏 die 排序，并声称 API 不能按 TESTEND 排序。
 
@@ -151,7 +157,7 @@ cd pcr-ai-report && npm ci && npm run build   # 或 pack:dist 部署静态资源
 
 ---
 
-## 9. 「by lot BIN10 vs BIN66」勿用 aggregate top 表（2026-05-27 补充）
+## 10. 「by lot BIN10 vs BIN66」勿用 aggregate top 表（2026-05-27 补充）
 
 **现象：** 问「7747-01 by lot 是不是 BIN10 多于 BIN66」时，Agent 调 `aggregate_jb_bins(groupBy: lot,bin)`，表格里 TR17367.1T 排前列且为 BIN10，用户误以为 **全卡 / 多数 lot** 都是 BIN10 更多；实际上 aggregate 每行是 **(lot, 单个 bin)** 按坏 die 降序的 top 组，**不能**横向对比同一 lot 的 BIN10 与 BIN66 总量。
 
