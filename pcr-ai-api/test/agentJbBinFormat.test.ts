@@ -510,6 +510,49 @@ describe("agentJbBinFormat", () => {
     assert.equal(cmp[0]!.bin10GtBin66, true);
   });
 
+  it("lot-scoped serialize keeps yield pivot not binBySlot when over limit", () => {
+    const rows = Array.from({ length: 25 }, (_, i) => {
+      const slot = i + 1;
+      return {
+        LOT: "NF12316.1X",
+        DEVICE: "WA03P02G",
+        SLOT: slot,
+        PASSID: 1,
+        CARDID: "8041-05",
+        GROSSDIE: 2971,
+        bins: [
+          { n: 1, value: 2500, isGoodBin: true },
+          { n: 7, value: 80 + slot, isGoodBin: false },
+        ],
+      };
+    }) as Record<string, unknown>[];
+    for (let slot = 1; slot <= 25; slot++) {
+      rows.push({
+        LOT: "NF12316.1X",
+        DEVICE: "WA03P02G",
+        SLOT: slot,
+        PASSID: 3,
+        CARDID: "8041-03",
+        GROSSDIE: 2787,
+        bins: [
+          { n: 1, value: 2700, isGoodBin: true },
+          { n: 4, value: 5, isGoodBin: false },
+        ],
+      });
+    }
+    const wrapped = wrapJbQueryResultForAgent(rows, { lotScopedFullRows: true });
+    const json = serializeJbQueryResultForAgent(wrapped, 12000);
+    const parsed = JSON.parse(json) as Record<string, unknown>;
+    assert.equal(parsed.lotQueryFullRows, true);
+    assert.ok(
+      typeof parsed.slotYieldPivotMarkdown === "string" ||
+        (Array.isArray(parsed.slotYieldSummary) &&
+          (parsed.slotYieldSummary as Array<{ yieldPct?: number }>)[0]
+            ?.yieldPct != null)
+    );
+    assert.equal(parsed.binBySlot, undefined);
+  });
+
   it("serializeJbQueryResultForAgent omits rows when payload too large", () => {
     const rows = Array.from({ length: 30 }, (_, i) => ({
       SLOT: i + 1,

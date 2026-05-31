@@ -7,6 +7,7 @@ import {
   detectJbReplyMode,
   extractBinFromUserText,
   isBinTrendQuestion,
+  isSlotPassYieldQuestion,
   resolveJbToolPayload,
 } from "../src/lib/agent/agentJbDeterministicReply.js";
 import {
@@ -41,6 +42,11 @@ describe("agentJbDeterministicReply", () => {
     assert.equal(
       detectJbReplyMode("NF12316.1X 中bin7 的趋势 请重新计算"),
       "bin_trend"
+    );
+    assert.ok(isSlotPassYieldQuestion("给出 每片wafer 每个pass 的yield"));
+    assert.equal(
+      detectJbReplyMode("给出 每片wafer 每个pass 的yield"),
+      "slot_pass_yield"
     );
   });
 

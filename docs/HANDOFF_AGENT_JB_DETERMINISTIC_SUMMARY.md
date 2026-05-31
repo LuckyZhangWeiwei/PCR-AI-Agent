@@ -109,7 +109,10 @@ flowchart TD
 | --- | --- | --- |
 | **`bin_trend`** | BINn + 趋势/每片/1-25/颗数 | `badBinSlotTrends` 中匹配 bin；`pickPassIdForBinTrend` 解析 sort1/2/3 |
 | **`lot_overview`** | 整体/概况/测试情况/重新计算 | `lotYieldOverviewMarkdown` |
+| **`slot_pass_yield`** | 每片 wafer × 每个 pass 的 yield%/良率 | 同 overview（pivot + interrupt + `slotYieldSummary.yieldPct`） |
 | **`generic`** | 其它 | 优先 overview，否则匹配 bin 趋势 |
+
+**禁止（2026-05-31）：** 用户要良率% 时 **不得** 仅用 `binBySlot` 坏 die 合计；`serializeJbQueryResultForAgent` 在 `lotQueryFullRows` 时 **优先** `slotYieldPivotMarkdown` / `slotYieldSummary`，不再先落 `binBySlot` 档。
 
 **会话缓存：** `agentJbSessionCache.ts` — `storeJbToolRawJson` / `getJbToolRawJson`；`AGENT_JB_CACHE_VERSION` **4**（`GET /health` → `agentJbCacheVersion`）。
 

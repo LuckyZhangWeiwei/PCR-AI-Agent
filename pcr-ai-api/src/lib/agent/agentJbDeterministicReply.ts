@@ -17,7 +17,11 @@ export type AgentTablesDigest = {
   passIdsPresent?: number[];
 };
 
-export type JbReplyMode = "lot_overview" | "bin_trend" | "generic";
+export type JbReplyMode =
+  | "lot_overview"
+  | "bin_trend"
+  | "slot_pass_yield"
+  | "generic";
 
 /** 从用户问题识别 BIN 编号（BIN7 / bin7 / bin 7）。 */
 export function extractBinFromUserText(text: string): number | null {
@@ -54,8 +58,26 @@ export function isBinTrendQuestion(text: string): boolean {
   return /趋势|按\s*slot|各\s*片|1\s*[-~–]\s*25|每\s*片|分布|颗数/i.test(text);
 }
 
+/** 每片 wafer × 每个 pass 的良率%（非 BIN 趋势、非仅 lot 概况一句）。 */
+export function isSlotPassYieldQuestion(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (isBinTrendQuestion(t)) return false;
+  if (!/良率|yield/i.test(t)) return false;
+  if (
+    /每\s*片|每个\s*pass|各\s*片|逐\s*片|每\s*个\s*sort|pass\s*1.*pass\s*3|各\s*测试层/i.test(
+      t
+    )
+  ) {
+    return true;
+  }
+  if (/wafer/i.test(t) && /pass|sort|测试层/i.test(t)) return true;
+  return false;
+}
+
 export function detectJbReplyMode(userMessage: string): JbReplyMode {
   if (isBinTrendQuestion(userMessage)) return "bin_trend";
+  if (isSlotPassYieldQuestion(userMessage)) return "slot_pass_yield";
   if (isLotOverviewQuestion(userMessage)) return "lot_overview";
   return "generic";
 }
@@ -159,7 +181,11 @@ export function buildDeterministicJbTables(
     return null;
   }
 
-  if (mode === "lot_overview" || mode === "generic") {
+  if (
+    mode === "slot_pass_yield" ||
+    mode === "lot_overview" ||
+    mode === "generic"
+  ) {
     const overview =
       digest.lotOverview?.trim() ||
       formatLotYieldOverviewMarkdown(toolPayload)?.trim();

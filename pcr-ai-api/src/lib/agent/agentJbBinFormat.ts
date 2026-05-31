@@ -670,6 +670,45 @@ export function serializeJbQueryResultForAgent(
   if (slim) return slim;
 
   const core = jbYieldCoreFields(wrapped);
+  const lotScoped = Boolean(wrapped["lotQueryFullRows"]);
+  if (lotScoped && yieldSummary?.length) {
+    const yieldFirst: Record<string, unknown> = {
+      ...core,
+      lotQueryFullRows: true,
+      _rowsNote:
+        "lot 全量查询：每片×每 pass 良率% 读 slotYieldPivotMarkdown、slotYieldInterruptMarkdown、slotYieldSummary[].yieldPct；禁止用 binBySlot 累加坏 die 代替良率",
+      rowsOmitted: true,
+      rowCount,
+      passIdsPresent: wrapped["passIdsPresent"],
+      slotsByPassId: wrapped["slotsByPassId"],
+      cardByPassId: wrapped["cardByPassId"],
+      cardChangesBySlotPass: wrapped["cardChangesBySlotPass"],
+      slotYieldSummary: minimalSlotYieldSummary(yieldSummary),
+      slotYieldPivotMarkdown: wrapped["slotYieldPivotMarkdown"],
+      slotYieldInterruptMarkdown: wrapped["slotYieldInterruptMarkdown"],
+    };
+    const yieldFirstJson = fitsLimit(yieldFirst, maxChars);
+    if (yieldFirstJson) return yieldFirstJson;
+
+    const trimmed = minimalSlotYieldSummary(yieldSummary);
+    while (trimmed.length > 0) {
+      const attempt = JSON.stringify({
+        ...core,
+        lotQueryFullRows: true,
+        _rowsNote:
+          "slotYieldSummary 已截短；良率% 以 yieldByPassIdMarkdown 与各片 pivot 为准",
+        rowsOmitted: true,
+        rowCount,
+        slotYieldPivotMarkdown: wrapped["slotYieldPivotMarkdown"],
+        slotYieldInterruptMarkdown: wrapped["slotYieldInterruptMarkdown"],
+        yieldByPassIdMarkdown: wrapped["yieldByPassIdMarkdown"],
+        slotYieldSummary: trimmed,
+      });
+      if (attempt.length <= maxChars) return attempt;
+      trimmed.pop();
+    }
+  }
+
   const withBinBySlot: Record<string, unknown> = {
     ...core,
     _rowsNote: withoutRows["_rowsNote"],

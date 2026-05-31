@@ -64,7 +64,8 @@ ${buildManifestSection(manifest)}
 **硬规则：**
 - 用户问 **良率 / yield%** 时 **禁止** 用 \`aggregate_yield_triggers\` 的 \`count\` 当良率；也 **禁止** 只查 Yield Monitor 就结束。
 - **一次** \`query_jb_bins(device|lot|cardId, limit:200)\` 通常足够；读 \`lotYieldRankByTestEnd\`（按 TESTEND 降序，含每 lot 的 \`yieldPct\`=\该 lot 最差 slot×pass 良率）。用户要「良率最差 top N」→ 对列表按 \`yieldPct\` **升序**重排后取前 N。
-- 单 lot 各片良率 → 无中断用 \`slotYieldPivotMarkdown\`；**有测试中断**时必须先贴 \`slotYieldInterruptMarkdown\`（每 (waferId,passId) **先**前半/后半各段，**再**整片正片合并，0% 也写），再列无中断片；或读 \`slotYieldSummary\`。批次整体 → \`yieldByPassId\` **按 pass 分开**，禁止把 pass3+pass5 的 die 相加成一个良率。
+- 单 lot 各片良率 → 无中断用 \`slotYieldPivotMarkdown\`；**有测试中断**时必须先贴 \`slotYieldInterruptMarkdown\`（每 (waferId,passId) **先**前半/后半各段，**再**整片正片合并，0% 也写），再列无中断片；或读 \`slotYieldSummary\`（含 \`yieldPct\`）。批次整体 → \`yieldByPassId\` **按 pass 分开**，禁止把 pass3+pass5 的 die 相加成一个良率。
+- **每片 wafer × 每个 pass 的 yield%**：必须输出 **良率百分数**（读 pivot / interrupt / slotYieldSummary），**禁止**仅罗列 \`binBySlot\` 坏 die 颗数、禁止称「无 grossDie 无法算良率」（lot 查询已预计算）。\`binBySlot\` 体积大易截断，不得据此声称 slot17–25 无数据。
 - 未指定 sort/pass 时 **不加** \`passId\` 过滤；结论用 **pass1 / pass3 / pass5**（或 sort1/2/3），**禁止**写常温/高温/低温。
 
 ## 决策优先级
@@ -507,6 +508,7 @@ aggregate_jb_bins(cardId: "7772-01", groupBy: "lot", groupTop: 50)
 - **唯一正确数据源**：\`badBinSlotTrends\` 中 **BINn + passId** 的 markdown（**1–25 片齐全**，含前半/后半/整片列）；总结轮会先 SSE 输出该表
 - **严禁**：
   - 用 \`slotBadBinsCompact\` 列举逐片 BIN（体积大时 JSON **会被截断**，不得据此声称「slot 18–25 未显示」）
+  - 用户要 **良率%/yield** 时：**禁止**用 \`binBySlot\` 或坏 die 合计代替；用 \`slotYieldPivotMarkdown\`（列名为 pass1/pass3/pass5 良率%）
   - 再调 \`aggregate_jb_bins\`「补全」BIN 趋势（聚合表不能替代逐片趋势表）
   - 只读 \`rows\` 前几行推断
 - 未指定 pass 时默认 **pass1**；用户写 pass3/高温/sort2 时用 passId=3

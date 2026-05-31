@@ -846,7 +846,9 @@ export function historyAwaitingToolSummary(history: ChatMessage[]): boolean {
 }
 
 const SUMMARIZE_NUDGE =
-  "【指令】工具查询已完成。请立即用中文总结，禁止再调工具。须含数据解读与 Wafer Test/Probe Card/DUT 维护专业建议（简短、极度专业）。";
+  "【指令】工具查询已完成。请立即用中文总结，禁止再调工具。须含数据解读与 Wafer Test/Probe Card/DUT 维护专业建议（简短、极度专业）。" +
+  "用户问每片×每 pass **良率%/yield** 时：只引用 slotYieldPivotMarkdown / slotYieldInterruptMarkdown / slotYieldSummary[].yieldPct；" +
+  "**禁止**用 binBySlot 或坏 die 颗数代替良率%；禁止写常温/高温/低温（用 pass1/3/5）。";
 
 export async function runAgentLoop(
   message: string,
