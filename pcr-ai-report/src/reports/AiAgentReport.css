@@ -531,3 +531,14 @@
 .ai-feedback-btn--regen { margin-left: 8px; border-left: 1px solid #2a3f6f; padding-left: 12px; border-radius: 0; border-right: none; border-top: none; border-bottom: none; background: none; }
 .ai-feedback-btn--regen:hover { border-left-color: #4a7abf; background: none; }
 .ai-feedback-thanks { font-size: 0.8rem; color: #6a8aaa; font-style: italic; }
+.ai-feedback-hint {
+  flex: 1;
+  min-width: 0;
+  margin: 0 12px;
+  font-size: 0.82rem;
+  color: #ffb0b0;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

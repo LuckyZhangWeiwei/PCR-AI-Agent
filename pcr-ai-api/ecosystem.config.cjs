@@ -56,6 +56,8 @@ const ORACLE_FORWARD_KEYS = [
   "AGENT_MODEL",
   "AGENT_MAX_ROUNDS",
   "AGENT_STREAM_TIMEOUT_MS",
+  "PCR_FEEDBACK_DIR",
+  "SESSION_LOG_DIR",
 ];
 
 function forwardEnvFromProcess(keys) {

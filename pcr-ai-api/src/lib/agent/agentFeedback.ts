@@ -1,5 +1,6 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export interface FeedbackRecord {
   id: string;
@@ -12,11 +13,18 @@ export interface FeedbackRecord {
   sessionId: string;
 }
 
-// Using a function (not a constant) so PCR_FEEDBACK_DIR can be set in tests
+// Using functions (not constants) so PCR_FEEDBACK_DIR can be set in tests
 // before the first call without worrying about module-load-time evaluation.
+function defaultFeedbackDir(): string {
+  const env = process.env["PCR_FEEDBACK_DIR"];
+  if (env) return env;
+  // dist/lib/agent/*.js → ../../../data (same package root as session-logs)
+  const here = dirname(fileURLToPath(import.meta.url));
+  return join(here, "../../../data");
+}
+
 function defaultFeedbackFile(): string {
-  const dir = process.env["PCR_FEEDBACK_DIR"] ?? join(process.cwd(), "data");
-  return join(dir, "feedback.json");
+  return join(defaultFeedbackDir(), "feedback.json");
 }
 
 async function readAll(filePath: string): Promise<FeedbackRecord[]> {

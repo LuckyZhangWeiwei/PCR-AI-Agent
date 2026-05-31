@@ -204,6 +204,25 @@ function findUserTextForAiMessage(msgs: ChatMessage[], aiIdx: number): string | 
   return findLastUserText(msgs.slice(0, aiIdx));
 }
 
+/** Mark the last non-empty AI bubble as conclusive (feedback/export eligible). */
+function markConclusiveAiMessages(msgs: ChatMessage[]): ChatMessage[] {
+  let lastAiIdx = -1;
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i]?.kind === "ai") {
+      lastAiIdx = i;
+      break;
+    }
+  }
+  return msgs.map((m, i) => {
+    if (m.kind !== "ai") return m;
+    const next = m.streaming ? { ...m, streaming: false } : m;
+    if (i === lastAiIdx && next.text.trim()) {
+      return { ...next, showFeedback: true };
+    }
+    return next;
+  });
+}
+
 interface Props {
   apiBase: string;
   agentConfig: AgentConfig;
@@ -230,6 +249,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
   const [loading, setLoading] = useState(false);
   const [statusHint, setStatusHint] = useState("");
   const [feedbackState, setFeedbackState] = useState<Record<number, "good" | "bad">>({});
+  const [feedbackHint, setFeedbackHint] = useState("");
   const [feedbackModal, setFeedbackModal] = useState<{
     msgIndex: number;
     question: string;
@@ -241,6 +261,14 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
   const abortRef = useRef<AbortController | null>(null);
   /** Bumped on New Chat so in-flight SSE cannot mutate the fresh session. */
   const chatGenerationRef = useRef(0);
+  const feedbackContextRef = useRef({ messages, sessionId, apiBase });
+  feedbackContextRef.current = { messages, sessionId, apiBase };
+
+  useEffect(() => {
+    if (!feedbackHint) return;
+    const timer = window.setTimeout(() => setFeedbackHint(""), 5000);
+    return () => window.clearTimeout(timer);
+  }, [feedbackHint]);
 
   const handleMessagesScroll = () => {
     const el = messagesRef.current;
@@ -313,24 +341,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
         ]);
         break;
       case "done":
-        setMessages((prev) => {
-          let lastAiIdx = -1;
-          for (let i = prev.length - 1; i >= 0; i--) {
-            if (prev[i]!.kind === "ai") {
-              lastAiIdx = i;
-              break;
-            }
-          }
-          return prev.map((m, i) => {
-            if (m.kind !== "ai") return m;
-            const next =
-              m.streaming ? { ...m, streaming: false } : m;
-            if (i === lastAiIdx && next.text.trim()) {
-              return { ...next, showFeedback: true };
-            }
-            return next;
-          });
-        });
+        setMessages((prev) => markConclusiveAiMessages(prev));
         break;
       case "error":
         setMessages((prev) => [
@@ -414,7 +425,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
       }
 
       try {
-        const response = await fetch(`${apiBase}/api/v4/agent/chat`, {
+        const response = await fetch(buildUrl(apiBase, "/api/v4/agent/chat"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(
@@ -522,11 +533,14 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
         abortRef.current = null;
         setLoading(false);
         setStatusHint("");
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.kind === "ai" && m.streaming ? { ...m, streaming: false } : m
-          )
-        );
+        setMessages((prev) => {
+          if (prev[prev.length - 1]?.kind === "error") {
+            return prev.map((m) =>
+              m.kind === "ai" && m.streaming ? { ...m, streaming: false } : m
+            );
+          }
+          return markConclusiveAiMessages(prev);
+        });
       }
     },
     [messages, sessionId, agentConfig, apiBase, handleSseEvent]
@@ -585,6 +599,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
     setMessages([WELCOME]);
     setInput("");
     setFeedbackState({});
+    setFeedbackHint("");
     setFeedbackModal(null);
     atBottomRef.current = true;
     if (messagesRef.current) messagesRef.current.scrollTop = 0;
@@ -601,34 +616,42 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
   };
 
   async function handleGoodFeedback(idx: number, msg: AiMessage) {
-    const question = findUserTextForAiMessage(messages, idx)?.trim();
+    const { messages: liveMessages, sessionId: liveSessionId, apiBase: liveApiBase } =
+      feedbackContextRef.current;
+    const question = findUserTextForAiMessage(liveMessages, idx)?.trim();
     const answer = msg.text.trim().slice(0, 1500);
-    if (!question || !answer) return;
+    if (!question || !answer) {
+      setFeedbackHint("无法提交反馈：缺少对应的问题或回答内容");
+      return;
+    }
     setFeedbackState((prev) => ({ ...prev, [idx]: "good" }));
     try {
-      const res = await fetch(buildUrl(apiBase, "/api/v4/agent/feedback"), {
+      const res = await fetch(buildUrl(liveApiBase, "/api/v4/agent/feedback"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sessionId,
+          sessionId: liveSessionId,
           question,
           answer,
           kind: "good",
         }),
       });
       if (!res.ok) {
-        setFeedbackState((prev) => {
-          const next = { ...prev };
-          delete next[idx];
-          return next;
-        });
+        const errBody = (await res.json().catch(() => null)) as {
+          error?: string;
+          code?: string;
+        } | null;
+        const detail = errBody?.error ?? `HTTP ${res.status}`;
+        throw new Error(detail);
       }
-    } catch {
+    } catch (err) {
       setFeedbackState((prev) => {
         const next = { ...prev };
         delete next[idx];
         return next;
       });
+      const detail = err instanceof Error ? err.message : String(err);
+      setFeedbackHint(`反馈提交失败：${detail}`);
     }
   }
 
@@ -663,6 +686,9 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
       <RobotAvatarDefs />
       <div className="ai-agent-toolbar">
         <span className="ai-agent-title">🤖 AI Agent — Wafer Test Data Analytics</span>
+        {feedbackHint ? (
+          <span className="ai-feedback-hint" role="status">{feedbackHint}</span>
+        ) : null}
         <button type="button" className="ai-agent-btn-new" onClick={newSession}>
           ＋ New Chat
         </button>
@@ -706,12 +732,12 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
 
               const planMatch = !msg.streaming && msg.text.match(/\[PLAN\]([\s\S]*?)\[\/PLAN\]/);
               const showFeedbackBar =
-                !loading &&
                 !msg.streaming &&
                 msg.showFeedback === true &&
                 msg.text.trim().length > 0 &&
                 findUserTextForAiMessage(messages, i) !== undefined;
-              const showRegenerateButton = showFeedbackBar && i === lastFeedbackIdx;
+              const showRegenerateButton =
+                showFeedbackBar && !loading && i === lastFeedbackIdx;
 
               rendered.push(
                 <div key={i} className="ai-msg ai-msg--ai">
