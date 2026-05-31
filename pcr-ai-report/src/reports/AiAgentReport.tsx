@@ -115,6 +115,8 @@ interface AiMessage {
   streaming: boolean;
   /** 本轮回复已结束且可展示结论后，由 SSE done 置 true */
   showFeedback?: boolean;
+  /** 用户已提交 👍/👎 后显示「感谢反馈」 */
+  feedback?: "good" | "bad";
 }
 interface ToolMessage {
   kind: "tool";
@@ -223,6 +225,16 @@ function markConclusiveAiMessages(msgs: ChatMessage[]): ChatMessage[] {
   });
 }
 
+function setAiMessageFeedback(
+  msgs: ChatMessage[],
+  aiIdx: number,
+  feedback: "good" | "bad" | undefined
+): ChatMessage[] {
+  return msgs.map((m, i) =>
+    i === aiIdx && m.kind === "ai" ? { ...m, feedback } : m
+  );
+}
+
 interface Props {
   apiBase: string;
   agentConfig: AgentConfig;
@@ -248,7 +260,6 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
   const [sessionId, setSessionId] = useState(genId);
   const [loading, setLoading] = useState(false);
   const [statusHint, setStatusHint] = useState("");
-  const [feedbackState, setFeedbackState] = useState<Record<number, "good" | "bad">>({});
   const [feedbackHint, setFeedbackHint] = useState("");
   const [feedbackModal, setFeedbackModal] = useState<{
     msgIndex: number;
@@ -598,7 +609,6 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
     setSessionId(genId());
     setMessages([WELCOME]);
     setInput("");
-    setFeedbackState({});
     setFeedbackHint("");
     setFeedbackModal(null);
     atBottomRef.current = true;
@@ -615,7 +625,9 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
     });
   };
 
-  async function handleGoodFeedback(idx: number, msg: AiMessage) {
+  function handleGoodFeedback(idx: number, msg: AiMessage) {
+    setMessages((prev) => setAiMessageFeedback(prev, idx, "good"));
+
     const { messages: liveMessages, sessionId: liveSessionId, apiBase: liveApiBase } =
       feedbackContextRef.current;
     const question = findUserTextForAiMessage(liveMessages, idx)?.trim();
@@ -624,46 +636,45 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
       setFeedbackHint("无法提交反馈：缺少对应的问题或回答内容");
       return;
     }
-    setFeedbackState((prev) => ({ ...prev, [idx]: "good" }));
-    try {
-      const res = await fetch(buildUrl(liveApiBase, "/api/v4/agent/feedback"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: liveSessionId,
-          question,
-          answer,
-          kind: "good",
-        }),
-      });
-      if (!res.ok) {
-        const errBody = (await res.json().catch(() => null)) as {
-          error?: string;
-          code?: string;
-        } | null;
-        const detail = errBody?.error ?? `HTTP ${res.status}`;
+    void (async () => {
+      try {
+        const res = await fetch(buildUrl(liveApiBase, "/api/v4/agent/feedback"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId: liveSessionId,
+            question,
+            answer,
+            kind: "good",
+          }),
+        });
+        if (!res.ok) {
+          const errBody = (await res.json().catch(() => null)) as {
+            error?: string;
+            code?: string;
+          } | null;
+          const detail = errBody?.error ?? `HTTP ${res.status}`;
+          setFeedbackHint(`反馈提交失败：${detail}`);
+        }
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
         setFeedbackHint(`反馈提交失败：${detail}`);
       }
-    } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err);
-      setFeedbackHint(`反馈提交失败：${detail}`);
-    }
+    })();
   }
 
   function handleOpenBadFeedback(idx: number, msg: AiMessage) {
     const question = findUserTextForAiMessage(messages, idx)?.trim();
     if (!question || !msg.text.trim()) return;
-    setFeedbackState((prev) => ({ ...prev, [idx]: "bad" }));
+    setMessages((prev) => setAiMessageFeedback(prev, idx, "bad"));
     setFeedbackModal({ msgIndex: idx, question, answer: msg.text });
   }
 
   function handleCloseBadFeedbackModal(restoreThumbs: boolean) {
     if (restoreThumbs && feedbackModal) {
-      setFeedbackState((prev) => {
-        const next = { ...prev };
-        delete next[feedbackModal.msgIndex];
-        return next;
-      });
+      setMessages((prev) =>
+        setAiMessageFeedback(prev, feedbackModal.msgIndex, undefined)
+      );
     }
     setFeedbackModal(null);
   }
@@ -677,14 +688,6 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
       if (messages[k].kind === "user") { userIdx = k; break; }
     }
     if (userIdx === -1) return;
-    setFeedbackState((prev) => {
-      const next: Record<number, "good" | "bad"> = {};
-      for (const key of Object.keys(prev)) {
-        const n = Number(key);
-        if (n < userIdx + 1) next[n] = prev[n];
-      }
-      return next;
-    });
     await submitAgentRequest({ text: question, baseMessages: messages.slice(0, userIdx) });
   }, [loading, messages, submitAgentRequest]);
 
@@ -819,12 +822,12 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
                         >
                           ⬇
                         </button>
-                        {feedbackState[i] !== undefined ? (
+                        {msg.feedback !== undefined ? (
                           <span className="ai-feedback-thanks">感谢反馈</span>
                         ) : (
                           <>
                             <button type="button" className="ai-feedback-btn"
-                              onClick={() => void handleGoodFeedback(i, msg)} title="这条回答有用">👍</button>
+                              onClick={() => handleGoodFeedback(i, msg)} title="这条回答有用">👍</button>
                             <button type="button" className="ai-feedback-btn"
                               onClick={() => handleOpenBadFeedback(i, msg)} title="这条回答有问题">👎</button>
                           </>
