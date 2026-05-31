@@ -930,11 +930,10 @@ export async function runAgentLoop(
       emit({ type: "status", message: "正在生成分析结论…" });
     }
 
-    // In the summary round, send tool schema with tool_choice:"none" so models
-    // that need schema context (MiniMax, GLM…) still understand which tools
-    // exist, but the API-level constraint prevents any tool call.
-    // Also append an explicit user-role instruction because some models
-    // (especially MiniMax via SiliconFlow) under-weight system-only nudges.
+    // Summary round: do NOT send tool schemas. Sending schemas with tool_choice:"none"
+    // causes some models (e.g. DeepSeek-V4-Pro) to still emit structured tool_calls,
+    // which get blocked by the guard below and leave textBuffer empty → error.
+    // Without schemas the model is forced to produce text.
     const summaryUserNudge: ChatMessage = {
       role: "user",
       content: "请立即用中文给出上述查询数据的分析结论与关键数字，不要调用任何工具。",
@@ -944,8 +943,6 @@ export async function runAgentLoop(
         ? {
             model: agentConfig.model,
             messages: [...messages, summaryUserNudge],
-            tools: TOOL_SCHEMAS as unknown as unknown[],
-            tool_choice: "none",
           }
         : {
             model: agentConfig.model,

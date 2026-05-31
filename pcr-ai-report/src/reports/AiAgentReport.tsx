@@ -670,12 +670,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
     setFeedbackModal({ msgIndex: idx, question, answer: msg.text });
   }
 
-  function handleCloseBadFeedbackModal(restoreThumbs: boolean) {
-    if (restoreThumbs && feedbackModal) {
-      setMessages((prev) =>
-        setAiMessageFeedback(prev, feedbackModal.msgIndex, undefined)
-      );
-    }
+  function handleCloseBadFeedbackModal() {
     setFeedbackModal(null);
   }
 
@@ -970,8 +965,8 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
           sessionId={sessionId}
           question={feedbackModal.question}
           answer={feedbackModal.answer}
-          onSubmit={() => handleCloseBadFeedbackModal(false)}
-          onClose={() => handleCloseBadFeedbackModal(true)}
+          onSubmit={() => handleCloseBadFeedbackModal()}
+          onClose={() => handleCloseBadFeedbackModal()}
         />
       )}
     </div>

@@ -55,7 +55,13 @@ export function isLotOverviewQuestion(text: string): boolean {
 export function isBinTrendQuestion(text: string): boolean {
   const bin = extractBinFromUserText(text);
   if (bin == null) return false;
-  return /趋势|按\s*slot|各\s*片|1\s*[-~–]\s*25|每\s*片|分布|颗数/i.test(text);
+  // Explicit trend keywords
+  if (/趋势|按\s*slot|各\s*片|1\s*[-~–]\s*25|每\s*片|分布|颗数/i.test(text)) return true;
+  // Count / quantity questions about a specific BIN — implies per-slot breakdown
+  if (/有多少|多少颗|多少\s*die|坏\s*die|坏\s*bin|各\s*片|片的|wafer.*bin|bin.*wafer/i.test(text)) return true;
+  // Interrupt-segment BIN questions
+  if (/中断|interrupt|前半|后半|续测|半段/i.test(text)) return true;
+  return false;
 }
 
 /** 每片 wafer × 每个 pass 的良率%（非 BIN 趋势、非仅 lot 概况一句）。 */
@@ -189,15 +195,27 @@ export function buildDeterministicJbTables(
     const overview =
       digest.lotOverview?.trim() ||
       formatLotYieldOverviewMarkdown(toolPayload)?.trim();
-    if (overview) return overview;
-  }
 
-  if (mode === "generic") {
+    // When the user also mentions a specific BIN (e.g. "整体情况中BIN7有多少"),
+    // append the BIN slot-trend tables (including interrupt前/后段 columns) so the
+    // model gets per-slot bad-die data without needing to "calculate" anything.
     const bin = extractBinFromUserText(userMessage);
     if (bin != null && digest.binTrends?.length) {
-      const m = digest.binTrends.filter((t) => t.bin === bin);
-      if (m.length) return m.map((t) => t.markdown).join("\n\n");
+      const matches = digest.binTrends.filter((t) => Number(t.bin) === bin);
+      if (matches.length) {
+        const binMd = matches.map((t) => t.markdown).join("\n\n");
+        if (overview) return `${overview}\n\n${binMd}`;
+        return binMd;
+      }
+      // Try on-demand generation from _trendRows
+      const onDemand = buildBinSlotTrendMarkdownOnDemand(toolPayload, bin, userMessage);
+      if (onDemand?.trim()) {
+        if (overview) return `${overview}\n\n${onDemand.trim()}`;
+        return onDemand.trim();
+      }
     }
+
+    if (overview) return overview;
   }
 
   return rebuildDeterministicTablesFallback(toolPayload);
