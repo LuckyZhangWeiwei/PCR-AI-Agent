@@ -61,17 +61,18 @@
 
 ---
 
-## 4. 测试机 / tester
+## 4. 测试机 + 探针卡（同问必同表）
 
-**文件：** `agentJbBinFormat.ts` — `buildTesterByLot`, `primaryTesterIdForLot`, `testerIdMarkdown`。
+**文件：** `agentJbBinFormat.ts` — `buildTesterByLot`, `buildCardByPassId`, `cardByPassIdMarkdown`。
 
-- 单 lot 查询顶层 `testerId`
-- 多 lot `testerByLot`
-- `formatLotTesterMarkdown` 写入 overview
+| 用户问法 | 模式 | 实测数据表 |
+| --- | --- | --- |
+| 机台 + 几号卡 | `equipment` | **cardByPassId 表 + TESTERID 表** |
+| 仅机台 | `tester_machine` | 机台表（有数据则附带卡表） |
 
-**确定性：** `isTesterMachineQuestion` → `tester_machine`。
+**禁止：** 有 `cardByPassId` 却写「无 CARDID」而不出表。
 
-**Prompt：** JB `TESTERID` / Yield `HOSTNAME` 对照。
+**Prompt：** JB `TESTERID` ↔ Yield `HOSTNAME`。
 
 ---
 
