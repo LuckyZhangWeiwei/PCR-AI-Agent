@@ -8,6 +8,7 @@ import {
   extractBinFromUserText,
   isBinTrendQuestion,
   isInterruptCountQuestion,
+  isProbeCardQuestion,
   isTesterMachineQuestion,
   isSlotPassYieldQuestion,
   resolveJbToolPayload,
@@ -60,6 +61,34 @@ describe("agentJbDeterministicReply", () => {
       detectJbReplyMode("DR45459.1A 用的哪台测试机"),
       "tester_machine"
     );
+    assert.ok(isProbeCardQuestion("DR45459.1A 用几号卡"));
+    assert.equal(
+      detectJbReplyMode("DR45459.1A 用几号卡，在哪个机器测试的"),
+      "equipment"
+    );
+  });
+
+  it("buildDeterministicJbTables equipment includes card and tester", () => {
+    const payload = {
+      lot: "DR45459.1A",
+      cardByPassId: [
+        { passId: 1, cardIds: ["8041-05"], hasCardChangeInPass: false },
+        { passId: 3, cardIds: ["8041-06"], hasCardChangeInPass: false },
+      ],
+      testerByLot: [
+        {
+          lot: "DR45459.1A",
+          primaryTesterId: "b3j75062",
+          testerIds: ["b3j75062"],
+        },
+      ],
+    };
+    const md = buildDeterministicJbTables(
+      "DR45459.1A 用几号卡，在哪个机器测试的",
+      payload
+    );
+    assert.ok(md?.includes("cardByPassId") || md?.includes("8041-05"));
+    assert.ok(md?.includes("b3j75062"));
   });
 
   it("resolveJbToolPayload reads history when session cache cleared", () => {

@@ -9,6 +9,7 @@ import {
   type SlotYieldSummaryEntry,
   type SlotYieldPivot,
   type YieldByPassEntry,
+  type YieldInterruptSegment,
 } from "../jbYieldCalc.js";
 import type { CardByPassIdEntry, LotTesterEntry } from "./agentJbBinFormat.js";
 import { jbYieldCoreFields } from "./agentJbYieldCore.js";
@@ -67,8 +68,15 @@ function slimSummary(
     };
     if (e.hasInterrupt) {
       row.hasInterrupt = true;
+      if (e.testInterruptCount > 0) row.testInterruptCount = e.testInterruptCount;
       if (e.interruptHalf) row.interruptHalf = slimMetrics(e.interruptHalf);
       if (e.completionHalf) row.completionHalf = slimMetrics(e.completionHalf);
+      if (e.interruptSegments?.length) {
+        row.interruptSegments = e.interruptSegments.map((s) => ({
+          label: s.label,
+          metrics: slimMetrics(s.metrics),
+        }));
+      }
     }
     return row;
   });
@@ -95,15 +103,22 @@ function appendSegmentRows(
   );
 }
 
-/** 有中断：先各中断/续测段，再合并整片（前半 → 后半 → 整片正片）。 */
+/** 有中断：按 interruptSegments 逐段；无 segments 时回退前半→后半→整片。 */
 export function appendInterruptYieldSegmentRows(
   lines: string[],
   slot: number,
   sortLabel: string,
   whole: JbYieldMetrics,
   interruptHalf: JbYieldMetrics,
-  completionHalf?: JbYieldMetrics
+  completionHalf?: JbYieldMetrics,
+  interruptSegments?: YieldInterruptSegment[]
 ): void {
+  if (interruptSegments?.length) {
+    for (const seg of interruptSegments) {
+      appendSegmentRows(lines, slot, sortLabel, seg.label, seg.metrics);
+    }
+    return;
+  }
   appendSegmentRows(lines, slot, sortLabel, "前半段", interruptHalf);
   if (completionHalf) {
     appendSegmentRows(lines, slot, sortLabel, "后半段", completionHalf);
@@ -194,7 +209,7 @@ export function formatSlotYieldInterruptMarkdown(
   const lines = [
     title,
     "",
-    `共 **${rows.length}** 个 (waferId×pass) 有中断/续测（次数见 **testInterruptCountMarkdown**）；**先逐段**（前半、后半），**再整片合并**；良率 **0% 也写**。`,
+    `共 **${rows.length}** 个 (waferId×pass) 有中断/续测（次数见 **testInterruptCountMarkdown**）；**按段列出每次中断/续测**，最后 **整片正片（合并）**；多次中断勿只写前半/后半两段；良率 **0% 也写**。`,
     "",
     "| Slot | 测试层 | 段 | 总die | 好die | 坏die | 良率% |",
     "|---:|---|---:|---:|---:|---:|---:|",
@@ -207,7 +222,8 @@ export function formatSlotYieldInterruptMarkdown(
       r.sortLabel,
       r.wholeWafer,
       r.interruptHalf,
-      r.completionHalf
+      r.completionHalf,
+      r.interruptSegments
     );
   }
   return lines.join("\n");
@@ -417,7 +433,8 @@ function formatSlotYieldFlatTable(
           yieldPct: e.yieldPct,
         },
         e.interruptHalf,
-        e.completionHalf
+        e.completionHalf,
+        e.interruptSegments
       );
     } else {
       appendSegmentRows(lines, e.slot, sortLabel, "整片", {

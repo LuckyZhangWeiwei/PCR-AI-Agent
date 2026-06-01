@@ -2,11 +2,12 @@
 /** 总结轮：服务端直出预计算表，LLM 仅写简短解读（禁止改数字）。 */
 
 import {
+  formatCardByPassIdMarkdown,
   formatLotYieldOverviewMarkdown,
   formatLotTesterMarkdown,
   formatTestInterruptCountMarkdown,
 } from "./agentJbHistoryCompact.js";
-import type { LotTesterEntry } from "./agentJbBinFormat.js";
+import type { CardByPassIdEntry, LotTesterEntry } from "./agentJbBinFormat.js";
 import type { ClusteredBadBinAlert } from "./agentJbBadBinCluster.js";
 import type { SlotYieldSummaryEntry } from "../jbYieldCalc.js";
 import { buildBinSlotTrendMarkdownOnDemand } from "./agentJbBinTrend.js";
@@ -30,6 +31,7 @@ export type JbReplyMode =
   | "slot_pass_yield"
   | "interrupt_count"
   | "tester_machine"
+  | "equipment"
   | "generic";
 
 /** 用户问在哪台机台/测试机测（JB testerId / YM hostname）。 */
@@ -37,13 +39,59 @@ export function isTesterMachineQuestion(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
   if (
-    /哪台|哪个.*机台|在哪.*机台|哪.*机器|测试机|机台|tester|hostname|TESTERID|HOSTNAME/i.test(
+    /哪台|哪个.*机台|在哪.*机台|哪.*机器|在哪个.*测试|测试机|机台|tester|hostname|TESTERID|HOSTNAME/i.test(
       t
     )
   ) {
     return true;
   }
   return false;
+}
+
+/** 用户问探针卡号（CARDID / 几号卡）。 */
+export function isProbeCardQuestion(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  return /几号卡|哪张.*卡|哪个.*卡|探针卡|probe\s*card|CARDID|卡号|用的.*卡|哪块卡/i.test(
+    t
+  );
+}
+
+function formatEquipmentTables(toolPayload: Record<string, unknown>): string | null {
+  const parts: string[] = [];
+  const cardDirect = toolPayload["cardByPassIdMarkdown"];
+  if (typeof cardDirect === "string" && cardDirect.trim()) {
+    parts.push(cardDirect.trim());
+  } else {
+    const cardMd = formatCardByPassIdMarkdown(
+      (toolPayload["cardByPassId"] as CardByPassIdEntry[] | undefined) ?? []
+    );
+    if (cardMd.trim()) parts.push(cardMd.trim());
+  }
+
+  const testerDirect = toolPayload["testerIdMarkdown"];
+  if (typeof testerDirect === "string" && testerDirect.trim()) {
+    parts.push(testerDirect.trim());
+  } else {
+    const byLot = toolPayload["testerByLot"] as LotTesterEntry[] | undefined;
+    if (byLot?.length) {
+      const lot = String(toolPayload["lot"] ?? "").trim();
+      const md = formatLotTesterMarkdown(byLot, lot || undefined);
+      if (md.trim()) parts.push(md.trim());
+    } else {
+      const tid = toolPayload["testerId"];
+      if (typeof tid === "string" && tid.trim()) {
+        const lot = String(toolPayload["lot"] ?? "").trim();
+        parts.push(
+          lot
+            ? `**${lot}** 测试机台（JB TESTERID）：**${tid.trim()}**`
+            : `测试机台（JB TESTERID）：**${tid.trim()}**`
+        );
+      }
+    }
+  }
+
+  return parts.length ? parts.join("\n\n") : null;
 }
 
 /** 用户问各片/某片「中断几次」等次数类问题。 */
@@ -116,6 +164,10 @@ export function isSlotPassYieldQuestion(text: string): boolean {
 }
 
 export function detectJbReplyMode(userMessage: string): JbReplyMode {
+  if (isTesterMachineQuestion(userMessage) && isProbeCardQuestion(userMessage)) {
+    return "equipment";
+  }
+  if (isProbeCardQuestion(userMessage)) return "equipment";
   if (isTesterMachineQuestion(userMessage)) return "tester_machine";
   if (isInterruptCountQuestion(userMessage)) return "interrupt_count";
   if (isBinTrendQuestion(userMessage)) return "bin_trend";
@@ -194,23 +246,12 @@ export function buildDeterministicJbTables(
   const digest = digestFromPayload(toolPayload);
   const mode = detectJbReplyMode(userMessage);
 
+  if (mode === "equipment") {
+    return formatEquipmentTables(toolPayload);
+  }
+
   if (mode === "tester_machine") {
-    const direct = toolPayload["testerIdMarkdown"];
-    if (typeof direct === "string" && direct.trim()) return direct.trim();
-    const byLot = toolPayload["testerByLot"] as LotTesterEntry[] | undefined;
-    if (byLot?.length) {
-      const lot = String(toolPayload["lot"] ?? "").trim();
-      const md = formatLotTesterMarkdown(byLot, lot || undefined);
-      if (md.trim()) return md;
-    }
-    const tid = toolPayload["testerId"];
-    if (typeof tid === "string" && tid.trim()) {
-      const lot = String(toolPayload["lot"] ?? "").trim();
-      return lot
-        ? `**${lot}** 测试机台（JB TESTERID）：**${tid.trim()}**`
-        : `测试机台（JB TESTERID）：**${tid.trim()}**`;
-    }
-    return null;
+    return formatEquipmentTables(toolPayload);
   }
 
   if (mode === "interrupt_count") {
@@ -306,6 +347,15 @@ function rebuildDeterministicTablesFallback(
   const clusterMd = toolPayload["clusteredBadBinAlertsMarkdown"];
   if (typeof clusterMd === "string" && clusterMd.trim()) {
     parts.push(clusterMd.trim());
+  }
+  const cardMd = toolPayload["cardByPassIdMarkdown"];
+  if (typeof cardMd === "string" && cardMd.trim()) {
+    parts.push(cardMd.trim());
+  } else {
+    const built = formatCardByPassIdMarkdown(
+      (toolPayload["cardByPassId"] as CardByPassIdEntry[] | undefined) ?? []
+    );
+    if (built.trim()) parts.push(built.trim());
   }
   const testerMd = toolPayload["testerIdMarkdown"];
   if (typeof testerMd === "string" && testerMd.trim()) {

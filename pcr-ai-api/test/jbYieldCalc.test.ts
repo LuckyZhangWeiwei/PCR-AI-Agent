@@ -6,6 +6,7 @@ import {
   buildLotYieldRank,
   buildSlotYieldSummary,
   buildYieldByPassId,
+  buildYieldInterruptSegments,
   computeJbYieldMetrics,
   countTestInterruptEvents,
 } from "../src/lib/jbYieldCalc.js";
@@ -330,6 +331,17 @@ describe("jbYieldCalc", () => {
       { SLOT: 1, PASSID: 1, ...group[4] },
     ]);
     assert.equal(summary[0]!.testInterruptCount, 4);
+    const segs = summary[0]!.interruptSegments;
+    assert.ok(segs && segs.length >= 6, "4 interrupts + resume + whole");
+    assert.equal(segs![0]!.label, "中断1");
+    assert.equal(segs![3]!.label, "中断4");
+    assert.equal(segs![segs!.length - 1]!.label, "整片正片（合并）");
+    const built = buildYieldInterruptSegments(group.map((r, i) => ({
+      SLOT: 1,
+      PASSID: 1,
+      ...r,
+    })));
+    assert.equal(built?.filter((s) => s.label.startsWith("中断")).length, 4);
   });
 
   it("countTestInterruptEvents uses PASSNUM delta when no INTERRUPT rows", () => {

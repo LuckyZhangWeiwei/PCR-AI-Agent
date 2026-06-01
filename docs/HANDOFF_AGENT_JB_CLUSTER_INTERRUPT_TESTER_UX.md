@@ -75,7 +75,23 @@
 
 ---
 
-## 5. 前端：数据 vs 结论分栏
+## 5. 多次中断逐段良率（非仅前半/后半）
+
+**文件：** `jbYieldCalc.ts` — `buildYieldInterruptSegments()` → `slotYieldSummary[].interruptSegments`。
+
+| 数据形态 | 输出段 |
+| --- | --- |
+| 多行 `PASSTYPE=INTERRUPT` | 中断1 … 中断N → 续测完成 → 整片正片（合并） |
+| passNum 1,2,3…（≥3） | 续测段1(passNum1) … → 整片合并 |
+| 单次中断 + 续测 | 前半段 → 后半段 → 整片合并（与旧行为一致） |
+
+展示：`slotYieldInterruptMarkdown`、`formatSlotYieldFlatTable` 均读 `interruptSegments`。
+
+**次数：** 仍用 `testInterruptCount`（≠ 段数）。
+
+---
+
+## 6. 前端：数据 vs 结论分栏
 
 | 文件 | 作用 |
 | --- | --- |

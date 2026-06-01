@@ -767,6 +767,17 @@ function minimalSlotYieldSummary(
     if (e.testInterruptCount > 0) row.testInterruptCount = e.testInterruptCount;
     if (e.hasInterrupt && e.interruptHalf) row.interruptHalf = e.interruptHalf;
     if (e.hasInterrupt && e.completionHalf) row.completionHalf = e.completionHalf;
+    if (e.interruptSegments?.length) {
+      row.interruptSegments = e.interruptSegments.map((s) => ({
+        label: s.label,
+        metrics: {
+          grossDie: s.metrics.grossDie,
+          badDie: s.metrics.badDie,
+          goodDie: s.metrics.goodDie,
+          yieldPct: s.metrics.yieldPct,
+        },
+      }));
+    }
     return row;
   });
 }

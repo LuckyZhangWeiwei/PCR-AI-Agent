@@ -317,6 +317,12 @@ export function computeJbYieldMetrics(
   return computeSegmentedWholeWafer(firstHalf, secondHalf);
 }
 
+/** 单次中断/续测段良率（多次中断时逐段列出，最后含整片合并）。 */
+export type YieldInterruptSegment = {
+  label: string;
+  metrics: JbYieldMetrics;
+};
+
 export type SlotYieldSummaryEntry = {
   slot: number;
   /** PASSID：sort1→1，sort2→3，sort3→5 */
@@ -327,23 +333,114 @@ export type SlotYieldSummaryEntry = {
   goodDie: number;
   yieldPct: number | null;
   hasInterrupt: boolean;
-  /** 该 (slot,passId) 测试中断次数；良率表仅展示前半/后半两段，勿把 2 段当成 2 次 */
+  /** 该 (slot,passId) 测试中断次数；勿把良率表段数当成次数 */
   testInterruptCount: number;
   rowCount: number;
-  /** 前半段（INTERRUPT 或较早续测 TEST），hasInterrupt 时必有 */
+  /** 前半段（INTERRUPT 或较早续测 TEST），hasInterrupt 时必有；多次中断时仅为首段摘要 */
   interruptHalf?: JbYieldMetrics;
   /** 后半段（续测完成），hasInterrupt 且存在完成段时必有 */
   completionHalf?: JbYieldMetrics;
+  /** 多次中断/多 passNum/多续测行：逐段 + 整片合并（展示用，优先于仅前半/后半） */
+  interruptSegments?: YieldInterruptSegment[];
 };
 
 const SLOT_YIELD_GUIDE =
-  "slotYieldSummary：每条=一片 wafer 的一个测试层 (slot, passId)。testInterruptCount=该层测试中断次数（INTERRUPT 行数或 PASSNUM 步进）；良率 markdown 仅列前半/后半两段，禁止把 2 段当成中断次数。有中断时 JSON 须含整片+interruptHalf+completionHalf 良率（0%也写）；查 BIN 见 badBinSlotTrends。禁止把 pass3+pass5 的 die 相加成一个良率。";
+  "slotYieldSummary：每条=一片 wafer 的一个测试层 (slot, passId)。testInterruptCount=中断次数；有中断时读 interruptSegments（多次中断逐段：中断1…中断N→续测→整片合并）或 slotYieldInterruptMarkdown，禁止把 2 段当成 2 次。JSON 仍含 interruptHalf/completionHalf 摘要。查 BIN 见 badBinSlotTrends。";
 
 const TEST_INTERRUPT_COUNT_GUIDE =
   "testInterruptCountMarkdown / slotYieldSummary[].testInterruptCount：各 wafer×pass 的中断次数；用户问「中断几次」必须读本表数字，禁止用前半/后半两段推断次数。";
 
 const LOT_YIELD_RANK_GUIDE =
   "lotYieldRankByTestEnd：按 lot 汇总良率（该 lot 内所有 slot×passId 的 yieldPct 最小值=lot 代表良率，与报表 LOT Yield% 一致）。按 TESTEND 降序；用户要「良率最差 top N」时按 yieldPct 升序重排。";
+
+function sortGroupRowsByTime(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  return [...rows].sort((a, b) => {
+    const d = testEndMs(a) - testEndMs(b);
+    if (d !== 0) return d;
+    return passNumFromJbRow(a) - passNumFromJbRow(b);
+  });
+}
+
+/**
+ * 同 (slot,passId) 有序段：多行 INTERRUPT → 中断1…N；多 passNum → 各段；否则前半→后半→整片。
+ */
+export function buildYieldInterruptSegments(
+  group: Record<string, unknown>[]
+): YieldInterruptSegment[] | undefined {
+  if (group.length < 2) return undefined;
+  const sorted = sortGroupRowsByTime(group);
+  const whole = computeJbYieldMetrics(group);
+  const interruptRows = sorted.filter(isInterruptPasstype);
+
+  if (interruptRows.length >= 2) {
+    const segs: YieldInterruptSegment[] = interruptRows.map((row, i) => ({
+      label: `中断${i + 1}`,
+      metrics: segmentMetrics([row]),
+    }));
+    const testRows = sorted.filter((r) => !isInterruptPasstype(r));
+    if (testRows.length) {
+      segs.push({ label: "续测完成", metrics: segmentMetrics(testRows) });
+    }
+    segs.push({ label: "整片正片（合并）", metrics: whole });
+    return segs;
+  }
+
+  const passNums = [...new Set(sorted.map(passNumFromJbRow))].sort((a, b) => a - b);
+  if (passNums.length >= 3) {
+    const segs: YieldInterruptSegment[] = passNums.map((pn, i) => {
+      const rows = sorted.filter((r) => passNumFromJbRow(r) === pn);
+      const label = `续测段${i + 1}(passNum${pn})`;
+      return { label, metrics: segmentMetrics(rows) };
+    });
+    segs.push({ label: "整片正片（合并）", metrics: whole });
+    return segs;
+  }
+
+  if (passNums.length === 2) {
+    const split = splitPassGroupIntoHalves(group);
+    if (!split.segmented) return undefined;
+    const segs: YieldInterruptSegment[] = [
+      { label: "前半段", metrics: segmentMetrics(split.firstHalfRows) },
+    ];
+    if (split.secondHalfRows.length) {
+      segs.push({ label: "后半段", metrics: segmentMetrics(split.secondHalfRows) });
+    }
+    segs.push({ label: "整片正片（合并）", metrics: whole });
+    return segs;
+  }
+
+  if (sorted.length >= 2 && passNums.length === 1) {
+    const testRows = sorted.filter((r) => !isInterruptPasstype(r));
+    if (testRows.length >= 2) {
+      const segs: YieldInterruptSegment[] = [];
+      if (interruptRows.length === 1) {
+        segs.push({
+          label: "中断1",
+          metrics: segmentMetrics(interruptRows),
+        });
+      }
+      for (let i = 0; i < testRows.length; i++) {
+        segs.push({
+          label: `续测段${i + 1}`,
+          metrics: segmentMetrics([testRows[i]!]),
+        });
+      }
+      segs.push({ label: "整片正片（合并）", metrics: whole });
+      return segs;
+    }
+  }
+
+  const split = splitPassGroupIntoHalves(group);
+  if (!split.segmented) return undefined;
+  const segs: YieldInterruptSegment[] = [
+    { label: "前半段", metrics: segmentMetrics(split.firstHalfRows) },
+  ];
+  if (split.secondHalfRows.length) {
+    segs.push({ label: "后半段", metrics: segmentMetrics(split.secondHalfRows) });
+  }
+  segs.push({ label: "整片正片（合并）", metrics: whole });
+  return segs;
+}
 
 /** 拆出前半/后半；整片正片走 computeJbYieldMetrics。 */
 export function computeJbYieldBreakdown(rows: Record<string, unknown>[]): {
@@ -412,6 +509,10 @@ export function buildSlotYieldSummary(
     }
     if (b.hasInterrupt && b.completionHalf) {
       entry.completionHalf = b.completionHalf;
+    }
+    if (b.hasInterrupt) {
+      const segments = buildYieldInterruptSegments(groupRows);
+      if (segments?.length) entry.interruptSegments = segments;
     }
     out.push(entry);
   }
@@ -632,7 +733,7 @@ export function slotYieldPivotFieldGuide(): string {
 }
 
 const SLOT_YIELD_INTERRUPT_GUIDE =
-  "slotYieldInterruptMarkdown：有中断 (waferId,passId) 良率三行：前半→后半→整片正片（合并）（0%也写）。查 BIN 见 badBinSlotTrends（同序）；禁止只报后半。";
+  "slotYieldInterruptMarkdown：有中断时按 interruptSegments 逐段输出（多次中断：中断1…N→续测→整片合并；0%也写）。禁止仅报后半或把 2 段当成中断次数。";
 
 export function slotYieldInterruptFieldGuide(): string {
   return SLOT_YIELD_INTERRUPT_GUIDE;
@@ -647,6 +748,7 @@ export type SlotYieldInterruptRow = {
   wholeWafer: JbYieldMetrics;
   interruptHalf: JbYieldMetrics;
   completionHalf?: JbYieldMetrics;
+  interruptSegments?: YieldInterruptSegment[];
 };
 
 /** 仅 hasInterrupt:true 的 (slot, passId)，供 Agent 中断良率表。 */
@@ -670,6 +772,7 @@ export function buildSlotYieldInterruptRows(
       },
       interruptHalf: e.interruptHalf,
       completionHalf: e.completionHalf,
+      interruptSegments: e.interruptSegments,
     });
   }
   return out.sort((a, b) => a.slot - b.slot || a.passId - b.passId);
