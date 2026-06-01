@@ -15,10 +15,10 @@ describe("resolveAgentConfig", () => {
     assert.equal(cfg.apiKey, "sk-test");
     assert.equal(cfg.apiBase, "https://custom.api/v1"); // trailing slash stripped
     assert.equal(cfg.model, "my-model");
-    assert.equal(cfg.maxRounds, 5);
-    assert.equal(cfg.streamTimeoutSec, 150);
-    assert.equal(cfg.streamTimeoutMs, 150_000);
-    assert.equal(cfg.toolResultMaxChars, 12000);
+    assert.equal(cfg.maxRounds, 8);
+    assert.equal(cfg.streamTimeoutSec, 120);
+    assert.equal(cfg.streamTimeoutMs, 120_000);
+    assert.equal(cfg.toolResultMaxChars, 20000);
   });
 
   it("clamps streamTimeoutSec from override", async () => {

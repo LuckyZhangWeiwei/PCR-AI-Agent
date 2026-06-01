@@ -99,14 +99,14 @@ describe("agentJbBinFormat", () => {
     const s21 = summary.find((x) => x.slot === 21)!;
     assert.equal(s21.interruptHalf!.goodDie, 0);
     assert.equal(s21.interruptHalf!.yieldPct, 0);
-    assert.ok(String(out._slotYieldGuide).includes("0%"));
+    assert.ok(String(out._slotYieldInterruptGuide ?? out._slotYieldGuide).includes("0%"));
     const md = String(out.slotYieldInterruptMarkdown);
     assert.ok(md.includes("整片正片（合并）"));
     assert.ok(md.includes("前半段"));
     assert.ok(md.includes("后半段"));
     const firstIdx = md.indexOf("前半段");
     const secondIdx = md.indexOf("后半段");
-    const wholeIdx = md.indexOf("整片正片（合并）");
+    const wholeIdx = md.lastIndexOf("整片正片（合并）");
     assert.ok(firstIdx < secondIdx && secondIdx < wholeIdx);
     const ultra = serializeJbQueryResultForAgent(out, 8000);
     const parsed = JSON.parse(ultra) as {

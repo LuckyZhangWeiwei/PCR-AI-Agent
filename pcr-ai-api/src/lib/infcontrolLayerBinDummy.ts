@@ -51,20 +51,18 @@ export interface InfcontrolLayerBinDummyRow {
 }
 
 /**
- * Dummy 联调：查询串由 **`docs/JBStart.xlsx` Sheet1 首行** 推导（`device/lot/slot/tstype/cardId` + 该行 `TESTEND` 所在自然月的 `testEndFrom`/`testEndTo`），保证至少一行命中。
+ * Dummy 联调：查询串由 **`docs/JBStart.xlsx` Sheet1 首行** 推导（`device/lot/slot/tstype/cardId` + 滚动日期窗口）。
+ * 日期用 now-30d 到 now：v3 dummy filter 的 time-shift 逻辑会把绝对日期向前移 (now−maxTs)，
+ * 用滚动日期可保证 shifted 窗口始终覆盖 Excel 数据（shifted_to = maxTs，数据在其内）。
  */
 function buildInfcontrolDummyExampleQuery(
   first: InfcontrolLayerBinDummyRow
 ): string {
-  const testEnd = new Date(String(first.TESTEND));
-  const y = Number.isNaN(testEnd.getTime())
-    ? 2026
-    : testEnd.getUTCFullYear();
-  const m = Number.isNaN(testEnd.getTime()) ? 0 : testEnd.getUTCMonth();
-  const testEndFrom = new Date(Date.UTC(y, m, 1)).toISOString();
-  const testEndTo = new Date(
-    Date.UTC(y, m + 1, 0, 23, 59, 59, 999)
-  ).toISOString();
+  const now = Date.now();
+  const testEndFrom = new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString();
+  // +60 s buffer: v3 dummy filter shifts dates by (now_filter − maxTs); without buffer
+  // shifted_to = maxTs − tiny_delta, excluding the row whose TESTEND equals maxTs.
+  const testEndTo = new Date(now + 60 * 1000).toISOString();
   return new URLSearchParams({
     device: String(first.DEVICE),
     lot: String(first.LOT),

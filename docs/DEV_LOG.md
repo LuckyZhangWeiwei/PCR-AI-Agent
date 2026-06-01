@@ -2,6 +2,18 @@
 
 ---
 
+## 2026-06-01 — Cursor 改动 Review + 测试修复
+
+**完成内容：**
+- `pcr-ai-api/src/lib/infcontrolLayerBinDummy.ts`：`buildInfcontrolDummyExampleQuery` 改用滚动日期（now-30d 到 now+60s），修复 v3 dummy time-shift 逻辑导致 example query 返回 0 行的时间窗口 Bug（shifted_to = maxTs - delta，最大 TESTEND 的行被排除）。
+- `pcr-ai-api/test/agentConfig.test.ts`：默认值断言对齐新设置（maxRounds 5→8、streamTimeoutSec 150→120、toolResultMaxChars 12000→20000，与 runtime-config.json 一致）。
+- `pcr-ai-api/test/agentJbBinFormat.test.ts`：`_slotYieldGuide` 断言改查 `_slotYieldInterruptGuide`（"0%" 提示已移入中断专项 guide）；`indexOf("整片正片（合并）")` 改 `lastIndexOf`（新 header 文字含该串导致查到表头而非表行）。
+- `pcr-ai-api/test/agentJbHistoryCompact.test.ts`：同上，`indexOf` → `lastIndexOf` 修复 wholeIdx 顺序断言。
+
+**测试：** 225 个测试，1 失败（agentAggregateGuard Oracle 连线问题，本机无库，非代码 Bug）
+
+---
+
 ## 2026-05-29 — Code Review 修复（JB 换卡检测三项 Bug）
 
 **完成内容：**

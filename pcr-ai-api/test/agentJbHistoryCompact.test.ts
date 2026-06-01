@@ -114,7 +114,7 @@ describe("agentJbHistoryCompact", () => {
     assert.ok(md.includes("整片正片（合并）"));
     assert.ok(md.includes("前半段"));
     assert.ok(md.includes("后半段"));
-    const wholeIdx = md.indexOf("整片正片（合并）");
+    const wholeIdx = md.lastIndexOf("整片正片（合并）");
     const firstIdx = md.indexOf("前半段");
     const secondIdx = md.indexOf("后半段");
     assert.ok(firstIdx < secondIdx && secondIdx < wholeIdx);

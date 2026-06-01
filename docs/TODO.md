@@ -5,7 +5,7 @@
 | 优先级 | 任务 | 备注 |
 |--------|------|------|
 | 1 | 服务器部署新版本 | `npm run build + pm2:reload`（API）；`npm run pack:dist` → scp + tar xf（前端） |
-| 2 | AI Agent 生产部署验证 | 确认 `AGENT_API_KEY`、`AGENT_STREAM_TIMEOUT_MS`（默认 150s）、PM2 重启后聊天可用；验证工具结果后能正常输出中文结论 |
+| 2 | AI Agent 生产部署验证 | 确认 `AGENT_API_KEY`、`AGENT_STREAM_TIMEOUT_MS`（默认 120s）、PM2 重启后聊天可用；验证 clusteredBadBinAlerts / testerByLot 字段正常输出 |
 | 3 | INF DUT 面板 Agent 工具接入 | `query_inf_site_bin_by_dut` 接入 agentPrompt + agentToolHandlers；见 `docs/SITE_BIN_BY_LOT_INTEGRATION.md` |
 
 ## 待办
