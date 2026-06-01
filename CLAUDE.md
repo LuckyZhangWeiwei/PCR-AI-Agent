@@ -17,6 +17,7 @@ This is a two-package monorepo (no shared workspace tooling — each package has
 > **JB 中断 slot 良率（半片 + Agent 汇报顺序）：** [`docs/HANDOFF_JB_INTERRUPT_YIELD.md`](docs/HANDOFF_JB_INTERRUPT_YIELD.md) — `interruptHalf` / `completionHalf`、输出顺序 **前半→后半→整片合并**，再 lot 整体；0% 必写。  
 > **Agent JB 逐片 BIN + 工具结果体积：** [`docs/HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md`](docs/HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md) — `slotBadBinsCompact`、`toolResultMaxChars`（Settings 默认 12000）。  
 > **Agent JB 确定性总结 + 工程建议：** [`docs/HANDOFF_AGENT_JB_DETERMINISTIC_SUMMARY.md`](docs/HANDOFF_AGENT_JB_DETERMINISTIC_SUMMARY.md) — 服务端直出表、`badBinSlotTrends`/`lotYieldOverviewMarkdown`、lot 全量查询、`### 数据解读` + `### 专业建议`（Wafer Test / Probe Card / DUT）。  
+> **Agent JB 突增/聚集坏 bin + 中断次数 + 机台 + 数据/结论分栏：** [`docs/HANDOFF_AGENT_JB_CLUSTER_INTERRUPT_TESTER_UX.md`](docs/HANDOFF_AGENT_JB_CLUSTER_INTERRUPT_TESTER_UX.md) — `clusteredBadBinAlerts`、`testInterruptCount`、`testerByLot`、`splitAgentReplyMarkdown`。  
 > **Agent JB 中途换卡（CARDID×passId）：** [`docs/HANDOFF_AGENT_JB_PROBE_CARD_CHANGE.md`](docs/HANDOFF_AGENT_JB_PROBE_CARD_CHANGE.md) — 仅同 (slot,passId) 算换卡；`cardByPassId`（pass1/3 各一卡正常）。  
 > **Agent generate_chart（GLM 空参 + DUT 占比推断）：** [`docs/HANDOFF_AGENT_GENERATE_CHART.md`](docs/HANDOFF_AGENT_GENERATE_CHART.md) — `parseGlmToolCallBody`、`inferGenerateChartArgsFromHistory`、`labels`+`values`。  
 > **JB 报表 BIN/Platform/DUT 多选：** [`docs/HANDOFF_JB_REPORT_FILTERS_DUT_MULTISELECT.md`](docs/HANDOFF_JB_REPORT_FILTERS_DUT_MULTISELECT.md) — `bins=` 列表筛选、Platform 仅 Yield（含 93K）、明细/下钻多选叠加 DUT、`mergeSiteBinPasses`。

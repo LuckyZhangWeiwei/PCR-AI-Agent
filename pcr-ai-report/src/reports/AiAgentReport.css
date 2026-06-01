@@ -198,9 +198,28 @@
 }
 .ai-msg-bubble--md table {
   border-collapse: collapse;
-  width: 100%;
+  width: max-content;
+  max-width: 100%;
   margin: 4px 0;
   font-size: 12px;
+}
+/* 实测数据表：横向滚动，避免长结论列撑破气泡宽度 */
+.ai-md-data {
+  overflow-x: auto;
+  margin-bottom: 10px;
+  padding-bottom: 2px;
+}
+.ai-md-data table {
+  width: max-content;
+  min-width: min(100%, 480px);
+}
+.ai-md-commentary {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid #333;
+}
+.ai-md-commentary table {
+  display: none;
 }
 .ai-msg-bubble--md th,
 .ai-msg-bubble--md td {

@@ -10,7 +10,7 @@ import {
   type SlotYieldPivot,
   type YieldByPassEntry,
 } from "../jbYieldCalc.js";
-import type { CardByPassIdEntry } from "./agentJbBinFormat.js";
+import type { CardByPassIdEntry, LotTesterEntry } from "./agentJbBinFormat.js";
 import { jbYieldCoreFields } from "./agentJbYieldCore.js";
 
 function roundYieldPct(v: number | null): number | null {
@@ -111,6 +111,73 @@ export function appendInterruptYieldSegmentRows(
   appendSegmentRows(lines, slot, sortLabel, "整片正片（合并）", whole);
 }
 
+/** JB STAR 机台（TESTERID）；Yield Monitor 同机台为 HOSTNAME。 */
+export function formatLotTesterMarkdown(
+  entries: LotTesterEntry[],
+  focusLot?: string
+): string {
+  const list = focusLot?.trim()
+    ? entries.filter((e) => e.lot === focusLot.trim())
+    : entries;
+  if (!list.length) return "";
+
+  const title = focusLot?.trim()
+    ? `**${focusLot.trim()}** 测试机台（JB \`TESTERID\` / API \`testerId\`）`
+    : "**测试机台（JB TESTERID）**";
+
+  const lines = [
+    title,
+    "",
+    "与 Yield Monitor 的 **HOSTNAME**（API \`hostname\`）为同一物理机台，列名不同。",
+    "",
+    "| 批次 lot | 机台 TESTERID | 本批出现过的机台 |",
+    "|---|---|---|",
+  ];
+
+  for (const e of list) {
+    const all =
+      e.testerIds.length > 1
+        ? e.testerIds.join(", ")
+        : e.testerIds[0] || "—";
+    lines.push(
+      `| ${e.lot} | ${e.primaryTesterId || "—"} | ${all} |`
+    );
+  }
+  return lines.join("\n");
+}
+
+/** 各 (waferId×pass) 测试中断次数（与良率前半/后半段数无关）。 */
+export function formatTestInterruptCountMarkdown(
+  summary: SlotYieldSummaryEntry[],
+  lot?: string,
+  device?: string
+): string {
+  const rows = summary.filter((e) => e.testInterruptCount > 0);
+  if (!rows.length) return "";
+
+  const title = lot
+    ? `**${lot}**${device ? `（${device}）` : ""} 各片测试中断次数`
+    : "**各片测试中断次数**";
+
+  const lines = [
+    title,
+    "",
+    "中断次数 = `testInterruptCount`（INTERRUPT 行数或 PASSNUM 续测步进）；**不是**良率表里「前半/后半」两段的数量。",
+    "",
+    "| waferId | 测试层 | 中断次数 |",
+    "|---:|---|---:|",
+  ];
+
+  for (const e of [...rows].sort(
+    (a, b) => a.slot - b.slot || a.passId - b.passId
+  )) {
+    lines.push(
+      `| ${e.slot} | ${passSortLabel(e.passId)} | ${e.testInterruptCount} |`
+    );
+  }
+  return lines.join("\n");
+}
+
 /** 有 INTERRUPT/续测的 (slot,passId)：固定顺序 前半 → 后半 → 整片正片（合并）。 */
 export function formatSlotYieldInterruptMarkdown(
   summary: SlotYieldSummaryEntry[],
@@ -127,7 +194,7 @@ export function formatSlotYieldInterruptMarkdown(
   const lines = [
     title,
     "",
-    `共 **${rows.length}** 个 (waferId×pass) 有中断/续测；**先逐段**（前半、后半），**再整片合并**；良率 **0% 也写**。`,
+    `共 **${rows.length}** 个 (waferId×pass) 有中断/续测（次数见 **testInterruptCountMarkdown**）；**先逐段**（前半、后半），**再整片合并**；良率 **0% 也写**。`,
     "",
     "| Slot | 测试层 | 段 | 总die | 好die | 坏die | 良率% |",
     "|---:|---|---:|---:|---:|---:|---:|",
@@ -247,6 +314,25 @@ export function formatLotYieldOverviewMarkdown(
   const pivotRaw = o["slotYieldPivot"] as SlotYieldPivot | undefined;
 
   const parts: string[] = [];
+  const clusterMd =
+    typeof o["clusteredBadBinAlertsMarkdown"] === "string"
+      ? o["clusteredBadBinAlertsMarkdown"]
+      : "";
+  if (clusterMd.trim()) {
+    parts.push(clusterMd.trim());
+    parts.push("");
+  }
+  const testerMd =
+    typeof o["testerIdMarkdown"] === "string"
+      ? o["testerIdMarkdown"]
+      : formatLotTesterMarkdown(
+          (o["testerByLot"] as LotTesterEntry[] | undefined) ?? [],
+          lot || undefined
+        );
+  if (testerMd?.trim()) {
+    parts.push(testerMd.trim());
+    parts.push("");
+  }
   const cardMd = formatCardByPassIdMarkdown(
     (o["cardByPassId"] as CardByPassIdEntry[] | undefined) ?? []
   );
@@ -256,6 +342,12 @@ export function formatLotYieldOverviewMarkdown(
   }
   if (byPass?.length) {
     parts.push(formatYieldByPassSection(byPass));
+    parts.push("");
+  }
+
+  const interruptCountMd = formatTestInterruptCountMarkdown(summary, lot, device);
+  if (interruptCountMd) {
+    parts.push(interruptCountMd);
     parts.push("");
   }
 

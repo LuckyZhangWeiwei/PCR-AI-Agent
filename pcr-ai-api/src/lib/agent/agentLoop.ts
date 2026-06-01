@@ -30,6 +30,8 @@ import {
   buildDeterministicJbTables,
   buildEngineeringContextFromPayload,
   DETERMINISTIC_TABLES_HEADER,
+  DETERMINISTIC_DATA_SECTION_TITLE,
+  DETERMINISTIC_COMMENTARY_SECTION_TITLE,
   resolveJbToolPayload,
 } from "./agentJbDeterministicReply.js";
 import {
@@ -673,7 +675,7 @@ async function tryRunDeterministicJbSummary(
   const tables = buildDeterministicJbTables(userQuestion, payload);
   if (!tables?.trim()) return false;
 
-  const tablesBlock = `${DETERMINISTIC_TABLES_HEADER}\n\n${tables}`;
+  const tablesBlock = `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${DETERMINISTIC_TABLES_HEADER}\n\n${tables}`;
   emit({ type: "status", message: "正在输出服务端预计算表…" });
   emitTextInChunks(tablesBlock, emit);
 
@@ -718,10 +720,10 @@ async function tryRunDeterministicJbSummary(
 
   let full = tablesBlock;
   if (commentary) {
-    full += `\n\n---\n\n${commentary}`;
+    full += `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n${commentary}`;
   }
   if (streamError && !commentary) {
-    full += `\n\n---\n\n*（解读与专业建议生成失败：${streamError.slice(0, 120)}；请以表格为准。）*`;
+    full += `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n*（解读与专业建议生成失败：${streamError.slice(0, 120)}；请以实测数据表为准。）*`;
   }
 
   appendMessages(sessionId, { role: "assistant", content: full });
@@ -770,10 +772,12 @@ function jbBinsYieldFallbackMessage(
   if (payload) {
     const tables = buildDeterministicJbTables(userQuestion, payload);
     if (tables?.trim()) {
-      return `${DETERMINISTIC_TABLES_HEADER}\n\n${tables}`;
+      return `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${DETERMINISTIC_TABLES_HEADER}\n\n${tables}`;
     }
     const overview = formatLotYieldOverviewMarkdown(payload);
-    if (overview) return `${DETERMINISTIC_TABLES_HEADER}\n\n${overview}`;
+    if (overview) {
+      return `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${DETERMINISTIC_TABLES_HEADER}\n\n${overview}`;
+    }
   }
   return formatSlotYieldMarkdownFromToolJson(String(toolMsg.content ?? ""));
 }
@@ -852,6 +856,8 @@ export function historyAwaitingToolSummary(history: ChatMessage[]): boolean {
 
 const SUMMARIZE_NUDGE =
   "【指令】工具查询已完成。请立即用中文总结，禁止再调工具。须含数据解读与 Wafer Test/Probe Card/DUT 维护专业建议（简短、极度专业）。" +
+  "**输出格式**：若有服务端预计算 markdown 表，**数字只引用表中值**；解读/建议用 **### 数据解读**、**### 专业建议** 两节 **纯文字段落**，**禁止**把结论写进 markdown 表格、禁止新增「结论」列或重复整表。" +
+  "**聚集性坏 bin**：若工具 JSON 含 clusteredBadBinAlerts 或文首警示表，**必须**在数据解读首段点明 BIN、waferId 范围与突增/聚集/递升，非常警惕，禁止忽略。" +
   "用户问每片×每 pass **良率%/yield** 时：只引用 slotYieldPivotMarkdown / slotYieldInterruptMarkdown / slotYieldSummary[].yieldPct；" +
   "**禁止**用 binBySlot 或坏 die 颗数代替良率%；禁止写常温/高温/低温（用 pass1/3/5）。";
 

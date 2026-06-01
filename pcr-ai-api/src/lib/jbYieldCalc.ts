@@ -141,6 +141,37 @@ export function binDieByHalvesForGroup(
   };
 }
 
+/**
+ * 同 (slot, passId) 组内的测试中断次数（非「前半/后半」段数；多段续测可 >2）。
+ * - 有 PASSTYPE=INTERRUPT 行：计 INTERRUPT 行数。
+ * - 否则 PASSNUM 递增：max(PASSNUM)−min(PASSNUM)。
+ * - 否则同 PASSNUM 多行 TEST（按 TESTEND 续测）：TEST 行数−1。
+ */
+export function countTestInterruptEvents(
+  group: Record<string, unknown>[]
+): number {
+  if (group.length < 2) return 0;
+
+  const interruptRows = group.filter(isInterruptPasstype);
+  if (interruptRows.length > 0) {
+    return interruptRows.length;
+  }
+
+  const passNums = group.map(passNumFromJbRow);
+  const minPn = Math.min(...passNums);
+  const maxPn = Math.max(...passNums);
+  if (maxPn > minPn) {
+    return maxPn - minPn;
+  }
+
+  const testRows = group.filter((r) => !isInterruptPasstype(r));
+  if (testRows.length >= 2) {
+    return testRows.length - 1;
+  }
+
+  return 0;
+}
+
 /** 同 (slot, passId) 下是否应拆前后半（与 agentPrompt / HANDOFF 一致）。 */
 export function splitPassGroupIntoHalves(
   group: Record<string, unknown>[]
@@ -296,6 +327,8 @@ export type SlotYieldSummaryEntry = {
   goodDie: number;
   yieldPct: number | null;
   hasInterrupt: boolean;
+  /** 该 (slot,passId) 测试中断次数；良率表仅展示前半/后半两段，勿把 2 段当成 2 次 */
+  testInterruptCount: number;
   rowCount: number;
   /** 前半段（INTERRUPT 或较早续测 TEST），hasInterrupt 时必有 */
   interruptHalf?: JbYieldMetrics;
@@ -304,7 +337,10 @@ export type SlotYieldSummaryEntry = {
 };
 
 const SLOT_YIELD_GUIDE =
-  "slotYieldSummary：每条=一片 wafer 的一个测试层 (slot, passId)。有中断时 JSON 须含整片+interruptHalf+completionHalf 良率（0%也写）；查 BIN 见 badBinSlotTrends（前半/后半/合计颗数）。禁止把 pass3+pass5 的 die 相加成一个良率。";
+  "slotYieldSummary：每条=一片 wafer 的一个测试层 (slot, passId)。testInterruptCount=该层测试中断次数（INTERRUPT 行数或 PASSNUM 步进）；良率 markdown 仅列前半/后半两段，禁止把 2 段当成中断次数。有中断时 JSON 须含整片+interruptHalf+completionHalf 良率（0%也写）；查 BIN 见 badBinSlotTrends。禁止把 pass3+pass5 的 die 相加成一个良率。";
+
+const TEST_INTERRUPT_COUNT_GUIDE =
+  "testInterruptCountMarkdown / slotYieldSummary[].testInterruptCount：各 wafer×pass 的中断次数；用户问「中断几次」必须读本表数字，禁止用前半/后半两段推断次数。";
 
 const LOT_YIELD_RANK_GUIDE =
   "lotYieldRankByTestEnd：按 lot 汇总良率（该 lot 内所有 slot×passId 的 yieldPct 最小值=lot 代表良率，与报表 LOT Yield% 一致）。按 TESTEND 降序；用户要「良率最差 top N」时按 yieldPct 升序重排。";
@@ -357,6 +393,9 @@ export function buildSlotYieldSummary(
     const passId = Number(passStr);
     const groupRows = bySlotPass.get(key)!;
     const b = computeJbYieldBreakdown(groupRows);
+    const testInterruptCount = b.hasInterrupt
+      ? countTestInterruptEvents(groupRows)
+      : 0;
     const entry: SlotYieldSummaryEntry = {
       slot,
       passId,
@@ -365,6 +404,7 @@ export function buildSlotYieldSummary(
       goodDie: b.wholeWafer.goodDie,
       yieldPct: b.wholeWafer.yieldPct,
       hasInterrupt: b.hasInterrupt,
+      testInterruptCount,
       rowCount: groupRows.length,
     };
     if (b.hasInterrupt && b.interruptHalf) {
@@ -468,6 +508,10 @@ export function buildLotYieldRank(
 
 export function slotYieldSummaryFieldGuide(): string {
   return SLOT_YIELD_GUIDE;
+}
+
+export function testInterruptCountFieldGuide(): string {
+  return TEST_INTERRUPT_COUNT_GUIDE;
 }
 
 export function lotYieldRankFieldGuide(): string {
@@ -599,6 +643,7 @@ export type SlotYieldInterruptRow = {
   passId: number;
   sortLabel: string;
   hasInterrupt: true;
+  testInterruptCount: number;
   wholeWafer: JbYieldMetrics;
   interruptHalf: JbYieldMetrics;
   completionHalf?: JbYieldMetrics;
@@ -616,6 +661,7 @@ export function buildSlotYieldInterruptRows(
       passId: e.passId,
       sortLabel: passIdSortLabel(e.passId),
       hasInterrupt: true,
+      testInterruptCount: e.testInterruptCount,
       wholeWafer: {
         grossDie: e.grossDie,
         badDie: e.badDie,

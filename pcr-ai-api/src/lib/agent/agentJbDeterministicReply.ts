@@ -1,7 +1,14 @@
 // pcr-ai-api/src/lib/agent/agentJbDeterministicReply.ts
 /** 总结轮：服务端直出预计算表，LLM 仅写简短解读（禁止改数字）。 */
 
-import { formatLotYieldOverviewMarkdown } from "./agentJbHistoryCompact.js";
+import {
+  formatLotYieldOverviewMarkdown,
+  formatLotTesterMarkdown,
+  formatTestInterruptCountMarkdown,
+} from "./agentJbHistoryCompact.js";
+import type { LotTesterEntry } from "./agentJbBinFormat.js";
+import type { ClusteredBadBinAlert } from "./agentJbBadBinCluster.js";
+import type { SlotYieldSummaryEntry } from "../jbYieldCalc.js";
 import { buildBinSlotTrendMarkdownOnDemand } from "./agentJbBinTrend.js";
 import { getJbToolRawJson } from "./agentJbSessionCache.js";
 
@@ -21,7 +28,34 @@ export type JbReplyMode =
   | "lot_overview"
   | "bin_trend"
   | "slot_pass_yield"
+  | "interrupt_count"
+  | "tester_machine"
   | "generic";
+
+/** 用户问在哪台机台/测试机测（JB testerId / YM hostname）。 */
+export function isTesterMachineQuestion(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (
+    /哪台|哪个.*机台|在哪.*机台|哪.*机器|测试机|机台|tester|hostname|TESTERID|HOSTNAME/i.test(
+      t
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** 用户问各片/某片「中断几次」等次数类问题。 */
+export function isInterruptCountQuestion(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (/中断.*(几次|多少次|多少\s*次|次数)|(几次|多少次|多少\s*次).*中断/i.test(t)) {
+    return true;
+  }
+  if (/INTERRUPT.*(count|times|how many)/i.test(t)) return true;
+  return false;
+}
 
 /** 从用户问题识别 BIN 编号（BIN7 / bin7 / bin 7）。 */
 export function extractBinFromUserText(text: string): number | null {
@@ -82,6 +116,8 @@ export function isSlotPassYieldQuestion(text: string): boolean {
 }
 
 export function detectJbReplyMode(userMessage: string): JbReplyMode {
+  if (isTesterMachineQuestion(userMessage)) return "tester_machine";
+  if (isInterruptCountQuestion(userMessage)) return "interrupt_count";
   if (isBinTrendQuestion(userMessage)) return "bin_trend";
   if (isSlotPassYieldQuestion(userMessage)) return "slot_pass_yield";
   if (isLotOverviewQuestion(userMessage)) return "lot_overview";
@@ -158,6 +194,44 @@ export function buildDeterministicJbTables(
   const digest = digestFromPayload(toolPayload);
   const mode = detectJbReplyMode(userMessage);
 
+  if (mode === "tester_machine") {
+    const direct = toolPayload["testerIdMarkdown"];
+    if (typeof direct === "string" && direct.trim()) return direct.trim();
+    const byLot = toolPayload["testerByLot"] as LotTesterEntry[] | undefined;
+    if (byLot?.length) {
+      const lot = String(toolPayload["lot"] ?? "").trim();
+      const md = formatLotTesterMarkdown(byLot, lot || undefined);
+      if (md.trim()) return md;
+    }
+    const tid = toolPayload["testerId"];
+    if (typeof tid === "string" && tid.trim()) {
+      const lot = String(toolPayload["lot"] ?? "").trim();
+      return lot
+        ? `**${lot}** 测试机台（JB TESTERID）：**${tid.trim()}**`
+        : `测试机台（JB TESTERID）：**${tid.trim()}**`;
+    }
+    return null;
+  }
+
+  if (mode === "interrupt_count") {
+    const direct = toolPayload["testInterruptCountMarkdown"];
+    if (typeof direct === "string" && direct.trim()) return direct.trim();
+    const summary = toolPayload["slotYieldSummary"] as
+      | SlotYieldSummaryEntry[]
+      | undefined;
+    if (summary?.length) {
+      const lot = String(toolPayload["lot"] ?? "").trim();
+      const device = String(toolPayload["device"] ?? "").trim();
+      const md = formatTestInterruptCountMarkdown(
+        summary,
+        lot || undefined,
+        device || undefined
+      );
+      if (md.trim()) return md;
+    }
+    return null;
+  }
+
   if (mode === "bin_trend") {
     const bin = extractBinFromUserText(userMessage);
     if (bin == null) return null;
@@ -229,6 +303,18 @@ function rebuildDeterministicTablesFallback(
   if (overview) return overview;
 
   const parts: string[] = [];
+  const clusterMd = toolPayload["clusteredBadBinAlertsMarkdown"];
+  if (typeof clusterMd === "string" && clusterMd.trim()) {
+    parts.push(clusterMd.trim());
+  }
+  const testerMd = toolPayload["testerIdMarkdown"];
+  if (typeof testerMd === "string" && testerMd.trim()) {
+    parts.push(testerMd.trim());
+  }
+  const countMd = toolPayload["testInterruptCountMarkdown"];
+  if (typeof countMd === "string" && countMd.trim()) {
+    parts.push(countMd.trim());
+  }
   const interruptMd = toolPayload["slotYieldInterruptMarkdown"];
   if (typeof interruptMd === "string" && interruptMd.trim()) {
     parts.push(interruptMd.trim());
@@ -245,15 +331,19 @@ function rebuildDeterministicTablesFallback(
 }
 
 export const DETERMINISTIC_TABLES_HEADER =
-  "以下表格由服务端根据 JB STAR 实测数据生成，**数字与下表一致**；请勿自行合并 sort 或改写半片良率/BIN 颗数。";
+  "以下**仅实测数据表**（服务端生成），数字与表一致；**勿在表内或表尾加「结论/解读/建议」列或长段文字**。";
+
+/** 与 agentLoop 拼接：数据段标题（与「分析结论」段分开展示）。 */
+export const DETERMINISTIC_DATA_SECTION_TITLE = "## 实测数据";
+export const DETERMINISTIC_COMMENTARY_SECTION_TITLE = "## 分析结论";
 
 export const BRIEF_COMMENTARY_SYSTEM =
   "你是资深晶圆测试（Wafer Test）与探针卡（Probe Card）可靠性工程师，熟悉 JB STAR、Yield Monitor、INF map 与 DUT 维护。" +
   "术语：JB 字段 slot = waferId（第几片 wafer，对用户写 waferId）；INF 字段 dut = 探针卡触点（对用户写 DUT，勿写 site）。" +
   "用户消息含【实测数据表】，表中数字为最终结论，禁止修改、平均或合并 sort/半片。" +
-  "你必须用中文输出以下两个小节（不要其它大表）：\n\n" +
+  "你必须用中文输出以下两个小节：**禁止 markdown 表格**（`| col |`）；禁止重复粘贴上方数据表；结论只用段落/列表。\n\n" +
   "### 数据解读\n" +
-  "3–5 句：仅解读表内数字；有 INTERRUPT 时须体现「各中断段→整片合并→批次整体」逻辑，勿只报合并整片或只报后半；禁止复述整表。\n\n" +
+  "3–5 句纯文字：仅解读上文表格中的数字。**若文首有「聚集性/突增坏 bin 警示」或 JSON 含 clusteredBadBinAlerts，首句必须点明 BIN、waferId 范围、突增/聚集/递升类型**（非常警惕，禁止只报 topBadBins 合计）。用户问中断次数时只读 testInterruptCountMarkdown；有 INTERRUPT 时须体现各中断段→整片合并逻辑；禁止复述整表或把解读写进表格。\n\n" +
   "### 专业建议\n" +
   "三个要点，每点 1–2 句，极度专业、可执行、简短，用工程术语：\n" +
   "1. **晶圆测试（Wafer Test）**：pass1/3/5 各层、INTERRUPT 与续测、tester 稳定性、工艺批次 vs 测试机因素；禁止写常温/高温/低温。\n" +
@@ -270,6 +360,18 @@ export function buildEngineeringContextFromPayload(
   const passIds = payload.passIdsPresent as number[] | undefined;
   if (passIds?.length) {
     lines.push(`本批出现的测试层 passId：${passIds.join(", ")}`);
+  }
+
+  const clusterAlerts = payload.clusteredBadBinAlerts as
+    | ClusteredBadBinAlert[]
+    | undefined;
+  if (clusterAlerts?.length) {
+    lines.push(
+      `聚集性/突增坏 bin（须首段点明）：${clusterAlerts
+        .slice(0, 6)
+        .map((a) => `BIN${a.bin} ${a.sortLabel} ${a.detail}`)
+        .join("；")}${clusterAlerts.length > 6 ? "…" : ""}`
+    );
   }
 
   const cardMd = payload.cardByPassIdMarkdown;
@@ -292,8 +394,31 @@ export function buildEngineeringContextFromPayload(
     }
   }
 
-  const tester = payload.testerId ?? payload.TESTERID;
-  if (tester) lines.push(`测试机：${String(tester)}`);
+  const testerMd = payload.testerIdMarkdown;
+  if (typeof testerMd === "string" && testerMd.trim()) {
+    lines.push("机台见上表 testerIdMarkdown（JB TESTERID）。");
+  } else {
+    const byLot = payload.testerByLot as LotTesterEntry[] | undefined;
+    const lot = String(payload.lot ?? "").trim();
+    if (byLot?.length) {
+      const hit = lot
+        ? byLot.find((e) => e.lot === lot)
+        : byLot.length === 1
+          ? byLot[0]
+          : undefined;
+      if (hit?.primaryTesterId) {
+        lines.push(
+          `测试机台（JB TESTERID${lot ? `，lot ${lot}` : ""}）：${hit.primaryTesterId}`
+        );
+        if (hit.testerIds.length > 1) {
+          lines.push(`本批该 lot 还曾出现机台：${hit.testerIds.join(", ")}`);
+        }
+      }
+    } else {
+      const tester = payload.testerId ?? payload.TESTERID;
+      if (tester) lines.push(`测试机台（JB TESTERID）：${String(tester)}`);
+    }
+  }
 
   return lines.length ? lines.join("\n") : "（无额外工程上下文字段）";
 }
@@ -313,10 +438,10 @@ export function buildBriefCommentaryUserMessage(
   const ctx = options?.engineeringContext?.trim() ?? "";
   const ym = buildYieldMonitorContextNote(options?.yieldMonitorNote);
   return (
-    `【实测数据表 — 禁止改数字，勿重复粘贴全表】\n\n${tablesMarkdown}\n\n` +
+    `【实测数据表 — 禁止改数字；勿重复粘贴全表；你的回复里禁止再用表格】\n\n${tablesMarkdown}\n\n` +
     `---\n\n【工程上下文】\n${ctx || "（见上表）"}${ym}\n\n` +
     `【用户问题】\n${userQuestion}\n\n` +
-    `请按 system 要求输出「### 数据解读」与「### 专业建议」两节；专业建议须覆盖 Wafer Test、Probe Card、DUT 维护，极度专业且简短。` +
+    `请按 system 要求仅输出「### 数据解读」「### 专业建议」两节（**纯文字，禁止 | 表格 |**）；专业建议须覆盖 Wafer Test、Probe Card、DUT 维护，极度专业且简短。` +
     `正文用 waferId 指代片号（表头 slot 列除外）、用 DUT 指代触点（勿写 site）；测试层用 pass1/3/5，禁止常温/高温/低温。`
   );
 }

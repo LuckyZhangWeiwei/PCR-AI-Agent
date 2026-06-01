@@ -7,6 +7,7 @@ import {
   buildSlotYieldSummary,
   buildYieldByPassId,
   computeJbYieldMetrics,
+  countTestInterruptEvents,
 } from "../src/lib/jbYieldCalc.js";
 
 describe("jbYieldCalc", () => {
@@ -310,6 +311,47 @@ describe("jbYieldCalc", () => {
     assert.equal(lotA.worstSlot, 2);
     const lotB = rank.find((x) => x.lot === "LOT_B")!;
     assert.ok(lotB.yieldPct !== null && Math.abs(lotB.yieldPct - 98) < 0.1);
+  });
+
+  it("countTestInterruptEvents counts multiple INTERRUPT rows", () => {
+    const group = [
+      { PASSTYPE: "INTERRUPT", PASSNUM: 1 },
+      { PASSTYPE: "INTERRUPT", PASSNUM: 1 },
+      { PASSTYPE: "INTERRUPT", PASSNUM: 1 },
+      { PASSTYPE: "INTERRUPT", PASSNUM: 1 },
+      { PASSTYPE: "TEST", PASSNUM: 2, GROSSDIE: 100, bins: [] },
+    ] as Record<string, unknown>[];
+    assert.equal(countTestInterruptEvents(group), 4);
+    const summary = buildSlotYieldSummary([
+      { SLOT: 1, PASSID: 1, ...group[0] },
+      { SLOT: 1, PASSID: 1, ...group[1] },
+      { SLOT: 1, PASSID: 1, ...group[2] },
+      { SLOT: 1, PASSID: 1, ...group[3] },
+      { SLOT: 1, PASSID: 1, ...group[4] },
+    ]);
+    assert.equal(summary[0]!.testInterruptCount, 4);
+  });
+
+  it("countTestInterruptEvents uses PASSNUM delta when no INTERRUPT rows", () => {
+    const group = [
+      { SLOT: 5, PASSID: 1, PASSNUM: 1, PASSTYPE: "TEST", GROSSDIE: 100, bins: [] },
+      { SLOT: 5, PASSID: 1, PASSNUM: 2, PASSTYPE: "TEST", GROSSDIE: 100, bins: [] },
+      { SLOT: 5, PASSID: 1, PASSNUM: 3, PASSTYPE: "TEST", GROSSDIE: 100, bins: [] },
+    ] as Record<string, unknown>[];
+    assert.equal(countTestInterruptEvents(group), 2);
+    const summary = buildSlotYieldSummary(group);
+    assert.equal(summary[0]!.testInterruptCount, 2);
+  });
+
+  it("countTestInterruptEvents: three INTERRUPT rows on slot 4", () => {
+    const rows = [
+      { SLOT: 4, PASSID: 1, PASSTYPE: "INTERRUPT", PASSNUM: 1, GROSSDIE: 10, bins: [] },
+      { SLOT: 4, PASSID: 1, PASSTYPE: "INTERRUPT", PASSNUM: 1, GROSSDIE: 10, bins: [] },
+      { SLOT: 4, PASSID: 1, PASSTYPE: "INTERRUPT", PASSNUM: 1, GROSSDIE: 10, bins: [] },
+      { SLOT: 4, PASSID: 1, PASSTYPE: "TEST", PASSNUM: 2, GROSSDIE: 100, bins: [{ n: 1, value: 90, isGoodBin: true }] },
+    ] as Record<string, unknown>[];
+    assert.equal(countTestInterruptEvents(rows), 3);
+    assert.equal(buildSlotYieldSummary(rows)[0]!.testInterruptCount, 3);
   });
 
   it("resume: two TEST rows same PASSNUM split by TESTEND (NF12773 slot22 pattern)", () => {

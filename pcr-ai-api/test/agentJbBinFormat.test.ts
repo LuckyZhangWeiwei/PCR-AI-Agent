@@ -8,6 +8,7 @@ import {
   buildCardByPassId,
   buildCardChangesBySlotPass,
   buildRecentLotsByTestEnd,
+  buildTesterByLot,
   buildSlotBadBinsCompact,
   formatJbRowsForAgent,
   normalizeBinsForAgent,
@@ -381,6 +382,48 @@ describe("agentJbBinFormat", () => {
     const [entry] = buildCardChangesBySlotPass(rows);
     assert.equal(entry!.hasCardChange, false);
     assert.equal(entry!.hasTestInterrupt, false, "normal multi-TEST rows must not be flagged as interrupted");
+  });
+
+  it("wrapJbQueryResultForAgent includes testerByLot and testerId for lot query", () => {
+    const rows = [
+      {
+        LOT: "DR45459.1A",
+        DEVICE: "WA02",
+        SLOT: 1,
+        PASSID: 1,
+        CARDID: "6093-01",
+        TESTERID: "b3uflex17",
+        TESTEND: "2026-05-29T10:00:00.000Z",
+        bins: [],
+      },
+      {
+        LOT: "DR45459.1A",
+        DEVICE: "WA02",
+        SLOT: 2,
+        PASSID: 1,
+        CARDID: "6093-01",
+        TESTERID: "b3uflex17",
+        TESTEND: "2026-05-29T11:00:00.000Z",
+        bins: [],
+      },
+    ] as Record<string, unknown>[];
+    const out = wrapJbQueryResultForAgent(rows, { lotScopedFullRows: true });
+    assert.equal(out.testerId, "b3uflex17");
+    const byLot = out.testerByLot as Array<{ lot: string; primaryTesterId: string }>;
+    assert.equal(byLot[0]!.lot, "DR45459.1A");
+    assert.equal(byLot[0]!.primaryTesterId, "b3uflex17");
+    assert.ok(String(out.testerIdMarkdown).includes("b3uflex17"));
+    assert.ok(String(out.lotYieldOverviewMarkdown).includes("b3uflex17"));
+  });
+
+  it("buildTesterByLot lists all distinct testers per lot", () => {
+    const rows = [
+      { LOT: "L", TESTERID: "A", TESTEND: "2026-05-01T00:00:00.000Z", bins: [] },
+      { LOT: "L", TESTERID: "B", TESTEND: "2026-05-02T00:00:00.000Z", bins: [] },
+    ] as Record<string, unknown>[];
+    const [e] = buildTesterByLot(rows);
+    assert.deepEqual(e!.testerIds, ["A", "B"]);
+    assert.equal(e!.primaryTesterId, "B");
   });
 
   it("wrapJbQueryResultForAgent includes recentLotsByTestEnd", () => {

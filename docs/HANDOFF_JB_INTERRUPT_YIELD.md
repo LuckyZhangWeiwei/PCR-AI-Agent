@@ -28,6 +28,7 @@
 | --- | --- |
 | **分组键** | **(slot, passId)** — 同一片 wafer、同一 sort 层；`splitSlotIntoHalves` 先按 `PASSID` 分组，取第一个发生分段的 pass 组。 |
 | **判定有分段** (`hasInterrupt:true`) | 组内：存在 `PASSTYPE=INTERRUPT`；或 **PASSNUM 递增**（1→2→3）；或 **PASSNUM 相同但多行**（按 `TESTEND` 先后拆）。 |
+| **中断次数** (`testInterruptCount`) | 同 (slot,passId)：**INTERRUPT 行数**；无 INTERRUPT 行时 **max(PASSNUM)−min(PASSNUM)**；同 PASSNUM 多行 TEST 时为 **TEST 行数−1**。良率表仅列前半/后半两段，**禁止**把 2 段当成 2 次。见 `testInterruptCountMarkdown`。 |
 | **前半 / 后半** | INTERRUPT → 前半；或 **较小 PASSNUM** → 前半；或 **较早 TESTEND**（同 PASSNUM 多行）→ 前半。 |
 | **无分段** | 同 slot 仅一行/一 pass 组：`grossDie = MAX(GROSSDIE)`，坏 die 仅在满片行累加。 |
 | **整片正片**（顶层） | 前半 **goodDie = 0** → 正片 **仅后半**（例：DR43375 Slot 21）。前半 **goodDie > 0** → 上下半合并。 |

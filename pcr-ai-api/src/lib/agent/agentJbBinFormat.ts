@@ -13,6 +13,7 @@ import {
   slotYieldInterruptFieldGuide,
   slotYieldPivotFieldGuide,
   slotYieldSummaryFieldGuide,
+  testInterruptCountFieldGuide,
   yieldByPassFieldGuide,
   type LotYieldRankEntry,
   type SlotYieldSummaryEntry,
@@ -20,11 +21,16 @@ import {
 import {
   formatCardByPassIdMarkdown,
   formatLotYieldOverviewMarkdown,
+  formatLotTesterMarkdown,
   formatSlotYieldInterruptMarkdown,
+  formatTestInterruptCountMarkdown,
   formatSlotYieldPivotMarkdown,
   formatYieldByPassSection,
 } from "./agentJbHistoryCompact.js";
-import { jbYieldCoreFields } from "./agentJbYieldCore.js";
+import {
+  jbYieldCoreFields,
+  jbYieldCoreFieldsForSerialize,
+} from "./agentJbYieldCore.js";
 import {
   BAD_BIN_SLOT_TRENDS_GUIDE,
   buildBadBinSlotTrends,
@@ -33,6 +39,12 @@ import {
   SLOTS_BY_PASS_GUIDE,
   type BadBinSlotTrendEntry,
 } from "./agentJbBinTrend.js";
+import {
+  buildClusteredBadBinAlerts,
+  CLUSTERED_BAD_BIN_ALERTS_GUIDE,
+  formatClusteredBadBinAlertsMarkdown,
+  type ClusteredBadBinAlert,
+} from "./agentJbBadBinCluster.js";
 
 export { jbYieldCoreFields } from "./agentJbYieldCore.js";
 
@@ -71,6 +83,15 @@ export type CardByPassIdEntry = {
   cardIds: string[];
   /** 任一 (slot, passId) 组内是否中途换卡 */
   hasCardChange: boolean;
+};
+
+/** 各 lot 在返回行内出现的测试机（JB 列 TESTERID，API 参数 testerId）。 */
+export type LotTesterEntry = {
+  lot: string;
+  /** 该 lot 全部匹配行中的不同 TESTERID（升序） */
+  testerIds: string[];
+  /** 最近 TESTEND 行上的 TESTERID（汇报「在哪台机台测」时优先用） */
+  primaryTesterId: string;
 };
 
 export type RecentLotByTestEndEntry = {
@@ -113,7 +134,10 @@ const CARD_BY_PASS_ID_GUIDE =
   "cardByPassId：各 passId 在返回行内的 CARDID 集合。pass1 与 pass3 各用一卡为正常；结论用 pass1/3/5，禁止写常温/高温/低温。";
 
 const RECENT_LOTS_GUIDE =
-  "recentLotsByTestEnd：按 lot MAX(TESTEND) 降序 top20（返回行集内）；每 lot 含 slotCount（该 lot 下不同 slot 数）、slots（slot 编号列表）、cardIds（全部卡号）、hasCardChangeInLot（同 slot+pass 中途换卡，非多 pass 各一卡）。wafer 总数用 distinctLotSlotCount（跨 lot 正确），禁止用 distinctSlots.length（同 slot 编号跨 lot 只计一次）。";
+  "recentLotsByTestEnd：按 lot MAX(TESTEND) 降序 top20（返回行集内）；每 lot 含 slotCount、slots、cardIds、testerId（最近 TESTEND 行机台）、hasCardChangeInLot。机台汇总见 testerByLot / testerIdMarkdown（JB=TESTERID；Yield Monitor 同机台字段为 HOSTNAME/hostname）。";
+
+const TESTER_BY_LOT_GUIDE =
+  "testerByLot / testerIdMarkdown：JB STAR 机台=INFLAYERBINLIST.TESTERID（API testerId）。用户问「在哪台机台/测试机测」须读本表；与 Yield Monitor 的 HOSTNAME（API hostname）为同一机台不同列名。";
 
 const BIN10_VS66_BY_LOT_GUIDE =
   "bin10Vs66ByLot：按 lot 汇总全部匹配行（跨 slot/pass 相加）的 BIN10 与 BIN66 dieCount 及 diff=bin10−bin66。问「by lot BIN10 是否多于 BIN66」时读此字段；禁止用 aggregate 表格里单列 BIN66 代表整 lot。";
@@ -248,6 +272,69 @@ export function buildCardByPassId(
 
 function lotHasMidRunCardChange(rows: Record<string, unknown>[]): boolean {
   return buildCardChangesBySlotPass(rows).some((e) => e.hasCardChange);
+}
+
+/** 按 lot 汇总 TESTERID；primary = 该 lot 最近 TESTEND 行上的机台。 */
+export function buildTesterByLot(
+  rows: Record<string, unknown>[]
+): LotTesterEntry[] {
+  const byLot = new Map<
+    string,
+    { testers: Set<string>; bestMs: number; primary: string }
+  >();
+  for (const row of rows) {
+    const lot = String(row["LOT"] ?? row["lot"] ?? "").trim();
+    if (!lot) continue;
+    const tester = String(row["TESTERID"] ?? row["testerId"] ?? "").trim();
+    if (!byLot.has(lot)) {
+      byLot.set(lot, { testers: new Set(), bestMs: 0, primary: "" });
+    }
+    const e = byLot.get(lot)!;
+    if (tester) e.testers.add(tester);
+    const ms = testEndMsFromRow(row);
+    if (ms >= e.bestMs) {
+      e.bestMs = ms;
+      if (tester) e.primary = tester;
+    }
+  }
+  return [...byLot.keys()]
+    .sort((a, b) => a.localeCompare(b))
+    .map((lot) => {
+      const e = byLot.get(lot)!;
+      const testerIds = [...e.testers].sort((a, b) => a.localeCompare(b));
+      const primaryTesterId =
+        e.primary || testerIds[0] || "";
+      return { lot, testerIds, primaryTesterId };
+    });
+}
+
+export function primaryTesterIdForLot(
+  entries: LotTesterEntry[],
+  lot: string
+): string | undefined {
+  const key = lot.trim();
+  if (!key) return undefined;
+  const hit = entries.find((e) => e.lot === key);
+  return hit?.primaryTesterId || hit?.testerIds[0];
+}
+
+/** serialize 截断时用紧凑机台摘要（省略 testerIds 列表）。 */
+export function minimalTesterByLot(
+  entries: LotTesterEntry[]
+): Array<{ lot: string; primaryTesterId: string }> {
+  return entries
+    .filter((e) => e.primaryTesterId)
+    .map((e) => ({ lot: e.lot, primaryTesterId: e.primaryTesterId }));
+}
+
+function testerFieldsForSerialize(
+  wrapped: Record<string, unknown>
+): Record<string, unknown> {
+  const byLot = wrapped["testerByLot"] as LotTesterEntry[] | undefined;
+  const out: Record<string, unknown> = {};
+  if (byLot?.length) out.testerByLot = minimalTesterByLot(byLot);
+  if (wrapped["testerId"]) out.testerId = wrapped["testerId"];
+  return out;
 }
 
 /** 按 lot 聚合最近 TESTEND，降序取 topN（用于「7747-01 最近五个 lot」类问题）。 */
@@ -474,6 +561,7 @@ export function wrapJbQueryResultForAgent(
   const cardChangesBySlotPass = buildCardChangesBySlotPass(rows);
   const cardByPassId = buildCardByPassId(rows);
   const recentLotsByTestEnd = buildRecentLotsByTestEnd(rows, 20);
+  const testerByLot = buildTesterByLot(rows);
   const bin10Vs66ByLot = buildBin10Vs66ByLot(rows);
   const distinctLotCount = new Set(
     rows
@@ -484,6 +572,21 @@ export function wrapJbQueryResultForAgent(
   const primaryDevice = String(
     rows[0]?.["DEVICE"] ?? rows[0]?.["device"] ?? ""
   ).trim();
+  const shouldDetectClusteredBins =
+    Boolean(meta?.lotScopedFullRows) ||
+    distinctLotCount === 1 ||
+    Boolean(primaryLot);
+  const clusteredBadBinAlerts: ClusteredBadBinAlert[] = shouldDetectClusteredBins
+    ? buildClusteredBadBinAlerts(
+        primaryLot
+          ? rows.filter(
+              (r) =>
+                String(r["LOT"] ?? r["lot"] ?? "").trim() === primaryLot
+            )
+          : rows,
+        topBadBins
+      )
+    : [];
   const passIdSet = new Set<number>();
   for (const r of rows) {
     const pid = passIdFromJbRow(r);
@@ -515,9 +618,12 @@ export function wrapJbQueryResultForAgent(
     _yieldByPassGuide: yieldByPassFieldGuide(),
     _slotYieldPivotGuide: slotYieldPivotFieldGuide(),
     _slotYieldInterruptGuide: slotYieldInterruptFieldGuide(),
+    _testInterruptCountGuide: testInterruptCountFieldGuide(),
+    _testerByLotGuide: TESTER_BY_LOT_GUIDE,
     _passIdsPresentGuide: PASS_IDS_PRESENT_GUIDE,
     _slotsByPassGuide: SLOTS_BY_PASS_GUIDE,
     _badBinSlotTrendsGuide: BAD_BIN_SLOT_TRENDS_GUIDE,
+    _clusteredBadBinAlertsGuide: CLUSTERED_BAD_BIN_ALERTS_GUIDE,
     ...(meta?.lotScopedFullRows
       ? { _lotQueryGuide: LOT_QUERY_FULL_ROWS_GUIDE, lotQueryFullRows: true }
       : {}),
@@ -529,6 +635,11 @@ export function wrapJbQueryResultForAgent(
     distinctLotCount,
     distinctLotSlotCount,
     recentLotsByTestEnd,
+    testerByLot,
+    testerIdMarkdown:
+      testerByLot.length > 0
+        ? formatLotTesterMarkdown(testerByLot, primaryLot || undefined)
+        : undefined,
     bin10Vs66ByLot,
     cardChangesBySlotPass,
     cardByPassId,
@@ -552,6 +663,14 @@ export function wrapJbQueryResultForAgent(
             slotYieldSummary
           )
         : undefined,
+    testInterruptCountMarkdown: (() => {
+      const md = formatTestInterruptCountMarkdown(
+        slotYieldSummary,
+        primaryLot || undefined,
+        primaryDevice || undefined
+      );
+      return md || undefined;
+    })(),
     slotYieldInterruptMarkdown: (() => {
       const md = formatSlotYieldInterruptMarkdown(
         slotYieldSummary,
@@ -563,8 +682,24 @@ export function wrapJbQueryResultForAgent(
     lotYieldRankByTestEnd,
     slotBadBinsCompact,
     topBadBins,
+    clusteredBadBinAlerts,
+    clusteredBadBinAlertsMarkdown:
+      clusteredBadBinAlerts.length > 0
+        ? formatClusteredBadBinAlertsMarkdown(
+            clusteredBadBinAlerts,
+            primaryLot || undefined,
+            primaryDevice || undefined
+          )
+        : undefined,
     rows: formatJbRowsForAgent(rows),
   };
+  if (primaryLot && testerByLot.length) {
+    const tid = primaryTesterIdForLot(testerByLot, primaryLot);
+    if (tid) result.testerId = tid;
+  } else if (distinctLotCount === 1 && testerByLot.length === 1) {
+    const tid = testerByLot[0]!.primaryTesterId;
+    if (tid) result.testerId = tid;
+  }
   if (meta?.lotScopedFullRows) {
     const overview = formatLotYieldOverviewMarkdown(result);
     if (overview) result.lotYieldOverviewMarkdown = overview;
@@ -629,6 +764,7 @@ function minimalSlotYieldSummary(
       yieldPct: e.yieldPct,
       hasInterrupt: e.hasInterrupt,
     };
+    if (e.testInterruptCount > 0) row.testInterruptCount = e.testInterruptCount;
     if (e.hasInterrupt && e.interruptHalf) row.interruptHalf = e.interruptHalf;
     if (e.hasInterrupt && e.completionHalf) row.completionHalf = e.completionHalf;
     return row;
@@ -662,6 +798,20 @@ export function serializeJbQueryResultForAgent(
 
   const withoutRows: Record<string, unknown> = { ...wrapped };
   delete withoutRows["rows"];
+  // 长 markdown 由 session cache 保留；serialize 优先 slotYieldSummary / testerByLot
+  delete withoutRows["testerIdMarkdown"];
+  delete withoutRows["lotYieldOverviewMarkdown"];
+  delete withoutRows["testInterruptCountMarkdown"];
+  delete withoutRows["clusteredBadBinAlertsMarkdown"];
+  delete withoutRows["agentTablesDigest"];
+  delete withoutRows["slotBadBinsCompact"];
+  delete withoutRows["recentLotsByTestEnd"];
+  delete withoutRows["lotYieldRankByTestEnd"];
+  delete withoutRows["bin10Vs66ByLot"];
+  delete withoutRows["cardChangesBySlotPass"];
+  for (const k of Object.keys(withoutRows)) {
+    if (k.startsWith("_") && k.endsWith("Guide")) delete withoutRows[k];
+  }
   withoutRows["rowsOmitted"] = true;
   withoutRows["rowCount"] = rowCount;
   withoutRows["_rowsNote"] =
@@ -670,7 +820,7 @@ export function serializeJbQueryResultForAgent(
   const slim = fitsLimit(withoutRows, maxChars);
   if (slim) return slim;
 
-  const core = jbYieldCoreFields(wrapped);
+  const core = jbYieldCoreFieldsForSerialize(wrapped);
   const lotScoped = Boolean(wrapped["lotQueryFullRows"]);
   if (lotScoped && yieldSummary?.length) {
     const yieldFirst: Record<string, unknown> = {
@@ -684,11 +834,14 @@ export function serializeJbQueryResultForAgent(
       slotsByPassId: wrapped["slotsByPassId"],
       cardByPassId: wrapped["cardByPassId"],
       cardChangesBySlotPass: wrapped["cardChangesBySlotPass"],
+      ...testerFieldsForSerialize(wrapped),
       slotYieldSummary: minimalSlotYieldSummary(yieldSummary),
-      slotYieldPivotMarkdown: wrapped["slotYieldPivotMarkdown"],
-      slotYieldInterruptMarkdown: wrapped["slotYieldInterruptMarkdown"],
     };
-    const yieldFirstJson = fitsLimit(yieldFirst, maxChars);
+    let yieldFirstJson = fitsLimit(yieldFirst, maxChars);
+    if (!yieldFirstJson) {
+      yieldFirst.slotYieldPivotMarkdown = wrapped["slotYieldPivotMarkdown"];
+      yieldFirstJson = fitsLimit(yieldFirst, maxChars);
+    }
     if (yieldFirstJson) return yieldFirstJson;
 
     const trimmed = minimalSlotYieldSummary(yieldSummary);
@@ -700,7 +853,9 @@ export function serializeJbQueryResultForAgent(
           "slotYieldSummary 已截短；良率% 以 yieldByPassIdMarkdown 与各片 pivot 为准",
         rowsOmitted: true,
         rowCount,
+        ...testerFieldsForSerialize(wrapped),
         slotYieldPivotMarkdown: wrapped["slotYieldPivotMarkdown"],
+        testInterruptCountMarkdown: wrapped["testInterruptCountMarkdown"],
         slotYieldInterruptMarkdown: wrapped["slotYieldInterruptMarkdown"],
         yieldByPassIdMarkdown: wrapped["yieldByPassIdMarkdown"],
         slotYieldSummary: trimmed,
@@ -710,15 +865,22 @@ export function serializeJbQueryResultForAgent(
     }
   }
 
-  const withBinBySlot: Record<string, unknown> = {
+  const withSummaryOnly: Record<string, unknown> = {
     ...core,
     _rowsNote: withoutRows["_rowsNote"],
     rowsOmitted: true,
     rowCount,
-    binBySlot: compact?.length ? buildBinBySlotMap(compact) : {},
+    ...testerFieldsForSerialize(wrapped),
     slotYieldSummary: yieldSummary
       ? minimalSlotYieldSummary(yieldSummary)
       : [],
+  };
+  const summaryOnlyJson = fitsLimit(withSummaryOnly, maxChars);
+  if (summaryOnlyJson) return summaryOnlyJson;
+
+  const withBinBySlot: Record<string, unknown> = {
+    ...withSummaryOnly,
+    binBySlot: compact?.length ? buildBinBySlotMap(compact) : {},
   };
   const binBySlotJson = fitsLimit(withBinBySlot, maxChars);
   if (binBySlotJson) return binBySlotJson;
@@ -733,6 +895,7 @@ export function serializeJbQueryResultForAgent(
     distinctLotCount: wrapped["distinctLotCount"],
     cardByPassId: wrapped["cardByPassId"],
     cardChangesBySlotPass: wrapped["cardChangesBySlotPass"],
+    ...testerFieldsForSerialize(wrapped),
     slotYieldPivot:
       yieldSummary && yieldSummary.length > 0
         ? buildSlotYieldPivot(yieldSummary)
@@ -752,11 +915,27 @@ export function serializeJbQueryResultForAgent(
         _rowsNote: "slotYieldSummary 已截短；批次良率以 yieldByPassIdMarkdown 为准",
         rowsOmitted: true,
         rowCount,
+        ...testerFieldsForSerialize(wrapped),
         slotYieldSummary: trimmed,
       });
       if (attempt.length <= maxChars) return attempt;
       trimmed.pop();
     }
+  }
+
+  if (wrapped["lotQueryFullRows"]) {
+    const lotFlagJson = fitsLimit(
+      {
+        ...core,
+        lotQueryFullRows: true,
+        rowsOmitted: true,
+        rowCount,
+        ...testerFieldsForSerialize(wrapped),
+        _rowsNote: "payload 过大；请缩小 lot 或依赖 session 缓存中的 lotYieldOverviewMarkdown",
+      },
+      maxChars
+    );
+    if (lotFlagJson) return lotFlagJson;
   }
 
   const coreJson = fitsLimit(

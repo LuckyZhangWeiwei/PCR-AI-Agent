@@ -8,6 +8,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { buildUrl } from "../api/client.js";
 import { sanitizeAgentMarkdownForDisplay } from "../utils/sanitizeAgentMarkdown.js";
+import { splitAgentReplyMarkdown } from "../utils/splitAgentReplyMarkdown.js";
 function downloadMarkdown(text: string, title: string): void {
   const safe = title.slice(0, 50).replace(/[^\w一-龥.\-]/g, "_").trim() || "answer";
   const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
@@ -35,6 +36,18 @@ const AGENT_MARKDOWN_COMPONENTS = {
   del: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
   s: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
 };
+
+/** Hidden SVG defs rendered once; all RobotAvatar instances share these paint servers. */
+function AgentMarkdownBody({ text }: { text: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[[remarkGfm, { singleTilde: false }]]}
+      components={AGENT_MARKDOWN_COMPONENTS}
+    >
+      {sanitizeAgentMarkdownForDisplay(text)}
+    </ReactMarkdown>
+  );
+}
 
 /** Hidden SVG defs rendered once; all RobotAvatar instances share these paint servers. */
 function RobotAvatarDefs() {
@@ -784,12 +797,24 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
                     {(msg.text || (msg.streaming && tools.length === 0)) && (
                       <div className="ai-msg-bubble ai-msg-bubble--md">
                         {msg.text ? (
-                          <ReactMarkdown
-                            remarkPlugins={[[remarkGfm, { singleTilde: false }]]}
-                            components={AGENT_MARKDOWN_COMPONENTS}
-                          >
-                            {sanitizeAgentMarkdownForDisplay(msg.text)}
-                          </ReactMarkdown>
+                          (() => {
+                            const { dataMarkdown, commentaryMarkdown } =
+                              splitAgentReplyMarkdown(msg.text);
+                            return (
+                              <>
+                                {dataMarkdown ? (
+                                  <div className="ai-md-data">
+                                    <AgentMarkdownBody text={dataMarkdown} />
+                                  </div>
+                                ) : null}
+                                {commentaryMarkdown ? (
+                                  <div className="ai-md-commentary">
+                                    <AgentMarkdownBody text={commentaryMarkdown} />
+                                  </div>
+                                ) : null}
+                              </>
+                            );
+                          })()
                         ) : (
                           <span className="ai-status-hint">{statusHint || "正在思考…"}</span>
                         )}

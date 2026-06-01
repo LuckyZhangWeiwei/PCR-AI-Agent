@@ -7,6 +7,8 @@ import {
   detectJbReplyMode,
   extractBinFromUserText,
   isBinTrendQuestion,
+  isInterruptCountQuestion,
+  isTesterMachineQuestion,
   isSlotPassYieldQuestion,
   resolveJbToolPayload,
 } from "../src/lib/agent/agentJbDeterministicReply.js";
@@ -47,6 +49,16 @@ describe("agentJbDeterministicReply", () => {
     assert.equal(
       detectJbReplyMode("给出 每片wafer 每个pass 的yield"),
       "slot_pass_yield"
+    );
+    assert.ok(isInterruptCountQuestion("DR45459.1A 第1片中断几次"));
+    assert.equal(
+      detectJbReplyMode("lot DR45459.1A 各片中断多少次"),
+      "interrupt_count"
+    );
+    assert.ok(isTesterMachineQuestion("DR45459.1A 在哪个机台测试的"));
+    assert.equal(
+      detectJbReplyMode("DR45459.1A 用的哪台测试机"),
+      "tester_machine"
     );
   });
 
@@ -117,6 +129,50 @@ describe("agentJbDeterministicReply", () => {
     assert.ok(md!.includes("BIN7"));
     assert.ok(md!.includes("| 1 |"));
     assert.ok(md!.includes("90"));
+  });
+
+  it("buildDeterministicJbTables returns tester machine table", () => {
+    const rows = [
+      {
+        LOT: "DR45459.1A",
+        SLOT: 1,
+        PASSID: 1,
+        TESTERID: "b3uflex17",
+        TESTEND: "2026-05-29T10:00:00.000Z",
+        bins: [],
+      },
+    ] as Record<string, unknown>[];
+    const wrapped = wrapJbQueryResultForAgent(rows, { lotScopedFullRows: true });
+    const md = buildDeterministicJbTables(
+      "DR45459.1A 在哪个机台测试",
+      wrapped
+    );
+    assert.ok(md);
+    assert.ok(md!.includes("b3uflex17"));
+    assert.ok(md!.includes("TESTERID"));
+  });
+
+  it("buildDeterministicJbTables returns interrupt count table", () => {
+    const rows = [
+      { LOT: "DR45459.1A", SLOT: 1, PASSID: 1, PASSTYPE: "INTERRUPT", PASSNUM: 1, GROSSDIE: 10, bins: [] },
+      { LOT: "DR45459.1A", SLOT: 1, PASSID: 1, PASSTYPE: "INTERRUPT", PASSNUM: 1, GROSSDIE: 10, bins: [] },
+      { LOT: "DR45459.1A", SLOT: 1, PASSID: 1, PASSTYPE: "INTERRUPT", PASSNUM: 1, GROSSDIE: 10, bins: [] },
+      { LOT: "DR45459.1A", SLOT: 1, PASSID: 1, PASSTYPE: "INTERRUPT", PASSNUM: 1, GROSSDIE: 10, bins: [] },
+      { LOT: "DR45459.1A", SLOT: 1, PASSID: 1, PASSTYPE: "TEST", PASSNUM: 2, GROSSDIE: 100, bins: [{ n: 1, value: 90, isGoodBin: true }] },
+      { LOT: "DR45459.1A", SLOT: 5, PASSID: 1, PASSTYPE: "TEST", PASSNUM: 1, GROSSDIE: 100, bins: [] },
+      { LOT: "DR45459.1A", SLOT: 5, PASSID: 1, PASSTYPE: "TEST", PASSNUM: 3, GROSSDIE: 100, bins: [{ n: 1, value: 90, isGoodBin: true }] },
+    ] as Record<string, unknown>[];
+    const wrapped = wrapJbQueryResultForAgent(rows, { lotScopedFullRows: true });
+    const md = buildDeterministicJbTables(
+      "DR45459.1A 第1片和第5片各中断几次",
+      wrapped
+    );
+    assert.ok(md);
+    assert.ok(md!.includes("测试中断次数"));
+    assert.ok(md!.includes("| 1 |"));
+    assert.ok(md!.includes("| 4 |"));
+    assert.ok(md!.includes("| 5 |"));
+    assert.ok(md!.includes("| 2 |"));
   });
 
   it("brief commentary prompt requests wafer test probe card dut advice", () => {
