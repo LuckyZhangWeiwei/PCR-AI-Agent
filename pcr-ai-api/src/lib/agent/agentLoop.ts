@@ -855,11 +855,15 @@ export function historyAwaitingToolSummary(history: ChatMessage[]): boolean {
 }
 
 const SUMMARIZE_NUDGE =
-  "【指令】工具查询已完成。请立即用中文总结，禁止再调工具。须含数据解读与 Wafer Test/Probe Card/DUT 维护专业建议（简短、极度专业）。" +
-  "**输出格式**：若有服务端预计算 markdown 表，**数字只引用表中值**；解读/建议用 **### 数据解读**、**### 专业建议** 两节 **纯文字段落**，**禁止**把结论写进 markdown 表格、禁止新增「结论」列或重复整表。" +
-  "**聚集性坏 bin**：若工具 JSON 含 clusteredBadBinAlerts 或文首警示表，**必须**在数据解读首段点明 BIN、waferId 范围与突增/聚集/递升，非常警惕，禁止忽略。" +
-  "用户问每片×每 pass **良率%/yield** 时：只引用 slotYieldPivotMarkdown / slotYieldInterruptMarkdown / slotYieldSummary[].yieldPct；" +
-  "**禁止**用 binBySlot 或坏 die 颗数代替良率%；禁止写常温/高温/低温（用 pass1/3/5）。";
+  "【指令】工具查询已完成，立即用中文总结，禁止再调工具。\n" +
+  "**字数约束**：数据解读 ≤ 150 字（3 句以内）；专业建议 3 条，每条 1 句（≤ 50 字）。\n" +
+  "**格式**：数字只引用服务端预计算表中的值；解读/建议用 **### 数据解读**、**### 专业建议** 两节**纯文字段落**。\n" +
+  "**禁止（DeepSeek-V4-Pro 常见问题）**：\n" +
+  "- 禁止画 `| col |` markdown 表格（含「结论」列）\n" +
+  "- 禁止逐行复述数据表里的每个数字（只点明异常值/对比）\n" +
+  "- 禁止合并 pass1/3/5 的 die 成「整体良率」——各 pass 独立报告\n" +
+  "**聚集性坏 bin**：工具 JSON 含 clusteredBadBinAlerts 或有警示表时，数据解读**首句必须**点明 BIN、waferId 范围与类型，禁止只报 lot 合计。\n" +
+  "**良率**：只引用 slotYieldPivotMarkdown / slotYieldInterruptMarkdown / slotYieldSummary[].yieldPct；禁止用坏 die 颗数代替良率%；禁止写常温/高温/低温（用 pass1/3/5）。";
 
 export async function runAgentLoop(
   message: string,
@@ -946,7 +950,16 @@ export async function runAgentLoop(
     // Without schemas the model is forced to produce text.
     const summaryUserNudge: ChatMessage = {
       role: "user",
-      content: "请立即用中文给出上述查询数据的分析结论与关键数字，不要调用任何工具。",
+      // Explicit format instruction as the final user-turn — DeepSeek-V4-Pro
+      // responds more reliably to a user-role reminder than to system nudge alone.
+      content:
+        "请立即用中文给出分析结论。\n" +
+        "要求：\n" +
+        "1. 不要调用工具\n" +
+        "2. 不要画 markdown 表格（`| col |`）\n" +
+        "3. 不要逐行复述数据表——只点明异常/对比，引导用户看表\n" +
+        "4. 数据解读 3 句以内；专业建议恰好 3 条，每条 1 句\n" +
+        "5. 各 pass 良率独立报告，禁止合并为「整体良率」",
     };
     await streamSiliconFlow(
       awaitingSummary
