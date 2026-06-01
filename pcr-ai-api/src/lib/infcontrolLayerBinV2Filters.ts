@@ -5,7 +5,7 @@ import { clampLimit } from "./sqlIdent.js";
 export const INFCONTROL_LAYER_BIN_V2_DEFAULT_TOP = 200;
 
 /** `limit` 查询参数上限 */
-export const INFCONTROL_LAYER_BIN_V2_MAX_TOP = 1000;
+export const INFCONTROL_LAYER_BIN_V2_MAX_TOP = 2000;
 
 /** **`rankTop`**：返回 bad 合计最高的前 **N** 个 BIN 下标（默认 **10**，范围 **5–10**） */
 export const INFCONTROL_LAYER_BIN_V2_BAD_RANK_DEFAULT = 10;

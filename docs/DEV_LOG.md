@@ -2,6 +2,16 @@
 
 ---
 
+## 2026-06-01 — 明细行数上限调整（默认 1000 / 最多 2000）
+
+**完成内容：**
+- `pcr-ai-api/src/lib/infcontrolLayerBinV2Filters.ts`：`INFCONTROL_LAYER_BIN_V2_MAX_TOP` 1000 → 2000，同时提升 `API_V3_LIST_LIMIT_MAX`（v3/v4 列表端点共用此常量）。
+- `pcr-ai-report/src/hooks/usePersistedReportLimits.ts`：`API_LIST_LIMIT_CEILING` 1000 → 2000，`REPORT_LIST_LIMITS_DEFAULT.defaultLimit` 300 → 1000，`REPORT_LIST_LIMITS_DEFAULT.maxLimit` 1000 → 2000。UI 说明文字与「↺ 恢复默认」按钮自动更新（动态读常量）。
+
+**测试：** 225 个测试，1 失败（Oracle 连线，非代码 Bug）
+
+---
+
 ## 2026-06-01 — Cursor 改动 Review + 测试修复
 
 **完成内容：**

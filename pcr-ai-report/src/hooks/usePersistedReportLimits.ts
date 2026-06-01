@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 /** v3/v4 list `limit` hard ceiling enforced by pcr-ai-api */
-export const API_LIST_LIMIT_CEILING = 1000;
+export const API_LIST_LIMIT_CEILING = 2000;
 
 export type ReportListLimits = {
   defaultLimit: number;
@@ -9,8 +9,8 @@ export type ReportListLimits = {
 };
 
 export const REPORT_LIST_LIMITS_DEFAULT: ReportListLimits = {
-  defaultLimit: 300,
-  maxLimit: 1000,
+  defaultLimit: 1000,
+  maxLimit: 2000,
 };
 
 const STORAGE_KEY = "pcr-ai-report.listLimits.v1";
