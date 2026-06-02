@@ -895,11 +895,18 @@ export async function runDrawDutBinMap(
   const dutTotal = dies.filter((d) => d.site === dut).length;
   const binTotal = dies.filter((d) => d.bin === bin).length;
 
+  const note = binTotal === 0
+    ? `⚠️ 该 pass（${passIdStr}）中 BIN${bin} 出现次数为 0，图中无白色或竖线 die——请改用其他 pass_id（如 "1"/"3"/"5"）或确认 bin 编号`
+    : matchCount === 0
+    ? `ℹ️ BIN${bin} 存在（${binTotal} 个），但均不由 DUT${dut} 测试（图中仅竖线，无白色 die）`
+    : "";
+
   return [
     `**DUT${dut} × BIN${bin} 关系图已生成** → [点击在新窗口查看](${urlPath})`,
     `Pass: ${passIdStr}  总 die: ${dies.length}`,
     `DUT${dut} 测的 die: ${dutTotal}  BIN${bin} 出现: ${binTotal}  双匹配: ${matchCount}`,
     `DUT${dut} 中 BIN${bin} 占比: ${dutTotal > 0 ? ((matchCount / dutTotal) * 100).toFixed(1) : 0}%`,
+    note,
     `图例: ■ 白色=双匹配  横线=DUT${dut}其他bin  竖线=BIN${bin}其他DUT  极暗=其他`,
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
