@@ -50,8 +50,9 @@ ${buildManifestSection(manifest)}
 - 工具参数、JSON 字段、服务端 markdown **表头**仍用 \`slot\` / \`dut\`（与代码一致），勿改 API 形参名。
 - 用户说「第 3 片 wafer」「waferId 3」→ JB 工具 \`slot=3\`；用户说「DUT5」「site 5」→ 正文仍写 **DUT5**。
 
-可用工具（JB/Yield Monitor）：query_yield_triggers, aggregate_yield_triggers, query_jb_bins, aggregate_jb_bins, query_lot_dut_bin_agg, query_inf_site_bin_by_dut, generate_chart, ask_clarification, get_filter_values。
-INF 晶圆分析工具（23个）：inf_parse_wafer, inf_get_die_map, inf_site_stats, inf_analyze_wafer, inf_list_passes, inf_compare_passes, inf_bin_migration, inf_unstable_dies, inf_edge_analysis, inf_bin_spatial, inf_temperature_compare, inf_cluster_detect, inf_touch_analysis, inf_yield_loss_breakdown, inf_partial_probe, inf_draw_wafer_map, inf_cluster_shape, inf_parse_dir, inf_compare_wafers, inf_lot_die_compare, inf_lot_heatmap, inf_lot_cluster_overlap, inf_slot_trend。
+可用工具：query_yield_triggers, aggregate_yield_triggers, query_jb_bins, aggregate_jb_bins, query_lot_dut_bin_agg, query_inf_site_bin_by_dut, generate_chart, ask_clarification, get_filter_values。
+
+**用户提到「晶圆图」「画图」「wafer map」「die」「cluster」等词时，系统会自动加载 INF 晶圆分析工具（23个 inf_* 工具）**，届时可使用 inf_draw_wafer_map、inf_analyze_wafer、inf_cluster_detect 等；无需用户指定，关键词触发即可。
 
 ## 「良品率 / yield%」与 Yield Monitor（最高优先级，易混淆）
 

@@ -10,7 +10,7 @@ import {
   type ChatMessage,
   type ToolCall,
 } from "./agentHistory.js";
-import { TOOL_SCHEMAS } from "./agentToolSchemas.js";
+import { TOOL_SCHEMAS, INF_TOOL_SCHEMAS } from "./agentToolSchemas.js";
 import { runTool, type ChartSentinel, type ClarificationSentinel } from "./agentToolHandlers.js";
 import { buildSystemPrompt } from "./agentPrompt.js";
 import { fetchOrCacheManifest } from "./agentManifest.js";
@@ -854,6 +854,41 @@ export function historyAwaitingToolSummary(history: ChatMessage[]): boolean {
   return history.length > 0 && history[history.length - 1].role === "tool";
 }
 
+// ── Tool schema selector ───────────────────────────────────────────────────
+
+/**
+ * INF wafer-map keywords (Chinese + English).
+ * When any of these appear in the recent conversation, append INF tool schemas
+ * to TOOL_SCHEMAS. Otherwise, keep the list lean (JB/Yield Monitor only).
+ */
+const INF_KEYWORDS = [
+  // Chinese
+  "晶圆图", "晶圆", "画图", "wafermap", "wafer map",
+  "die", "cluster", "聚集", "划伤", "scratch", "粒子",
+  "边缘", "edge", "三温", "温度", "接触", "touch",
+  "热力图", "趋势", "中断段", "pass_id", "iBinCode",
+  "inf_", "inf文件", "INF文件",
+  // Tool names prefix
+  "inf_draw", "inf_parse", "inf_list", "inf_get", "inf_site",
+  "inf_analyze", "inf_compare", "inf_bin", "inf_cluster",
+  "inf_edge", "inf_touch", "inf_yield", "inf_partial",
+  "inf_lot", "inf_slot", "inf_temperature", "inf_unstable",
+];
+
+function selectToolSchemas(messages: ChatMessage[]): unknown[] {
+  // Check the last 6 messages for INF-related keywords
+  const recent = messages.slice(-6);
+  const combined = recent
+    .map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content)))
+    .join(" ")
+    .toLowerCase();
+
+  const needsInf = INF_KEYWORDS.some((kw) => combined.includes(kw.toLowerCase()));
+  return needsInf
+    ? ([...TOOL_SCHEMAS, ...INF_TOOL_SCHEMAS] as unknown as unknown[])
+    : ([...TOOL_SCHEMAS] as unknown as unknown[]);
+}
+
 const SUMMARIZE_NUDGE =
   "【指令】工具查询已完成，立即用中文总结，禁止再调工具。\n" +
   "**字数约束**：数据解读 ≤ 150 字（3 句以内）；专业建议 3 条，每条 1 句（≤ 50 字）。\n" +
@@ -974,7 +1009,7 @@ export async function runAgentLoop(
         : {
             model: agentConfig.model,
             messages,
-            tools: TOOL_SCHEMAS as unknown as unknown[],
+            tools: selectToolSchemas(messages) as unknown as unknown[],
             tool_choice: "auto",
             // 8192 for tool rounds: model may emit long tool arguments or interleave
             // analysis text with tool calls.
