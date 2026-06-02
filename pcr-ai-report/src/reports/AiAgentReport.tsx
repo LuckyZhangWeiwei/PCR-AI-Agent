@@ -29,20 +29,35 @@ function downloadChartPng(instance: ECharts, title: string): void {
   a.click();
 }
 
-const AGENT_MARKDOWN_COMPONENTS = {
-  img: ({ alt }: { alt?: string }) => (
-    <span className="ai-img-placeholder">[{alt}]</span>
-  ),
-  del: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
-  s: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
-};
+function makeAgentMarkdownComponents(apiBase: string) {
+  return {
+    img: ({ alt }: { alt?: string }) => (
+      <span className="ai-img-placeholder">[{alt}]</span>
+    ),
+    del: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+    s: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+    // Wafer map links (/wafermaps/xxx.html) → prepend apiBase + open new tab
+    a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
+      if (href && href.startsWith("/wafermaps/")) {
+        const base = apiBase.replace(/\/$/, "");
+        return (
+          <a href={`${base}${href}`} target="_blank" rel="noopener noreferrer" className="ai-wafermap-link">
+            {children}
+          </a>
+        );
+      }
+      return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
+    },
+  };
+}
 
 /** Hidden SVG defs rendered once; all RobotAvatar instances share these paint servers. */
-function AgentMarkdownBody({ text }: { text: string }) {
+function AgentMarkdownBody({ text, apiBase }: { text: string; apiBase: string }) {
+  const components = makeAgentMarkdownComponents(apiBase);
   return (
     <ReactMarkdown
       remarkPlugins={[[remarkGfm, { singleTilde: false }]]}
-      components={AGENT_MARKDOWN_COMPONENTS}
+      components={components}
     >
       {sanitizeAgentMarkdownForDisplay(text)}
     </ReactMarkdown>
@@ -804,12 +819,12 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
                               <>
                                 {dataMarkdown ? (
                                   <div className="ai-md-data">
-                                    <AgentMarkdownBody text={dataMarkdown} />
+                                    <AgentMarkdownBody text={dataMarkdown} apiBase={apiBase} />
                                   </div>
                                 ) : null}
                                 {commentaryMarkdown ? (
                                   <div className="ai-md-commentary">
-                                    <AgentMarkdownBody text={commentaryMarkdown} />
+                                    <AgentMarkdownBody text={commentaryMarkdown} apiBase={apiBase} />
                                   </div>
                                 ) : null}
                               </>

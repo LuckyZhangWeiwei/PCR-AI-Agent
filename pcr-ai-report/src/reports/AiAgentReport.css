@@ -250,6 +250,23 @@
   margin: 2px 0;
 }
 
+.ai-wafermap-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  background: #1565c0;
+  color: #e3f2fd !important;
+  border-radius: 4px;
+  font-size: 0.88em;
+  font-weight: 600;
+  text-decoration: none !important;
+  transition: background 0.15s;
+}
+.ai-wafermap-link:hover {
+  background: #1976d2;
+}
+
 .ai-img-placeholder {
   color: #888;
   font-style: italic;

@@ -809,7 +809,7 @@ export async function runDrawWaferMap(
   const topBad = topBadBinsSummary(r.final.binCounts, ctx.goodBins);
 
   return [
-    `晶圆图已生成，访问地址：${urlPath}`,
+    `**晶圆图已生成** → [点击在新窗口查看晶圆图](${urlPath})`,
     `Lot: ${r.lot}  Wafer: ${r.waferId}  Slot: ${slot}`,
     `总 die: ${finalPass.dies.length}  良品: ${goodCount}  良率: ${yieldPct}%`,
     `坏 bin top: ${topBad}`,

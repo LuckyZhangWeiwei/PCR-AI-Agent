@@ -260,7 +260,7 @@ export async function runLotHeatmap(
   const urlPath = waferMapUrlPath(filename);
 
   return [
-    `Lot 热力图已生成，访问地址：${urlPath}`,
+    `**Lot 热力图已生成** → [点击在新窗口查看热力图](${urlPath})`,
     `Lot: ${lotId}  晶圆数: ${valid.length}  Pass: ${passIds.join(", ")}`,
     ...(errors.length > 0 ? [`解析失败: ${errors.length} 片`] : []),
   ].join("\n");
@@ -407,12 +407,12 @@ export async function runSlotTrend(
     drift_pct: r4(driftPct),
     has_drift: hasDrift,
     drift_direction: driftDirection,
-    chart_url: urlPath,
+    chart_url: `[点击在新窗口查看趋势图](${urlPath})`,
     wafers,
   };
 
   return [
-    `Slot 趋势图已生成：${urlPath}`,
+    `**Slot 趋势图已生成** → [点击在新窗口查看趋势图](${urlPath})`,
     truncResult(textResult),
   ].join("\n");
 }
