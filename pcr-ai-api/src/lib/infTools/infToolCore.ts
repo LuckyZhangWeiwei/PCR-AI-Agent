@@ -4,7 +4,9 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseInf } from "../infParser.js";
+import { infcontrolLayerBinsUseDummy } from "../infcontrolLayerBinDummy.js";
 import {
   calculateWafer,
   decodePsbn,
@@ -60,22 +62,51 @@ export type InfWaferCtx = {
   goodBins: Set<number>;
   waferResult: WaferResult;
   infPath: string;
+  isDummy: boolean;
 };
+
+/**
+ * Resolve the INF fixture path used in dummy/dev mode.
+ * Falls back to INFCONTROL_LAYER_BINS_DUMMY env flag (same as JB dummy).
+ */
+function getInfDummyFixturePath(): string {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  // resolve relative to dist/lib/infTools/ → dist/../../docs/
+  const candidates = [
+    path.join(here, "..", "..", "..", "docs", "inf-dummy-r_1-1"),
+    path.join(here, "..", "..", "docs", "inf-dummy-r_1-1"),
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return candidates[0]!;
+}
+
+function infToolsUseDummy(): boolean {
+  return infcontrolLayerBinsUseDummy();
+}
 
 export async function loadInfWafer(
   device: string,
   lot: string,
   slot: number
 ): Promise<InfWaferCtx> {
-  const infPath = buildInfPath(device, lot, slot);
+  const realPath = buildInfPath(device, lot, slot);
+  const dummy = infToolsUseDummy() || !fs.existsSync(realPath);
+  const infPath = dummy ? getInfDummyFixturePath() : realPath;
+
   if (!fs.existsSync(infPath)) {
-    throw new Error(`INF 文件不存在: ${infPath}`);
+    const hint = infToolsUseDummy()
+      ? "Dummy 模式下找不到测试 fixture（docs/inf-dummy-r_1-1）"
+      : `INF 文件不存在: ${realPath}`;
+    throw new Error(hint);
   }
+
   const root = await parseInf(infPath);
   const psbn = findPsbn(root);
   const goodBins = psbn ? decodePsbn(psbn) : new Set([1]);
   const waferResult = calculateWafer(root);
-  return { root, goodBins, waferResult, infPath };
+  return { root, goodBins, waferResult, infPath, isDummy: dummy };
 }
 
 // ── Lot directory enumeration ──────────────────────────────────────────────
@@ -95,8 +126,22 @@ export async function loadLotWafers(
   maxWafers = 25
 ): Promise<{ entries: LotWaferEntry[]; lotDir: string; errors: string[] }> {
   const lotDir = buildInfLotDir(device, lot);
-  if (!fs.existsSync(lotDir)) {
-    throw new Error(`Lot INF 目录不存在: ${lotDir}`);
+
+  // Dummy mode: use the single fixture as a synthetic "lot" of 3 wafers
+  if (infToolsUseDummy() || !fs.existsSync(lotDir)) {
+    const fixturePath = getInfDummyFixturePath();
+    if (!fs.existsSync(fixturePath)) {
+      throw new Error("Dummy 模式下找不到测试 fixture（docs/inf-dummy-r_1-1）");
+    }
+    const root = await parseInf(fixturePath);
+    const psbn = findPsbn(root);
+    const goodBins = psbn ? decodePsbn(psbn) : new Set([1]);
+    const waferResult = calculateWafer(root);
+    // Simulate 3 wafers with the same fixture
+    const entries: LotWaferEntry[] = [1, 2, 3].map((slot) => ({
+      slot, infPath: fixturePath, root, waferResult, goodBins,
+    }));
+    return { entries, lotDir: `${lotDir} (dummy)`, errors: [] };
   }
 
   const listed = await listWaferInfPathsInLotDir(lotDir);
