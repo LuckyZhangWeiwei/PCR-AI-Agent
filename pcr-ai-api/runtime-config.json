@@ -1,5 +1,12 @@
 {
   "agentEnabled": true,
   "agentApiBase": "https://api.siliconflow.cn/v1",
-  "agentModel": "deepseek-ai/DeepSeek-V3"
+  "agentModel": "deepseek-ai/DeepSeek-V4-Pro",
+  "maxRounds": 8,
+  "streamTimeoutSec": 120,
+  "clientTimeoutSec": 240,
+  "toolResultMaxChars": 20000,
+  "toolResultMaxHistoryChars": 8000,
+  "listDefaultLimit": 1000,
+  "listMaxLimit": 2000
 }
