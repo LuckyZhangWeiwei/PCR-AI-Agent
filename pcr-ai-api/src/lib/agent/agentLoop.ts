@@ -862,9 +862,12 @@ export function historyAwaitingToolSummary(history: ChatMessage[]): boolean {
  * to TOOL_SCHEMAS. Otherwise, keep the list lean (JB/Yield Monitor only).
  */
 const INF_KEYWORDS = [
-  // Chinese
+  // Chinese — DUT / die / wafer map related
   "晶圆图", "晶圆", "画图", "wafermap", "wafer map",
-  "die", "cluster", "聚集", "划伤", "scratch", "粒子",
+  "哪个dut", "哪个 dut", "dut测", "dut 测", "由dut", "由 dut",
+  "哪个site", "site测", "dut分析", "dut维度",
+  "die坐标", "die分布", "die位置",
+  "cluster", "聚集", "划伤", "scratch", "粒子",
   "边缘", "edge", "三温", "温度", "接触", "touch",
   "热力图", "趋势", "中断段", "pass_id", "iBinCode",
   "inf_", "inf文件", "INF文件",
