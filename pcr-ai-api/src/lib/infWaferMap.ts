@@ -90,13 +90,16 @@ function readNlFormat(layer: InfBlock): NlFormat {
 }
 
 // ── Layer finders ──────────────────────────────────────────────────────────
+//
+// INF NlLayer blocks are all named "NlLayer" — they are identified by the
+// strTag key within them (e.g. strTag:iBinCode), NOT by block name.
 
 export function findLayer(block: InfBlock, name: string): InfBlock | undefined {
-  return block.block(name);
+  return block.blocks("NlLayer").find((b) => b.key("strTag") === name);
 }
 
 export function findLastLayer(block: InfBlock, name: string): InfBlock | undefined {
-  const all = block.blocks(name);
+  const all = block.blocks("NlLayer").filter((b) => b.key("strTag") === name);
   return all.length > 0 ? all[all.length - 1] : undefined;
 }
 
@@ -118,13 +121,18 @@ export function decodePsbn(psbnBlock: InfBlock): Set<number> {
   return result;
 }
 
-/** Search for PSBN block within root or within a SmWaferPass. */
-export function findPsbn(root: InfBlock, smWaferPass?: InfBlock): InfBlock | undefined {
-  if (smWaferPass) {
-    const p = smWaferPass.block("PSBN");
-    if (p) return p;
-  }
-  return root.block("PSBN");
+/**
+ * Find PSBN bin table in INF.
+ * In real INF files it lives as a StBinTable block with strTag:PSBN
+ * directly inside SmWaferFlow (not as a block named "PSBN").
+ */
+export function findPsbn(root: InfBlock): InfBlock | undefined {
+  const flow = root.block("SmWaferFlow") ?? root;
+  // Try StBinTable with strTag:PSBN first (real INF format)
+  const stBin = flow.blocks("StBinTable").find((b) => b.key("strTag") === "PSBN");
+  if (stBin) return stBin;
+  // Fallback: block literally named "PSBN" (older/alternate format)
+  return flow.block("PSBN") ?? root.block("PSBN");
 }
 
 // ── Die map builder ────────────────────────────────────────────────────────
@@ -245,24 +253,40 @@ export function buildDieMapForSmWaferPass(
 }
 
 /**
- * Build die map from the final SmWaferFlow — merges all top-level MdMapResult tiles.
+ * Build die map from the final (flow-level) composite MdMapResult.
+ * In real INF files, SmWaferFlow contains multiple SmWaferPass children each
+ * with their own MdMapResult, PLUS one or more top-level MdMapResult blocks
+ * at the end of SmWaferFlow that represent the final composite map.
+ * SmWaferFlow.blocks("MdMapResult") returns ONLY direct children — the pass-level
+ * MdMapResult blocks are nested under SmWaferPass and won't appear here.
  */
 export function buildDieMapForFinalFlow(
   root: InfBlock,
   goodBins: Set<number>
 ): DieEntry[] {
-  // Try SmWaferFlow first, then fall back to root-level MdMapResult blocks
   const flow = root.block("SmWaferFlow") ?? root;
+  // Direct-child MdMapResult blocks of SmWaferFlow = the final composite maps
   const maps = flow.blocks("MdMapResult");
-  if (maps.length === 0) return [];
-  if (maps.length === 1)
-    return buildDieMap(maps[0]!, goodBins, "iBinCodeLast", "iTestSiteLast");
+  if (maps.length > 0) {
+    if (maps.length === 1) {
+      // Prefer iBinCodeLast, fall back to iBinCode
+      const { binLayerName, siteLayerName } = resolvePerPassLayerNames(maps[0]!);
+      return buildDieMap(maps[0]!, goodBins, binLayerName, siteLayerName);
+    }
+    const merged = new Map<string, DieEntry>();
+    for (const m of maps) {
+      const { binLayerName, siteLayerName } = resolvePerPassLayerNames(m);
+      for (const d of buildDieMap(m, goodBins, binLayerName, siteLayerName))
+        merged.set(`${d.x},${d.y}`, d);
+    }
+    return [...merged.values()];
+  }
 
-  const merged = new Map<string, DieEntry>();
-  for (const m of maps)
-    for (const d of buildDieMap(m, goodBins, "iBinCodeLast", "iTestSiteLast"))
-      merged.set(`${d.x},${d.y}`, d);
-  return [...merged.values()];
+  // Fallback: use iBinCodeLast from the last SmWaferPass
+  const passes = findAllSmWaferPasses(root);
+  if (passes.length === 0) return [];
+  const lastPass = passes[passes.length - 1]!;
+  return buildDieMapForSmWaferPass(lastPass.block, goodBins, "iBinCodeLast", "iTestSiteLast");
 }
 
 // ── Possible-die counter ───────────────────────────────────────────────────
@@ -440,18 +464,32 @@ export function getDiesForPassId(
 
 // ── Geometry helpers ───────────────────────────────────────────────────────
 
-/** Read die geometry from MdMg block: aspect ratio + notch angle. */
+/**
+ * Read die geometry from MdMapResult.
+ * - dDieWidth / dDieHeight are direct keys of MdMapResult
+ * - dNotchAngle is in MdMapResult.MdBlank.dNotchAngle
+ */
 export function readDieGeometry(root: InfBlock): { dieAspect: number; notchAngle: number } {
-  const mdmg = root.block("MdMg") ?? root.block("SmWaferFlow")?.block("MdMg");
-  const dieWidth = parseFloat(mdmg?.key("dDieWidth") ?? "1");
-  const dieHeight = parseFloat(mdmg?.key("dDieHeight") ?? "1");
-  const aspect = !isNaN(dieWidth) && !isNaN(dieHeight) && dieHeight !== 0
-    ? dieWidth / dieHeight
-    : 1;
+  const flow = root.block("SmWaferFlow") ?? root;
 
-  const ctrl = root.block("MdMapControl") ?? root.block("SmWaferFlow")?.block("MdMapControl");
-  const notchRaw = parseFloat(ctrl?.key("dNotchAngle") ?? "270");
+  // Find the first MdMapResult (flow-level or pass-level)
+  let mdMapResult: InfBlock | undefined = flow.blocks("MdMapResult")[0];
+  if (!mdMapResult) {
+    const passes = findAllSmWaferPasses(root);
+    mdMapResult = passes[0]?.block.block("MdMapResult");
+  }
+
+  // Die dimensions are direct keys on MdMapResult
+  const dieWidth = parseFloat(mdMapResult?.key("dDieWidth") ?? "1");
+  const dieHeight = parseFloat(mdMapResult?.key("dDieHeight") ?? "1");
+  const aspect = !isNaN(dieWidth) && !isNaN(dieHeight) && dieHeight !== 0
+    ? dieWidth / dieHeight : 1;
+
+  // Notch angle: MdMapResult.MdBlank.dNotchAngle
+  const mdBlank = mdMapResult?.block("MdBlank");
+  const notchRaw = parseFloat(mdBlank?.key("dNotchAngle") ?? "270");
   const notchAngle = isNaN(notchRaw) ? 270 : notchRaw;
+
   return { dieAspect: aspect, notchAngle };
 }
 
