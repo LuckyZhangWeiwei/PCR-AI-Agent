@@ -2,6 +2,17 @@
 
 ---
 
+## 2026-06-02 — Agent JB 坏 bin 排行检测修复（bad_bin_ranking 模式）
+
+**完成内容：**
+- `agentJbDeterministicReply.ts`：新增 `JbReplyMode "bad_bin_ranking"` 及 `isBadBinRankingQuestion` 检测函数（匹配「主要坏bin / 坏bin排行 / 坏bin排名 / top bad bin…」，无具体 bin 编号时触发）；`detectJbReplyMode` 在 `bin_trend` 后插入该检测，结束「主要坏bin」类问题落入 generic 模式只返回 lot overview 而不含排行表的问题。
+- `buildDeterministicJbTables`：新增 `bad_bin_ranking` 分支，优先输出 lot overview，追加 `topBadBins` 排行表；无数据则降级 fallback。
+- `formatTopBadBinsMarkdown`：修复 lot 标题字段读 `primaryLot`（不存在）而非 `lot` 的 bug，改为优先读 `lot` 再 fallback `primaryLot`。
+
+**测试：** 7 个测试（agentJbDeterministicReply），0 失败；typecheck 通过
+
+---
+
 ## 2026-06-02 — Agent 新工具 query_lot_dut_bin_agg（lot 级 DUT×Bin 聚合）
 
 **完成内容：**

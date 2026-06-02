@@ -32,6 +32,7 @@ export type JbReplyMode =
   | "interrupt_count"
   | "tester_machine"
   | "equipment"
+  | "bad_bin_ranking"
   | "generic";
 
 /** 用户问在哪台机台/测试机测（JB testerId / YM hostname）。 */
@@ -134,6 +135,16 @@ export function isLotOverviewQuestion(text: string): boolean {
   return /整体|概况|测试情况|重新计算|lot\s*概况|批次.*情况/i.test(t);
 }
 
+/** 用户问「主要坏 bin」「坏 bin 排行/排名」类问题（无具体 bin 编号）。 */
+export function isBadBinRankingQuestion(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (extractBinFromUserText(t) != null) return false; // 有具体 bin 号走 bin_trend
+  return /主要.*坏\s*bin|坏\s*bin.*主要|坏\s*bin.*排行|排行.*坏\s*bin|坏\s*bin.*排名|排名.*坏\s*bin|top.*bad.*bin|主要.*bad\s*bin|哪些.*坏\s*bin|坏\s*bin.*哪些|坏die.*排行|排行.*坏die/i.test(
+    t
+  );
+}
+
 export function isBinTrendQuestion(text: string): boolean {
   const bin = extractBinFromUserText(text);
   if (bin == null) return false;
@@ -171,6 +182,7 @@ export function detectJbReplyMode(userMessage: string): JbReplyMode {
   if (isTesterMachineQuestion(userMessage)) return "tester_machine";
   if (isInterruptCountQuestion(userMessage)) return "interrupt_count";
   if (isBinTrendQuestion(userMessage)) return "bin_trend";
+  if (isBadBinRankingQuestion(userMessage)) return "bad_bin_ranking";
   if (isSlotPassYieldQuestion(userMessage)) return "slot_pass_yield";
   if (isLotOverviewQuestion(userMessage)) return "lot_overview";
   return "generic";
@@ -252,6 +264,15 @@ export function buildDeterministicJbTables(
 
   if (mode === "tester_machine") {
     return formatEquipmentTables(toolPayload);
+  }
+
+  if (mode === "bad_bin_ranking") {
+    const topMd = formatTopBadBinsMarkdown(toolPayload);
+    const overview = digest.lotOverview?.trim() || formatLotYieldOverviewMarkdown(toolPayload)?.trim();
+    if (topMd && overview) return `${overview}\n\n${topMd}`;
+    if (topMd) return topMd;
+    if (overview) return overview;
+    return rebuildDeterministicTablesFallback(toolPayload);
   }
 
   if (mode === "interrupt_count") {
@@ -377,7 +398,30 @@ function rebuildDeterministicTablesFallback(
   if (typeof pivotMd === "string" && pivotMd.trim()) {
     parts.push(pivotMd.trim());
   }
+  // Top bad bins ranking — essential for "what are the main bad bins" queries
+  const topBadBinsMd = formatTopBadBinsMarkdown(toolPayload);
+  if (topBadBinsMd) parts.push(topBadBinsMd);
+
   return parts.length ? parts.join("\n\n") : null;
+}
+
+/** Build a compact markdown table of topBadBins from the tool payload. */
+function formatTopBadBinsMarkdown(toolPayload: Record<string, unknown>): string | null {
+  const raw = toolPayload["topBadBins"];
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const entries = (raw as Array<{ bin: number; dieCount: number }>)
+    .filter((e) => e.dieCount > 0)
+    .slice(0, 15);
+  if (entries.length === 0) return null;
+  const lot =
+    (typeof toolPayload["lot"] === "string" ? toolPayload["lot"] : "") ||
+    (typeof toolPayload["primaryLot"] === "string" ? toolPayload["primaryLot"] : "");
+  const header = lot ? `主要坏 bin 排行（lot ${lot}，坏 bin dieCount 降序 Top ${entries.length}）`
+    : `主要坏 bin 排行（坏 bin dieCount 降序 Top ${entries.length}）`;
+  const rows = ["| BIN | 坏 die 颗数 |", "|---|---|",
+    ...entries.map((e) => `| BIN${e.bin} | ${e.dieCount} |`),
+  ];
+  return `**${header}**\n\n${rows.join("\n")}`;
 }
 
 export const DETERMINISTIC_TABLES_HEADER =
