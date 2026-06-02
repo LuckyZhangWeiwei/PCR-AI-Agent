@@ -2,6 +2,17 @@
 
 ---
 
+## 2026-06-02 — Agent INF Wafer Map 工具路由精确化
+
+**完成内容：**
+- `agentLoop.ts` `INF_KEYWORDS`：移除误触发词（`"晶圆"`、`"温度"`、`"趋势"`、`"边缘"`、`"画图"`）；新增 DUT-BIN 分析专用触发词（`"dut坏"`、`"dut良率"`、`"dut分布"`、`"各dut"`、`"每个dut"`、`"dut占比"`、`"dut和bin"` 等），区分 die 级 DUT 分析（需 INF 工具）与数据库 YM/JB 查询（无需 INF）。
+- `agentLoop.ts` `selectToolSchemas`：改为只扫描 **user 消息**（`role: "user"`）的最近 3 条，不再扫 tool result 和 assistant 消息——防止 `inf_draw_wafer_map` 工具结果里含"晶圆图"字样导致 INF 工具永久粘连注入。
+- `agentPrompt.ts`：新增「晶圆图与数据库查询路由」章节（位于决策优先级最前），含 wafermap vs Oracle 路由对照表、lot 级聚集（`clusteredBadBinAlerts`）vs die 级 cluster（`inf_cluster_detect`）区分规则、DUT 汇总（base tool）vs die 级 DUT 分析（INF 工具）两层分工说明、画晶圆图四步硬规则（多轮对话时强制重调 `query_jb_bins` 避免从摘要猜参数）。
+
+**测试：** 225 个测试，1 失败（agentAggregateGuard Oracle 连线，本机无库，非代码 Bug）
+
+---
+
 ## 2026-06-02 — Agent JB 坏 bin 排行检测修复（bad_bin_ranking 模式）
 
 **完成内容：**

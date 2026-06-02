@@ -862,26 +862,50 @@ export function historyAwaitingToolSummary(history: ChatMessage[]): boolean {
  * to TOOL_SCHEMAS. Otherwise, keep the list lean (JB/Yield Monitor only).
  */
 const INF_KEYWORDS = [
-  // Chinese — DUT / die / wafer map related
-  "晶圆图", "晶圆", "画图", "wafermap", "wafer map",
+  // Wafer map / visual output — must be specific to avoid triggering on pure DB queries
+  "晶圆图", "wafermap", "wafer map", "wafer图", "画晶圆",
+  // die-level spatial analysis
+  "die坐标", "die分布", "die位置", "die图",
+  // defect analysis
+  "cluster", "聚集", "划伤", "scratch", "粒子", "热力图",
+  // DUT / site keywords that imply INF analysis (inf_site_stats / inf_draw_dut_bin_map)
+  // Note: query_inf_site_bin_by_dut and query_lot_dut_bin_agg are always-available base tools;
+  // INF injection is needed for die-level DUT stats and visual DUT×BIN maps.
   "哪个dut", "哪个 dut", "dut测", "dut 测", "由dut", "由 dut",
   "哪个site", "site测", "dut分析", "dut维度",
-  "die坐标", "die分布", "die位置",
-  "cluster", "聚集", "划伤", "scratch", "粒子",
-  "边缘", "edge", "三温", "温度", "接触", "touch",
-  "热力图", "趋势", "中断段", "pass_id", "iBinCode",
+  // DUT-BIN relationship and DUT yield analysis patterns
+  "dut坏", "dut 坏",          // "DUT坏bin最多" / "DUT坏die"
+  "dut良率", "dut分布",       // DUT yield breakdown / distribution
+  "各dut", "每个dut",         // "各DUT的bin" / "每个DUT情况"
+  "dut占比",                   // DUT share/proportion of bad bins
+  "dut和bin", "dut与bin", "dut×bin", "bin和dut",  // explicit DUT-BIN relationship
+  // Other INF-specific terms
+  "iBinCode", "pass_id", "中断段",
   "inf_", "inf文件", "INF文件",
-  // Tool names prefix
+  // Tool name prefixes (model explicitly naming tools)
   "inf_draw", "inf_parse", "inf_list", "inf_get", "inf_site", "inf_dut",
   "inf_analyze", "inf_compare", "inf_bin", "inf_cluster",
   "inf_edge", "inf_touch", "inf_yield", "inf_partial",
   "inf_lot", "inf_slot", "inf_temperature", "inf_unstable",
+  // Removed (too common in JB/YM context, cause false triggers):
+  //   "晶圆" — appears in every lot query ("这片晶圆良率")
+  //   "温度" — maps to 高温/常温/低温 in JB STAR queries
+  //   "趋势" — users say "良率趋势" meaning badBinSlotTrends (JB tool)
+  //   "边缘" — appears in unrelated business language
+  //   "画图" — usually means generate_chart (bar/line/pie), not wafer map
+  //   "edge"  — too common in English
+  //   "touch" — too common
 ];
 
 function selectToolSchemas(messages: ChatMessage[]): unknown[] {
-  // Check the last 6 messages for INF-related keywords
-  const recent = messages.slice(-6);
-  const combined = recent
+  // Only inspect user-role messages, not tool results or assistant turns.
+  // Tool results often contain strings like "晶圆图已生成" which would perpetually
+  // keep INF tools injected after the first wafer-map request, bloating the tool
+  // list for every subsequent unrelated query.
+  const recentUserMessages = messages
+    .filter((m) => m.role === "user")
+    .slice(-3);
+  const combined = recentUserMessages
     .map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content)))
     .join(" ")
     .toLowerCase();

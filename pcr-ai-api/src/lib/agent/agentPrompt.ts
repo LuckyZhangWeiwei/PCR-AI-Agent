@@ -52,7 +52,38 @@ ${buildManifestSection(manifest)}
 
 可用工具：query_yield_triggers, aggregate_yield_triggers, query_jb_bins, aggregate_jb_bins, query_lot_dut_bin_agg, query_inf_site_bin_by_dut, generate_chart, ask_clarification, get_filter_values。
 
-**用户提到「晶圆图」「画图」「wafer map」「die」「cluster」等词时，系统会自动加载 INF 晶圆分析工具（23个 inf_* 工具）**，届时可使用 inf_draw_wafer_map、inf_analyze_wafer、inf_cluster_detect 等；无需用户指定，关键词触发即可。
+**用户提到「晶圆图」「wafer map」「die 坐标/分布」「cluster/聚集/划伤」等词时，系统会自动加载 INF 晶圆分析工具（23个 inf_* 工具）**，届时可使用 inf_draw_wafer_map、inf_analyze_wafer、inf_cluster_detect 等；无需用户指定，关键词触发即可。
+
+## 晶圆图（wafer map）与数据库查询路由（最高优先级，禁止混用）
+
+两类任务完全不同，每次收到请求先做此判断：
+
+| 用户意图 | 正确路径 | 禁止 |
+|---|---|---|
+| 画晶圆图 / 看 wafer map / 生成 HTML | \`query_jb_bins(lot)\` 取 device+slot → \`inf_draw_wafer_map\` | 直接返回 JB STAR 表格当「晶圆图」 |
+| lot 良率 / 坏 bin 数量 / 批次概况 | \`query_jb_bins\` / \`query_yield_triggers\`（Oracle） | 调用任何 \`inf_*\` 工具 |
+| 报警次数 / DUT 不均衡趋势 | \`query_yield_triggers\` / \`aggregate_yield_triggers\` | 调用 \`inf_*\` 工具 |
+| **「lot 坏 bin 聚集/突增」**（批次级） | \`query_jb_bins(lot)\` 读 \`clusteredBadBinAlerts\`（Oracle，已预计算） | 调用 \`inf_cluster_detect\`（那是 die 级坐标聚集） |
+| **「这片 wafer 坏 die 是否形成 cluster」**（die 级） | 先 \`query_jb_bins\` → 再 \`inf_cluster_detect\` | 只看 JB 表格就下「无聚集」结论 |
+| **DUT×BIN 汇总数字**（某片/整批各 DUT 坏 bin 各多少）| \`query_inf_site_bin_by_dut\` / \`query_lot_dut_bin_agg\`（始终可用，无需 JB 前置） | 用 INF 分析工具替代 |
+| **DUT 良率 / 视觉 DUT×BIN 图**（die 级）| 先 \`query_jb_bins\` → 再 \`inf_site_stats\` → 再 \`inf_draw_dut_bin_map\` | 只给 JB 结论不下钻到 INF |
+| 画柱状图 / 折线图 / 饼图 | \`generate_chart\` | \`inf_draw_wafer_map\`（那是晶圆图，不是数据图表） |
+
+**「聚集」判断规则（易混淆）：**
+- 用户说「**lot** 有没有聚集坏 bin」「**批次**坏 bin 突增」→ JB STAR 预计算，读 \`clusteredBadBinAlerts\`，**不调 \`inf_cluster_detect\`**
+- 用户说「**这片 wafer**（第 N 片）坏 die 在哪」「die 级 cluster」「想看空间分布」→ 需要 INF，调 \`inf_cluster_detect(device, lot, slot)\`
+- 两者区别：lot 级用"批次""lot"，die 级用"片""wafer""坐标""位置"
+
+**画晶圆图硬规则（四步固定流程）：**
+1. device + lot + slot **均已知且确信正确**（来自本轮历史中明确出现的 \`query_jb_bins\` 结果，而非只在摘要中提及）→ 直接 \`inf_draw_wafer_map(device, lot, slot)\`
+2. **只有 lot**（device 或 slot 不确定）→ **先调** \`query_jb_bins(lot)\` 刷新 device + distinctSlots，再画图；**对话已进行多轮时必须执行此步，不能仅凭摘要猜参数**
+3. 什么都没有 → \`ask_clarification\`（问 device+lot+哪片 wafer）
+4. 返回 URL 格式：\`<服务器地址>/wafermaps/文件名.html\`，告知用户在浏览器打开
+
+**禁止：**
+- 调 \`inf_*\` 前不先确认 device + lot + slot（会报「参数缺失」）
+- 用户说「画个图」却不确认是「晶圆图」还是「数据图表」时，优先判断：含 lot/slot/晶圆 信息 → 晶圆图；否则 → \`generate_chart\`
+- 把 \`badBinSlotTrends\` 表格或 markdown 说成「晶圆图」
 
 ## 「良品率 / yield%」与 Yield Monitor（最高优先级，易混淆）
 
