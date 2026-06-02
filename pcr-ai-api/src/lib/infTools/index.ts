@@ -8,7 +8,7 @@ import {
   runListPasses, runComparePasses, runBinMigration, runUnstableDies,
   runEdgeAnalysis, runBinSpatial, runTemperatureCompare,
   runClusterDetect, runTouchAnalysis, runYieldLossBreakdown,
-  runPartialProbe, runDrawWaferMap, runClusterShape,
+  runPartialProbe, runDrawWaferMap, runClusterShape, runDrawDutBinMap,
 } from "./infToolsSingleWafer.js";
 import {
   runParseDir, runCompareWafers, runLotDieCompare,
@@ -384,6 +384,24 @@ export const INF_TOOL_SCHEMAS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "inf_draw_dut_bin_map",
+      description:
+        "生成 DUT × BIN 关系晶圆图（无颜色设计）：用横线/竖线/白色实心等图案区分「该DUT测该BIN」「该DUT测其他BIN」「其他DUT测该BIN」四种状态，hover 显示坐标和分类。适用于判断某个坏 bin 是否由特定 DUT 系统性造成。",
+      parameters: {
+        type: "object",
+        properties: {
+          ...DEVICE_LOT_SLOT,
+          dut: { type: "number", description: "目标 DUT 编号（来自 inf_site_stats 或 query_inf_site_bin_by_dut），必填" },
+          bin: { type: "number", description: "目标 BIN 编号，必填" },
+          ...PASS_ID,
+        },
+        required: ["device", "lot", "slot", "dut", "bin"],
+      },
+    },
+  },
 ] as const;
 
 // ── Dispatch ───────────────────────────────────────────────────────────────
@@ -427,6 +445,7 @@ export async function runInfTool(
       case "inf_lot_heatmap":         return await runLotHeatmap(args, device, lot);
       case "inf_lot_cluster_overlap": return await runLotClusterOverlap(args, device, lot);
       case "inf_slot_trend":          return await runSlotTrend(args, device, lot);
+      case "inf_draw_dut_bin_map":    return await runDrawDutBinMap(args, device, lot, slot);
       default: return null; // not an inf tool
     }
   } catch (e) {

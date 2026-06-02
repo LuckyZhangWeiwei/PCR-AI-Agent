@@ -15,7 +15,7 @@ import {
   countPossibleDie,
   type DieEntry,
 } from "../infWaferMap.js";
-import { generateWaferMapHtml, type WaferMapPass } from "../infWaferMapHtml.js";
+import { generateWaferMapHtml, generateDutBinMapHtml, type WaferMapPass } from "../infWaferMapHtml.js";
 import { detectClusters, classifyClusterShapes } from "./infClusterDetector.js";
 import {
   loadInfWafer,
@@ -855,4 +855,51 @@ export async function runClusterShape(
       center_y: s.centerY,
     })),
   });
+}
+
+// ── inf_draw_dut_bin_map ───────────────────────────────────────────────────
+
+export async function runDrawDutBinMap(
+  args: Record<string, unknown>,
+  device: string, lot: string, slot: number
+): Promise<string> {
+  const dut = argInt(args, "dut", NaN);
+  const bin = argInt(args, "bin", NaN);
+  if (!Number.isFinite(dut)) return "inf_draw_dut_bin_map 参数错误: dut 不能为空";
+  if (!Number.isFinite(bin)) return "inf_draw_dut_bin_map 参数错误: bin 不能为空";
+
+  const ctx = await loadInfWafer(device, lot, slot);
+  const passIdStr = resolvePassId(args, "final");
+  const dies = getDiesForPassId(ctx.root, ctx.goodBins, passIdStr);
+
+  if (dies.length === 0) return `无 die 数据（pass_id=${passIdStr}）`;
+
+  const { waferResult: r } = ctx;
+  const passLabel = `${passIdStr === "final" ? "最终" : `Pass ${passIdStr}`} | DUT=${dut} × BIN=${bin}`;
+
+  const html = generateDutBinMapHtml(
+    `DUT${dut} × BIN${bin} — ${device} / ${lot} / Slot ${slot}`,
+    dies.map((d) => ({ x: d.x, y: d.y, bin: d.bin, site: d.site, isGood: d.isGood })),
+    dut,
+    bin,
+    r.dieAspect,
+    r.notchAngle,
+    passLabel
+  );
+
+  const filename = buildWaferMapFilename(device, lot, slot, `_dut${dut}_bin${bin}`);
+  saveWaferMapHtml(filename, html);
+  const urlPath = waferMapUrlPath(filename);
+
+  const matchCount = dies.filter((d) => d.site === dut && d.bin === bin).length;
+  const dutTotal = dies.filter((d) => d.site === dut).length;
+  const binTotal = dies.filter((d) => d.bin === bin).length;
+
+  return [
+    `**DUT${dut} × BIN${bin} 关系图已生成** → [点击在新窗口查看](${urlPath})`,
+    `Pass: ${passIdStr}  总 die: ${dies.length}`,
+    `DUT${dut} 测的 die: ${dutTotal}  BIN${bin} 出现: ${binTotal}  双匹配: ${matchCount}`,
+    `DUT${dut} 中 BIN${bin} 占比: ${dutTotal > 0 ? ((matchCount / dutTotal) * 100).toFixed(1) : 0}%`,
+    `图例: ■ 白色=双匹配  横线=DUT${dut}其他bin  竖线=BIN${bin}其他DUT  极暗=其他`,
+  ].join("\n");
 }

@@ -869,7 +869,7 @@ const INF_KEYWORDS = [
   "热力图", "趋势", "中断段", "pass_id", "iBinCode",
   "inf_", "inf文件", "INF文件",
   // Tool names prefix
-  "inf_draw", "inf_parse", "inf_list", "inf_get", "inf_site",
+  "inf_draw", "inf_parse", "inf_list", "inf_get", "inf_site", "inf_dut",
   "inf_analyze", "inf_compare", "inf_bin", "inf_cluster",
   "inf_edge", "inf_touch", "inf_yield", "inf_partial",
   "inf_lot", "inf_slot", "inf_temperature", "inf_unstable",
