@@ -344,3 +344,225 @@ Yield Monitor 最近触发次数最多的是哪张探针卡？取该卡最近一
 ```
 WA03P02G 器件近期失效最严重的 lot 是哪个？先给我这个 lot 的 JB STAR 坏 bin 排名，然后查该 lot 整批（所有晶圆求和）的 INF DUT 分布，判断坏 bin 是某个 DUT 系统性偏高还是全局均匀失效，最后给出探针卡健康状态的初步结论。
 ```
+
+---
+
+## 10. INF 晶圆 die 级分析工具（23 个 inf_* 工具）
+
+> **Dummy 模式说明：**
+> 以下所有提问在开启 Dummy 模式时（`INFCONTROL_LAYER_BINS_DUMMY=true`）均可直接运行，device / lot / slot 填任意值即可——系统会自动使用内置测试 INF 文件。
+>
+> **统一使用以下测试参数：**
+> - device = `WA03P02G`
+> - lot = `NF12551.1N`
+> - slot = `1`（单片工具）
+>
+> **晶圆图访问方式：** 生成 HTML 后，在浏览器访问 `http://<服务器地址>:30008/wafermaps/<文件名>.html`
+
+---
+
+### 10a. 一键综合分析（推荐入门）
+
+**inf_analyze_wafer — 快速体检一片晶圆**
+
+```
+帮我分析 WA03P02G 器件 NF12551.1N 这个 lot 第 1 槽晶圆，给出良率、各 pass 统计、DUT 差异和异常诊断。
+```
+
+---
+
+### 10b. 画晶圆图（最常用）
+
+**inf_draw_wafer_map — 生成可交互 SVG HTML 晶圆图**
+
+```
+帮我画 WA03P02G 器件 NF12551.1N lot 第 1 槽晶圆的 wafer map，显示最终测试结果（final），并给出访问链接。
+```
+
+**显示所有 pass（多 tab 切换）：**
+
+```
+帮我画 WA03P02G NF12551.1N lot slot 1 的 wafer map，展示所有测试 pass，每个 pass 一个 tab，我要对比不同温度下的 die 分布。
+```
+
+**高亮特定坏 bin：**
+
+```
+帮我画 WA03P02G NF12551.1N lot slot 1 的 wafer map，高亮 bin37 的分布位置（黄色描边），其余正常显示。
+```
+
+**高亮边缘 die：**
+
+```
+帮我画 WA03P02G NF12551.1N slot 1 的 wafer map，并高亮显示边缘 die（edge 模式），判断边缘良率是否低于内部。
+```
+
+---
+
+### 10c. 基础查询
+
+**inf_parse_wafer — 查单片晶圆详细统计**
+
+```
+查询 WA03P02G NF12551.1N lot 第 1 槽晶圆的详细信息：良率、各 pass 良率、bin 分布、测试时间。
+```
+
+**inf_list_passes — 列出所有测试 pass**
+
+```
+WA03P02G NF12551.1N lot slot 1 这片晶圆有哪些测试 pass？有没有中断记录？良品 bin 是哪些？
+```
+
+**inf_get_die_map — 获取 die 坐标数据**
+
+```
+获取 WA03P02G NF12551.1N slot 1 最终测试结果的 ASCII 晶圆图，并显示坏 die 的坐标列表。
+```
+
+**inf_site_stats — DUT 良率统计**
+
+```
+WA03P02G NF12551.1N lot slot 1 各测试 DUT（site）的良率分别是多少？哪个 DUT 良率最低？良率差异有多大？
+```
+
+---
+
+### 10d. 失效分析
+
+**inf_yield_loss_breakdown — 良率损失按 bin 分解**
+
+```
+WA03P02G NF12551.1N lot slot 1 的最终测试结果中，哪个坏 bin 损失良率最多？各 bin 占总 die 和坏 die 的比例分别是多少？
+```
+
+**inf_bin_spatial — 某坏 bin 的空间分布**
+
+```
+WA03P02G NF12551.1N lot slot 1，最终测试结果中坏 die 最多的那个 bin，分布是聚集在一个区域还是均匀散布？给出质心和 ASCII 热点图。
+```
+
+**inf_cluster_detect — 聚集缺陷检测**
+
+```
+WA03P02G NF12551.1N lot slot 1 最终结果中有没有坏 die 聚集成片的区域？检测所有 cluster，列出每个 cluster 的中心位置、大小和局部良率。
+```
+
+**inf_cluster_shape — 判断是划伤还是粒子污染**
+
+```
+WA03P02G NF12551.1N lot slot 1 的坏 die cluster 是什么形状？判断是线状划伤（scratch）还是圆形粒子污染（particle），并给出每个 cluster 的宽高比。
+```
+
+**inf_edge_analysis — 边缘 die 良率分析**
+
+```
+WA03P02G NF12551.1N lot slot 1 的边缘 die 良率比内部低多少？按外到内分 2 个环分析，给出各环的良率对比。
+```
+
+**inf_partial_probe — 检查未测 die**
+
+```
+WA03P02G NF12551.1N lot slot 1 有没有本应测试但实际未测的 die？未测 die 占应测 die 的比例是多少？
+```
+
+---
+
+### 10e. 多 pass 对比
+
+**inf_compare_passes — 对比两个 pass 的 die 结果**
+
+```
+WA03P02G NF12551.1N lot slot 1，对比 pass1 和 pass3 测试结果：有多少 die 从不良恢复为良品？有多少 die 反而从良品变为不良？稳定不良的 die 有多少？
+```
+
+**inf_bin_migration — bin 流向矩阵**
+
+```
+WA03P02G NF12551.1N lot slot 1，pass1 到 pass3 之间，哪些坏 bin 的恢复率最高？给出 bin 流向矩阵和可恢复率排行。
+```
+
+**inf_unstable_dies — 找反复翻转的不稳定 die**
+
+```
+WA03P02G NF12551.1N lot slot 1 有没有在多个 pass 之间反复变好变坏的不稳定 die？最终判为良品但有翻转风险的 die 有多少？
+```
+
+**inf_temperature_compare — 三温测试对比**
+
+```
+WA03P02G NF12551.1N lot slot 1，对比常温（pass1）、高温（pass3）、低温（pass5）三个温度的测试结果：仅在高温下失效的 die 有多少？仅在低温下失效的 die 有多少？三温都失效的有多少？
+```
+
+**inf_touch_analysis — 探针接触质量**
+
+```
+WA03P02G NF12551.1N lot slot 1 的探针接触次数分布如何？哪些 die 接触次数异常偏高（≥2次）？按 DUT 统计平均接触次数。
+```
+
+---
+
+### 10f. Lot 批次级分析（多片汇总）
+
+**inf_parse_dir — 解析整批良率概览**
+
+```
+WA03P02G NF12551.1N 这批晶圆一共几片？每片良率分别是多少？哪片最差、哪片最好？
+```
+
+**inf_compare_wafers — 批次内晶圆良率对比**
+
+```
+WA03P02G NF12551.1N lot 所有晶圆的良率排名，标出离群的异常片（超过 2σ），并给出平均良率和标准差。
+```
+
+**inf_lot_die_compare — 批次热点分析（共同坏 die）**
+
+```
+WA03P02G NF12551.1N lot 中，有哪些坐标位置在多片晶圆上都出现坏 die？找出整批最严重的热点坐标（至少 2 片有坏 die 的位置）。
+```
+
+**inf_lot_heatmap — 生成批次热力图**
+
+```
+帮我生成 WA03P02G NF12551.1N lot 的 wafer 热力图，显示每个坐标位置在整批中出现坏 die 的频率，用绿→黄→红表示严重程度，给出访问链接。
+```
+
+**inf_lot_cluster_overlap — 批次 cluster 重叠分析**
+
+```
+WA03P02G NF12551.1N lot 各片晶圆的坏 die 聚集区域在空间上是否重叠？分析跨片共同 cluster，找出在多片上都出现的批次性缺陷区域。
+```
+
+**inf_slot_trend — 按槽位顺序良率趋势**
+
+```
+WA03P02G NF12551.1N lot 按槽位顺序排列，良率是否有逐渐下降或上升的趋势？前半批和后半批的平均良率相差多少？生成趋势折线图。
+```
+
+---
+
+### 10g. 综合场景（INF 工具联动）
+
+**场景 I：完整晶圆体检流程**
+
+```
+对 WA03P02G NF12551.1N lot slot 1 做完整体检：1. 列出所有 pass 和良率 2. 画出最终 wafer map 3. 分析坏 die 是否有聚集 cluster 4. 检查各 DUT 良率是否均衡 5. 给出综合诊断结论。
+```
+
+**场景 J：cluster 根因判断**
+
+```
+WA03P02G NF12551.1N lot slot 1，先检测坏 die cluster，再判断每个 cluster 的形状（划伤/粒子），最后对最大的 cluster 做空间分析（质心、局部良率），给出初步根因判断。
+```
+
+**场景 K：批次性缺陷 vs 单片偶发**
+
+```
+WA03P02G NF12551.1N lot：先看各片良率是否均匀，再找批次共同热点坐标，判断失效是批次性系统缺陷还是个别片的随机问题，最后生成整批热力图供参考。
+```
+
+**场景 L：三温筛选效果评估**
+
+```
+WA03P02G NF12551.1N lot slot 1 的三温测试（常温/高温/低温）筛选效果如何？哪种温度独有的失效最多？最终良率损失主要来自哪个 bin？用 bin migration 分析各温度间的 die 流向。
+```
