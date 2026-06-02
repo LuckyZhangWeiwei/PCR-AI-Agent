@@ -873,12 +873,19 @@ const INF_KEYWORDS = [
   // INF injection is needed for die-level DUT stats and visual DUT×BIN maps.
   "哪个dut", "哪个 dut", "dut测", "dut 测", "由dut", "由 dut",
   "哪个site", "site测", "dut分析", "dut维度",
-  // DUT-BIN relationship and DUT yield analysis patterns
-  "dut坏", "dut 坏",          // "DUT坏bin最多" / "DUT坏die"
-  "dut良率", "dut分布",       // DUT yield breakdown / distribution
-  "各dut", "每个dut",         // "各DUT的bin" / "每个DUT情况"
-  "dut占比",                   // DUT share/proportion of bad bins
-  "dut和bin", "dut与bin", "dut×bin", "bin和dut",  // explicit DUT-BIN relationship
+  // DUT die-level analysis patterns — only when DEEPER than aggregate counts
+  // Note: basic "哪个DUT坏bin最多" is answered by query_inf_site_bin_by_dut (base tool).
+  // INF tools (inf_site_stats / inf_draw_dut_bin_map) are only needed for:
+  //   - die-level DUT yield comparison ("DUT良率低")
+  //   - spatial pattern / systematic analysis ("DUT分布")
+  //   - visual DUT×BIN map
+  "dut良率", "dut 良率",      // die-level DUT yield breakdown
+  "dut分布",                   // DUT spatial distribution (ambiguous, better have tools available)
+  "dut和bin", "dut与bin", "dut×bin", "bin和dut",  // explicit DUT-BIN relationship map
+  // Removed (too broad — answered by base tools query_inf_site_bin_by_dut / query_lot_dut_bin_agg):
+  //   "dut坏" / "dut 坏" — "DUT坏bin最多" is a counting query, base tool suffices
+  //   "各dut" / "每个dut" — "各DUT报警情况" is a YM query; "各DUT坏bin" uses base tool
+  //   "dut占比" — DUT proportion of bad bins, base tool suffices
   // Other INF-specific terms
   "iBinCode", "pass_id", "中断段",
   "inf_", "inf文件", "INF文件",
