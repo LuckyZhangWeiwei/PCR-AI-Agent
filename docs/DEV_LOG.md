@@ -2,6 +2,18 @@
 
 ---
 
+## 2026-06-02 — Agent 新工具 query_lot_dut_bin_agg（lot 级 DUT×Bin 聚合）
+
+**完成内容：**
+- 发现 `query_inf_site_bin_by_dut` 已完整接入（schema + handler + prompt），TODO 条目为过时记录。
+- `agentToolSchemas.ts`：新增 `query_lot_dut_bin_agg` 工具 schema（device + lot + passId/passIds + probeCardType 可选）。
+- `agentToolHandlers.ts`：新增 `toolQueryLotDutBinAgg` 函数，复用已有的 `runOutputSiteBinByLotForLot`（含卡型过滤）和 `runOutputSiteBinByLotForLotByDirectory`（目录扫描）；dummy 路径同样复用已有 `tryResolveSiteBinByLotDummyForLot/ForLotByDirectory`；调用现有 `compactSiteBinPasses` 压缩返回体积；新增 `runTool` case。
+- `agentPrompt.ts`：工具列表加入 `query_lot_dut_bin_agg`；新增「Lot 级 DUT 聚合」说明节，含适用场景、调用前置、结论写法、禁止项。
+
+**测试：** 225 个测试，1 失败（agentAggregateGuard Oracle 连线，本机无库，非代码 Bug）
+
+---
+
 ## 2026-06-01 — 明细行数上限调整（默认 1000 / 最多 2000）
 
 **完成内容：**

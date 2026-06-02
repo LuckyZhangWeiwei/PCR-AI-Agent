@@ -64,10 +64,17 @@ import {
 import { buildInfPath } from "../buildInfPath.js";
 import {
   runOutputSiteBinByLot,
+  runOutputSiteBinByLotForLot,
+  runOutputSiteBinByLotForLotByDirectory,
   parseSiteBinByLotJson,
   type SiteBinPass,
 } from "../outputSiteBinByLot.js";
-import { tryResolveSiteBinByLotDummy } from "../outputSiteBinByLotDummy.js";
+import {
+  tryResolveSiteBinByLotDummy,
+  tryResolveSiteBinByLotDummyForLot,
+  tryResolveSiteBinByLotDummyForLotByDirectory,
+} from "../outputSiteBinByLotDummy.js";
+import { parseSiteBinByLotTestEndWindow } from "../siteBinByLotTestEndWindow.js";
 
 export type { ChartSentinel, ClarificationSentinel };
 
@@ -434,6 +441,89 @@ function compactSiteBinPasses(passes: SiteBinPass[]): unknown[] {
   }));
 }
 
+async function toolQueryLotDutBinAgg(
+  args: Record<string, unknown>,
+  maxChars: number
+): Promise<string> {
+  const device = typeof args["device"] === "string" ? args["device"].trim() : "";
+  const lot = typeof args["lot"] === "string" ? args["lot"].trim() : "";
+
+  if (!device) return "query_lot_dut_bin_agg 参数错误: device 不能为空";
+  if (!lot) return "query_lot_dut_bin_agg 参数错误: lot 不能为空";
+
+  const passIds: number[] = [];
+  if (typeof args["passId"] === "number") passIds.push(Math.round(args["passId"]));
+  if (Array.isArray(args["passIds"])) {
+    for (const p of args["passIds"]) {
+      if (typeof p === "number") passIds.push(Math.round(p));
+    }
+  }
+  if (passIds.length === 0) passIds.push(1, 3, 5);
+
+  const probeCardType =
+    typeof args["probeCardType"] === "string" ? args["probeCardType"].trim() : "";
+
+  try {
+    if (probeCardType) {
+      const testEndWindow = parseSiteBinByLotTestEndWindow({});
+      const dummy = tryResolveSiteBinByLotDummyForLot(
+        device, lot, probeCardType, passIds, testEndWindow
+      );
+      if (dummy !== null) {
+        return truncateResult(
+          {
+            device, lot, probeCardType: dummy.probeCardType ?? probeCardType,
+            waferCount: dummy.waferCount, waferSlots: dummy.waferSlots,
+            passes: compactSiteBinPasses(dummy.passes),
+          },
+          maxChars
+        );
+      }
+      const res = await runOutputSiteBinByLotForLot(
+        device, lot, probeCardType, passIds, testEndWindow
+      );
+      return truncateResult(
+        {
+          device, lot, probeCardType: res.probeCardType ?? probeCardType,
+          waferCount: res.waferCount, waferSlots: res.waferSlots,
+          passes: compactSiteBinPasses(res.data.passes),
+          ...(res.skippedInfPaths.length > 0 ? { skippedWafers: res.skippedInfPaths.length } : {}),
+        },
+        maxChars
+      );
+    } else {
+      const dummy = tryResolveSiteBinByLotDummyForLotByDirectory(device, lot, passIds);
+      if (dummy !== null) {
+        return truncateResult(
+          {
+            device, lot,
+            waferCount: dummy.waferCount, waferSlots: dummy.waferSlots,
+            passes: compactSiteBinPasses(dummy.passes),
+          },
+          maxChars
+        );
+      }
+      const res = await runOutputSiteBinByLotForLotByDirectory(device, lot, passIds);
+      return truncateResult(
+        {
+          device, lot,
+          waferCount: res.waferCount, waferSlots: res.waferSlots,
+          passes: compactSiteBinPasses(res.data.passes),
+        },
+        maxChars
+      );
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (e && typeof e === "object" && "statusCode" in e) {
+      const code = (e as { statusCode: number }).statusCode;
+      if (code === 404) return `query_lot_dut_bin_agg: lot INF 目录未找到 — ${msg}`;
+      if (code === 400) return `query_lot_dut_bin_agg 参数错误: ${msg}`;
+    }
+    return `query_lot_dut_bin_agg 执行失败: ${msg}`;
+  }
+}
+
 async function toolQueryInfSiteBinByDut(
   args: Record<string, unknown>,
   maxChars: number
@@ -537,6 +627,8 @@ export async function runTool(
     }
     case "get_filter_values":
       return runGetFilterValues(args);
+    case "query_lot_dut_bin_agg":
+      return toolQueryLotDutBinAgg(args, maxChars);
     case "query_inf_site_bin_by_dut":
       return toolQueryInfSiteBinByDut(args, maxChars);
     default:

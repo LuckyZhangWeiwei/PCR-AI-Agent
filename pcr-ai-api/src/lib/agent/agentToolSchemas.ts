@@ -249,6 +249,39 @@ export const TOOL_SCHEMAS = [
   {
     type: "function",
     function: {
+      name: "query_lot_dut_bin_agg",
+      description:
+        "读取某个 lot 全部 wafer INF（最多 25 片求和），按 pass 聚合各 bin 由哪个 DUT 贡献的 dieCount。" +
+        "适用于「lot 整批 DUT 分布/坏 bin 集中在哪个 DUT」问题。数据来自磁盘 INF，非 Oracle。" +
+        "调用前须已通过 query_jb_bins 获得 device+lot；建议传 probeCardType（来自 cardByPassId）提高精度，省略时扫 lot 目录全部 wafer。",
+      parameters: {
+        type: "object",
+        properties: {
+          device: { type: "string", description: "产品代码，必填" },
+          lot: { type: "string", description: "批次 ID，含 '.' 后缀，必填" },
+          passId: {
+            type: "number",
+            description: "PASS_ID：pass1/常温→1，pass3/高温→3，pass5/低温→5",
+          },
+          passIds: {
+            type: "array",
+            items: { type: "number" },
+            description: "多 pass，如 [1,3,5]",
+          },
+          probeCardType: {
+            type: "string",
+            description:
+              "探针卡类型（来自 query_jb_bins 的 cardByPassId 首段，如 '6045'）；省略时扫 lot 目录全部 wafer",
+          },
+          focusBin: { type: "number", description: "结论聚焦某一 BIN（可选）" },
+        },
+        required: ["device", "lot"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "query_inf_site_bin_by_dut",
       description:
         "读取该片 wafer 的 INF 文件（服务端由 device+lot+slot 自动拼路径），按 pass 统计各 bin 由哪个 DUT(site) 测得及 dieCount。数据来自磁盘 INF，非 Oracle JB；与 query_jb_bins 数据源不同。调用前须已通过 query_jb_bins 获得 device+lot+slot+CARDID。",
