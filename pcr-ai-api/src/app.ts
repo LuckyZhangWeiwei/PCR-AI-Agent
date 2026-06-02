@@ -1,5 +1,6 @@
 import "./polyfillUtilIsDate.js";
 import express, { type ErrorRequestHandler } from "express";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { sendAgentError } from "./lib/agentResponse.js";
@@ -51,6 +52,11 @@ export function createApp() {
   );
   /** 本地 v3 联调页：`public/v3-api-tester.html` → `GET /v3-api-tester.html` */
   app.use(express.static(publicDir));
+
+  /** 晶圆图 HTML 文件：`GET /wafermaps/<filename>.html` */
+  const waferMapsDir = process.env["WAFERMAPS_DIR"] ?? path.join(process.cwd(), "wafermaps");
+  if (!fs.existsSync(waferMapsDir)) fs.mkdirSync(waferMapsDir, { recursive: true });
+  app.use("/wafermaps", express.static(waferMapsDir));
 
   app.use((req, res) => {
     sendAgentError(res, 404, "NOT_FOUND", "Not Found", req.path);

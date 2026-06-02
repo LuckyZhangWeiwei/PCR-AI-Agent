@@ -1,4 +1,5 @@
 // pcr-ai-api/src/lib/agent/agentToolHandlers.ts
+import { runInfTool } from "../infTools/index.js";
 import { withConnection, withProbeWebConnection } from "../../oracle.js";
 import oracledb from "oracledb";
 import {
@@ -631,7 +632,13 @@ export async function runTool(
       return toolQueryLotDutBinAgg(args, maxChars);
     case "query_inf_site_bin_by_dut":
       return toolQueryInfSiteBinByDut(args, maxChars);
-    default:
+    default: {
+      // Delegate inf_* tools
+      if (name.startsWith("inf_")) {
+        const result = await runInfTool(name, args);
+        if (result !== null) return result;
+      }
       return `未知工具: ${name}`;
+    }
   }
 }

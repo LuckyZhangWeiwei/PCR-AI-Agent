@@ -1,6 +1,8 @@
 // pcr-ai-api/src/lib/agent/agentToolSchemas.ts
+import { INF_TOOL_SCHEMAS } from "../infTools/index.js";
 
 export const TOOL_SCHEMAS = [
+  ...INF_TOOL_SCHEMAS,
   {
     type: "function",
     function: {
