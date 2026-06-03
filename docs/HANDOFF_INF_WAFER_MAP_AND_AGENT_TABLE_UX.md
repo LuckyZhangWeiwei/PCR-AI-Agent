@@ -59,6 +59,22 @@ npm test -- test/agentInfWaferMapTool.test.ts
 
 Fixture：`pcr-ai-api/docs/inf-dummy-r_1-1`（6 个 SmWaferPass + 1 合成 = 7 标签）。
 
+### 2.4 240 秒超时：程序问题为主（非单纯 Oracle 慢）
+
+| 现象 | 原因 |
+| --- | --- |
+| AI 页红字「请求超时 (约 240 秒)」 | 前端 **`clientTimeoutSec` 默认 240**（`useServerConfig.ts`），整段 Agent SSE 上限，不单指某条 REST |
+| 「第14片 pass1」仍很慢 | 若工具用默认 **`passes=final`**，会展开**全部** SmWaferPass + 合成；大 INF × 多标签极慢 |
+| HTML 生成卡数分钟 | `infWaferMapHtml.ts` 曾对**每个 pass** 遍历 `readPossibleDieCoords` 画**全部未测灰格**（tyControl 可达数万～数十万格 × N pass） |
+
+**本批性能修复（待部署）：**
+
+1. **`infWaferMapHtml.ts`** — 多 pass 标签页**不再**画未测灰格（仅已测 die + 轮廓）；单 pass 未测格上限 **12000**。
+2. **`agentInfWaferMapTool.ts`** — `inferSinglePassIdFromText`：用户只说 pass1 且未要求「全部层/合成」时自动 **`passes: "1"`**。
+3. **`agentPrompt.ts`** — 明确「仅 pass1」用 `passes=1`，全层才用 `final`/`all`。
+
+验证：「第14片 pass1 wafermap」部署后应在**数秒**内出 `/wafermaps/` 链接；全层需用户明确说「所有中断层和合成」。
+
 ---
 
 ## 3. Agent 聊天气泡：表 vs 解读
@@ -130,6 +146,7 @@ cd ../pcr-ai-report && npm ci && npm run build
 - [ ] AI 页问 lot 概况：聚集警示、良率 pivot 为** HTML 表格**，非 `\|` 原文
 - [ ] 表下方「数据解读」在**分隔线以下**，不是表格最后一行
 - [ ] `inf_draw_wafer_map`：标签页含各正测/复测段 + **合成**；换 BIN 说「同理画 bin14」仍有 `/wafermaps/` 链接
+- [ ] 「第14片 pass1 wafermap」：**单 pass**、数秒内出链接；全层请求才出现多标签页
 - [ ] 设置里 API 地址正确时，wafermap 链接新标签可打开
 
 ### 5.3 Agent 测试话术

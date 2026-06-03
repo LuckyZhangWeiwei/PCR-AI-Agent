@@ -159,6 +159,37 @@ function latestUserSlotHint(history: ChatMessage[]): number | undefined {
   return undefined;
 }
 
+/** User explicitly wants every SmWaferPass layer + composite (slow on large INF). */
+export function userWantsAllInfLayers(text: string): boolean {
+  return /全部.*层|所有.*层|每一层|各.*层|所有.*中断|中断.*层|正测.*复测|含.*合成|画出.*全部|全.*层.*晶圆图/i.test(
+    text
+  );
+}
+
+/** e.g. "pass1" / "第1层" → "1" (PASS_ID); omit when user wants all layers. */
+export function inferSinglePassIdFromText(text: string): string | undefined {
+  if (userWantsAllInfLayers(text)) return undefined;
+  const m =
+    /\bpass\s*([135])\b/i.exec(text) ??
+    /pass\s*([135])\s*的/i.exec(text) ??
+    /第\s*([135])\s*层/i.exec(text);
+  if (m) return m[1]!;
+  if (/\bpass\s*1\b|pass1|常温/i.test(text)) return "1";
+  if (/\bpass\s*3\b|pass3|高温/i.test(text)) return "3";
+  if (/\bpass\s*5\b|pass5|低温/i.test(text)) return "5";
+  return undefined;
+}
+
+function latestUserMessageText(history: ChatMessage[]): string {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const msg = history[i];
+    if (msg.role === "user" && typeof msg.content === "string") {
+      return msg.content;
+    }
+  }
+  return "";
+}
+
 export function infDrawWaferMapArgsComplete(args: Record<string, unknown>): boolean {
   return (
     strField(args, "device").length > 0 &&
@@ -196,6 +227,14 @@ export function normalizeInfDrawWaferMapArgs(
   const hl = normalizeHighlight(out, binHint);
   if (hl) out["highlight"] = hl;
   if ("bin" in out) delete out["bin"];
+
+  if (!strField(out, "passes")) {
+    const userText = latestUserMessageText(history);
+    const passId = inferSinglePassIdFromText(userText);
+    if (passId) {
+      out["passes"] = passId;
+    }
+  }
 
   return out;
 }

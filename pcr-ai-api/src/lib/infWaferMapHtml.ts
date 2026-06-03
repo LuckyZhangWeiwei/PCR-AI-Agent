@@ -16,6 +16,9 @@ const COLOR_OUTLINE = "#78909C";
 const COLOR_EDGE_BAND = "#37474f";
 const COLORS_BAD = ["#F44336", "#E91E63", "#FF5722", "#FF9800", "#C62828"];
 
+/** 多标签页时不再逐格绘制 tyControl 未测点（每 pass 重复一遍会极慢）。 */
+const MAX_UNTESTED_RECTS_SINGLE_PASS = 12_000;
+
 const HTML_CSS = `<style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#1a1a2e;color:#cfd8dc;font-family:'Segoe UI',Consolas,sans-serif;padding:16px}
@@ -106,6 +109,8 @@ export function generateWaferMapHtml(
   highlight = ""
 ): string {
   const multiPass = passes.length > 1;
+  /** 多 pass 只画已测 die；单 pass 可画未测灰格（带上限）。 */
+  const drawUntestedGrid = !multiPass;
 
   // ── Coordinate bounds (union of all passes + possible) ─────────────────
   let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
@@ -184,15 +189,27 @@ export function generateWaferMapHtml(
       );
     }
 
-    // Untested die
-    for (const { x, y } of possibleDies) {
-      if (testedSet.has(`${x},${y}`)) continue;
-      const sx = offX + (x - xMin) * cellW;
-      const sy = offY + (y - yMin) * cellH;
-      const tip = `X=${x} Y=${y}|状态=未测`;
-      lines.push(
-        `      <rect x="${f(sx + 0.5)}" y="${f(sy + 0.5)}" width="${f(cellW - 1)}" height="${f(cellH - 1)}" fill="${COLOR_UNTESTED}" opacity="0.5" data-die="${esc(tip)}"/>`
-      );
+    // Untested die (skipped on multi-pass tabs — each pass duplicated the full tyControl grid)
+    if (drawUntestedGrid) {
+      let untestedDrawn = 0;
+      let untestedTotal = 0;
+      for (const { x, y } of possibleDies) {
+        if (testedSet.has(`${x},${y}`)) continue;
+        untestedTotal++;
+        if (untestedDrawn >= MAX_UNTESTED_RECTS_SINGLE_PASS) continue;
+        untestedDrawn++;
+        const sx = offX + (x - xMin) * cellW;
+        const sy = offY + (y - yMin) * cellH;
+        const tip = `X=${x} Y=${y}|状态=未测`;
+        lines.push(
+          `      <rect x="${f(sx + 0.5)}" y="${f(sy + 0.5)}" width="${f(cellW - 1)}" height="${f(cellH - 1)}" fill="${COLOR_UNTESTED}" opacity="0.5" data-die="${esc(tip)}"/>`
+        );
+      }
+      if (untestedTotal > untestedDrawn) {
+        lines.push(
+          `      <!-- untested grid capped: ${untestedDrawn}/${untestedTotal} -->`
+        );
+      }
     }
 
     // Tested die
@@ -247,8 +264,10 @@ export function generateWaferMapHtml(
         lines.push(`      <div class="leg-row"><div class="leg-box" style="background:${bc}"></div>不良 Bin ${bin}</div>`);
       }
     }
-    if (possibleDies.length > 0) {
+    if (possibleDies.length > 0 && drawUntestedGrid) {
       lines.push(`      <div class="leg-row"><div class="leg-box" style="background:${COLOR_UNTESTED}"></div>未测</div>`);
+    } else if (possibleDies.length > 0 && multiPass) {
+      lines.push(`      <div class="leg-row"><div class="leg-box" style="background:${COLOR_UNTESTED}"></div>未测（多标签页不逐格绘制）</div>`);
     }
     lines.push("    </div>"); // card
 

@@ -81,9 +81,10 @@ ${buildManifestSection(manifest)}
 4. 返回 URL 格式：\`<服务器地址>/wafermaps/文件名.html\`，告知用户在浏览器打开
 
 **晶圆图分层（INF，默认全画）：**
-- 默认 \`inf_draw_wafer_map\`：按 INF 文件顺序画出**每个** \`SmWaferPass\` 物理层（**正测** TEST 各中断段 + **复测** RETESTBIN 各中断段，标签如「正测·中断前」「复测·续测后」）+ 最后一页 **合成 (正测+复测)**（flow-level final）
-- 不是固定三层；层数 = 物理 pass 块数 + 1。勿只描述合成层而省略中断段标签页
-- 只看某段：\`passes=3@pre\` / \`5@post\` 等；\`passes=all\` 与默认相同
+- **仅某一测试层**（如「第14片 pass1 的 wafermap」）→ \`inf_draw_wafer_map(..., passes=1)\` **只画该 PASS_ID**；**不要**用默认 \`passes=final\`（会展开全部正测/复测/合成层，大 INF 极慢、易超时）
+- **明确要求全部中断层 + 合成**（用户说「所有层」「含中断」「正测复测都要」）→ \`passes=final\` 或 \`passes=all\`
+- 默认 \`passes=final\`：每个 \`SmWaferPass\` 物理层 + **合成**；层数 = 物理块数 + 1
+- 只看某段：\`passes=3@pre\` / \`5@post\`
 
 **同一对话换 BIN 高亮（「同理」「再画 BIN14」）：**
 - **必须**复用上一轮 \`inf_draw_wafer_map\` 的 **device + lot + slot**（三者缺一不可，**禁止省略 lot**）

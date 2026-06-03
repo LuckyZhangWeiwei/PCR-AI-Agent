@@ -3,8 +3,10 @@ import test from "node:test";
 import {
   extractBinNumberFromText,
   findLastInfDrawWaferMapContext,
+  inferSinglePassIdFromText,
   normalizeInfDrawWaferMapArgs,
   parseInfDrawResultText,
+  userWantsAllInfLayers,
 } from "../src/lib/agent/agentInfWaferMapTool.js";
 import type { ChatMessage } from "../src/lib/agent/agentHistory.js";
 
@@ -23,6 +25,29 @@ test("parseInfDrawResultText reads device lot slot", () => {
   assert.equal(ctx.device, "WA00P32P");
   assert.equal(ctx.lot, "DR44117.1Y");
   assert.equal(ctx.slot, 14);
+});
+
+test("inferSinglePassIdFromText for pass1-only wafermap request", () => {
+  assert.equal(
+    inferSinglePassIdFromText("帮我画出第14片wafer 的pass1 的wafermap"),
+    "1"
+  );
+  assert.equal(userWantsAllInfLayers("画出全部层包括中断和合成"), true);
+  assert.equal(
+    inferSinglePassIdFromText("画出全部层包括中断和合成"),
+    undefined
+  );
+});
+
+test("normalizeInfDrawWaferMapArgs sets passes=1 for pass1-only question", () => {
+  const history = [
+    {
+      role: "user",
+      content: "帮我画出第14片wafer 的pass1 的wafermap",
+    },
+  ] as import("../src/lib/agent/agentHistory.js").ChatMessage[];
+  const merged = normalizeInfDrawWaferMapArgs({}, history);
+  assert.equal(merged.passes, "1");
 });
 
 test("normalizeInfDrawWaferMapArgs fills lot from prior inf_draw", () => {
