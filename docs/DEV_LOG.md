@@ -2,6 +2,18 @@
 
 ---
 
+## 2026-06-03 — Agent 工具并发执行（减少多工具轮次 timeout 概率）
+
+**完成内容：**
+- `agentLoop.ts`：新增 `getToolResourceGroup` 函数，按 Oracle 连接池（probeweb / main / perl / pure）对工具分组。
+- `agentLoop.ts`：将工具执行段从串行 `for` 循环改为 `Promise.all` 分组并发——同组（同连接池）内仍串行，不同组并发。工具消息仍按原始 `tool_calls` 顺序 append 到 history，LLM 上下文顺序不变，回答质量不受影响。
+- 典型收益：`query_yield_triggers`（probeweb 池）与 `query_jb_bins`（main 池）同轮调用时，由串行 ~25s 降至并发 ~15s，减少 SiliconFlow 等待时长，降低 idle timeout 概率。
+- Oracle 连接池代码（`oracle.ts`）和 SiliconFlow 流式调用（`agentStream.ts`、`streamSiliconFlow`）均未改动。
+
+**测试：** 249 个测试通过，2 失败（agentAggregateGuard Oracle 连线，本机无库，预存失败项）；typecheck 通过
+
+---
+
 ## 2026-06-03 — Code Review 修复（INF 晶圆图 + Agent 三路由）
 
 **完成内容：**

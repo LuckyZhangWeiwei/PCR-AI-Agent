@@ -1297,6 +1297,32 @@ function selectToolSchemas(messages: ChatMessage[]): unknown[] {
     : ([...TOOL_SCHEMAS] as unknown as unknown[]);
 }
 
+// ── Tool resource group for parallel execution ─────────────────────────────
+// Tools in the same group share a connection pool and must run sequentially.
+// Tools in different groups have independent I/O and can run concurrently.
+// "probeweb" and "main" are separate Oracle pools — safe to run in parallel.
+// "perl" tools invoke Perl scripts and have no Oracle dependency.
+// "pure" tools (generate_chart, ask_clarification) do only in-process work.
+type ToolResourceGroup = "probeweb" | "main" | "perl" | "pure";
+
+function getToolResourceGroup(name: string): ToolResourceGroup {
+  if (name === "query_yield_triggers" || name === "aggregate_yield_triggers") {
+    return "probeweb";
+  }
+  if (
+    name === "query_jb_bins" ||
+    name === "aggregate_jb_bins" ||
+    name === "get_filter_values"
+  ) {
+    return "main";
+  }
+  if (name === "generate_chart" || name === "ask_clarification") {
+    return "pure";
+  }
+  // query_lot_dut_bin_agg, query_inf_site_bin_by_dut, inf_* — Perl / file I/O
+  return "perl";
+}
+
 const SUMMARIZE_NUDGE =
   "【指令】工具查询已完成，立即用中文总结，禁止再调工具。\n" +
   "**字数约束**：数据解读 ≤ 150 字（3 句以内）；专业建议 3 条，每条 1 句（≤ 50 字）。\n" +
@@ -1647,7 +1673,28 @@ export async function runAgentLoop(
       tool_calls: assistantToolCalls,
     });
 
-    // Execute tools sequentially (Oracle pool constraint)
+    // Execute tools — same-pool tools sequential, cross-pool tools concurrent.
+    // SSE events (tool_start / tool_result / chart / clarification) are emitted
+    // as each tool completes. Tool messages are appended to history in the
+    // original tool_calls order after all tools finish so the next LLM round
+    // sees a consistent sequence regardless of execution order.
+    //
+    // Parallelism is safe because:
+    //   • "probeweb" (withProbeWebConnection) and "main" (withConnection) are
+    //     independent Oracle pools — concurrent use does not exceed per-pool limits.
+    //   • "perl" tools invoke Perl scripts with no Oracle dependency.
+    //   • "pure" tools (generate_chart, ask_clarification) are in-process only.
+    //   Tools within the same group always run sequentially (pool constraint).
+    type ToolRunResult = { historyContent: string; callId: string; toolName: string };
+    const toolRunResults: ToolRunResult[] = new Array(toolCalls.length);
+
+    type ToolSlot = {
+      tc: CollectedToolCall;
+      tcIdx: number;
+      parsedArgs: Record<string, unknown>;
+      callId: string;
+    };
+    const resourceGroups = new Map<ToolResourceGroup, ToolSlot[]>();
     for (let tcIdx = 0; tcIdx < toolCalls.length; tcIdx++) {
       const tc = toolCalls[tcIdx];
       let parsedArgs: Record<string, unknown> = {};
@@ -1656,62 +1703,75 @@ export async function runAgentLoop(
       } catch {
         parsedArgs = {};
       }
-
-      emit({ type: "tool_start", name: tc.name, args: parsedArgs });
-      emit({ type: "status", message: `正在执行工具 ${tc.name}…` });
-
-      let historyContent: string;
-      let jbCacheForHistory: string | undefined;
-      try {
-        const toolResult = await runTool(tc.name, parsedArgs, {
-          toolResultMaxChars: agentConfig.toolResultMaxChars,
-          history: getHistory(sessionId),
-          onJbBinsWrapped: (wrapped) => {
-            jbCacheForHistory = buildJbSessionCacheJson(wrapped);
-            storeJbToolRawJson(sessionId, jbCacheForHistory);
-          },
-        });
-        if (
-          typeof toolResult === "object" &&
-          toolResult !== null &&
-          "__chartOption" in toolResult
-        ) {
-          emit({ type: "chart", option: (toolResult as ChartSentinel).__chartOption });
-          historyContent = "[图表已生成]";
-        } else if (
-          typeof toolResult === "object" &&
-          toolResult !== null &&
-          "__clarification" in toolResult
-        ) {
-          const question = (toolResult as ClarificationSentinel).__clarification;
-          emit({ type: "clarification", question });
-          historyContent = `[已向用户提问：${question}]`;
-        } else {
-          const rawContent =
-            typeof toolResult === "string"
-              ? toolResult
-              : JSON.stringify(toolResult);
-          historyContent = toolResultForHistory(
-            tc.name,
-            rawContent,
-            agentConfig.toolResultMaxHistoryChars,
-            agentConfig.toolResultMaxChars,
-            jbCacheForHistory
-          );
-        }
-      } catch (err) {
-        historyContent = `工具执行失败: ${err instanceof Error ? err.message : String(err)}`;
-      }
-
-      const summary = historyContent.slice(0, 200);
-      emit({ type: "tool_result", name: tc.name, summary });
-
       const callId = assistantToolCalls[tcIdx]?.id ?? `call_${round}_${tc.index}`;
+      const group = getToolResourceGroup(tc.name);
+      if (!resourceGroups.has(group)) resourceGroups.set(group, []);
+      resourceGroups.get(group)!.push({ tc, tcIdx, parsedArgs, callId });
+    }
+
+    await Promise.all(
+      Array.from(resourceGroups.values()).map(async (slots) => {
+        for (const { tc, tcIdx, parsedArgs, callId } of slots) {
+          emit({ type: "tool_start", name: tc.name, args: parsedArgs });
+          emit({ type: "status", message: `正在执行工具 ${tc.name}…` });
+
+          let historyContent: string;
+          let jbCacheForHistory: string | undefined;
+          try {
+            const toolResult = await runTool(tc.name, parsedArgs, {
+              toolResultMaxChars: agentConfig.toolResultMaxChars,
+              history: getHistory(sessionId),
+              onJbBinsWrapped: (wrapped) => {
+                jbCacheForHistory = buildJbSessionCacheJson(wrapped);
+                storeJbToolRawJson(sessionId, jbCacheForHistory);
+              },
+            });
+            if (
+              typeof toolResult === "object" &&
+              toolResult !== null &&
+              "__chartOption" in toolResult
+            ) {
+              emit({ type: "chart", option: (toolResult as ChartSentinel).__chartOption });
+              historyContent = "[图表已生成]";
+            } else if (
+              typeof toolResult === "object" &&
+              toolResult !== null &&
+              "__clarification" in toolResult
+            ) {
+              const question = (toolResult as ClarificationSentinel).__clarification;
+              emit({ type: "clarification", question });
+              historyContent = `[已向用户提问：${question}]`;
+            } else {
+              const rawContent =
+                typeof toolResult === "string"
+                  ? toolResult
+                  : JSON.stringify(toolResult);
+              historyContent = toolResultForHistory(
+                tc.name,
+                rawContent,
+                agentConfig.toolResultMaxHistoryChars,
+                agentConfig.toolResultMaxChars,
+                jbCacheForHistory
+              );
+            }
+          } catch (err) {
+            historyContent = `工具执行失败: ${err instanceof Error ? err.message : String(err)}`;
+          }
+
+          emit({ type: "tool_result", name: tc.name, summary: historyContent.slice(0, 200) });
+          toolRunResults[tcIdx] = { historyContent, callId, toolName: tc.name };
+        }
+      })
+    );
+
+    // Append tool messages in original order (tool_call_id must align with
+    // the assistant's tool_calls sequence for all LLM providers)
+    for (const result of toolRunResults) {
       appendMessages(sessionId, {
         role: "tool",
-        tool_call_id: callId,
-        name: tc.name,
-        content: historyContent,
+        tool_call_id: result.callId,
+        name: result.toolName,
+        content: result.historyContent,
       });
     }
     // If agent asked for clarification, stop this round and wait for user reply
