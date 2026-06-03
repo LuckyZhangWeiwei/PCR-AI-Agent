@@ -267,7 +267,7 @@ export function formatClusteredBadBinAlertsMarkdown(
     "以下由服务端按 **waferId(slot) 顺序** 扫描检出；解读与专业建议中 **必须首段写明**（勿仅列 lot 合计 topBadBins）。",
     "",
     "| BIN | 测试层 | 类型 | waferId 范围 | 说明 |",
-    "|---:|---|---|---|",
+    "|---:|---:|---:|---:|---|",
   ];
 
   for (const a of alerts.slice(0, 12)) {
@@ -282,5 +282,6 @@ export function formatClusteredBadBinAlertsMarkdown(
   if (alerts.length > 12) {
     lines.push(`| … | … | … | … | 另有 ${alerts.length - 12} 条见 JSON clusteredBadBinAlerts |`);
   }
+  lines.push("");
   return lines.join("\n");
 }

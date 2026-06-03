@@ -462,6 +462,130 @@ export function getDiesForPassId(
   return [...merged.values()];
 }
 
+// ── Wafer map pass tabs (incl. interrupt / retest segments) ────────────────
+
+export type WaferMapPassSpec = {
+  /** Passed to getDiesForWaferMapSpec (`final`, `5@pre`, or `__block:12`). */
+  dieKey: string;
+  label: string;
+};
+
+/** Dies for one wafer-map tab; `__block:N` = Nth SmWaferPass in file order. */
+export function getDiesForWaferMapSpec(
+  root: InfBlock,
+  goodBins: Set<number>,
+  dieKey: string
+): DieEntry[] {
+  const blockMatch = /^__block:(\d+)$/.exec(dieKey.trim());
+  if (blockMatch) {
+    const idx = Number(blockMatch[1]);
+    const all = findAllSmWaferPasses(root);
+    const pi = all[idx];
+    if (!pi) return [];
+    return buildDieMapForSmWaferPass(pi.block, goodBins);
+  }
+  return getDiesForPassId(root, goodBins, dieKey);
+}
+
+/** Multi-segment label when same PASS_ID has several blocks of one PASS_TYPE (interrupt). */
+function layeredPassLabel(
+  all: SmWaferPassInfo[],
+  blockIndex: number,
+  passType: string,
+  prefix: string
+): string {
+  const pi = all[blockIndex]!;
+  const indices = all
+    .map((p, i) => ({ p, i }))
+    .filter(
+      ({ p }) =>
+        p.passId === pi.passId && p.passType.toUpperCase() === passType.toUpperCase()
+    )
+    .map(({ i }) => i);
+  if (indices.length < 2) return prefix;
+  const pos = indices.indexOf(blockIndex);
+  if (pos < 0) return prefix;
+  if (indices.length === 2) {
+    return pos === 0 ? `${prefix}·中断前` : `${prefix}·续测后`;
+  }
+  return `${prefix}·段${pos + 1}`;
+}
+
+/** Human label for one SmWaferPass tab (正测 / 复测 / 其它类型，含中断分段). */
+export function describePassLayer(all: SmWaferPassInfo[], blockIndex: number): string {
+  const pt = all[blockIndex]!.passType.toUpperCase();
+  if (pt === "TEST") return layeredPassLabel(all, blockIndex, "TEST", "正测");
+  if (pt === "RETESTBIN") return layeredPassLabel(all, blockIndex, "RETESTBIN", "复测");
+  if (pt === "INTERRUPT") return layeredPassLabel(all, blockIndex, "INTERRUPT", "中断");
+  return layeredPassLabel(all, blockIndex, pt, pt);
+}
+
+/**
+ * Default wafer-map tabs: every SmWaferPass physical layer (in file order), then flow-level 合成.
+ * 正测/复测均可有多段（中断前/续测后/段N）；最后为 TEST+RETEST 合并的 final 图。
+ */
+export function buildStandardWaferMapPassSpecs(root: InfBlock): WaferMapPassSpec[] {
+  const all = findAllSmWaferPasses(root);
+  const specs: WaferMapPassSpec[] = all.map((pi, i) => ({
+    dieKey: `__block:${i}`,
+    label: `Pass ${pi.passId} (${describePassLayer(all, i)})`,
+  }));
+  specs.push({
+    dieKey: "final",
+    label: "合成 (正测+复测)",
+  });
+  return specs;
+}
+
+/** Physical layers only (no final) — for tests. */
+export function findSegmentedPassLayers(root: InfBlock): WaferMapPassSpec[] {
+  return buildStandardWaferMapPassSpecs(root).filter((s) => s.dieKey !== "final");
+}
+
+function labelForDieKey(dieKey: string): string {
+  if (dieKey === "final") return "合成 (正测+复测)";
+  if (/^(\d+)@(pre|post)$/.test(dieKey)) {
+    const m = /^(\d+)@(pre|post)$/.exec(dieKey)!;
+    return `Pass ${m[1]} (${m[2] === "pre" ? "正测·中断前" : "正测·续测后"})`;
+  }
+  return `Pass ${dieKey}`;
+}
+
+/**
+ * Build wafer-map tab list from passes= argument.
+ * Default `final` / `all` → 每个 SmWaferPass 物理层 + 合成（flow-level final）。
+ */
+export function buildWaferMapPassSpecs(root: InfBlock, passesArg: string): WaferMapPassSpec[] {
+  const arg = passesArg.trim().toLowerCase();
+
+  if (arg === "all") {
+    return buildStandardWaferMapPassSpecs(root);
+  }
+
+  if (arg === "final" || arg === "final+segments" || arg === "final_interrupt") {
+    return buildStandardWaferMapPassSpecs(root);
+  }
+
+  const tokens = passesArg.split(",").map((s) => s.trim()).filter(Boolean);
+  const specs: WaferMapPassSpec[] = [];
+  let wantStandardExpand = false;
+  for (const t of tokens) {
+    if (t.toLowerCase() === "final") {
+      wantStandardExpand = true;
+    } else {
+      specs.push({ dieKey: t, label: labelForDieKey(t) });
+    }
+  }
+  if (wantStandardExpand) {
+    const standard = buildStandardWaferMapPassSpecs(root);
+    const seen = new Set(specs.map((s) => s.dieKey));
+    for (const s of standard) {
+      if (!seen.has(s.dieKey)) specs.push(s);
+    }
+  }
+  return specs;
+}
+
 // ── Geometry helpers ───────────────────────────────────────────────────────
 
 /**

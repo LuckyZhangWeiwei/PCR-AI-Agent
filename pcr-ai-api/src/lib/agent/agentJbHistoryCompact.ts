@@ -317,6 +317,8 @@ export function formatSlotYieldPivotMarkdown(
     }
     lines.push(`| ${slot} |${cells.join("")} ${badSum} |`);
   }
+  // 表后空行，避免后续解读段落被 GFM 误解析为表内最后一行
+  lines.push("");
   return lines.join("\n");
 }
 
@@ -445,6 +447,7 @@ function formatSlotYieldFlatTable(
       });
     }
   }
+  lines.push("");
   return lines.join("\n");
 }
 

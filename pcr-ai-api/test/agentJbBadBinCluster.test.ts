@@ -56,6 +56,24 @@ describe("agentJbBadBinCluster", () => {
     assert.ok(String(out.lotYieldOverviewMarkdown).includes("警示"));
   });
 
+  it("formatClusteredBadBinAlertsMarkdown has GFM separator column count matching header", () => {
+    const rows = [
+      ...[1, 2, 3, 4].map((s) => row(s, 2)),
+      row(5, 60),
+      row(6, 70),
+    ];
+    const alerts = buildClusteredBadBinAlerts(rows, [{ bin: 7, dieCount: 200 }]);
+    assert.ok(alerts.length > 0);
+    const md = formatClusteredBadBinAlertsMarkdown(alerts, "L1.1Y", "DEV");
+    const lines = md.split("\n");
+    const header = lines.find((l) => l.startsWith("| BIN |"))!;
+    const sep = lines.find((l) => /^\|[\s:|-]+\|$/.test(l.trim()))!;
+    const countCols = (row: string) =>
+      row.split("|").filter((c, i, a) => i > 0 && i < a.length - 1).length;
+    assert.equal(countCols(header), 5);
+    assert.equal(countCols(sep), 5);
+  });
+
   it("formatClusteredBadBinAlertsMarkdown is empty when no alerts", () => {
     const rows = [1, 2, 3, 4].map((s) => row(s, 1));
     const alerts = buildClusteredBadBinAlerts(rows, [{ bin: 7, dieCount: 4 }]);

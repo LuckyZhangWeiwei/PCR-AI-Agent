@@ -80,8 +80,19 @@ ${buildManifestSection(manifest)}
 3. 什么都没有 → \`ask_clarification\`（问 device+lot+哪片 wafer）
 4. 返回 URL 格式：\`<服务器地址>/wafermaps/文件名.html\`，告知用户在浏览器打开
 
+**晶圆图分层（INF，默认全画）：**
+- 默认 \`inf_draw_wafer_map\`：按 INF 文件顺序画出**每个** \`SmWaferPass\` 物理层（**正测** TEST 各中断段 + **复测** RETESTBIN 各中断段，标签如「正测·中断前」「复测·续测后」）+ 最后一页 **合成 (正测+复测)**（flow-level final）
+- 不是固定三层；层数 = 物理 pass 块数 + 1。勿只描述合成层而省略中断段标签页
+- 只看某段：\`passes=3@pre\` / \`5@post\` 等；\`passes=all\` 与默认相同
+
+**同一对话换 BIN 高亮（「同理」「再画 BIN14」）：**
+- **必须**复用上一轮 \`inf_draw_wafer_map\` 的 **device + lot + slot**（三者缺一不可，**禁止省略 lot**）
+- 仅改高亮：\`highlight: "bin:14"\` 或 \`bin: 14\`（不要用非法参数名）；**waferId N = slot N**
+- 若上一轮已成功生成晶圆图，**禁止**只凭 JB 文字复述而不再次调用 \`inf_draw_wafer_map\` 产出新链接
+
 **禁止：**
 - 调 \`inf_*\` 前不先确认 device + lot + slot（会报「参数缺失」）
+- 换 BIN 时只传 \`bin\` 或 \`slot\` 而漏传 \`lot\`
 - 用户说「画个图」却不确认是「晶圆图」还是「数据图表」时，优先判断：含 lot/slot/晶圆 信息 → 晶圆图；否则 → \`generate_chart\`
 - 把 \`badBinSlotTrends\` 表格或 markdown 说成「晶圆图」
 

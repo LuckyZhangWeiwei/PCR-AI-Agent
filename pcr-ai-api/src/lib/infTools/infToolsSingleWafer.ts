@@ -5,6 +5,8 @@
 
 import {
   getDiesForPassId,
+  getDiesForWaferMapSpec,
+  buildWaferMapPassSpecs,
   findAllSmWaferPasses,
   findSmWaferPassesForId,
   buildDieMapForSmWaferPass,
@@ -772,20 +774,23 @@ export async function runDrawWaferMap(
   const passesArg = argStr(args, "passes", "final");
   const highlight = argStr(args, "highlight");
 
-  const passIdList = passesArg === "all"
-    ? [...new Set(findAllSmWaferPasses(ctx.root).map((p) => p.passId)), "final"]
-    : passesArg.split(",").map((s) => s.trim()).filter(Boolean);
-
+  const passSpecs = buildWaferMapPassSpecs(ctx.root, passesArg);
   const passes: WaferMapPass[] = [];
-  for (const pid of passIdList) {
-    const dies = getDiesForPassId(ctx.root, ctx.goodBins, pid);
-    if (dies.length > 0) {
-      const label = pid === "final" ? "最终 (final)" : `Pass ${pid}`;
-      passes.push({ label, dies });
-    }
+  for (const spec of passSpecs) {
+    const dies = getDiesForWaferMapSpec(ctx.root, ctx.goodBins, spec.dieKey);
+    if (dies.length > 0) passes.push({ label: spec.label, dies });
   }
 
   if (passes.length === 0) return `未找到任何 die 数据（passes=${passesArg}）`;
+
+  const layerCount = passSpecs.filter((s) => s.dieKey.startsWith("__block:")).length;
+  const hasFinal = passSpecs.some((s) => s.dieKey === "final");
+  const segmentNote =
+    layerCount > 0 && hasFinal
+      ? `共 ${layerCount} 个物理测试层（正测/复测各段含中断）+ 1 个合成层，请在标签页切换查看。`
+      : passSpecs.length > 1
+        ? "含多层测试结果，请在标签页切换查看。"
+        : "";
 
   const possibleDies = readPossibleDieCoords(ctx.root);
   const { waferResult: r } = ctx;
@@ -803,18 +808,23 @@ export async function runDrawWaferMap(
   saveWaferMapHtml(filename, html);
   const urlPath = waferMapUrlPath(filename);
 
-  const finalPass = passes[0]!;
-  const goodCount = finalPass.dies.filter((d) => d.isGood).length;
-  const yieldPct = finalPass.dies.length > 0 ? (goodCount / finalPass.dies.length * 100).toFixed(2) : "0.00";
+  const compositeTab =
+    passes.find((p) => p.label.startsWith("合成")) ?? passes[passes.length - 1]!;
+  const goodCount = compositeTab.dies.filter((d) => d.isGood).length;
+  const yieldPct =
+    compositeTab.dies.length > 0
+      ? (goodCount / compositeTab.dies.length * 100).toFixed(2)
+      : "0.00";
   const topBad = topBadBinsSummary(r.final.binCounts, ctx.goodBins);
 
   return [
     `**晶圆图已生成** → [点击在新窗口查看晶圆图](${urlPath})`,
-    `Lot: ${r.lot}  Wafer: ${r.waferId}  Slot: ${slot}`,
-    `总 die: ${finalPass.dies.length}  良品: ${goodCount}  良率: ${yieldPct}%`,
+    `Device: ${device}  Lot: ${r.lot}  Wafer: ${r.waferId}  Slot: ${slot}`,
+    `总 die: ${compositeTab.dies.length}  良品: ${goodCount}  良率: ${yieldPct}%（合成层）`,
     `坏 bin top: ${topBad}`,
     `Pass 数: ${passes.length}（${passes.map((p) => p.label).join(", ")}）`,
-  ].join("\n");
+    segmentNote,
+  ].filter(Boolean).join("\n");
 }
 
 // ── 17. inf_cluster_shape ─────────────────────────────────────────────────

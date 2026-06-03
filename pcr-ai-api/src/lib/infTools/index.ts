@@ -265,11 +265,17 @@ export const INF_TOOL_SCHEMAS = [
           ...DEVICE_LOT_SLOT,
           passes: {
             type: "string",
-            description: "pass 规格，逗号分隔或 'all'，默认 'final'（如 'final,1,3,5' 或 'all'）",
+            description:
+              "pass 规格：默认 'final' = 每个 SmWaferPass 物理层（正测/复测，含全部中断段）+ 合成层；" +
+              "'all' 同默认；逗号列表如 '3@pre,5@post' 可只画指定段",
           },
           highlight: {
             type: "string",
-            description: "高亮模式：'edge'（边缘 die 金色描边）| 'bin:N'（指定 bin 黄色描边）| 不填=无",
+            description: "高亮模式：'edge'（边缘 die 金色描边）| 'bin:N'（指定 bin 黄色描边，标出 BIN98 时用 bin:98）| 不填=无",
+          },
+          bin: {
+            type: "number",
+            description: "等价于 highlight=bin:N；标出某 bin 位置时传此字段（勿省略 lot/device/slot）",
           },
         },
         required: ["device", "lot", "slot"],

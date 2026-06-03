@@ -20,7 +20,8 @@ This is a two-package monorepo (no shared workspace tooling — each package has
 > **Agent JB 突增/聚集坏 bin + 中断次数 + 机台 + 数据/结论分栏：** [`docs/HANDOFF_AGENT_JB_CLUSTER_INTERRUPT_TESTER_UX.md`](docs/HANDOFF_AGENT_JB_CLUSTER_INTERRUPT_TESTER_UX.md) — `clusteredBadBinAlerts`、`testInterruptCount`、`testerByLot`、`splitAgentReplyMarkdown`。  
 > **Agent JB 中途换卡（CARDID×passId）：** [`docs/HANDOFF_AGENT_JB_PROBE_CARD_CHANGE.md`](docs/HANDOFF_AGENT_JB_PROBE_CARD_CHANGE.md) — 仅同 (slot,passId) 算换卡；`cardByPassId`（pass1/3 各一卡正常）。  
 > **Agent generate_chart（GLM 空参 + DUT 占比推断）：** [`docs/HANDOFF_AGENT_GENERATE_CHART.md`](docs/HANDOFF_AGENT_GENERATE_CHART.md) — `parseGlmToolCallBody`、`inferGenerateChartArgsFromHistory`、`labels`+`values`。  
-> **JB 报表 BIN/Platform/DUT 多选：** [`docs/HANDOFF_JB_REPORT_FILTERS_DUT_MULTISELECT.md`](docs/HANDOFF_JB_REPORT_FILTERS_DUT_MULTISELECT.md) — `bins=` 列表筛选、Platform 仅 Yield（含 93K）、明细/下钻多选叠加 DUT、`mergeSiteBinPasses`。
+> **JB 报表 BIN/Platform/DUT 多选：** [`docs/HANDOFF_JB_REPORT_FILTERS_DUT_MULTISELECT.md`](docs/HANDOFF_JB_REPORT_FILTERS_DUT_MULTISELECT.md) — `bins=` 列表筛选、Platform 仅 Yield（含 93K）、明细/下钻多选叠加 DUT、`mergeSiteBinPasses`。  
+> **INF 晶圆图分层 + Agent 表/解读分栏（2026-06-03）：** [`docs/HANDOFF_INF_WAFER_MAP_AND_AGENT_TABLE_UX.md`](docs/HANDOFF_INF_WAFER_MAP_AND_AGENT_TABLE_UX.md) — 全 SmWaferPass 标签页 + 合成、`inf_draw` 多轮补参、聚集表 GFM、`## 分析结论` 与表尾拆分。
 
 ---
 

@@ -680,6 +680,11 @@ async function tryRunDeterministicJbSummary(
   emitTextInChunks(tablesBlock, emit);
 
   emit({ type: "status", message: "正在生成数据解读与专业建议…" });
+  // 先推送分段标题，避免解读文字与上方表格落在同一 Markdown 块里被 GFM 当成表尾行
+  emit({
+    type: "text",
+    delta: `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n`,
+  });
 
   const commFilter = createDeepSeekFilter(emit);
   let streamError: string | undefined;

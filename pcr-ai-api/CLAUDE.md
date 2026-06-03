@@ -25,6 +25,7 @@
 | 1e1 | [`../docs/HANDOFF_AGENT_JB_DETERMINISTIC_SUMMARY.md`](../docs/HANDOFF_AGENT_JB_DETERMINISTIC_SUMMARY.md) | **Agent JB 确定性总结**：lot 全量查询、预计算 markdown、`tryRunDeterministicJbSummary`、数据解读 + Wafer Test/Probe Card/DUT 专业建议 |
 | 1e2 | [`../docs/HANDOFF_AGENT_JB_PROBE_CARD_CHANGE.md`](../docs/HANDOFF_AGENT_JB_PROBE_CARD_CHANGE.md) | **Agent JB 中途换卡**：仅同 **(slot, passId)** 多 CARDID；`cardByPassId`（pass1≠pass3 用不同卡为正常） |
 | 1f | [`../docs/HANDOFF_AGENT_GENERATE_CHART.md`](../docs/HANDOFF_AGENT_GENERATE_CHART.md) | **Agent generate_chart**：GLM `<tool_call>` 解析、空参合并、`inferGenerateChartArgsFromHistory`（DUT 占比 pie） |
+| 1g | [`../docs/HANDOFF_INF_WAFER_MAP_AND_AGENT_TABLE_UX.md`](../docs/HANDOFF_INF_WAFER_MAP_AND_AGENT_TABLE_UX.md) | **INF 晶圆图**：全物理层 + 合成；`inf_draw` 历史补参；聚集表 GFM；总结流 `## 分析结论` + 前端表/解读分栏 |
 | 2 | [`docs/API_V3.md`](docs/API_V3.md) | **v3 列表**完整 SQL（由 `npm run docs:api-v3` 从 `dist` 再生） |
 | 3 | [`.env.example`](.env.example) | 环境变量与 Dummy 开关说明 |
 | 4 | [`.cursor/rules/dummy-parity.mdc`](.cursor/rules/dummy-parity.mdc) | **Oracle 与 Dummy 双路径必须同步**（改筛选/WHERE/响应形状时必读） |

@@ -52,6 +52,7 @@ import {
   type ChartSentinel,
   type ClarificationSentinel,
 } from "./agentChartTool.js";
+import { normalizeInfDrawWaferMapArgs } from "./agentInfWaferMapTool.js";
 import type { ChatMessage } from "./agentHistory.js";
 import { runGetFilterValues } from "./agentFilterValuesTool.js";
 import {
@@ -635,7 +636,11 @@ export async function runTool(
     default: {
       // Delegate inf_* tools
       if (name.startsWith("inf_")) {
-        const result = await runInfTool(name, args);
+        const infArgs =
+          name === "inf_draw_wafer_map" && options?.history?.length
+            ? normalizeInfDrawWaferMapArgs(args, options.history)
+            : args;
+        const result = await runInfTool(name, infArgs);
         if (result !== null) return result;
       }
       return `未知工具: ${name}`;
