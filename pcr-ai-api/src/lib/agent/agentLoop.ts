@@ -46,7 +46,12 @@ import {
   LOT_OVERVIEW_JB_NUDGE,
   lotOverviewNeedsJbRecovery,
 } from "./agentJbOverviewRoute.js";
-import { extractLotFromUserText } from "./agentInfWaferMapTool.js";
+import {
+  buildInfDrawArgsAfterJbLookup,
+  extractLotFromUserText,
+  findJbLotContext,
+  infDrawWaferMapArgsComplete,
+} from "./agentInfWaferMapTool.js";
 import {
   buildDutBinMapArgsFromSession,
   DUT_BIN_MAP_JB_LOOKUP_NUDGE,
@@ -892,6 +897,100 @@ async function emitDeterministicJbTablesReply(
 }
 
 /**
+ * 用户提供 lot + slot 但未提供 device 时，自动 query_jb_bins 取 device，再直接画图。
+ * 避免让 LLM 反问用户提供 device（LLM 不可靠地遵循 WAFER_MAP_JB_LOOKUP_NUDGE）。
+ */
+async function tryRunWaferMapWithAutoDeviceLookup(
+  sessionId: string,
+  userQuestion: string,
+  agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void
+): Promise<boolean> {
+  // lot 必须可以从用户文本或历史 JB 上下文中提取
+  const history = getHistory(sessionId);
+  const lot =
+    extractLotFromUserText(userQuestion) ?? findJbLotContext(history).lot;
+  if (!lot) return false;
+
+  // 复用已有缓存：同一 lot 已查过就直接画
+  const cached = getCachedJbPayloadForLot(sessionId, lot);
+  if (cached) {
+    const drawArgs = buildInfDrawArgsAfterJbLookup(cached, history, userQuestion);
+    if (!infDrawWaferMapArgsComplete(drawArgs)) {
+      const msg =
+        "已有 JB 数据，但画晶圆图还需要**片号（slot/waferId）**，如「第5片」或「slot=14」。";
+      emitTextInChunks(msg, emit);
+      appendMessages(sessionId, { role: "assistant", content: msg });
+      emit({ type: "done" });
+      return true;
+    }
+    return finishWaferMapDraw(sessionId, drawArgs, history, emit);
+  }
+
+  // 轻量查询：limit:1 只取 device/lot 字段，不需全量数据
+  const queryArgs: Record<string, unknown> = { lot, limit: 1 };
+  emit({ type: "status", message: `正在查询 ${lot} 的设备信息…` });
+  emit({ type: "tool_start", name: "query_jb_bins", args: queryArgs });
+
+  let jbCacheForHistory: string | undefined;
+  let payload: Record<string, unknown> | null = null;
+
+  try {
+    const toolResult = await runTool("query_jb_bins", queryArgs, {
+      toolResultMaxChars: agentConfig.toolResultMaxChars,
+      history: getHistory(sessionId),
+      onJbBinsWrapped: (wrapped) => {
+        jbCacheForHistory = buildJbSessionCacheJson(wrapped);
+        storeJbToolRawJson(sessionId, jbCacheForHistory);
+      },
+    });
+    const rawContent =
+      typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult);
+    const historyContent = toolResultForHistory(
+      "query_jb_bins",
+      rawContent,
+      agentConfig.toolResultMaxHistoryChars,
+      agentConfig.toolResultMaxChars,
+      jbCacheForHistory
+    );
+    emit({ type: "tool_result", name: "query_jb_bins", summary: historyContent.slice(0, 200) });
+    appendMessages(sessionId, {
+      role: "tool",
+      name: "query_jb_bins",
+      tool_call_id: `wafermap_device_${Date.now()}`,
+      content: historyContent,
+    });
+    payload =
+      (jbCacheForHistory ? parseJbToolPayload(jbCacheForHistory) : null) ??
+      resolveJbToolPayload(sessionId, historyContent);
+  } catch (e) {
+    // 查询失败 → 回退到 LLM 路由
+    return false;
+  }
+
+  if (!payload) return false;
+
+  const updatedHistory = getHistory(sessionId);
+  const drawArgs = buildInfDrawArgsAfterJbLookup(
+    payload as Record<string, unknown>,
+    updatedHistory,
+    userQuestion
+  );
+
+  if (!infDrawWaferMapArgsComplete(drawArgs)) {
+    // device/lot 已有，通常是缺 slot
+    const msg =
+      "已查询到设备信息。画晶圆图还需要**片号（slot/waferId）**，如「第5片」或「slot=14」。";
+    emitTextInChunks(msg, emit);
+    appendMessages(sessionId, { role: "assistant", content: msg });
+    emit({ type: "done" });
+    return true;
+  }
+
+  return finishWaferMapDraw(sessionId, drawArgs, updatedHistory, emit);
+}
+
+/**
  * 「DR44117.1Y 整体测试情况」：服务端 query_jb_bins + 表，不走首轮/解读 LLM。
  */
 async function tryRunLotOverviewDirectRoute(
@@ -1289,6 +1388,17 @@ export async function runAgentLoop(
         emit
       );
       if (dutBinDone) return;
+
+      // lot+slot 已知但 device 未知 → 自动 query_jb_bins 取 device，不经 LLM
+      if (waferPlan.isWaferMapIntent && waferPlan.action.kind === "need_jb_lookup") {
+        const autoDrawn = await tryRunWaferMapWithAutoDeviceLookup(
+          sessionId,
+          userQuestion,
+          agentConfig,
+          emit
+        );
+        if (autoDrawn) return;
+      }
 
       const drawn = await applyWaferMapRoutePlan(
         sessionId,
