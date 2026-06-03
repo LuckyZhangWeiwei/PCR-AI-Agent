@@ -60,7 +60,7 @@ ${buildManifestSection(manifest)}
 
 | 用户意图 | 正确路径 | 禁止 |
 |---|---|---|
-| 画晶圆图 / 看 wafer map / 生成 HTML | \`query_jb_bins(lot)\` 取 device+slot → \`inf_draw_wafer_map\` | 直接返回 JB STAR 表格当「晶圆图」 |
+| 画晶圆图 / 看 wafer map / 生成 HTML | \`query_jb_bins(lot)\` 取 device → 服务端**自动** \`inf_draw_wafer_map\` 返回链接（**勿**输出聚集/良率大表） | 直接返回 JB STAR 表格当「晶圆图」 |
 | lot 良率 / 坏 bin 数量 / 批次概况 | \`query_jb_bins\` / \`query_yield_triggers\`（Oracle） | 调用任何 \`inf_*\` 工具 |
 | 报警次数 / DUT 不均衡趋势 | \`query_yield_triggers\` / \`aggregate_yield_triggers\` | 调用 \`inf_*\` 工具 |
 | **「lot 坏 bin 聚集/突增」**（批次级） | \`query_jb_bins(lot)\` 读 \`clusteredBadBinAlerts\`（Oracle，已预计算） | 调用 \`inf_cluster_detect\`（那是 die 级坐标聚集） |
@@ -76,7 +76,7 @@ ${buildManifestSection(manifest)}
 
 **画晶圆图硬规则（四步固定流程）：**
 1. device + lot + slot **均已知且确信正确**（来自本轮历史中明确出现的 \`query_jb_bins\` 结果，而非只在摘要中提及）→ 直接 \`inf_draw_wafer_map(device, lot, slot)\`
-2. **只有 lot**（device 或 slot 不确定）→ **先调** \`query_jb_bins(lot)\` 刷新 device + distinctSlots，再画图；**对话已进行多轮时必须执行此步，不能仅凭摘要猜参数**
+2. **只有 lot**（device 或 slot 不确定）→ **先调** \`query_jb_bins(lot)\` 取 device；**仅画晶圆图**时服务端会在该步后**直接出图**，禁止再输出 JB 聚集/良率表；**对话已进行多轮时必须执行此步，不能仅凭摘要猜参数**
 3. 什么都没有 → \`ask_clarification\`（问 device+lot+哪片 wafer）
 4. 返回 URL 格式：\`<服务器地址>/wafermaps/文件名.html\`，告知用户在浏览器打开
 
@@ -88,6 +88,8 @@ ${buildManifestSection(manifest)}
 
 **同一对话换 BIN 高亮（「同理」「再画 BIN14」）：**
 - **必须**复用上一轮 \`inf_draw_wafer_map\` 的 **device + lot + slot**（三者缺一不可，**禁止省略 lot**）
+- **换 BIN 高亮**（如「标出 BIN15」）→ 服务端自动 \`passes=composite\`（仅合成层，秒级出图）；**禁止**再调 \`query_jb_bins\`
+- **BIN 与 DUT 关系 / 相关 DUT**（如「BIN15 和相关 DUT 的 wafermap」）→ **必须** \`inf_draw_dut_bin_map(dut, bin)\`（横线/竖线/白块图）；**禁止**用 \`inf_draw_wafer_map\` 的 \`highlight:bin:N\`（那是单色高亮，看不出 DUT）
 - 仅改高亮：\`highlight: "bin:14"\` 或 \`bin: 14\`（不要用非法参数名）；**waferId N = slot N**
 - 若上一轮已成功生成晶圆图，**禁止**只凭 JB 文字复述而不再次调用 \`inf_draw_wafer_map\` 产出新链接
 
@@ -243,6 +245,7 @@ ${buildManifestSection(manifest)}
 - **批次 ID 必须原样使用**：lot ID 可能含 "." 后缀（如 "NF12551.1N"），"." 及其后面的部分是 lot ID 的有效组成部分，**绝对不能截断**。"NF12551.1N" 整体才是 lot ID，不是 "NF12551"。
 - **区分 lot ID 与 device**：device（产品代码）通常形如 "WA03P02G"（字母+数字组合，无 "."，长度较短）；lot ID 通常含较长数字段，且可能带 "." 后缀（如 "NF12551.1N"）。若用户输入包含 "."，优先判断为 lot ID。
 - **跨域查询**：用户仅提供 lot ID 而**未明确说明要查 Yield Monitor 还是 JB STAR** 时，**必须同时查两个域**（先调 query_yield_triggers，再调 query_jb_bins），然后合并汇报两域的结果，不能只查一个域就结束。
+- **lot 整体/概况/测试情况**（如「DR44117.1Y 整体的测试情况」）：**必须先** \`query_jb_bins(lot, limit:200)\` 并由服务端直出聚集/良率/机台/探针卡等表；**禁止**仅 \`query_yield_triggers\` 后用文字代替 JB 表。YM 报警在 JB 表之后的解读中简要提及即可。
 
 ### 用户已指定 lot 的「整体测试情况 / 概况 / 重新计算」（硬规则）
 

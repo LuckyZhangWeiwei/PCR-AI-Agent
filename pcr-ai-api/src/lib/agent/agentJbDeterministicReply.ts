@@ -174,6 +174,28 @@ export function isSlotPassYieldQuestion(text: string): boolean {
   return false;
 }
 
+/** 服务端表已覆盖用户问题时，不再调 LLM 解读（避免 120s 超时）。lot_overview 需要表+简短解读，不在此列。 */
+export function jbReplySkipsCommentaryLlm(mode: JbReplyMode): boolean {
+  return (
+    mode === "bad_bin_ranking" ||
+    mode === "interrupt_count" ||
+    mode === "tester_machine" ||
+    mode === "equipment"
+  );
+}
+
+/** lot 概况：聚集/机台/探针卡/良率 pivot 等完整服务端表。 */
+export function buildLotOverviewTablesMarkdown(
+  toolPayload: Record<string, unknown>
+): string | null {
+  const full = formatLotYieldOverviewMarkdown(toolPayload)?.trim();
+  if (full) return full;
+  return rebuildDeterministicTablesFallback(toolPayload);
+}
+
+export const JB_TABLES_ONLY_FOOTER =
+  "\n\n---\n\n*以上为服务端实测表。如需某 BIN 逐片趋势或晶圆图，请继续提问。*";
+
 export function detectJbReplyMode(userMessage: string): JbReplyMode {
   if (isTesterMachineQuestion(userMessage) && isProbeCardQuestion(userMessage)) {
     return "equipment";
@@ -323,11 +345,11 @@ export function buildDeterministicJbTables(
     return null;
   }
 
-  if (
-    mode === "slot_pass_yield" ||
-    mode === "lot_overview" ||
-    mode === "generic"
-  ) {
+  if (mode === "lot_overview") {
+    return buildLotOverviewTablesMarkdown(toolPayload);
+  }
+
+  if (mode === "slot_pass_yield" || mode === "generic") {
     const overview =
       digest.lotOverview?.trim() ||
       formatLotYieldOverviewMarkdown(toolPayload)?.trim();

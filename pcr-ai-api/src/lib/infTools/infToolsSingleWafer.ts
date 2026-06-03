@@ -819,7 +819,7 @@ export async function runDrawWaferMap(
 
   return [
     `**晶圆图已生成** → [点击在新窗口查看晶圆图](${urlPath})`,
-    `Device: ${device}  Lot: ${r.lot}  Wafer: ${r.waferId}  Slot: ${slot}`,
+    `Device: ${device}  Lot: ${lot || r.lot}  Wafer: ${r.waferId}  Slot: ${slot}`,
     `总 die: ${compositeTab.dies.length}  良品: ${goodCount}  良率: ${yieldPct}%（合成层）`,
     `坏 bin top: ${topBad}`,
     `Pass 数: ${passes.length}（${passes.map((p) => p.label).join(", ")}）`,
@@ -867,15 +867,31 @@ export async function runClusterShape(
   });
 }
 
+/** BIN 在各 DUT(site) 上出现次数最多者，用于「相关 DUT」未指定编号时。 */
+function inferPrimaryDutForBin(dies: DieEntry[], targetBin: number): number | undefined {
+  const counts = new Map<number, number>();
+  for (const d of dies) {
+    if (d.bin !== targetBin || d.site == null) continue;
+    counts.set(d.site, (counts.get(d.site) ?? 0) + 1);
+  }
+  let best: number | undefined;
+  let max = 0;
+  for (const [site, n] of counts) {
+    if (n > max) {
+      max = n;
+      best = site;
+    }
+  }
+  return best;
+}
+
 // ── inf_draw_dut_bin_map ───────────────────────────────────────────────────
 
 export async function runDrawDutBinMap(
   args: Record<string, unknown>,
   device: string, lot: string, slot: number
 ): Promise<string> {
-  const dut = argInt(args, "dut", NaN);
   const bin = argInt(args, "bin", NaN);
-  if (!Number.isFinite(dut)) return "inf_draw_dut_bin_map 参数错误: dut 不能为空";
   if (!Number.isFinite(bin)) return "inf_draw_dut_bin_map 参数错误: bin 不能为空";
 
   const ctx = await loadInfWafer(device, lot, slot);
@@ -883,6 +899,22 @@ export async function runDrawDutBinMap(
   const dies = getDiesForPassId(ctx.root, ctx.goodBins, passIdStr);
 
   if (dies.length === 0) return `无 die 数据（pass_id=${passIdStr}）`;
+
+  let dut = argInt(args, "dut", NaN);
+  let dutInferred = false;
+  if (!Number.isFinite(dut)) {
+    const inferred = inferPrimaryDutForBin(dies, bin);
+    if (inferred != null) {
+      dut = inferred;
+      dutInferred = true;
+    }
+  }
+  if (!Number.isFinite(dut)) {
+    return (
+      "inf_draw_dut_bin_map 参数错误: dut 不能为空。" +
+      "可说「DUT2 × BIN15」或先 query_inf_site_bin_by_dut 查哪个 DUT 的 BIN15 最多。"
+    );
+  }
 
   const { waferResult: r } = ctx;
   const passLabel = `${passIdStr === "final" ? "最终" : `Pass ${passIdStr}`} | DUT=${dut} × BIN=${bin}`;
@@ -911,12 +943,18 @@ export async function runDrawDutBinMap(
     ? `ℹ️ BIN${bin} 存在（${binTotal} 个），但均不由 DUT${dut} 测试（图中仅竖线，无白色 die）`
     : "";
 
+  const inferredNote = dutInferred
+    ? `已自动选取 BIN${bin} 颗数最多的 DUT${dut}；**竖线**=其他 DUT 上的 BIN${bin}（即「相关 DUT」）。`
+    : "";
+
   return [
     `**DUT${dut} × BIN${bin} 关系图已生成** → [点击在新窗口查看](${urlPath})`,
+    `Device: ${device}  Lot: ${lot}  Slot: ${slot}`,
     `Pass: ${passIdStr}  总 die: ${dies.length}`,
     `DUT${dut} 测的 die: ${dutTotal}  BIN${bin} 出现: ${binTotal}  双匹配: ${matchCount}`,
     `DUT${dut} 中 BIN${bin} 占比: ${dutTotal > 0 ? ((matchCount / dutTotal) * 100).toFixed(1) : 0}%`,
+    inferredNote,
     note,
-    `图例: ■ 白色=双匹配  横线=DUT${dut}其他bin  竖线=BIN${bin}其他DUT  极暗=其他`,
+    `图例: ■ 白色=DUT${dut}且BIN${bin}  横线=该DUT其他bin  竖线=BIN${bin}由其他DUT测得  极暗=其他`,
   ].filter(Boolean).join("\n");
 }

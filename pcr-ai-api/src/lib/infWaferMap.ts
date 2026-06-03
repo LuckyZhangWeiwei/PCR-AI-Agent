@@ -562,6 +562,11 @@ export function buildWaferMapPassSpecs(root: InfBlock, passesArg: string): Wafer
     return buildStandardWaferMapPassSpecs(root);
   }
 
+  /** 仅合成层（换 BIN 高亮跟随时，避免重复画全部中断段） */
+  if (arg === "composite") {
+    return [{ dieKey: "final", label: "合成 (正测+复测)" }];
+  }
+
   if (arg === "final" || arg === "final+segments" || arg === "final_interrupt") {
     return buildStandardWaferMapPassSpecs(root);
   }

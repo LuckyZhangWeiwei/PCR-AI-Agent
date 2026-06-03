@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildInfDrawArgsAfterJbLookup,
+  buildInfDrawArgsFromSession,
   extractBinNumberFromText,
+  extractLotFromUserText,
+  extractSlotFromUserText,
   findLastInfDrawWaferMapContext,
   inferSinglePassIdFromText,
   normalizeInfDrawWaferMapArgs,
   parseInfDrawResultText,
   userWantsAllInfLayers,
+  userWantsWaferMapOnly,
 } from "../src/lib/agent/agentInfWaferMapTool.js";
 import type { ChatMessage } from "../src/lib/agent/agentHistory.js";
 
@@ -89,6 +94,63 @@ test("normalizeInfDrawWaferMapArgs fills lot from prior inf_draw", () => {
   assert.equal(merged.slot, 14);
   assert.equal(merged.highlight, "bin:14");
   assert.equal("bin" in merged, false);
+});
+
+test("extractSlotFromUserText 第1片wafer", () => {
+  assert.equal(
+    extractSlotFromUserText("帮我画出DR44117.1Y第1片wafer 的pass1 的wafermap"),
+    1
+  );
+});
+
+test("userWantsWaferMapOnly vs lot overview", () => {
+  assert.equal(
+    userWantsWaferMapOnly(
+      "帮我画出DR44117.1Y第1片wafer 的pass1 的wafermap"
+    ),
+    true
+  );
+  assert.equal(userWantsWaferMapOnly("DR44117.1Y lot 概况和聚集分析"), false);
+});
+
+test("normalizeInfDrawWaferMapArgs BIN follow-up uses composite pass", () => {
+  const history: ChatMessage[] = [
+    {
+      role: "tool",
+      name: "inf_draw_wafer_map",
+      content:
+        "**晶圆图已生成** → [x](/wafermaps/a.html)\n" +
+        "Device: WA00P32P  Lot: DR44117.1Y  Wafer: 14  Slot: 14",
+    },
+    { role: "user", content: "画出bin15 所在位置的 wafermap" },
+  ];
+  const merged = normalizeInfDrawWaferMapArgs({}, history);
+  assert.equal(merged.lot, "DR44117.1Y");
+  assert.equal(merged.slot, 14);
+  assert.equal(merged.highlight, "bin:15");
+  assert.equal(merged.passes, "composite");
+});
+
+test("buildInfDrawArgsAfterJbLookup from jb payload + user slot", () => {
+  const history = [
+    {
+      role: "user",
+      content: "帮我画出DR44117.1Y第1片wafer 的pass1 的wafermap",
+    },
+  ] as ChatMessage[];
+  const args = buildInfDrawArgsAfterJbLookup(
+    { device: "WA00P32P", lot: "DR44117.1Y" },
+    history,
+    history[0]!.content as string
+  );
+  assert.equal(args.device, "WA00P32P");
+  assert.equal(args.lot, "DR44117.1Y");
+  assert.equal(args.slot, 1);
+  assert.equal(args.passes, "1");
+});
+
+test("extractLotFromUserText", () => {
+  assert.equal(extractLotFromUserText("lot DR44117.1Y 第3片"), "DR44117.1Y");
 });
 
 test("findLastInfDrawWaferMapContext skips failed draw", () => {

@@ -29,15 +29,37 @@ import {
   buildBriefCommentaryUserMessage,
   buildDeterministicJbTables,
   buildEngineeringContextFromPayload,
+  detectJbReplyMode,
   DETERMINISTIC_TABLES_HEADER,
   DETERMINISTIC_DATA_SECTION_TITLE,
   DETERMINISTIC_COMMENTARY_SECTION_TITLE,
+  JB_TABLES_ONLY_FOOTER,
+  jbReplySkipsCommentaryLlm,
+  parseJbToolPayload,
   resolveJbToolPayload,
 } from "./agentJbDeterministicReply.js";
+import {
+  buildLotOverviewQueryArgs,
+  canRunLotOverviewDirectRoute,
+  getCachedJbPayloadForLot,
+  LOT_OVERVIEW_JB_NUDGE,
+  lotOverviewNeedsJbRecovery,
+} from "./agentJbOverviewRoute.js";
+import { isLotOverviewQuestion } from "./agentJbDeterministicReply.js";
+import { extractLotFromUserText } from "./agentInfWaferMapTool.js";
+import {
+  buildDutBinMapArgsFromSession,
+  sessionCanDrawDutBinMap,
+} from "./agentDutBinMapRoute.js";
 import {
   getJbToolRawJson,
   storeJbToolRawJson,
 } from "./agentJbSessionCache.js";
+import {
+  planWaferMapRoute,
+  WAFER_MAP_JB_LOOKUP_NUDGE,
+  type WaferMapRoutePlan,
+} from "./agentWaferMapRoute.js";
 
 export type AgentSseEvent =
   | { type: "text"; delta: string }
@@ -652,33 +674,164 @@ function emitTextInChunks(text: string, emit: (event: AgentSseEvent) => void): v
   }
 }
 
-/**
- * 总结轮：先 SSE 直出服务端表，再让 LLM 只写 3–8 句解读（不改表中数字）。
- * @returns true 表示已完整结束本轮（调用方应 return）。
- */
-async function tryRunDeterministicJbSummary(
+/** DUT×BIN 关系图：inf_draw_dut_bin_map（非 inf_draw_wafer_map）。 */
+async function tryRunDutBinMapDirectRoute(
   sessionId: string,
   userQuestion: string,
-  agentConfig: AgentConfig,
   emit: (event: AgentSseEvent) => void
 ): Promise<boolean> {
+  if (!sessionCanDrawDutBinMap(getHistory(sessionId), userQuestion)) {
+    return false;
+  }
+
   const history = getHistory(sessionId);
-  const lastTool = lastToolMessage(history);
-  if (lastTool?.name !== "query_jb_bins") return false;
+  const drawArgs = buildDutBinMapArgsFromSession(history, userQuestion);
 
-  const payload = resolveJbToolPayload(
-    sessionId,
-    String(lastTool.content ?? "")
-  );
-  if (!payload) return false;
+  const missing: string[] = [];
+  if (!String(drawArgs["device"] ?? "").trim()) missing.push("device");
+  if (!String(drawArgs["lot"] ?? "").trim()) missing.push("lot");
+  if (drawArgs["slot"] == null) missing.push("slot");
+  if (drawArgs["bin"] == null) missing.push("bin");
+  if (missing.length) {
+    emit({
+      type: "text",
+      delta: `无法画 DUT×BIN 关系图：缺少 ${missing.join("、")}。请先查询该 lot/slot 或说明片号。`,
+    });
+    appendMessages(sessionId, {
+      role: "assistant",
+      content: `无法画 DUT×BIN 关系图：缺少 ${missing.join("、")}。`,
+    });
+    emit({ type: "done" });
+    return true;
+  }
 
+  emit({ type: "status", message: "正在生成 DUT×BIN 关系晶圆图…" });
+  emit({ type: "tool_start", name: "inf_draw_dut_bin_map", args: drawArgs });
+
+  try {
+    const raw = await runTool("inf_draw_dut_bin_map", drawArgs, { history });
+    const content =
+      typeof raw === "string" ? raw : JSON.stringify(raw);
+    emit({
+      type: "tool_result",
+      name: "inf_draw_dut_bin_map",
+      summary: content.slice(0, 200),
+    });
+    appendMessages(sessionId, {
+      role: "tool",
+      name: "inf_draw_dut_bin_map",
+      tool_call_id: `dutbin_${Date.now()}`,
+      content,
+    });
+    emitTextInChunks(content, emit);
+    appendMessages(sessionId, { role: "assistant", content });
+    emit({ type: "done" });
+    return true;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    emit({ type: "text", delta: `DUT×BIN 关系图生成失败：${msg.slice(0, 300)}` });
+    appendMessages(sessionId, {
+      role: "assistant",
+      content: `DUT×BIN 关系图生成失败：${msg.slice(0, 300)}`,
+    });
+    emit({ type: "done" });
+    return true;
+  }
+}
+
+/** 执行 inf_draw_wafer_map 并结束本轮（不经过 LLM / JB 大表）。 */
+async function finishWaferMapDraw(
+  sessionId: string,
+  drawArgs: Record<string, unknown>,
+  history: ChatMessage[],
+  emit: (event: AgentSseEvent) => void
+): Promise<boolean> {
+  emit({ type: "status", message: "正在生成晶圆图…" });
+  emit({ type: "tool_start", name: "inf_draw_wafer_map", args: drawArgs });
+
+  try {
+    const raw = await runTool("inf_draw_wafer_map", drawArgs, { history });
+    const content =
+      typeof raw === "string" ? raw : JSON.stringify(raw);
+    emit({
+      type: "tool_result",
+      name: "inf_draw_wafer_map",
+      summary: content.slice(0, 200),
+    });
+    const callId = `wafermap_fast_${Date.now()}`;
+    appendMessages(sessionId, {
+      role: "tool",
+      name: "inf_draw_wafer_map",
+      tool_call_id: callId,
+      content,
+    });
+    emitTextInChunks(content, emit);
+    appendMessages(sessionId, { role: "assistant", content });
+    emit({ type: "done" });
+    return true;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    emit({ type: "text", delta: `晶圆图生成失败：${msg.slice(0, 300)}` });
+    appendMessages(sessionId, {
+      role: "assistant",
+      content: `晶圆图生成失败：${msg.slice(0, 300)}`,
+    });
+    emit({ type: "done" });
+    return true;
+  }
+}
+
+/** 按 agentWaferMapRoute 计划执行晶圆图（draw / 失败提示）。 */
+async function applyWaferMapRoutePlan(
+  sessionId: string,
+  plan: WaferMapRoutePlan,
+  history: ChatMessage[],
+  emit: (event: AgentSseEvent) => void
+): Promise<boolean> {
+  if (!plan.isWaferMapIntent) return false;
+  const { action } = plan;
+  if (action.kind === "not_applicable" || action.kind === "need_jb_lookup") {
+    return false;
+  }
+  if (action.kind === "draw_failed") {
+    emit({ type: "text", delta: action.message });
+    appendMessages(sessionId, { role: "assistant", content: action.message });
+    emit({ type: "done" });
+    return true;
+  }
+  return finishWaferMapDraw(sessionId, action.args, history, emit);
+}
+
+/** 直出 JB 服务端表；可选跳过解读 LLM（lot 概况等）。 */
+async function emitDeterministicJbTablesReply(
+  sessionId: string,
+  userQuestion: string,
+  payload: Record<string, unknown>,
+  agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void,
+  options?: { withCommentaryLlm?: boolean }
+): Promise<boolean> {
   const tables = buildDeterministicJbTables(userQuestion, payload);
   if (!tables?.trim()) return false;
+
+  const mode = detectJbReplyMode(userQuestion);
+  const withCommentary =
+    options?.withCommentaryLlm ??
+    !jbReplySkipsCommentaryLlm(mode);
 
   const tablesBlock = `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${DETERMINISTIC_TABLES_HEADER}\n\n${tables}`;
   emit({ type: "status", message: "正在输出服务端预计算表…" });
   emitTextInChunks(tablesBlock, emit);
 
+  if (!withCommentary) {
+    const full = tablesBlock + JB_TABLES_ONLY_FOOTER;
+    emitTextInChunks(JB_TABLES_ONLY_FOOTER, emit);
+    appendMessages(sessionId, { role: "assistant", content: full });
+    emit({ type: "done" });
+    return true;
+  }
+
+  const history = getHistory(sessionId);
   emit({ type: "status", message: "正在生成数据解读与专业建议…" });
   // 先推送分段标题，避免解读文字与上方表格落在同一 Markdown 块里被 GFM 当成表尾行
   emit({
@@ -736,6 +889,114 @@ async function tryRunDeterministicJbSummary(
   return true;
 }
 
+/**
+ * 「DR44117.1Y 整体测试情况」：服务端 query_jb_bins + 表，不走首轮/解读 LLM。
+ */
+async function tryRunLotOverviewDirectRoute(
+  sessionId: string,
+  userQuestion: string,
+  agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void
+): Promise<boolean> {
+  if (!canRunLotOverviewDirectRoute(userQuestion)) return false;
+
+  const lot = extractLotFromUserText(userQuestion)!;
+  let payload = getCachedJbPayloadForLot(sessionId, lot);
+
+  if (!payload) {
+    const queryArgs = buildLotOverviewQueryArgs(lot);
+    emit({ type: "status", message: `正在查询 ${lot} JB STAR 数据…` });
+    emit({ type: "tool_start", name: "query_jb_bins", args: queryArgs });
+
+    let jbCacheForHistory: string | undefined;
+    try {
+      const toolResult = await runTool("query_jb_bins", queryArgs, {
+        toolResultMaxChars: agentConfig.toolResultMaxChars,
+        history: getHistory(sessionId),
+        onJbBinsWrapped: (wrapped) => {
+          jbCacheForHistory = buildJbSessionCacheJson(wrapped);
+          storeJbToolRawJson(sessionId, jbCacheForHistory);
+        },
+      });
+      const rawContent =
+        typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult);
+      const historyContent = toolResultForHistory(
+        "query_jb_bins",
+        rawContent,
+        agentConfig.toolResultMaxHistoryChars,
+        agentConfig.toolResultMaxChars,
+        jbCacheForHistory
+      );
+      emit({
+        type: "tool_result",
+        name: "query_jb_bins",
+        summary: historyContent.slice(0, 200),
+      });
+      const callId = `jb_overview_${Date.now()}`;
+      appendMessages(sessionId, {
+        role: "tool",
+        name: "query_jb_bins",
+        tool_call_id: callId,
+        content: historyContent,
+      });
+      payload =
+        (jbCacheForHistory ? parseJbToolPayload(jbCacheForHistory) : null) ??
+        resolveJbToolPayload(sessionId, historyContent);
+    } catch (e) {
+      const msg = `JB 查询失败: ${e instanceof Error ? e.message : String(e)}`;
+      emit({ type: "text", delta: msg });
+      appendMessages(sessionId, { role: "assistant", content: msg });
+      emit({ type: "done" });
+      return true;
+    }
+  }
+
+  if (!payload) {
+    const err = `已查询 ${lot}，但无法生成概况表。请点「重试」或缩小时间范围。`;
+    emit({ type: "text", delta: err });
+    appendMessages(sessionId, { role: "assistant", content: err });
+    emit({ type: "done" });
+    return true;
+  }
+
+  return emitDeterministicJbTablesReply(
+    sessionId,
+    userQuestion,
+    payload,
+    agentConfig,
+    emit
+  );
+}
+
+/**
+ * 总结轮：先 SSE 直出服务端表，再让 LLM 只写 3–8 句解读（不改表中数字）。
+ * @returns true 表示已完整结束本轮（调用方应 return）。
+ */
+async function tryRunDeterministicJbSummary(
+  sessionId: string,
+  userQuestion: string,
+  agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void
+): Promise<boolean> {
+  const history = getHistory(sessionId);
+  const lastTool = lastToolMessage(history);
+  if (lastTool?.name !== "query_jb_bins") return false;
+
+  const payload = resolveJbToolPayload(
+    sessionId,
+    String(lastTool.content ?? "")
+  );
+  if (!payload) return false;
+
+  return emitDeterministicJbTablesReply(
+    sessionId,
+    userQuestion,
+    payload,
+    agentConfig,
+    emit
+  );
+}
+
 function chartToolFallbackMessage(toolMsg: ChatMessage): string {
   const c = String(toolMsg.content ?? "");
   if (c.startsWith("[图表已生成]")) {
@@ -769,6 +1030,12 @@ function jbBinsYieldFallbackMessage(
   userQuestion: string,
   sessionId: string
 ): string | null {
+  if (
+    planWaferMapRoute(sessionId, getHistory(sessionId), userQuestion, "user_turn")
+      .skipJbDeterministicSummary
+  ) {
+    return null;
+  }
   if (toolMsg.name !== "query_jb_bins") return null;
   const payload = resolveJbToolPayload(
     sessionId,
@@ -887,6 +1154,7 @@ const INF_KEYWORDS = [
   "dut良率", "dut 良率",      // die-level DUT yield breakdown
   "dut分布",                   // DUT spatial distribution (ambiguous, better have tools available)
   "dut和bin", "dut与bin", "dut×bin", "bin和dut",  // explicit DUT-BIN relationship map
+  "dut_bin_map", "dutbin", "关系图",
   // Removed (too broad — answered by base tools query_inf_site_bin_by_dut / query_lot_dut_bin_agg):
   //   "dut坏" / "dut 坏" — "DUT坏bin最多" is a counting query, base tool suffices
   //   "各dut" / "每个dut" — "各DUT报警情况" is a YM query; "各DUT坏bin" uses base tool
@@ -984,7 +1252,60 @@ export async function runAgentLoop(
     const awaitingSummary = historyAwaitingToolSummary(history);
     const userQuestion = lastUserMessageText(history, message);
 
-    if (awaitingSummary) {
+    const lastTool = lastToolMessage(history);
+    const waferPlan = planWaferMapRoute(
+      sessionId,
+      history,
+      userQuestion,
+      awaitingSummary ? "after_jb_bins" : "user_turn",
+      lastTool?.name,
+      lastTool ? String(lastTool.content ?? "") : undefined
+    );
+
+    if (awaitingSummary && lotOverviewNeedsJbRecovery(userQuestion, lastTool?.name)) {
+      const recovered = await tryRunLotOverviewDirectRoute(
+        sessionId,
+        userQuestion,
+        agentConfig,
+        emit
+      );
+      if (recovered) return;
+    }
+
+    if (!awaitingSummary) {
+      const overviewDone = await tryRunLotOverviewDirectRoute(
+        sessionId,
+        userQuestion,
+        agentConfig,
+        emit
+      );
+      if (overviewDone) return;
+
+      const dutBinDone = await tryRunDutBinMapDirectRoute(
+        sessionId,
+        userQuestion,
+        emit
+      );
+      if (dutBinDone) return;
+
+      const drawn = await applyWaferMapRoutePlan(
+        sessionId,
+        waferPlan,
+        history,
+        emit
+      );
+      if (drawn) return;
+    } else if (waferPlan.isWaferMapIntent) {
+      const drawn = await applyWaferMapRoutePlan(
+        sessionId,
+        waferPlan,
+        history,
+        emit
+      );
+      if (drawn) return;
+    }
+
+    if (awaitingSummary && !waferPlan.skipJbDeterministicSummary) {
       const handled = await tryRunDeterministicJbSummary(
         sessionId,
         userQuestion,
@@ -998,9 +1319,17 @@ export async function runAgentLoop(
     // trailing system message after tool turns, which is non-standard and can
     // cause empty responses on some providers (SiliconFlow/DeepSeek).
     const basePrompt = buildSystemPrompt(manifest) + feedbackInjection;
+    const waferJbNudge =
+      !awaitingSummary && waferPlan.action.kind === "need_jb_lookup"
+        ? `\n\n${WAFER_MAP_JB_LOOKUP_NUDGE}`
+        : "";
+    const lotOverviewNudge =
+      !awaitingSummary && isLotOverviewQuestion(userQuestion)
+        ? `\n\n${LOT_OVERVIEW_JB_NUDGE}`
+        : "";
     const systemContent = awaitingSummary
       ? `${basePrompt}\n\n${SUMMARIZE_NUDGE}`
-      : basePrompt;
+      : `${basePrompt}${waferJbNudge}${lotOverviewNudge}`;
 
     const messages: ChatMessage[] = [
       { role: "system", content: systemContent },

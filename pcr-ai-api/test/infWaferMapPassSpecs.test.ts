@@ -69,6 +69,13 @@ test("buildWaferMapPassSpecs(final) matches standard layout", async () => {
   assert.ok(findSegmentedPassLayers(root).length >= 6);
 });
 
+test("buildWaferMapPassSpecs(composite) is final layer only", async () => {
+  const root = await parseInf(fixture);
+  const specs = buildWaferMapPassSpecs(root, "composite");
+  assert.equal(specs.length, 1);
+  assert.equal(specs[0]!.dieKey, "final");
+});
+
 test("buildWaferMapPassSpecs(all) equals standard", async () => {
   const root = await parseInf(fixture);
   assert.deepEqual(

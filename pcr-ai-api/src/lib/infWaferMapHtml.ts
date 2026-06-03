@@ -95,7 +95,7 @@ export type WaferMapPass = {
  * @param passes       One entry per pass tab
  * @param possibleDies Testable positions from tyControl (rendered as grey if untested)
  * @param dieAspect    dieWidth / dieHeight (controls rectangle shape)
- * @param notchAngle   Degrees (0=right, 90=bottom, 180=left, 270=top); INF default 270
+ * @param _notchAngle  INF notch angle (reserved; notch marker not drawn in HTML)
  * @param goodBins     Set of good bin numbers (for legend / summary)
  * @param highlight    "" | "edge" | "bin:N"
  */
@@ -104,7 +104,7 @@ export function generateWaferMapHtml(
   passes: WaferMapPass[],
   possibleDies: Array<{ x: number; y: number }>,
   dieAspect: number,
-  notchAngle: number,
+  _notchAngle: number,
   goodBins: Set<number>,
   highlight = ""
 ): string {
@@ -242,9 +242,6 @@ export function generateWaferMapHtml(
       );
     }
 
-    // Notch
-    appendNotch(lines, cx, cy, r, notchAngle);
-
     lines.push("    </svg>");
     lines.push("  </div>"); // wafer-wrap
 
@@ -292,26 +289,6 @@ export function generateWaferMapHtml(
   return lines.join("\n");
 }
 
-// ── Notch triangle ────────────────────────────────────────────────────────
-
-function appendNotch(lines: string[], cx: number, cy: number, r: number, notchAngle: number): void {
-  const rad = (notchAngle * Math.PI) / 180;
-  const perpRad = rad + Math.PI / 2;
-  const notchSz = r * 0.028;
-
-  const bx1 = cx + r * Math.cos(rad) + notchSz * Math.cos(perpRad);
-  const by1 = cy + r * Math.sin(rad) + notchSz * Math.sin(perpRad);
-  const bx2 = cx + r * Math.cos(rad) - notchSz * Math.cos(perpRad);
-  const by2 = cy + r * Math.sin(rad) - notchSz * Math.sin(perpRad);
-  const tipR = r - notchSz * 1.8;
-  const nx = cx + tipR * Math.cos(rad);
-  const ny = cy + tipR * Math.sin(rad);
-
-  lines.push(
-    `      <polygon class="notch" points="${f(bx1)},${f(by1)} ${f(bx2)},${f(by2)} ${f(nx)},${f(ny)}" fill="#90a4ae"/>`
-  );
-}
-
 // ── Lot heatmap HTML ──────────────────────────────────────────────────────
 
 export type LotHeatmapPass = {
@@ -330,7 +307,7 @@ export function generateLotHeatmapHtml(
   passes: LotHeatmapPass[],
   allCoords: Set<string>,   // "x,y" strings of all tested positions
   dieAspect: number,
-  notchAngle: number,
+  _notchAngle: number,
   possibleDies: Array<{ x: number; y: number }>
 ): string {
   const multiPass = passes.length > 1;
@@ -413,7 +390,6 @@ export function generateLotHeatmapHtml(
       );
     }
 
-    appendNotch(lines, cx, cy, r, notchAngle);
     lines.push("    </svg>");
     lines.push("  </div>"); // wafer-wrap
 
@@ -575,7 +551,7 @@ export function generateDutBinMapHtml(
   targetDut: number,
   targetBin: number,
   dieAspect: number,
-  notchAngle: number,
+  _notchAngle: number,
   passLabel: string
 ): string {
   const xs = dies.map((d) => d.x);
@@ -625,16 +601,22 @@ export function generateDutBinMapHtml(
   lines.push(`    <svg width="${CANVAS_SIZE}" height="${CANVAS_SIZE}" xmlns="http://www.w3.org/2000/svg" style="display:block">`);
   lines.push(`      <rect width="${CANVAS_SIZE}" height="${CANVAS_SIZE}" fill="#0d0d1e"/>`);
 
-  // Patterns — stripe pitch adapts to die size
+  // Patterns — stripe pitch adapts to die size; 竖线（其他 DUT×目标 BIN）用高对比青色系
   const pw = Math.max(3, Math.min(8, Math.round(cellW * 0.45)));
+  const binStripeW = Math.max(1.1, Math.min(2.2, pw * 0.42));
   lines.push("      <defs>");
   lines.push(`        <pattern id="p-dut" width="${pw}" height="${pw}" patternUnits="userSpaceOnUse">`);
   lines.push(`          <rect width="${pw}" height="${pw}" fill="#0d1830"/>`);
   lines.push(`          <line x1="0" y1="${f(pw / 2)}" x2="${pw}" y2="${f(pw / 2)}" stroke="#8888bb" stroke-width="0.9"/>`);
   lines.push("        </pattern>");
   lines.push(`        <pattern id="p-bin" width="${pw}" height="${pw}" patternUnits="userSpaceOnUse">`);
-  lines.push(`          <rect width="${pw}" height="${pw}" fill="#0d1830"/>`);
-  lines.push(`          <line x1="${f(pw / 2)}" y1="0" x2="${f(pw / 2)}" y2="${pw}" stroke="#8888bb" stroke-width="0.9"/>`);
+  lines.push(`          <rect width="${pw}" height="${pw}" fill="#1a3358"/>`);
+  lines.push(
+    `          <line x1="${f(pw / 2)}" y1="0" x2="${f(pw / 2)}" y2="${pw}" stroke="#4fc3f7" stroke-width="${f(binStripeW)}"/>`
+  );
+  lines.push(
+    `          <line x1="${f(pw * 0.28)}" y1="0" x2="${f(pw * 0.28)}" y2="${pw}" stroke="#b3e5fc" stroke-width="${f(binStripeW * 0.55)}" opacity="0.85"/>`
+  );
   lines.push("        </pattern>");
   lines.push("      </defs>");
 
@@ -649,7 +631,13 @@ export function generateDutBinMapHtml(
   const rules: DrawRule[] = [
     { pred: (d) => d.site !== targetDut && d.bin !== targetBin, fill: "#1a1a30", stroke: "none",    sw: "0",   opacity: "0.35" },
     { pred: (d) => d.site === targetDut && d.bin !== targetBin, fill: "url(#p-dut)", stroke: "#6060a0", sw: "0.6", opacity: "0.95" },
-    { pred: (d) => d.site !== targetDut && d.bin === targetBin, fill: "url(#p-bin)", stroke: "#6060a0", sw: "0.6", opacity: "0.95" },
+    {
+      pred: (d) => d.site !== targetDut && d.bin === targetBin,
+      fill: "url(#p-bin)",
+      stroke: "#29b6f6",
+      sw: "1.5",
+      opacity: "1",
+    },
     { pred: (d) => d.site === targetDut && d.bin === targetBin, fill: "#dcdcff",     stroke: "#a0a0e0", sw: "1.2", opacity: "1.0"  },
   ];
 
@@ -674,7 +662,6 @@ export function generateDutBinMapHtml(
     }
   }
 
-  appendNotch(lines, cx, cy, r, notchAngle);
   lines.push("    </svg>");
   lines.push("  </div>"); // wafer-wrap
 
@@ -684,12 +671,12 @@ export function generateDutBinMapHtml(
   const legItems = [
     { label: `DUT${targetDut} ＆ BIN${targetBin}（双匹配）`, svgFill: "#dcdcff", svgStroke: "#a0a0e0" },
     { label: `DUT${targetDut}（其他 bin）横线`, patternId: "p-dut" },
-    { label: `BIN${targetBin}（其他 DUT）竖线`, patternId: "p-bin" },
+    { label: `BIN${targetBin}（其他 DUT）青色竖线`, patternId: "p-bin" },
     { label: "其他 die（极暗）", svgFill: "#1a1a30" },
   ];
   for (const item of legItems) {
     const inner = "patternId" in item
-      ? `<svg width="13" height="13" xmlns="http://www.w3.org/2000/svg" style="display:inline-block;margin-right:6px"><defs><pattern id="l-${item.patternId}" width="4" height="4" patternUnits="userSpaceOnUse"><rect width="4" height="4" fill="#0d1830"/>${item.patternId === "p-dut" ? '<line x1="0" y1="2" x2="4" y2="2" stroke="#8888bb" stroke-width="0.9"/>' : '<line x1="2" y1="0" x2="2" y2="4" stroke="#8888bb" stroke-width="0.9"/>'}</pattern></defs><rect width="13" height="13" fill="url(#l-${item.patternId})" stroke="#6060a0" stroke-width="0.6"/></svg>${esc(item.label)}`
+      ? `<svg width="13" height="13" xmlns="http://www.w3.org/2000/svg" style="display:inline-block;margin-right:6px"><defs><pattern id="l-${item.patternId}" width="4" height="4" patternUnits="userSpaceOnUse"><rect width="4" height="4" fill="${item.patternId === "p-bin" ? "#1a3358" : "#0d1830"}"/>${item.patternId === "p-dut" ? '<line x1="0" y1="2" x2="4" y2="2" stroke="#8888bb" stroke-width="0.9"/>' : '<line x1="2" y1="0" x2="2" y2="4" stroke="#4fc3f7" stroke-width="1.3"/><line x1="1.1" y1="0" x2="1.1" y2="4" stroke="#b3e5fc" stroke-width="0.7"/>'}</pattern></defs><rect width="13" height="13" fill="url(#l-${item.patternId})" stroke="${item.patternId === "p-bin" ? "#29b6f6" : "#6060a0"}" stroke-width="${item.patternId === "p-bin" ? "1" : "0.6"}"/></svg>${esc(item.label)}`
       : `<div class="leg-box" style="background:${"svgFill" in item ? item.svgFill : "#888"};border:1px solid ${"svgStroke" in item ? item.svgStroke : "transparent"}"></div>${esc(item.label)}`;
     const wrapStyle = "patternId" in item ? 'style="display:flex;align-items:center;margin:4px 0;font-size:11px;color:#b0bec5"' : 'class="leg-row"';
     lines.push(`      <div ${wrapStyle}>${inner}</div>`);

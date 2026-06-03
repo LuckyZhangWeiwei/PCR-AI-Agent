@@ -39,8 +39,8 @@ export function parseInfDrawResultText(content: string): Partial<InfWaferMapCont
   const out: Partial<InfWaferMapContext> = {};
   const deviceM = /Device:\s*(\S+)/i.exec(content);
   if (deviceM) out.device = deviceM[1];
-  const lotM = /Lot:\s*(\S+)/i.exec(content);
-  if (lotM) out.lot = lotM[1];
+  const lotM = /Lot:\s*(\S+?)(?=\s{2,}Wafer:|\s{2,}Slot:|$)/i.exec(content);
+  if (lotM?.[1]) out.lot = lotM[1];
   const slotM = /Slot:\s*(\d+)/i.exec(content);
   if (slotM) out.slot = Number(slotM[1]);
   const hlM = /highlight[=:]\s*['"]?(bin:\d+|edge)['"]?/i.exec(content);
@@ -146,15 +146,125 @@ function latestUserBinHint(history: ChatMessage[]): number | undefined {
   return undefined;
 }
 
+/** waferId / slot from user text (e.g. 第1片、wafer 14). */
+export function extractSlotFromUserText(text: string): number | undefined {
+  const patterns = [
+    /第\s*(\d+)\s*片/i,
+    /wafer\s*id\s*[=:]?\s*(\d+)/i,
+    /(?:^|[\s/])wafer\s*(\d+)(?:\s|的|$)/i,
+    /(?:slot|片)\s*[=:]?\s*(\d+)/i,
+    /(?:第|slot)\s*(\d+)\s*(?:片|槽|slot)?/i,
+  ];
+  for (const p of patterns) {
+    const m = p.exec(text);
+    if (m) return Number(m[1]);
+  }
+  return undefined;
+}
+
 function latestUserSlotHint(history: ChatMessage[]): number | undefined {
   for (let i = history.length - 1; i >= 0; i--) {
     const msg = history[i];
     if (msg.role !== "user" || typeof msg.content !== "string") continue;
-    const t = msg.content;
-    const waferM = /wafer\s*id\s*[=:]?\s*(\d+)/i.exec(t);
-    if (waferM) return Number(waferM[1]);
-    const slotM = /(?:第|slot)\s*(\d+)\s*(?:片|槽|slot)?/i.exec(t);
-    if (slotM) return Number(slotM[1]);
+    const slot = extractSlotFromUserText(msg.content);
+    if (slot != null) return slot;
+  }
+  return undefined;
+}
+
+/** Lot id embedded in user message (e.g. DR44117.1Y). */
+export function extractLotFromUserText(text: string): string | undefined {
+  const m = /\b([A-Z]{1,3}\d{4,6}\.\d+[A-Z0-9]+)\b/i.exec(text);
+  return m ? m[1]! : undefined;
+}
+
+/**
+ * User only wants an interactive wafer map link — not lot-wide JB tables / commentary.
+ */
+export function userWantsWaferMapOnly(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  // DUT×BIN 关系图走 inf_draw_dut_bin_map，不是 BIN 高亮 wafermap
+  if (
+    extractBinNumberFromText(t) != null &&
+    /\bdut\b|DUT|site/i.test(t) &&
+    /关系|关联|相关\s*dut|和\s*dut|与\s*dut/i.test(t)
+  ) {
+    return false;
+  }
+  const wantsMap =
+    /\bwafermap\b/i.test(t) ||
+    /wafer\s*map/i.test(t) ||
+    /画.*(晶圆图|wafer)/i.test(t) ||
+    /(画出|绘制|生成).*(晶圆|wafer)/i.test(t) ||
+    /同理.*(wafer|晶圆图|wafermap)/i.test(t) ||
+    (/标出|标亮|高亮/i.test(t) && /bin/i.test(t) && /wafer/i.test(t));
+  if (!wantsMap) return false;
+  if (
+    /概况|整体分析|批次.*分析|聚集.*分析|突增|排名|机台.*分布|各片.*对比|解读|专业建议|坏\s*bin\s*排名/i.test(
+      t
+    )
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** Build inf_draw_wafer_map args after query_jb_bins (device/lot from payload). */
+export function buildInfDrawArgsAfterJbLookup(
+  payload: Record<string, unknown>,
+  history: ChatMessage[],
+  userText: string
+): Record<string, unknown> {
+  const args: Record<string, unknown> = {};
+  const device = String(payload["device"] ?? "").trim();
+  const lot =
+    String(payload["lot"] ?? payload["LOT"] ?? "").trim() ||
+    extractLotFromUserText(userText) ||
+    "";
+  if (device) args["device"] = device;
+  if (lot) args["lot"] = lot;
+  const slot =
+    extractSlotFromUserText(userText) ?? latestUserSlotHint(history);
+  if (slot != null) args["slot"] = slot;
+  const passId = inferSinglePassIdFromText(userText);
+  if (passId) args["passes"] = passId;
+  return normalizeInfDrawWaferMapArgs(args, history);
+}
+
+/** Args for inf_draw_wafer_map from session history + latest user text. */
+export function buildInfDrawArgsFromSession(
+  history: ChatMessage[],
+  userText: string
+): Record<string, unknown> {
+  const jb = findJbLotContext(history);
+  const payload: Record<string, unknown> = {};
+  if (jb.device) payload["device"] = jb.device;
+  if (jb.lot) payload["lot"] = jb.lot;
+  return buildInfDrawArgsAfterJbLookup(payload, history, userText);
+}
+
+export function sessionCanDrawWaferMapWithoutJb(
+  history: ChatMessage[],
+  userText: string
+): boolean {
+  if (!findLastInfDrawWaferMapContext(history) && !findJbLotContext(history).device) {
+    return false;
+  }
+  return infDrawWaferMapArgsComplete(buildInfDrawArgsFromSession(history, userText));
+}
+
+function findLastInfDrawPassesArg(history: ChatMessage[]): string | undefined {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const msg = history[i];
+    if (msg.role !== "assistant" || !msg.tool_calls?.length) continue;
+    for (const tc of msg.tool_calls) {
+      if (tc.function.name !== "inf_draw_wafer_map") continue;
+      const parsed = parseToolCallArgs(tc.function.arguments);
+      if (!parsed) continue;
+      const p = strField(parsed, "passes");
+      if (p) return p;
+    }
   }
   return undefined;
 }
@@ -233,6 +343,16 @@ export function normalizeInfDrawWaferMapArgs(
     const passId = inferSinglePassIdFromText(userText);
     if (passId) {
       out["passes"] = passId;
+    } else if (
+      findLastInfDrawWaferMapContext(history) &&
+      extractBinNumberFromText(userText) != null &&
+      !/\bdut\b|DUT|关系|相关\s*dut/i.test(userText)
+    ) {
+      // 换 BIN 高亮（非 DUT 关系图）：只重画合成层
+      out["passes"] = "composite";
+    } else {
+      const prevPasses = findLastInfDrawPassesArg(history);
+      if (prevPasses) out["passes"] = prevPasses;
     }
   }
 

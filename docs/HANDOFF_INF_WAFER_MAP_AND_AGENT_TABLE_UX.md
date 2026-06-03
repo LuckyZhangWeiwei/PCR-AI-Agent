@@ -1,9 +1,36 @@
-# Claude Code 交接：INF 晶圆图分层 + Agent 表格/解读分栏
+# Claude Code 交接：INF 晶圆图 + Agent 专用路由 + 表格 UX
 
-**日期：** 2026-06-03  
+**日期：** 2026-06-03（本批未提交前为 `feat/inf-wafer-map` 工作区）  
 **分支：** `feat/inf-wafer-map`  
-**读者：** Claude Code / Cursor Agent 接手 **INF wafer map**、**AI Agent 聊天气泡 Markdown** 时优先阅读。  
+**读者：** Claude Code / Cursor Agent 接手 **INF 晶圆图**、**AI Agent 意图路由**、**聊天气泡 Markdown** 时**必读**。  
 **前置阅读：** [`HANDOFF_AGENT_JB_DETERMINISTIC_SUMMARY.md`](HANDOFF_AGENT_JB_DETERMINISTIC_SUMMARY.md)、[`HANDOFF_AGENT_JB_CLUSTER_INTERRUPT_TESTER_UX.md`](HANDOFF_AGENT_JB_CLUSTER_INTERRUPT_TESTER_UX.md)、[`pcr-ai-api/CLAUDE.md`](../pcr-ai-api/CLAUDE.md) §6 / §11
+
+---
+
+## 0. 架构总览（Agent 每轮 `user_turn` 决策顺序）
+
+`agentLoop.ts` 在调用 LLM **之前**按序尝试服务端直连（避免误走 `query_jb_bins` 大表 / 错误工具 / 超时）：
+
+```
+用户消息
+  ├─ 1. tryRunLotOverviewDirectRoute     ← agentJbOverviewRoute（lot 整体/测试情况）
+  ├─ 2. tryRunDutBinMapDirectRoute       ← agentDutBinMapRoute（BIN×DUT 关系图）
+  ├─ 3. applyWaferMapRoutePlan (user_turn) ← agentWaferMapRoute（只画晶圆图）
+  └─ 4. LLM + 工具 …
+awaitingSummary（上轮工具结束）
+  ├─ lotOverviewNeedsJbRecovery → tryRunLotOverviewDirectRoute（只查了 YM 时补救）
+  ├─ planWaferMapRoute (after_jb_bins) → inf_draw_wafer_map
+  └─ tryRunDeterministicJbSummary（JB 表 + 可选解读 LLM）
+```
+
+**原则：** 三种用户意图用**三条路由**，不要混在一个 `if (wafermap)` 里补丁。
+
+| 用户说法示例 | 应用路由 | 工具 |
+| --- | --- | --- |
+| 「DR44117.1Y 整体的测试情况」 | `agentJbOverviewRoute` | `query_jb_bins` + 服务端全表 |
+| 「画出第14片 pass1 wafermap」 | `agentWaferMapRoute` | `inf_draw_wafer_map`（`passes=1`） |
+| 「同理标出 BIN14」 | `agentWaferMapRoute` | `inf_draw_wafer_map`（`passes=composite`） |
+| 「BIN15 和相关 DUT 的关系 wafermap」 | `agentDutBinMapRoute` | **`inf_draw_dut_bin_map`**（非 `highlight:bin`） |
 
 ---
 
@@ -11,163 +38,174 @@
 
 | 问题 | 根因 | 修复要点 |
 | --- | --- | --- |
-| 同理画 BIN14 wafermap 无链接 | 第二轮 `inf_draw_wafer_map` 漏传 `lot` | `normalizeInfDrawWaferMapArgs` 从历史补全 device/lot/slot/highlight |
-| 中断层未出现在晶圆图 | 默认只画 `final` 一层 | 默认画出**每个** `SmWaferPass` 物理层 + 合成层 |
-| 聚集警示表显示为 `\|...\|` 原文 | GFM 分隔行列数 ≠ 表头（5 列头 / 4 列分隔） | `formatClusteredBadBinAlertsMarkdown` 修正 + 前端 `repairGfmMarkdownTables` |
-| 良率表下方「总结」像在表格里 | 流式输出表与解读无分段；偶发假表格行 | SSE 先推 `## 分析结论`；`splitAgentReplyMarkdown` 拆表尾正文 |
+| 同理画 BIN14 wafermap 无链接 | 第二轮漏传 `lot` | `normalizeInfDrawWaferMapArgs` |
+| 中断层未出现在晶圆图 | 默认只画 `final` 一层 | `buildStandardWaferMapPassSpecs` 全物理层 + 合成 |
+| 聚集警示表 `\|...\|` 原文 | GFM 分隔行列数错误 | 5 列分隔 + `repairGfmMarkdownTables` |
+| 良率表下方「总结」像在表里 | 表与解读同块 | `## 分析结论` + `splitAgentReplyMarkdown` |
+| 画 pass1 / 换 BIN 超时 120–240s | 未测灰格 × 多 pass + 重复 `query_jb_bins` | `infWaferMapHtml` 性能 + `agentWaferMapRoute` |
+| 整体测试情况只有 YM 文字、无 JB 表 | 模型只调 `query_yield_triggers` | `agentJbOverviewRoute` + `buildLotOverviewTablesMarkdown` |
+| 「BIN15 和 DUT 关系」图不对 | 误走 `inf_draw_wafer_map` 高亮 | `agentDutBinMapRoute` → `inf_draw_dut_bin_map` |
+| 竖线（其他 DUT 的 BIN）不明显 | 图案对比度低 | `infWaferMapHtml` 青色双竖线 + 粗描边 |
+| 晶圆图右侧 notch 三角 | `appendNotch` | 已移除 notch 绘制 |
 
 ---
 
 ## 2. INF 晶圆图：`inf_draw_wafer_map`
 
-### 2.1 默认标签页（`passes=final` 或 `all`，二者相同）
+### 2.1 默认标签页（`passes=final` / `all`）
 
-**不是固定三层。** 按 INF 文件顺序，每个 **`SmWaferPass` 块**一页，最后一页为 flow-level **合成**：
+每个 **`SmWaferPass`** 一页 + 最后一页 **合成**（`dieKey=final`）。中断多段 → `正测·中断前` / `续测后` 等（见 `describePassLayer`）。
 
-| 标签示例 | 含义 |
-| --- | --- |
-| `Pass N (正测)` | `PASS_TYPE=TEST`，单段 |
-| `Pass N (正测·中断前)` / `(正测·续测后)` | 同 PASS_ID 多段 TEST |
-| `Pass N (复测)` / `(复测·中断前)` … | `PASS_TYPE=RETESTBIN`，可多段 |
-| `合成 (正测+复测)` | `dieKey=final`，`buildDieMapForFinalFlow` |
-
-实现入口：
-
-- `pcr-ai-api/src/lib/infWaferMap.ts` — `buildStandardWaferMapPassSpecs`、`describePassLayer`、`getDiesForWaferMapSpec`（`__block:N` = 第 N 个 SmWaferPass）
+- `pcr-ai-api/src/lib/infWaferMap.ts` — `buildStandardWaferMapPassSpecs`、`buildWaferMapPassSpecs`（`passes=composite` 仅合成一层）
 - `pcr-ai-api/src/lib/infTools/infToolsSingleWafer.ts` — `runDrawWaferMap`
-- `pcr-ai-api/src/app.ts` — `GET /wafermaps/*.html` 静态目录
+- 工具返回：`Device: … Lot: ${lot} … Slot: …`（**必须用请求 lot**，勿只用 `r.lot` 空值）
 
-工具返回含 `Device:` / `Lot:` / `Slot:` 行，便于多轮对话补参。
+### 2.2 性能（大 INF 必知）
 
-### 2.2 多轮换 BIN 高亮
+| 改动 | 文件 |
+| --- | --- |
+| 多 pass **不画**未测 tyControl 灰格；单 pass 未测上限 12000 | `infWaferMapHtml.ts` |
+| 用户仅 pass1 → `passes=1` | `agentInfWaferMapTool.inferSinglePassIdFromText` |
+| 换 BIN 高亮（非 DUT 关系）→ `passes=composite` | `normalizeInfDrawWaferMapArgs` |
 
-`pcr-ai-api/src/lib/agent/agentInfWaferMapTool.ts`：
+### 2.3 多轮补参
 
-- 从上一轮成功的 `inf_draw_wafer_map` 或 `query_jb_bins` 补全 **device + lot + slot**
-- 用户话中的 `BIN14` → `highlight: "bin:14"`（或 schema 别名 `bin: 14`）
-- 在 `agentToolHandlers.ts` 调用 `runInfTool` 前执行
+`agentInfWaferMapTool.ts` → `agentToolHandlers.ts` 在 `inf_draw_wafer_map` 前 `normalizeInfDrawWaferMapArgs`。
 
-`agentPrompt.ts` 已写：**禁止换 BIN 时省略 lot**。
+---
 
-### 2.3 相关测试
+## 3. 晶圆图路由 `agentWaferMapRoute.ts`
+
+| API | 作用 |
+| --- | --- |
+| `userWantsWaferMapOnly(text)` | 只画晶圆图；**排除** DUT×BIN 关系、lot 概况 |
+| `planWaferMapRoute(sessionId, history, userText, phase, …)` | `draw` / `need_jb_lookup` / `not_applicable` |
+| `WAFER_MAP_JB_LOOKUP_NUDGE` | 缺 device 时 system 提示仅 `query_jb_bins` |
+
+`phase=after_jb_bins`：上轮 `query_jb_bins` 后**优先本轮 tool 内容**解析 payload（避免旧 session 缓存盖掉）。
+
+---
+
+## 4. Lot 概况路由 `agentJbOverviewRoute.ts`
+
+| API | 作用 |
+| --- | --- |
+| `canRunLotOverviewDirectRoute` | `isLotOverviewQuestion` + 话中 lot ID |
+| `tryRunLotOverviewDirectRoute` | 服务端 `query_jb_bins(lot, limit:200)` + `emitDeterministicJbTablesReply` |
+| `buildLotOverviewTablesMarkdown` | **完整**聚集/机台/卡/良率 pivot（不单返回短 `lotOverview`） |
+| `lotOverviewNeedsJbRecovery` | 上轮仅 `query_yield_triggers` → 补 JB |
+| `LOT_OVERVIEW_JB_NUDGE` | 禁止只查 YM |
+
+`jbReplySkipsCommentaryLlm`：**不含** `lot_overview`（概况仍要表 + 解读 LLM）。
+
+---
+
+## 5. DUT×BIN 关系图 `agentDutBinMapRoute.ts` + `inf_draw_dut_bin_map`
+
+**与 `inf_draw_wafer_map` 完全不同：**
+
+| 工具 | 视觉 | 用途 |
+| --- | --- | --- |
+| `inf_draw_wafer_map` + `highlight:bin:N` | 彩色 die / 黄框 | 标出 BIN 位置 |
+| **`inf_draw_dut_bin_map`** | 白块 / 横线 / **青色竖线** | DUT 与 BIN 归属关系 |
+
+图例（`generateDutBinMapHtml`）：
+
+- **白色** = 目标 DUT 且目标 BIN  
+- **横线** = 该 DUT 的其他 bin  
+- **青色竖线**（加粗描边）= **其他 DUT** 上的目标 BIN（「相关 DUT」）  
+- 极暗 = 其他 die  
+
+未指定 `dut` 时：`inferPrimaryDutForBin` 选该 BIN 颗数最多的 site；竖线即其余 DUT。
+
+| API | 作用 |
+| --- | --- |
+| `userWantsDutBinRelationMap` | `bin` + `dut` + 「关系/相关」等 |
+| `tryRunDutBinMapDirectRoute` | 直连 `inf_draw_dut_bin_map` |
+| `userWantsWaferMapOnly` | 对 DUT×BIN 关系返回 **false** |
+
+实现：`infToolsSingleWafer.runDrawDutBinMap`、`infWaferMapHtml.generateDutBinMapHtml`。
+
+---
+
+## 6. Agent 聊天气泡：表 vs 解读
+
+- `splitAgentReplyMarkdown.ts` — 表在上、解读在下  
+- `emitDeterministicJbTablesReply` — 统一 JB 表 SSE（`agentLoop.ts`）  
+- 聚集表 5 列 GFM — `agentJbBadBinCluster.ts`
+
+---
+
+## 7. 关键文件索引
+
+| 领域 | 文件 |
+| --- | --- |
+| Agent 主循环 | `agent/agentLoop.ts` |
+| 晶圆图路由 | `agent/agentWaferMapRoute.ts` |
+| Lot 概况路由 | `agent/agentJbOverviewRoute.ts` |
+| DUT×BIN 路由 | `agent/agentDutBinMapRoute.ts` |
+| 参数补全 | `agent/agentInfWaferMapTool.ts` |
+| JB 表选择 | `agent/agentJbDeterministicReply.ts` |
+| INF pass / 合成 | `infWaferMap.ts` |
+| HTML | `infWaferMapHtml.ts` |
+| 工具 | `infTools/infToolsSingleWafer.ts` |
+| Prompt | `agent/agentPrompt.ts` |
+| 超时默认 | `pcr-ai-report/src/hooks/useServerConfig.ts`（client 300s / stream 180s） |
+| 气泡 UI | `reports/AiAgentReport.tsx`、`utils/splitAgentReplyMarkdown.ts` |
+
+---
+
+## 8. 测试
 
 ```bash
 cd pcr-ai-api
 npm test -- test/infWaferMapPassSpecs.test.ts
 npm test -- test/agentInfWaferMapTool.test.ts
+npm test -- test/agentWaferMapRoute.test.ts
+npm test -- test/agentJbOverviewRoute.test.ts
+npm test -- test/agentDutBinMapRoute.test.ts
+npm test -- test/agentJbBadBinCluster.test.ts   # 若改聚集表
+cd ../pcr-ai-report && npm run build
 ```
 
-Fixture：`pcr-ai-api/docs/inf-dummy-r_1-1`（6 个 SmWaferPass + 1 合成 = 7 标签）。
-
-### 2.4 240 秒超时：程序问题为主（非单纯 Oracle 慢）
-
-| 现象 | 原因 |
-| --- | --- |
-| AI 页红字「请求超时 (约 240 秒)」 | 前端 **`clientTimeoutSec` 默认 240**（`useServerConfig.ts`），整段 Agent SSE 上限，不单指某条 REST |
-| 「第14片 pass1」仍很慢 | 若工具用默认 **`passes=final`**，会展开**全部** SmWaferPass + 合成；大 INF × 多标签极慢 |
-| HTML 生成卡数分钟 | `infWaferMapHtml.ts` 曾对**每个 pass** 遍历 `readPossibleDieCoords` 画**全部未测灰格**（tyControl 可达数万～数十万格 × N pass） |
-
-**本批性能修复（待部署）：**
-
-1. **`infWaferMapHtml.ts`** — 多 pass 标签页**不再**画未测灰格（仅已测 die + 轮廓）；单 pass 未测格上限 **12000**。
-2. **`agentInfWaferMapTool.ts`** — `inferSinglePassIdFromText`：用户只说 pass1 且未要求「全部层/合成」时自动 **`passes: "1"`**。
-3. **`agentPrompt.ts`** — 明确「仅 pass1」用 `passes=1`，全层才用 `final`/`all`。
-
-验证：「第14片 pass1 wafermap」部署后应在**数秒**内出 `/wafermaps/` 链接；全层需用户明确说「所有中断层和合成」。
+Fixture INF：`pcr-ai-api/docs/inf-dummy-r_1-1`。
 
 ---
 
-## 3. Agent 聊天气泡：表 vs 解读
-
-### 3.1 布局（报表）
-
-`pcr-ai-report/src/reports/AiAgentReport.tsx`：
-
-- `splitAgentReplyMarkdown(msg.text)` → **上方** `.ai-md-data`（可横向滚动表格）
-- **下方** `.ai-md-commentary`（分隔线 + 纯文字解读/建议）
-
-依赖 `remark-gfm`（已配置）+ `sanitizeAgentMarkdownForDisplay`（去 `~~`、修表分隔符）。
-
-### 3.2 确定性 JB 总结流（API）
-
-`agentLoop.ts` → `tryRunDeterministicJbSummary`：
-
-1. SSE 直出 `## 实测数据` + 服务端表（`buildDeterministicJbTables` / `lotYieldOverviewMarkdown`）
-2. **再 SSE** `\n\n## 分析结论\n\n`（本批新增，避免解读贴在表块内）
-3. 流式 LLM 只写 `### 数据解读` / `### 专业建议`（禁止表格）
-
-### 3.3 前端拆分与修复
-
-| 文件 | 作用 |
-| --- | --- |
-| `splitAgentReplyMarkdown.ts` | 按 `## 分析结论` / `### 数据解读` 分段；`detachProseAfterMarkdownTables`；`detachSummaryLikeTableRows`（去掉 `\| 总结 \|` 假行） |
-| `repairGfmMarkdownTables.ts` | 表头与 `\|---\|` 列数不一致时自动补齐 |
-| `sanitizeAgentMarkdown.ts` | 展示前调用 repair |
-
-服务端表生成在表末增加**空行**（`formatSlotYieldPivotMarkdown`、`formatSlotYieldFlatTable`、`formatClusteredBadBinAlertsMarkdown`）。
-
-### 3.4 聚集警示表 GFM 修复
-
-`agentJbBadBinCluster.ts` 分隔行必须为 **5 列**：
-
-```text
-| BIN | 测试层 | 类型 | waferId 范围 | 说明 |
-|---:|---:|---:|---:|---|
-```
-
----
-
-## 4. 关键文件索引
-
-| 领域 | 文件 |
-| --- | --- |
-| INF 图 pass 列表 | `infWaferMap.ts` — `buildWaferMapPassSpecs`, `buildStandardWaferMapPassSpecs` |
-| 画图工具 | `infTools/infToolsSingleWafer.ts`, `infTools/index.ts` |
-| 多轮补参 | `agent/agentInfWaferMapTool.ts`, `agent/agentToolHandlers.ts` |
-| 总结流分段 | `agent/agentLoop.ts` |
-| 表 markdown | `agent/agentJbHistoryCompact.ts`, `agent/agentJbBadBinCluster.ts` |
-| 气泡 UI | `reports/AiAgentReport.tsx`, `reports/AiAgentReport.css` |
-| 拆分/修表 | `utils/splitAgentReplyMarkdown.ts`, `utils/repairGfmMarkdownTables.ts` |
-
----
-
-## 5. 部署与验证
-
-### 5.1 构建
+## 9. 部署与手动验证
 
 ```bash
 cd pcr-ai-api && npm ci && npm run build && npm test
 cd ../pcr-ai-report && npm ci && npm run build
-# 生产 API：pm2 reload（见 pcr-ai-api/docs/DEPLOY_PM2.md）
+# 生产：pm2 reload（见 pcr-ai-api/docs/DEPLOY_PM2.md）
 ```
 
-### 5.2 手动验证清单
-
-- [ ] AI 页问 lot 概况：聚集警示、良率 pivot 为** HTML 表格**，非 `\|` 原文
-- [ ] 表下方「数据解读」在**分隔线以下**，不是表格最后一行
-- [ ] `inf_draw_wafer_map`：标签页含各正测/复测段 + **合成**；换 BIN 说「同理画 bin14」仍有 `/wafermaps/` 链接
-- [ ] 「第14片 pass1 wafermap」：**单 pass**、数秒内出链接；全层请求才出现多标签页
-- [ ] 设置里 API 地址正确时，wafermap 链接新标签可打开
-
-### 5.3 Agent 测试话术
-
-见 `docs/pcr-ai-agent-test-prompts.md` §10（INF 23 工具）、§10f-2（DUT×BIN 图）。
+| 话术 | 预期 |
+| --- | --- |
+| `DR44117.1Y 整体的测试情况` | `query_jb_bins` + **完整 JB 表** + 解读；无仅 YM |
+| `画出 DR44117.1Y 第14片 wafer` | 多标签或全层；Lot 行有值 |
+| `画出第14片 pass1 wafermap` | 单 pass、数秒、`Pass 数: 1` |
+| `画出 bin15 所在位置的 wafermap` | 仅 `inf_draw`、合成层、黄框 BIN15 |
+| `画出 bin15 和相关 dut 的关系 wafermap` | **`inf_draw_dut_bin_map`**、白/横/青竖线 |
+| 设置超时 | 建议 client ≥300s（概况 + Oracle） |
 
 ---
 
-## 6. 勿破坏的约定
+## 10. 勿破坏的约定
 
-1. **dummy-parity**：本批未改 Oracle WHERE；INF 工具仅用 dummy fixture `docs/inf-dummy-r_1-1`。
-2. **总结轮**：`query_jb_bins` 仍走 `tryRunDeterministicJbSummary`；勿在服务端表里加「结论列」。
-3. **GFM 表**：任何新增 markdown 表，分隔符列数必须与表头一致；表后加空行。
-4. **`no-undici`** / **`oracledb@5.5`**：不变。
+1. **dummy-parity** — 本批 INF 路由未改 Oracle WHERE。  
+2. **新增路由** — 改 Agent 意图时同步改 `planWaferMapRoute` / overview / dutBin 三模块与测试，勿只在 `agentPrompt` 打补丁。  
+3. **DUT×BIN** — 禁止用 `inf_draw_wafer_map` 代替 `inf_draw_dut_bin_map`。  
+4. **GFM 表** — 分隔符列数 = 表头列数；表后空行。  
+5. **`no-undici`** / **`oracledb@5.5`** — 不变。
 
 ---
 
-## 7. 后续可做（未实现）
+## 11. 后续可做
 
-- 合成层标签置顶（当前在**最后**一页，与 INF 文件顺序一致）
-- 将 `splitAgentReplyMarkdown.test.ts` 纳入 CI（报表 `tsconfig.app.json` 已 exclude `*.test.ts`）
+- 合成层标签置顶（当前顺序与 INF 文件一致，合成在最后）  
+- 一张图展示多个 DUT×BIN（当前单 DUT + 竖线表示其他 DUT）  
+- `splitAgentReplyMarkdown.test.ts` 纳入 CI  
 
 ---
 
