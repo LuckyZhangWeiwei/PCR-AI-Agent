@@ -33,6 +33,7 @@ import {
   DETERMINISTIC_TABLES_HEADER,
   DETERMINISTIC_DATA_SECTION_TITLE,
   DETERMINISTIC_COMMENTARY_SECTION_TITLE,
+  isLotOverviewQuestion,
   JB_TABLES_ONLY_FOOTER,
   jbReplySkipsCommentaryLlm,
   parseJbToolPayload,
@@ -45,7 +46,6 @@ import {
   LOT_OVERVIEW_JB_NUDGE,
   lotOverviewNeedsJbRecovery,
 } from "./agentJbOverviewRoute.js";
-import { isLotOverviewQuestion } from "./agentJbDeterministicReply.js";
 import { extractLotFromUserText } from "./agentInfWaferMapTool.js";
 import {
   buildDutBinMapArgsFromSession,
@@ -876,12 +876,12 @@ async function emitDeterministicJbTablesReply(
   commFilter.finalize();
   const commentary = commFilter.cleanText.trim();
 
-  let full = tablesBlock;
+  // 标题已 SSE 流出，history 必须包含，否则下一轮 LLM 上下文与用户所见不一致
+  let full = tablesBlock + `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n`;
   if (commentary) {
-    full += `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n${commentary}`;
-  }
-  if (streamError && !commentary) {
-    full += `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n*（解读与专业建议生成失败：${streamError.slice(0, 120)}；请以实测数据表为准。）*`;
+    full += commentary;
+  } else if (streamError) {
+    full += `*（解读与专业建议生成失败：${streamError.slice(0, 120)}；请以实测数据表为准。）*`;
   }
 
   appendMessages(sessionId, { role: "assistant", content: full });

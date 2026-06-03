@@ -257,9 +257,7 @@ export function generateWaferMapHtml(
     const distinctBadBins = [...new Set(dies.filter((d) => !d.isGood).map((d) => d.bin))].sort((a, b) => a - b);
     for (const bin of distinctBadBins) {
       const bc = COLORS_BAD[bin % COLORS_BAD.length]!;
-      if (bc !== COLORS_BAD[0]) {
-        lines.push(`      <div class="leg-row"><div class="leg-box" style="background:${bc}"></div>不良 Bin ${bin}</div>`);
-      }
+      lines.push(`      <div class="leg-row"><div class="leg-box" style="background:${bc}"></div>不良 Bin ${bin}</div>`);
     }
     if (possibleDies.length > 0 && drawUntestedGrid) {
       lines.push(`      <div class="leg-row"><div class="leg-box" style="background:${COLOR_UNTESTED}"></div>未测</div>`);
@@ -558,8 +556,11 @@ export function generateDutBinMapHtml(
   const ys = dies.map((d) => d.y);
   if (xs.length === 0) return `<html><body><p>无 die 数据</p></body></html>`;
 
-  const xMin = Math.min(...xs), xMax = Math.max(...xs);
-  const yMin = Math.min(...ys), yMax = Math.max(...ys);
+  // Avoid spread-into-varargs: crashes with RangeError for >65k dies
+  const xMin = xs.reduce((a, b) => (b < a ? b : a), Infinity);
+  const xMax = xs.reduce((a, b) => (b > a ? b : a), -Infinity);
+  const yMin = ys.reduce((a, b) => (b < a ? b : a), Infinity);
+  const yMax = ys.reduce((a, b) => (b > a ? b : a), -Infinity);
   const gridW = xMax - xMin + 1;
   const gridH = yMax - yMin + 1;
 

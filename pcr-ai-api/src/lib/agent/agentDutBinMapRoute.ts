@@ -5,8 +5,6 @@
 import type { ChatMessage } from "./agentHistory.js";
 import {
   extractBinNumberFromText,
-  findJbLotContext,
-  findLastInfDrawWaferMapContext,
   infDrawWaferMapArgsComplete,
   normalizeInfDrawWaferMapArgs,
 } from "./agentInfWaferMapTool.js";
@@ -57,12 +55,12 @@ export function buildDutBinMapArgsFromSession(
   userText: string
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  const prev = findLastInfDrawWaferMapContext(history);
-  const jb = findJbLotContext(history);
+  // normalizeInfDrawWaferMapArgs already calls findLastInfDrawWaferMapContext
+  // and findJbLotContext internally — no need to call them separately
   const waferCtx = normalizeInfDrawWaferMapArgs({}, history);
 
-  out["device"] = prev?.device ?? jb.device ?? waferCtx["device"] ?? "";
-  out["lot"] = prev?.lot ?? jb.lot ?? waferCtx["lot"] ?? "";
+  out["device"] = waferCtx["device"] ?? "";
+  out["lot"] = waferCtx["lot"] ?? "";
   if (waferCtx["slot"] != null) out["slot"] = waferCtx["slot"];
 
   const bin = extractBinNumberFromText(userText);

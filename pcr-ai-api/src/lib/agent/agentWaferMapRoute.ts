@@ -74,7 +74,8 @@ export function planWaferMapRoute(
 
   if (phase === "after_jb_bins") {
     if (lastToolName !== "query_jb_bins") {
-      return { ...base, action: { kind: "not_applicable" } };
+      // 上一个工具不是 query_jb_bins，无法画图且不应阻断 JB 确定性表
+      return notApplicable;
     }
     // 优先本轮 query_jb_bins 工具结果，避免会话里旧 lot 的缓存覆盖
     const payload =

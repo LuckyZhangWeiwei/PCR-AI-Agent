@@ -122,9 +122,13 @@ export function splitAgentReplyMarkdown(text: string): {
   }
 
   const m = COMMENTARY_START.exec(trimmed);
-  if (m?.index != null && m.index > 0) {
+  if (m?.index != null) {
     let commentary = trimmed.slice(m.index).trim();
     commentary = commentary.replace(/^##\s*分析结论\s*\n+/i, "");
+    if (m.index === 0) {
+      // Commentary heading at start — no data tables precede it
+      return { dataMarkdown: "", commentaryMarkdown: mergeCommentaryParts(commentary) };
+    }
     let dataPart = trimmed.slice(0, m.index).trim();
     const fromRows = detachSummaryLikeTableRows(dataPart);
     dataPart = fromRows.body;

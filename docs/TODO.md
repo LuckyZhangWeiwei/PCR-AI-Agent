@@ -23,6 +23,7 @@
 
 ## 已完成
 
+- ✅ Code Review 修复（2026-06-03）：agentWaferMapRoute not_applicable 携带错误 skip 标志、repairGfmMarkdownTables 表头双写、infWaferMapHtml Math.min spread 崩溃、BIN 图例过滤、splitAgentReplyMarkdown index=0 边界、agentLoop 标题未写 history、agentDutBinMapRoute 冗余扫描、重复 import — 2026-06-03 完成
 - ✅ Code Review 修复（2026-05-28）：GLM 正则锚定、DUT 面板 null 保护、useEffect 冗余依赖、GLM arg zip、selectionSummary 计数、normalizeBinToken 去重 — 2026-05-28 完成
 - ✅ toolResultMaxHistoryChars 可配置化：Settings 新增「历史存储上限」（1000–12000，默认 6000），随 agentConfig 下发替代硬编码常量 — 2026-05-27 完成
 - ✅ mask 字段：所有 API device 相关响应新增 `mask`（device 末 4 位，Oracle+Dummy 双路径 + 聚合 parts）— 2026-05-27 完成

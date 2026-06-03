@@ -3,8 +3,7 @@
  */
 
 import type { ChatMessage } from "./agentHistory.js";
-import { extractLotFromUserText } from "./agentInfWaferMapTool.js";
-import { userWantsWaferMapOnly } from "./agentInfWaferMapTool.js";
+import { extractLotFromUserText, userWantsWaferMapOnly } from "./agentInfWaferMapTool.js";
 import { buildJbSessionCacheJson } from "./agentJbBinFormat.js";
 import {
   isLotOverviewQuestion,

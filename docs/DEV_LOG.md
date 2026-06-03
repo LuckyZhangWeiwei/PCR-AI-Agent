@@ -2,6 +2,22 @@
 
 ---
 
+## 2026-06-03 — Code Review 修复（INF 晶圆图 + Agent 三路由）
+
+**完成内容：**
+- `agentWaferMapRoute.ts`：`after_jb_bins` 阶段工具非 `query_jb_bins` 时返回 `notApplicable`（`skipJbDeterministicSummary=false`），修复晶圆图意图 + 错误工具时 JB 确定性表也被静默跳过的 bug。
+- `repairGfmMarkdownTables.ts`：将 `out.push(line)` 移入 repair 分支，消除有效 GFM 表格表头行被重复 push 两次导致渲染错乱的 bug。
+- `infWaferMapHtml.ts`：`generateDutBinMapHtml` 中 `Math.min(...xs)` 改为 `reduce`，避免超大晶圆（>65k die）抛 RangeError 崩溃。
+- `infWaferMapHtml.ts`：移除图例中 `if (bc !== COLORS_BAD[0])` 过滤，BIN 0/5/10/15 均显示具名图例条目（原逻辑使同色 BIN 在图例中不可见）。
+- `splitAgentReplyMarkdown.ts`：`m.index === 0` 时（LLM 回复直接以 `## 分析结论` 开头，无前置数据表）正确放入 `commentaryMarkdown` 而非 `dataMarkdown`。
+- `agentLoop.ts`：`## 分析结论` 标题已 SSE 流出，LLM 空输出时也写入 history，消除客户端所见与模型上下文不一致的问题。
+- `agentDutBinMapRoute.ts`：移除冗余的 `findLastInfDrawWaferMapContext` + `findJbLotContext` 独立调用（`normalizeInfDrawWaferMapArgs` 内部已调用），同时清理无用 import。
+- `agentLoop.ts` + `agentJbOverviewRoute.ts`：合并同模块重复 import，消除 ESLint `no-duplicate-imports` 报错。
+
+**测试：** 249 个测试通过，2 失败（agentAggregateGuard Oracle 连线，本机无库，非代码 Bug）；前端 tsc 构建通过。
+
+---
+
 ## 2026-06-02 — Agent INF Wafer Map 工具路由精确化
 
 **完成内容：**

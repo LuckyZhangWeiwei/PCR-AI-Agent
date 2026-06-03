@@ -34,8 +34,8 @@ export function repairGfmMarkdownTables(md: string): string {
     ) {
       const headerCols = countGfmTableColumns(line);
       const sepCols = countGfmTableColumns(next);
-      out.push(line);
       if (headerCols > 0 && sepCols !== headerCols) {
+        out.push(line);
         out.push(buildGfmSeparatorRow(headerCols));
         i++;
         continue;
