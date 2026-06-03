@@ -49,7 +49,9 @@ import {
 import { extractLotFromUserText } from "./agentInfWaferMapTool.js";
 import {
   buildDutBinMapArgsFromSession,
+  DUT_BIN_MAP_JB_LOOKUP_NUDGE,
   sessionCanDrawDutBinMap,
+  userWantsDutBinRelationMap,
 } from "./agentDutBinMapRoute.js";
 import {
   getJbToolRawJson,
@@ -1303,6 +1305,16 @@ export async function runAgentLoop(
         emit
       );
       if (drawn) return;
+    } else if (awaitingSummary && userWantsDutBinRelationMap(userQuestion) && lastTool?.name === "query_jb_bins") {
+      // Summary 轮：query_jb_bins 已完成，尝试直接画 DUT×BIN 关系图
+      const dutBinDone = await tryRunDutBinMapDirectRoute(sessionId, userQuestion, emit);
+      if (dutBinDone) return;
+      // 无法画图（通常缺少片号）— 给出明确提示而非输出 JB 表
+      const msg = "已查询 JB 数据。画 DUT×BIN 关系图还需要**片号（slot/waferId）**，如「第5片」或「slot=14」，以及 BIN 编号。请补充后重试。";
+      emitTextInChunks(msg, emit);
+      appendMessages(sessionId, { role: "assistant", content: msg });
+      emit({ type: "done" });
+      return;
     }
 
     if (awaitingSummary && !waferPlan.skipJbDeterministicSummary) {
@@ -1323,13 +1335,19 @@ export async function runAgentLoop(
       !awaitingSummary && waferPlan.action.kind === "need_jb_lookup"
         ? `\n\n${WAFER_MAP_JB_LOOKUP_NUDGE}`
         : "";
+    const dutBinNudge =
+      !awaitingSummary &&
+      userWantsDutBinRelationMap(userQuestion) &&
+      !sessionCanDrawDutBinMap(history, userQuestion)
+        ? `\n\n${DUT_BIN_MAP_JB_LOOKUP_NUDGE}`
+        : "";
     const lotOverviewNudge =
       !awaitingSummary && isLotOverviewQuestion(userQuestion)
         ? `\n\n${LOT_OVERVIEW_JB_NUDGE}`
         : "";
     const systemContent = awaitingSummary
       ? `${basePrompt}\n\n${SUMMARIZE_NUDGE}`
-      : `${basePrompt}${waferJbNudge}${lotOverviewNudge}`;
+      : `${basePrompt}${waferJbNudge}${dutBinNudge}${lotOverviewNudge}`;
 
     const messages: ChatMessage[] = [
       { role: "system", content: systemContent },

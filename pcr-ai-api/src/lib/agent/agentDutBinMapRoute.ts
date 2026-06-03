@@ -89,3 +89,9 @@ export function sessionCanDrawDutBinMap(
   delete partial["dut"];
   return infDrawWaferMapArgsComplete(partial) && partial["bin"] != null;
 }
+
+/** 首轮缺 device 时注入 system，约束 LLM 只调 query_jb_bins 取 device/lot。 */
+export const DUT_BIN_MAP_JB_LOOKUP_NUDGE =
+  "【DUT×BIN关系图路由】用户要画某个 BIN 与 DUT 的关系晶圆图（inf_draw_dut_bin_map）。" +
+  "若缺 device/lot：**仅**调 query_jb_bins(lot) 取 device/lot，禁止展开 JB 良率/机台/聚集表或长段解读。" +
+  "绘图由服务端在工具完成后自动执行。若缺片号（slot/waferId），须向用户询问。";

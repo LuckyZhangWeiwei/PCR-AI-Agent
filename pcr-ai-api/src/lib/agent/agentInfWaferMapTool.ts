@@ -197,7 +197,11 @@ export function userWantsWaferMapOnly(text: string): boolean {
     /wafer\s*map/i.test(t) ||
     /画.*(晶圆图|wafer)/i.test(t) ||
     /(画出|绘制|生成).*(晶圆|wafer)/i.test(t) ||
-    /同理.*(wafer|晶圆图|wafermap)/i.test(t) ||
+    // 跟进指令：同理/换/改 + BIN 编号（用户已在对话中建立晶圆图上下文）
+    /同理.*(wafer|晶圆图|wafermap|标出|标亮|高亮)/i.test(t) ||
+    /(?:换(?:成|为)?|改(?:成|为)?|重画|重新.*画)\s*bin\s*\d/i.test(t) ||
+    // 独立 BIN 高亮指令（"标出/标亮/高亮 BINn"，无需 wafer 关键词）
+    /(?:标出|标亮|高亮)\s*bin\s*\d/i.test(t) ||
     (/标出|标亮|高亮/i.test(t) && /bin/i.test(t) && /wafer/i.test(t));
   if (!wantsMap) return false;
   if (
