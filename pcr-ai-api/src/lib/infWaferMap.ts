@@ -542,6 +542,36 @@ export function findSegmentedPassLayers(root: InfBlock): WaferMapPassSpec[] {
   return buildStandardWaferMapPassSpecs(root).filter((s) => s.dieKey !== "final");
 }
 
+/**
+ * All physical blocks for one PASS_ID (正测/复测/中断前·续测后各段) + a pass-level composite tab.
+ * Used when user asks "只画 pass1" — shows every segment of that pass separately.
+ *
+ * If the passId has only one block (no retest, no interrupt), no composite is added
+ * (it would be identical to the single block).
+ * Returns empty array if no blocks exist for this passId.
+ */
+export function buildPassIdWaferMapSpecs(root: InfBlock, passId: string): WaferMapPassSpec[] {
+  const all = findAllSmWaferPasses(root);
+  const matching = all.filter((pi) => pi.passId === passId);
+  if (matching.length === 0) return [];
+
+  const specs: WaferMapPassSpec[] = matching.map((pi) => {
+    const globalIdx = all.indexOf(pi);
+    return {
+      dieKey: `__block:${globalIdx}`,
+      label: `Pass ${pi.passId} (${describePassLayer(all, globalIdx)})`,
+    };
+  });
+
+  // Add pass-level composite (merge all blocks for this passId) only when
+  // there are multiple blocks (retest / interrupted segments present).
+  if (matching.length > 1) {
+    specs.push({ dieKey: passId, label: `Pass ${passId} (合成)` });
+  }
+
+  return specs;
+}
+
 function labelForDieKey(dieKey: string): string {
   if (dieKey === "final") return "合成 (正测+复测)";
   if (/^(\d+)@(pre|post)$/.test(dieKey)) {
@@ -577,6 +607,18 @@ export function buildWaferMapPassSpecs(root: InfBlock, passesArg: string): Wafer
   for (const t of tokens) {
     if (t.toLowerCase() === "final") {
       wantStandardExpand = true;
+    } else if (/^\d+$/.test(t)) {
+      // Plain PASS_ID (e.g. "1"): expand to individual physical blocks + pass-level composite.
+      // Ensures interrupt segments (中断前/续测后) and retest show as separate tabs.
+      const passSpecs = buildPassIdWaferMapSpecs(root, t);
+      if (passSpecs.length > 0) {
+        const seen = new Set(specs.map((s) => s.dieKey));
+        for (const s of passSpecs) {
+          if (!seen.has(s.dieKey)) specs.push(s);
+        }
+      } else {
+        specs.push({ dieKey: t, label: labelForDieKey(t) });
+      }
     } else {
       specs.push({ dieKey: t, label: labelForDieKey(t) });
     }

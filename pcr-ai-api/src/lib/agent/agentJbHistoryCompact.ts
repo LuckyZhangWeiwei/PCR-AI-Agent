@@ -351,9 +351,17 @@ export function formatLotYieldOverviewMarkdown(
     parts.push(testerMd.trim());
     parts.push("");
   }
-  const cardMd = formatCardByPassIdMarkdown(
-    (o["cardByPassId"] as CardByPassIdEntry[] | undefined) ?? []
-  );
+  // cardByPassId (raw array) is not preserved in session cache; fall back to
+  // the pre-formatted string so the probe-card section survives serialization.
+  const prebuiltCardMd =
+    typeof o["cardByPassIdMarkdown"] === "string"
+      ? (o["cardByPassIdMarkdown"] as string).trim()
+      : "";
+  const cardMd =
+    prebuiltCardMd ||
+    formatCardByPassIdMarkdown(
+      (o["cardByPassId"] as CardByPassIdEntry[] | undefined) ?? []
+    );
   if (cardMd) {
     parts.push(cardMd);
     parts.push("");

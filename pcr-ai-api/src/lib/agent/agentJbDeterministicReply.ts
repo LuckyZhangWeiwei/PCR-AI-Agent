@@ -346,6 +346,11 @@ export function buildDeterministicJbTables(
   }
 
   if (mode === "lot_overview") {
+    // Prefer pre-computed overview from cache (built with full cardByPassId array).
+    // Without this, formatLotYieldOverviewMarkdown would skip the probe-card section
+    // because cardByPassId (raw array) is not persisted in the session cache.
+    const precomputed = digest.lotOverview?.trim();
+    if (precomputed) return precomputed;
     return buildLotOverviewTablesMarkdown(toolPayload);
   }
 

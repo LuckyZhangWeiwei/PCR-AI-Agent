@@ -13,16 +13,22 @@ export type InfWaferMapContext = {
   highlight?: string;
 };
 
-/** BIN98 / bin 14 / bin:14 / highlight bin:14 */
+/** BIN98 / bin 14 / bin:14 / highlight bin:14 / 7号bin / BIN号7 */
 export function extractBinNumberFromText(text: string): number | undefined {
   const t = text.trim();
   if (!t) return undefined;
+  // "BIN7", "BIN 7"
   const m1 = /\bBIN\s*(\d{1,3})\b/i.exec(t);
   if (m1) return Number(m1[1]);
-  const m2 = /\bbin\s*[:=]?\s*(\d{1,3})\b/i.exec(t);
+  // "bin:7", "bin=7", "BIN号7" (中文 "号" as separator)
+  const m2 = /\bbin\s*[号#:=]?\s*(\d{1,3})\b/i.exec(t);
   if (m2) return Number(m2[1]);
+  // "标出7"
   const m3 = /标出\s*(\d{1,3})/.exec(t);
   if (m3) return Number(m3[1]);
+  // "7号bin", "7 bin", "7bin" — digit before "bin"
+  const m4 = /(\d{1,3})\s*号?\s*bin\b/i.exec(t);
+  if (m4) return Number(m4[1]);
   return undefined;
 }
 

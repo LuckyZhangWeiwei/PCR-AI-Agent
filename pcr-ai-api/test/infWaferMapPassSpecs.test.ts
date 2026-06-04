@@ -5,6 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { parseInf } from "../src/lib/infParser.js";
 import {
+  buildPassIdWaferMapSpecs,
   buildStandardWaferMapPassSpecs,
   buildWaferMapPassSpecs,
   decodePsbn,
@@ -82,4 +83,38 @@ test("buildWaferMapPassSpecs(all) equals standard", async () => {
     buildWaferMapPassSpecs(root, "all"),
     buildStandardWaferMapPassSpecs(root)
   );
+});
+
+test("buildPassIdWaferMapSpecs(1) expands to TEST+RETEST blocks + composite", async () => {
+  const root = await parseInf(fixture);
+  const specs = buildPassIdWaferMapSpecs(root, "1");
+  // Fixture has TEST + RETESTBIN for passId=1 → 2 physical blocks + 1 composite
+  assert.equal(specs.length, 3);
+  const blockSpecs = specs.filter((s) => s.dieKey.startsWith("__block:"));
+  assert.equal(blockSpecs.length, 2);
+  assert.ok(blockSpecs.some((s) => s.label.includes("正测")), "should have 正测 tab");
+  assert.ok(blockSpecs.some((s) => s.label.includes("复测")), "should have 复测 tab");
+  const composite = specs.find((s) => s.dieKey === "1");
+  assert.ok(composite, "should have pass-level composite tab");
+  assert.equal(composite!.label, "Pass 1 (合成)");
+});
+
+test("buildWaferMapPassSpecs('1') expands same as buildPassIdWaferMapSpecs(1)", async () => {
+  const root = await parseInf(fixture);
+  const fromSingle = buildWaferMapPassSpecs(root, "1");
+  const fromPassId = buildPassIdWaferMapSpecs(root, "1");
+  assert.deepEqual(fromSingle, fromPassId);
+});
+
+test("buildWaferMapPassSpecs single passId: all block dies are non-empty", async () => {
+  const root = await parseInf(fixture);
+  const psbn = findPsbn(root);
+  const goodBins = psbn ? decodePsbn(psbn) : new Set([1]);
+  for (const passId of ["1", "3", "5"]) {
+    const specs = buildWaferMapPassSpecs(root, passId);
+    for (const spec of specs) {
+      const dies = getDiesForWaferMapSpec(root, goodBins, spec.dieKey);
+      assert.ok(dies.length > 0, `no dies for passId=${passId} spec ${spec.dieKey} (${spec.label})`);
+    }
+  }
 });

@@ -2,6 +2,20 @@
 
 ---
 
+## 2026-06-04 — Agent JB/Wafermap 四项 Bug 修复
+
+**完成内容：**
+- `agentJbDeterministicReply.ts`：`lot_overview` 模式改为优先用 `digest.lotOverview`（预计算的完整总览 markdown，含探针卡段），修复 session cache 里 `cardByPassId` 原始数组未持久化导致 lot 概况不输出探针卡信息的 bug。
+- `agentJbHistoryCompact.ts`：`formatLotYieldOverviewMarkdown` 的探针卡段加防御性回退——优先用 `cardByPassIdMarkdown`（序列化后仍保留的字符串），避免从 session cache 重建时因缺 `cardByPassId` 数组而静默跳过卡段。
+- `agentLoop.ts`：新增 `tryRunEquipmentDirectRoute`——当用户追问"probecard是什么"等装备类问题时，直接从 session cache 读取探针卡/机台信息输出，不走 LLM，避免 LLM 将上一轮 lot 总览表（每片良率 + 聚集 die）重复输出。
+- `agentInfWaferMapTool.ts`：`extractBinNumberFromText` 新增 m4（`(\d+)\s*号?\s*bin\b`）和 m2 扩展（`[号#:=]?`），支持"7号bin"、"BIN号7"等数字在前的中文表达。修复此类 phrasing 导致 `binHint=undefined`、晶圆图 BIN highlight 不生效的 bug。
+- `infWaferMap.ts`：新增 `buildPassIdWaferMapSpecs(root, passId)`——当用户说"只画 pass1"时，展开为该 passId 的全部物理块（正测·中断前/续测后/段N + 复测）+ pass 级合成 tab，而不是以前的单个合并视图。有中断时每段独立 tab 自动出现。
+- `buildWaferMapPassSpecs` 对 plain digit passId token 调用新函数展开，graceful fallback（找不到 passId 时退回旧行为）。
+
+**测试：** 255 个测试通过，1 失败（agentAggregateGuard Oracle 连线，本机无库，非代码 Bug）；typecheck 通过
+
+---
+
 ## 2026-06-03 — Agent 工具并发执行（减少多工具轮次 timeout 概率）
 
 **完成内容：**

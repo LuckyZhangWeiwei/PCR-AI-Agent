@@ -34,6 +34,8 @@ import {
   DETERMINISTIC_DATA_SECTION_TITLE,
   DETERMINISTIC_COMMENTARY_SECTION_TITLE,
   isLotOverviewQuestion,
+  isProbeCardQuestion,
+  isTesterMachineQuestion,
   JB_TABLES_ONLY_FOOTER,
   jbReplySkipsCommentaryLlm,
   parseJbToolPayload,
@@ -1070,6 +1072,24 @@ async function tryRunLotOverviewDirectRoute(
 }
 
 /**
+ * 探针卡 / 机台 直连路由：用户追问 "probecard是什么" 等时，直接从 session 缓存输出
+ * equipment 表，不走 LLM，避免 LLM 用历史上下文把上一轮的 lot 总览表重复输出一次。
+ */
+async function tryRunEquipmentDirectRoute(
+  sessionId: string,
+  userQuestion: string,
+  agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void
+): Promise<boolean> {
+  if (!isProbeCardQuestion(userQuestion) && !isTesterMachineQuestion(userQuestion)) {
+    return false;
+  }
+  const payload = resolveJbToolPayload(sessionId);
+  if (!payload) return false;
+  return emitDeterministicJbTablesReply(sessionId, userQuestion, payload, agentConfig, emit);
+}
+
+/**
  * 总结轮：先 SSE 直出服务端表，再让 LLM 只写 3–8 句解读（不改表中数字）。
  * @returns true 表示已完整结束本轮（调用方应 return）。
  */
@@ -1407,6 +1427,14 @@ export async function runAgentLoop(
         emit
       );
       if (overviewDone) return;
+
+      const equipmentDone = await tryRunEquipmentDirectRoute(
+        sessionId,
+        userQuestion,
+        agentConfig,
+        emit
+      );
+      if (equipmentDone) return;
 
       const dutBinDone = await tryRunDutBinMapDirectRoute(
         sessionId,
