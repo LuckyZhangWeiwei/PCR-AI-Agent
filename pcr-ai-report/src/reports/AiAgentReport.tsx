@@ -641,6 +641,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
     setFeedbackModal(null);
     atBottomRef.current = true;
     if (messagesRef.current) messagesRef.current.scrollTop = 0;
+    window.scrollTo(0, 0);
     inputRef.current?.focus();
   };
 

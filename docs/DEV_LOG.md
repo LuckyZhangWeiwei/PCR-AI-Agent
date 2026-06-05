@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-06-05 — Agent INF 工具瘦身 + New Chat 滚动重置
+
+**完成内容：**
+- `infTools/index.ts`：新增 `INF_DRAW_AGENT_SCHEMAS`，仅保留 `inf_draw_wafer_map` 和 `inf_draw_dut_bin_map` 两个工具 schema；原有 21 个分析工具的库函数和 `runInfTool` 调度保持完整。
+- `agentToolSchemas.ts`：改为 `export { INF_DRAW_AGENT_SCHEMAS as INF_TOOL_SCHEMAS }`，agent function call 列表从 23 个 INF 工具精简至 2 个，减少 LLM 工具过多导致的答案不准问题。
+- `agentLoop.ts`：`INF_KEYWORDS` 从 28 项缩减至 10 项，去掉只属于已移除分析工具的触发词（die 坐标、cluster/聚集/划伤、DUT 良率统计等）。
+- `AiAgentReport.tsx`：`newSession()` 补加 `window.scrollTo(0, 0)`，修复点击 New Chat 后页面停留在原滚动位置的问题（根因：app-shell 仅 `min-height: 100vh`，agent 输出大量内容时 window 会滚动，原来只重置了消息容器内部滚动）。
+- `runtime-config.json`：`listDefaultLimit` 1000 → 2000。
+
+**测试：** `npm run typecheck` 通过，无新后端测试
+
+---
+
 ## 2026-06-05 — InfDutDistPanel 交互优化 + DataTable 列筛选
 
 **完成内容：**

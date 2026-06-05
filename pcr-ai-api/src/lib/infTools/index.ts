@@ -410,6 +410,16 @@ export const INF_TOOL_SCHEMAS = [
   },
 ] as const;
 
+/** Only drawing tools exposed to the agent as function-call schemas.
+ *  The full INF_TOOL_SCHEMAS (analysis tools) remain available via runInfTool()
+ *  but are hidden from the LLM to keep the tool list lean and avoid confusion.
+ */
+export const INF_DRAW_AGENT_SCHEMAS = INF_TOOL_SCHEMAS.filter(
+  (s) =>
+    (s.function.name as string) === "inf_draw_wafer_map" ||
+    (s.function.name as string) === "inf_draw_dut_bin_map"
+);
+
 // ── Dispatch ───────────────────────────────────────────────────────────────
 
 export async function runInfTool(

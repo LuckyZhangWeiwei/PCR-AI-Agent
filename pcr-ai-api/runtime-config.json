@@ -7,6 +7,6 @@
   "clientTimeoutSec": 240,
   "toolResultMaxChars": 20000,
   "toolResultMaxHistoryChars": 8000,
-  "listDefaultLimit": 1000,
+  "listDefaultLimit": 2000,
   "listMaxLimit": 2000
 }
