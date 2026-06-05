@@ -278,6 +278,8 @@ function jbRowDimValue(row: InfcontrolLayerBinV3Row, dim: string): string | unde
         : undefined;
     case "cardId":
       return String(row.CARDID ?? "").trim() || undefined;
+    case "testerId":
+      return String(row.TESTERID ?? "").trim() || undefined;
     case "probeCardType": {
       const pct = row.PROBECARDTYPE;
       if (pct !== undefined && pct !== null && String(pct).trim()) {
@@ -550,8 +552,8 @@ const FUNNEL_LEVEL_DEFS: ReadonlyArray<{ key: string; label: string; color: stri
   { key: "mask",   label: "Mask",      color: "#79c0ff" },
   { key: "device", label: "Device",    color: "#d2a8ff" },
   { key: "lot",    label: "Lot",       color: "#3fb950" },
-  { key: "slot",   label: "Wafer ID",  color: "#e6b450" },
   { key: "passId", label: "Pass",      color: "#ff7b72" },
+  { key: "slot",   label: "Wafer ID",  color: "#e6b450" },
   { key: "cardId", label: "ProbeCard", color: "#58a6ff" },
 ];
 
@@ -630,7 +632,7 @@ function computeFunnelBars(rows: InfcontrolLayerBinV3Row[], levelKey: string): F
 }
 
 // FUNNEL_LEVEL_DEFS index at which a fresh DB fetch is used instead of list.rows
-const FUNNEL_DB_FETCH_FROM = 3; // slot (index 3) and deeper
+const FUNNEL_DB_FETCH_FROM = 3; // passId (index 3) and deeper
 
 function FunnelDrillSection({
   rows, chain, onChainChange, apiBase,

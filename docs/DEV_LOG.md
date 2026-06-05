@@ -2,6 +2,17 @@
 
 ---
 
+## 2026-06-05 — 标题改名 + 漏斗顺序调整 + Hostname 下钻免 Oracle 查询
+
+**完成内容：**
+- `pcr-ai-report/index.html` + `App.tsx`：页面标题从 "ATTJ Prober PCR Dashboard" 改为 "ATTJ WT PCR Dashboard"。
+- `InfcontrolReport.tsx`：`FUNNEL_LEVEL_DEFS` 中 Pass 与 Wafer ID 位置互换（Lot → Pass → Wafer ID → ProbeCard），与业务钻取习惯对齐。
+- `InfcontrolReport.tsx`：`jbRowDimValue` 新增 `testerId` case（读 `row.TESTERID`），使 Device 下钻面板点击 Hostname tab 时从已有明细行内存派生分组，不再发起 Oracle aggregate 查询，消除生产环境慢查询。
+
+**测试：** 未运行，本次仅前端 UI 修改
+
+---
+
 ## 2026-06-04 — Agent JB/Wafermap 四项 Bug 修复
 
 **完成内容：**
