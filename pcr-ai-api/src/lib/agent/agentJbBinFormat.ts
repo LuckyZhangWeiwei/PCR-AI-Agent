@@ -992,6 +992,11 @@ export function buildJbSessionCacheJson(wrapped: Record<string, unknown>): strin
     cache["slotYieldSummary"] = minimalSlotYieldSummary(summary);
   }
 
+  const compact = wrapped["slotBadBinsCompact"] as SlotBadBinsCompactEntry[] | undefined;
+  if (compact?.length) {
+    cache["slotBadBinsCompact"] = compact;
+  }
+
   if (lotScoped && summary?.length) {
     const overview = formatLotYieldOverviewMarkdown({
       ...wrapped,

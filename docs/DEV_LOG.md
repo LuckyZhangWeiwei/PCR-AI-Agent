@@ -2,6 +2,21 @@
 
 ---
 
+## 2026-06-05 — Agent JB 探针卡追问答案重复修复
+
+**完成内容：**
+- `agentJbBinFormat.ts`：`buildJbSessionCacheJson` 新增 `slotBadBinsCompact` 字段入 session cache，确保后续追问时仍能获取逐卡 BIN 细分数据（原先 session cache 缺此字段，导致逐卡归因失败）。
+- `agentJbDeterministicReply.ts`：新增 `isBinCardAttributionQuestion()`，识别「BINxx 是哪张探针卡」类型的追问，映射到新模式 `"bin_card_attribution"`；输出逐卡 BIN 颗数表（显示所有卡，包括 0 颗），跳过 LLM 解读（表即答案）。
+- `agentJbDeterministicReply.ts`：新增 `isCardYieldCompareQuestion()`，识别「7747-01 和 7747-03 哪张更差」「哪张探针卡 yield 最差」类型追问，映射到新模式 `"card_yield_compare"`；输出逐卡坏 die 汇总表 + 中断段良率表 + cardByPassId，让 LLM 推断哪张卡更差。
+- `agentJbDeterministicReply.ts`：`detectJbReplyMode()` 在 `isProbeCardQuestion` 之前先检测两个新模式，防止被泛化的 `"equipment"` 模式截断。
+- `agentJbDeterministicReply.ts`：新增私有 helper `buildBinCardAttributionMarkdown()` / `buildCardBadDieSummaryMarkdown()`。
+
+**根因：** 问题2（bin55 是哪张卡）和问题3（哪张卡 yield 最差）都被识别为 `"equipment"` 模式 → 永远输出同一张 `cardByPassId` 表，无法区分回答。
+
+**测试：** 258 个测试，255 通过，1 失败（Oracle 连线，非代码 bug）；typecheck 通过
+
+---
+
 ## 2026-06-05 — Agent INF 工具瘦身 + New Chat 滚动重置
 
 **完成内容：**

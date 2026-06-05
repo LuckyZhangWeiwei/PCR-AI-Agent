@@ -6,8 +6,9 @@ import {
   formatLotYieldOverviewMarkdown,
   formatLotTesterMarkdown,
   formatTestInterruptCountMarkdown,
+  formatSlotYieldInterruptMarkdown,
 } from "./agentJbHistoryCompact.js";
-import type { CardByPassIdEntry, LotTesterEntry } from "./agentJbBinFormat.js";
+import type { CardByPassIdEntry, LotTesterEntry, SlotBadBinsCompactEntry } from "./agentJbBinFormat.js";
 import type { ClusteredBadBinAlert } from "./agentJbBadBinCluster.js";
 import type { SlotYieldSummaryEntry } from "../jbYieldCalc.js";
 import { buildBinSlotTrendMarkdownOnDemand } from "./agentJbBinTrend.js";
@@ -33,6 +34,8 @@ export type JbReplyMode =
   | "tester_machine"
   | "equipment"
   | "bad_bin_ranking"
+  | "bin_card_attribution"
+  | "card_yield_compare"
   | "generic";
 
 /** 用户问在哪台机台/测试机测（JB testerId / YM hostname）。 */
@@ -56,6 +59,31 @@ export function isProbeCardQuestion(text: string): boolean {
   return /几号卡|哪张.*卡|哪个.*卡|探针卡|probe\s*card|CARDID|卡号|用的.*卡|哪块卡/i.test(
     t
   );
+}
+
+/** 用户问某个具体 BIN 编号是哪张探针卡测出来的（逐卡归因）。 */
+export function isBinCardAttributionQuestion(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (!/\bBIN\s*\d{1,3}\b|\bbin\s*\d{1,3}\b/i.test(t)) return false;
+  return /哪张.*卡|哪个.*卡|是.*卡|哪块卡|用的.*卡|什么.*卡|属于.*卡|哪张.*探针/i.test(t);
+}
+
+/** 用户比较两张或多张探针卡的良率/坏 die（哪张更差/更好）。 */
+export function isCardYieldCompareQuestion(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (/哪张.*(良率|yield|更差|更好|最差|最好|最低|最高)|(?:良率|yield).*(哪张|更差|更好|最差)/i.test(t)) {
+    return true;
+  }
+  const twoCards = (t.match(/\d{4}-\d{2,3}/g) ?? []).length >= 2;
+  if (twoCards && /(哪张|哪个|良率|yield|更差|更好|最差|最好)/i.test(t)) {
+    return true;
+  }
+  if (/探针卡.*(更差|更好|最差|最好|更低|更高|哪.*差|哪.*好)/i.test(t)) {
+    return true;
+  }
+  return false;
 }
 
 function formatEquipmentTables(toolPayload: Record<string, unknown>): string | null {
@@ -180,7 +208,9 @@ export function jbReplySkipsCommentaryLlm(mode: JbReplyMode): boolean {
     mode === "bad_bin_ranking" ||
     mode === "interrupt_count" ||
     mode === "tester_machine" ||
-    mode === "equipment"
+    mode === "equipment" ||
+    mode === "bin_card_attribution"
+    // "card_yield_compare" 不跳过：LLM 需要推断「哪张卡更差」
   );
 }
 
@@ -197,6 +227,9 @@ export const JB_TABLES_ONLY_FOOTER =
   "\n\n---\n\n*以上为服务端实测表。如需某 BIN 逐片趋势或晶圆图，请继续提问。*";
 
 export function detectJbReplyMode(userMessage: string): JbReplyMode {
+  // Specific attribution/compare modes take priority over generic equipment check
+  if (isBinCardAttributionQuestion(userMessage)) return "bin_card_attribution";
+  if (isCardYieldCompareQuestion(userMessage)) return "card_yield_compare";
   if (isTesterMachineQuestion(userMessage) && isProbeCardQuestion(userMessage)) {
     return "equipment";
   }
@@ -272,6 +305,65 @@ function pickPassIdForBinTrend(
   return passIdsPresent?.[0] ?? null;
 }
 
+/** 按卡汇总 lot 内各 BIN 的坏 die 颗数，并列出主要坏 BIN。 */
+function buildCardBadDieSummaryMarkdown(
+  compact: SlotBadBinsCompactEntry[],
+  lot?: string
+): string | null {
+  const byCard = new Map<string, { total: number; bins: Map<number, number> }>();
+  for (const { cardId, badBins } of compact) {
+    if (!byCard.has(cardId)) byCard.set(cardId, { total: 0, bins: new Map() });
+    const entry = byCard.get(cardId)!;
+    for (const { bin, dieCount } of badBins) {
+      entry.total += dieCount;
+      entry.bins.set(bin, (entry.bins.get(bin) ?? 0) + dieCount);
+    }
+  }
+  if (byCard.size === 0) return null;
+  const sorted = [...byCard.entries()].sort((a, b) => b[1].total - a[1].total);
+  const lotTag = lot ? `（lot ${lot}）` : "";
+  const rows = [
+    "| 探针卡 (CARDID) | 总坏 die 颗数 | 主要坏 BIN（前 3） |",
+    "|---|---|---|",
+  ];
+  for (const [cardId, { total, bins }] of sorted) {
+    const topBins = [...bins.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([b, c]) => `BIN${b}×${c}`)
+      .join(", ");
+    rows.push(`| ${cardId} | ${total} | ${topBins || "—"} |`);
+  }
+  return `**各探针卡坏 die 汇总${lotTag}**\n\n${rows.join("\n")}`;
+}
+
+/** 按卡汇总某 BIN 的坏 die 颗数（所有卡均列出，0 颗也显示）。 */
+function buildBinCardAttributionMarkdown(
+  compact: SlotBadBinsCompactEntry[],
+  bin: number,
+  lot?: string
+): string | null {
+  const byCard = new Map<string, number>();
+  for (const { cardId } of compact) {
+    if (!byCard.has(cardId)) byCard.set(cardId, 0);
+  }
+  for (const { cardId, badBins } of compact) {
+    const found = badBins.find((b) => b.bin === bin);
+    if (found && found.dieCount > 0) {
+      byCard.set(cardId, (byCard.get(cardId) ?? 0) + found.dieCount);
+    }
+  }
+  if (![...byCard.values()].some((c) => c > 0)) return null;
+  const sorted = [...byCard.entries()].sort((a, b) => b[1] - a[1]);
+  const lotTag = lot ? `（lot ${lot}）` : "";
+  const rows = [
+    `| 探针卡 (CARDID) | BIN${bin} 坏 die 颗数 |`,
+    `|---|---|`,
+    ...sorted.map(([cardId, count]) => `| ${cardId} | ${count} |`),
+  ];
+  return `**BIN${bin} 坏 die 所属探针卡${lotTag}**\n\n${rows.join("\n")}`;
+}
+
 /** 根据用户问题从工具 JSON 选出应直出的 markdown 表（不改写）。 */
 export function buildDeterministicJbTables(
   userMessage: string,
@@ -279,6 +371,55 @@ export function buildDeterministicJbTables(
 ): string | null {
   const digest = digestFromPayload(toolPayload);
   const mode = detectJbReplyMode(userMessage);
+
+  if (mode === "bin_card_attribution") {
+    const bin = extractBinFromUserText(userMessage);
+    if (bin != null) {
+      const compact = toolPayload["slotBadBinsCompact"] as SlotBadBinsCompactEntry[] | undefined;
+      if (compact?.length) {
+        const lot = String(toolPayload["lot"] ?? "").trim() || undefined;
+        const md = buildBinCardAttributionMarkdown(compact, bin, lot);
+        if (md) return md;
+      }
+    }
+    return formatEquipmentTables(toolPayload);
+  }
+
+  if (mode === "card_yield_compare") {
+    const parts: string[] = [];
+    const lot = String(toolPayload["lot"] ?? "").trim() || undefined;
+    const device = String(toolPayload["device"] ?? "").trim() || undefined;
+
+    const compact = toolPayload["slotBadBinsCompact"] as SlotBadBinsCompactEntry[] | undefined;
+    if (compact?.length) {
+      const cardSummary = buildCardBadDieSummaryMarkdown(compact, lot);
+      if (cardSummary) parts.push(cardSummary);
+    }
+
+    const interruptMd = toolPayload["slotYieldInterruptMarkdown"];
+    if (typeof interruptMd === "string" && interruptMd.trim()) {
+      parts.push(interruptMd.trim());
+    } else {
+      const summary = toolPayload["slotYieldSummary"] as SlotYieldSummaryEntry[] | undefined;
+      if (summary?.length) {
+        const rebuilt = formatSlotYieldInterruptMarkdown(summary, lot, device);
+        if (rebuilt.trim()) parts.push(rebuilt.trim());
+      }
+    }
+
+    const cardMd = toolPayload["cardByPassIdMarkdown"];
+    if (typeof cardMd === "string" && cardMd.trim()) {
+      parts.push(cardMd.trim());
+    } else {
+      const cardByPassId = toolPayload["cardByPassId"] as CardByPassIdEntry[] | undefined;
+      if (cardByPassId?.length) {
+        const built = formatCardByPassIdMarkdown(cardByPassId);
+        if (built.trim()) parts.push(built.trim());
+      }
+    }
+
+    return parts.length ? parts.join("\n\n") : formatEquipmentTables(toolPayload);
+  }
 
   if (mode === "equipment") {
     return formatEquipmentTables(toolPayload);
