@@ -2,7 +2,7 @@
 
 ---
 
-## 2026-06-05 — Agent JB lot 良率排名 + 探针卡追问答案重复修复
+## 2026-06-05 — Agent JB 逐片坏 bin 排名 + lot 良率排名 + 探针卡追问答案重复修复
 
 **完成内容：**
 - `agentJbBinFormat.ts`：`buildJbSessionCacheJson` 新增 `slotBadBinsCompact` 字段入 session cache，确保后续追问时仍能获取逐卡 BIN 细分数据（原先 session cache 缺此字段，导致逐卡归因失败）。
@@ -13,6 +13,8 @@
 
 - `agentJbBinFormat.ts`：`buildJbSessionCacheJson` 同时写入 `lotYieldRankByTestEnd`，支持 lot 良率排名追问。
 - `agentJbDeterministicReply.ts`：新增 `isLotYieldRankingQuestion()`，识别「良品率最差的 N 个 lot」类问题，映射到新模式 `"lot_yield_ranking"`；输出按良率% 升序排列的 lot 排名表，跳过 LLM 解读。
+- `agentJbDeterministicReply.ts`：新增 `isPerSlotBadBinRankingQuestion()`，识别「每一片坏bin的前五名」类问题，映射到新模式 `"per_slot_bin_ranking"`；从 `slotBadBinsCompact` 按 (slot, passId) 聚合后，输出逐片 top-N 坏 bin 表，支持中文数字（前五名=5），跳过 LLM 解读。
+- `agentJbDeterministicReply.ts`：新增 `extractTopN()` 工具函数，解析「前五名/前3名/top5」中的 N，支持阿拉伯数字和中文数字。
 
 **根因（lot 排名答非所问）：** `query_jb_bins(cardId)` 返回多 lot 时，`primaryLot` 取第一行（最近测试的 TR21625.1N），`shouldDetectClusteredBins=true` → cluster alerts 都是 TR21625.1N 的；`"generic"` 模式输出该 lot 的总览表，完全答非所问。新的 `"lot_yield_ranking"` 模式优先于 `"generic"` 截获这类问题。
 **根因（探针卡追问）：** 问题2（bin55 是哪张卡）和问题3（哪张卡 yield 最差）都被识别为 `"equipment"` 模式 → 永远输出同一张 `cardByPassId` 表，无法区分回答。

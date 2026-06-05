@@ -37,6 +37,7 @@ export type JbReplyMode =
   | "bin_card_attribution"
   | "card_yield_compare"
   | "lot_yield_ranking"
+  | "per_slot_bin_ranking"
   | "generic";
 
 /** 用户问在哪台机台/测试机测（JB testerId / YM hostname）。 */
@@ -98,6 +99,16 @@ export function isLotYieldRankingQuestion(text: string): boolean {
   // "lot良率排行/排名"
   if (/(lot|批次).*(良率|良品率|yield).*(排行|排名|ranking)/i.test(t)) return true;
   return false;
+}
+
+/** 用户要看每片 wafer 的坏 bin 排名（每片前 N 名）。 */
+export function isPerSlotBadBinRankingQuestion(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  // 必须含「每片/每一片/各片」类逐片含义
+  const perSlice = /(每片|每一片|各片|逐片|每个.*wafer|每个.*waferId|每个.*slot)/i.test(t);
+  if (!perSlice) return false;
+  return /(坏\s*bin|坏die|坏\s*BIN|bad\s*bin)/i.test(t);
 }
 
 function formatEquipmentTables(toolPayload: Record<string, unknown>): string | null {
@@ -224,7 +235,8 @@ export function jbReplySkipsCommentaryLlm(mode: JbReplyMode): boolean {
     mode === "tester_machine" ||
     mode === "equipment" ||
     mode === "bin_card_attribution" ||
-    mode === "lot_yield_ranking"
+    mode === "lot_yield_ranking" ||
+    mode === "per_slot_bin_ranking"
     // "card_yield_compare" 不跳过：LLM 需要推断「哪张卡更差」
   );
 }
@@ -254,6 +266,7 @@ export function detectJbReplyMode(userMessage: string): JbReplyMode {
   if (isBinTrendQuestion(userMessage)) return "bin_trend";
   if (isBadBinRankingQuestion(userMessage)) return "bad_bin_ranking";
   if (isLotYieldRankingQuestion(userMessage)) return "lot_yield_ranking";
+  if (isPerSlotBadBinRankingQuestion(userMessage)) return "per_slot_bin_ranking";
   if (isSlotPassYieldQuestion(userMessage)) return "slot_pass_yield";
   if (isLotOverviewQuestion(userMessage)) return "lot_overview";
   return "generic";
@@ -319,6 +332,74 @@ function pickPassIdForBinTrend(
   if (inTrends.length) return inTrends[0] ?? null;
   if (passIdsPresent?.includes(1)) return 1;
   return passIdsPresent?.[0] ?? null;
+}
+
+/** 从用户文字提取"前N名"数字（支持中文：前五名=5，前3名=3）。 */
+function extractTopN(text: string, defaultN = 5): number {
+  const mArabic = text.match(/top\s*(\d+)|前\s*(\d+)\s*名|前\s*(\d+)/i);
+  if (mArabic) {
+    const n = Number(mArabic[1] ?? mArabic[2] ?? mArabic[3]);
+    if (Number.isFinite(n) && n > 0 && n <= 50) return n;
+  }
+  const zhMap: Record<string, number> = {
+    "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
+    "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
+  };
+  const mZh = text.match(/前([一二三四五六七八九十]+)名?/);
+  if (mZh) {
+    const n = zhMap[mZh[1]!];
+    if (n) return n;
+  }
+  return defaultN;
+}
+
+/** 逐片 top-N 坏 bin 排名表（来自 slotBadBinsCompact，按 slot×passId 汇总）。 */
+function buildPerSlotBadBinRankingMarkdown(
+  toolPayload: Record<string, unknown>,
+  userMessage: string
+): string | null {
+  type CompactEntry = {
+    slot: number;
+    passId: number;
+    cardId: string;
+    badBins: Array<{ bin: number; dieCount: number }>;
+  };
+  const compact = toolPayload["slotBadBinsCompact"] as CompactEntry[] | undefined;
+  if (!compact?.length) return null;
+
+  const n = extractTopN(userMessage, 5);
+
+  // Aggregate by (slot, passId) across all cardIds
+  const bySlotPass = new Map<string, { slot: number; passId: number; bins: Map<number, number> }>();
+  for (const { slot, passId, badBins } of compact) {
+    const key = `${slot}:${passId}`;
+    if (!bySlotPass.has(key)) bySlotPass.set(key, { slot, passId, bins: new Map() });
+    const entry = bySlotPass.get(key)!;
+    for (const { bin, dieCount } of badBins) {
+      entry.bins.set(bin, (entry.bins.get(bin) ?? 0) + dieCount);
+    }
+  }
+  if (bySlotPass.size === 0) return null;
+
+  const sorted = [...bySlotPass.values()].sort(
+    (a, b) => a.slot - b.slot || a.passId - b.passId
+  );
+  const lot = String(toolPayload["lot"] ?? "").trim() || undefined;
+  const lotTag = lot ? `（lot ${lot}）` : "";
+
+  const rows = [
+    `| waferId | 测试层 | 坏 die 最多的前 ${n} 个 BIN（BIN×颗数） |`,
+    "|---|---|---|",
+    ...sorted.map(({ slot, passId, bins }) => {
+      const topBins = [...bins.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, n)
+        .map(([b, c]) => `BIN${b}×${c}`)
+        .join(", ");
+      return `| waferId ${slot} | pass${passId} | ${topBins || "—"} |`;
+    }),
+  ];
+  return `**各片 waferId 坏 bin 前 ${n} 名${lotTag}**\n\n${rows.join("\n")}`;
 }
 
 /** 按卡汇总 lot 内各 BIN 的坏 die 颗数，并列出主要坏 BIN。 */
@@ -430,6 +511,12 @@ export function buildDeterministicJbTables(
     const md = buildLotYieldRankingMarkdown(toolPayload, userMessage);
     if (md) return md;
     // Fallback: let LLM answer from lotYieldRankByTestEnd in tool result
+    return null;
+  }
+
+  if (mode === "per_slot_bin_ranking") {
+    const md = buildPerSlotBadBinRankingMarkdown(toolPayload, userMessage);
+    if (md) return md;
     return null;
   }
 
