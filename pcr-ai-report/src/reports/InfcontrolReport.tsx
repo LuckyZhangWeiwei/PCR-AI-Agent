@@ -1931,6 +1931,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
             <DataTable
               rows={detailRows}
               maxHeight={400}
+              filterRow
               multiSelect
               selectedRowKeys={detailSelectedListIndices}
               getRowKey={(row) => Number(row[JB_DETAIL_LIST_INDEX])}

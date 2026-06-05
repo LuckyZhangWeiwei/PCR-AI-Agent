@@ -51,26 +51,35 @@ function dutSeriesDieCount(value: unknown): number {
 
 /** DUT 条目较多时用多列，避免单列过高在 confine 下被裁切 */
 function dutDistTooltipColumns(itemCount: number): number {
-  if (itemCount <= 8) return 1;
-  if (itemCount <= 20) return 2;
-  if (itemCount <= 45) return 3;
+  if (itemCount <= 6) return 1;
+  if (itemCount <= 14) return 2;
+  if (itemCount <= 30) return 3;
   return 4;
 }
 
 type DutTipRow = { html: string; seriesIndex: number };
 
-function formatDutDistTooltipHtml(header: string, rows: DutTipRow[]): string {
+function formatDutDistTooltipHtml(
+  header: string,
+  rows: DutTipRow[],
+  hoveredSeriesIndex?: number | null
+): string {
   if (!rows.length) return header;
   const cols = dutDistTooltipColumns(rows.length);
   const cells = rows
-    .map(
-      (row) =>
-        `<div class="dut-tip-row" data-series-index="${row.seriesIndex}" style="white-space:nowrap;line-height:1.55;font-size:11px;display:flex;align-items:center;gap:5px;">${row.html}</div>`
-    )
+    .map((row) => {
+      const isHovered =
+        hoveredSeriesIndex != null && row.seriesIndex === hoveredSeriesIndex;
+      const extraStyle = isHovered
+        ? "background:rgba(88,166,255,0.32);border-radius:4px;padding:2px 7px;margin:-2px -7px;font-weight:700;color:#fff;box-shadow:0 0 0 1px rgba(88,166,255,0.45);"
+        : "";
+      const cls = isHovered ? "dut-tip-row dut-tip-row--hovered" : "dut-tip-row";
+      return `<div class="${cls}" data-series-index="${row.seriesIndex}" style="white-space:nowrap;line-height:1.7;font-size:12px;display:flex;align-items:center;gap:7px;${extraStyle}">${row.html}</div>`;
+    })
     .join("");
   return [
-    `<div style="font-weight:600;margin-bottom:6px;font-size:12px;">${header}</div>`,
-    `<div style="display:grid;grid-template-columns:repeat(${cols},auto);column-gap:16px;row-gap:3px;max-height:min(340px,62vh);overflow-y:auto;overflow-x:hidden;">`,
+    `<div style="font-weight:600;margin-bottom:9px;font-size:13px;">${header}</div>`,
+    `<div style="display:grid;grid-template-columns:repeat(${cols},auto);column-gap:28px;row-gap:7px;max-height:min(380px,64vh);overflow-y:auto;overflow-x:hidden;padding-right:14px;">`,
     cells,
     `</div>`,
   ].join("");
@@ -90,7 +99,9 @@ function enlargeDutTooltipMarker(marker: string | undefined): string {
 }
 
 /** 悬浮层挂到 body 并限制在视口内，避免被报表区域 overflow 裁切 */
-function dutDistTooltip(): EChartsOption["tooltip"] {
+function dutDistTooltip(
+  hoveredSeriesRef?: { current: number | null }
+): EChartsOption["tooltip"] {
   const base = baseChartOption().tooltip as Record<string, unknown> | undefined;
   return {
     ...base,
@@ -100,7 +111,7 @@ function dutDistTooltip(): EChartsOption["tooltip"] {
     confine: true,
     enterable: true,
     extraCssText:
-      "max-width:min(580px,96vw);padding:10px 12px;line-height:1.5;",
+      "max-width:min(680px,96vw);padding:14px 16px;line-height:1.6;",
     formatter(params: unknown) {
       const items = (Array.isArray(params) ? params : [params]) as {
         axisValue?: string;
@@ -111,13 +122,15 @@ function dutDistTooltip(): EChartsOption["tooltip"] {
       }[];
       if (!items.length) return "";
       const header = String(items[0]?.axisValue ?? "");
+      const hoveredIdx = hoveredSeriesRef?.current ?? null;
       const rows = items
         .filter((p) => dutSeriesDieCount(p.value) !== 0)
+        .sort((a, b) => dutSeriesDieCount(b.value) - dutSeriesDieCount(a.value))
         .map((p) => ({
           seriesIndex: p.seriesIndex ?? 0,
           html: `${enlargeDutTooltipMarker(p.marker)} ${p.seriesName ?? ""}: ${dutSeriesDieCount(p.value)}`,
         }));
-      return formatDutDistTooltipHtml(header, rows);
+      return formatDutDistTooltipHtml(header, rows, hoveredIdx);
     },
     position(
       point: number[],
@@ -201,12 +214,12 @@ function extractDutSeriesList(pass: SiteBinPass): DutSeriesItem[] {
 
 function DutDistHtmlLegend({
   items,
-  activeIndex,
+  activeSet,
   onEnter,
   onLeave,
 }: {
   items: DutSeriesItem[];
-  activeIndex: number | null;
+  activeSet: Set<number> | null;
   onEnter: (index: number) => void;
   onLeave: () => void;
 }) {
@@ -219,10 +232,10 @@ function DutDistHtmlLegend({
           role="listitem"
           className={[
             "dut-dist-html-legend-item",
-            activeIndex === item.seriesIndex
+            activeSet?.has(item.seriesIndex)
               ? "dut-dist-html-legend-item--active"
               : "",
-            activeIndex !== null && activeIndex !== item.seriesIndex
+            activeSet !== null && !activeSet.has(item.seriesIndex)
               ? "dut-dist-html-legend-item--dim"
               : "",
           ]
@@ -290,27 +303,110 @@ function DutDistPassChart({
   const chartRef = useRef<ECharts | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const clearTimerRef = useRef<number | null>(null);
-  const [activeIndex, setActiveIndex] = useState<number | null>(null);
-  const seriesList = useMemo(() => extractDutSeriesList(pass), [pass]);
-  const option = useMemo(
-    () => buildDutChartOption(pass, focusBin, goodBinNumbers),
-    [pass, focusBin, goodBinNumbers]
+  // Tracks the currently hovered series for tooltip row highlight (read by formatter at call time)
+  const hoveredSeriesIndexRef = useRef<number | null>(null);
+
+  // ── Interaction states ────────────────────────────────────────────────────
+  // DUT legend item hovered → dims bins where that DUT has count=0
+  const [legendHoveredDut, setLegendHoveredDut] = useState<number | null>(null);
+  // Bar (bin) clicked → highlights DUTs that have count>0 in that bin
+  const [clickedBinIndex, setClickedBinIndex] = useState<number | null>(null);
+  // Chart bar/tooltip hover → highlights all DUTs with count>0 in the hovered bin
+  const [hoveredBinDuts, setHoveredBinDuts] = useState<Set<number> | null>(null);
+
+  // ── Precomputed chart data (mirrors buildDutChartOption internals) ─────────
+  const good = useMemo(() => normalizeGoodBinSet(goodBinNumbers), [goodBinNumbers]);
+  const badBinEntries = useMemo(
+    () => pass.bins.filter((b) => !isGoodBinLabel(b.bin, good)),
+    [pass.bins, good]
+  );
+  const seriesList = useMemo(
+    () => extractDutSeriesList({ ...pass, bins: badBinEntries }),
+    [pass, badBinEntries]
   );
 
-  const applyHighlight = useCallback((idx: number | null) => {
+  // ── Derived: which bin indices are "active" for the hovered legend DUT ────
+  const activeBinIndices = useMemo<Set<number> | null>(() => {
+    if (legendHoveredDut === null) return null;
+    const item = seriesList[legendHoveredDut];
+    if (!item) return null;
+    const active = new Set<number>();
+    badBinEntries.forEach((b, i) => {
+      const de = b.duts.find((d) => String(d.dut) === item.dutKey);
+      if ((de?.dieCount ?? 0) > 0) active.add(i);
+    });
+    return active;
+  }, [legendHoveredDut, seriesList, badBinEntries]);
+
+  // ── Derived: which DUT series indices are active for the clicked bin ──────
+  const clickedBinDuts = useMemo<Set<number> | null>(() => {
+    if (clickedBinIndex === null) return null;
+    const binEntry = badBinEntries[clickedBinIndex];
+    if (!binEntry) return null;
+    const active = new Set<number>();
+    seriesList.forEach((item, i) => {
+      const de = binEntry.duts.find((d) => String(d.dut) === item.dutKey);
+      if ((de?.dieCount ?? 0) > 0) active.add(i);
+    });
+    return active;
+  }, [clickedBinIndex, seriesList, badBinEntries]);
+
+  // ── Legend highlight set (priority: legend hover > bar click > bar/tooltip hover)
+  const legendActiveSet = useMemo<Set<number> | null>(() => {
+    if (legendHoveredDut !== null) return new Set([legendHoveredDut]);
+    if (clickedBinDuts !== null) return clickedBinDuts;
+    if (hoveredBinDuts !== null) return hoveredBinDuts;
+    return null;
+  }, [legendHoveredDut, clickedBinDuts, hoveredBinDuts]);
+
+  // ── Chart option (includes activeBinIndices + hoveredSeriesIndex for legend-hover opacity) ─────
+  // hoveredSeriesIndexRef is intentionally excluded from deps: ref identity is stable,
+  // and the formatter reads ref.current at call time — no re-render needed.
+  const option = useMemo(
+    () =>
+      buildDutChartOption(
+        pass,
+        focusBin,
+        goodBinNumbers,
+        activeBinIndices,
+        legendHoveredDut,
+        hoveredSeriesIndexRef
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pass, focusBin, goodBinNumbers, activeBinIndices, legendHoveredDut]
+  );
+
+  // ── Compute which DUT series have count>0 at a given bin index ───────────
+  const computeBinDuts = useCallback((dataIndex: number): Set<number> => {
+    const binEntry = badBinEntries[dataIndex];
+    if (!binEntry) return new Set();
+    const active = new Set<number>();
+    seriesList.forEach((item, i) => {
+      const de = binEntry.duts.find((d) => String(d.dut) === item.dutKey);
+      if ((de?.dieCount ?? 0) > 0) active.add(i);
+    });
+    return active;
+  }, [badBinEntries, seriesList]);
+
+  // ── ECharts highlight helpers ─────────────────────────────────────────────
+  // When activeBinIndices is set (legend hover), emphasis/blur are stripped from
+  // the series option, so ECharts dispatch has no visible effect — safe to always call.
+  // binDuts: explicit set to use for legend; omit to default to Set([idx]) for single-DUT cases.
+  const applyHighlight = useCallback((idx: number | null, binDuts?: Set<number> | null) => {
+    hoveredSeriesIndexRef.current = idx; // keep ref in sync for tooltip formatter
     if (clearTimerRef.current != null) {
       window.clearTimeout(clearTimerRef.current);
       clearTimerRef.current = null;
     }
-    setActiveIndex(idx);
+    setHoveredBinDuts(
+      binDuts !== undefined ? binDuts : idx != null ? new Set([idx]) : null
+    );
     if (idx == null) downplayDutSeries(chartRef.current);
     else highlightDutSeries(chartRef.current, idx);
   }, []);
 
   const scheduleClearHighlight = useCallback(() => {
-    if (clearTimerRef.current != null) {
-      window.clearTimeout(clearTimerRef.current);
-    }
+    if (clearTimerRef.current != null) window.clearTimeout(clearTimerRef.current);
     clearTimerRef.current = window.setTimeout(() => {
       clearTimerRef.current = null;
       if (tooltipHovered()) return;
@@ -319,6 +415,22 @@ function DutDistPassChart({
     }, 48);
   }, [applyHighlight]);
 
+  // ── Legend DUT hover handlers ─────────────────────────────────────────────
+  const onLegendEnter = useCallback((index: number) => {
+    if (clearTimerRef.current != null) {
+      window.clearTimeout(clearTimerRef.current);
+      clearTimerRef.current = null;
+    }
+    setLegendHoveredDut(index);
+    downplayDutSeries(chartRef.current); // clear any ECharts native highlight
+  }, []);
+
+  const onLegendLeave = useCallback(() => {
+    setLegendHoveredDut(null);
+    scheduleClearHighlight();
+  }, [scheduleClearHighlight]);
+
+  // ── Tooltip DUT row hover ─────────────────────────────────────────────────
   useEffect(() => {
     const onTipRowOver = (e: MouseEvent) => {
       const row = (e.target as HTMLElement).closest<HTMLElement>(".dut-tip-row");
@@ -346,14 +458,14 @@ function DutDistPassChart({
     return () => {
       document.removeEventListener("mouseover", onTipRowOver);
       document.removeEventListener("mouseout", onTipRowOut);
-      if (clearTimerRef.current != null) {
-        window.clearTimeout(clearTimerRef.current);
-      }
+      if (clearTimerRef.current != null) window.clearTimeout(clearTimerRef.current);
     };
   }, [applyHighlight, scheduleClearHighlight]);
 
+  // ── Chart events ──────────────────────────────────────────────────────────
   const onEvents = useMemo(
     () => ({
+      // Hovering a specific segment highlights only that segment's DUT in the legend.
       mouseover: (params: unknown) => {
         const p = params as { componentType?: string; seriesIndex?: number };
         if (p.componentType !== "series" || p.seriesIndex == null) return;
@@ -361,6 +473,18 @@ function DutDistPassChart({
       },
       globalout: () => {
         scheduleClearHighlight();
+      },
+      // Clicking a bar highlights corresponding DUTs in the legend.
+      // Click same bin again (or outside a bar) to clear.
+      click: (params: unknown) => {
+        const p = params as { componentType?: string; dataIndex?: number };
+        if (p.componentType !== "series" || p.dataIndex == null) {
+          setClickedBinIndex(null);
+          return;
+        }
+        setClickedBinIndex((prev) =>
+          prev === p.dataIndex ? null : (p.dataIndex as number)
+        );
       },
     }),
     [applyHighlight, scheduleClearHighlight]
@@ -381,9 +505,9 @@ function DutDistPassChart({
       </div>
       <DutDistHtmlLegend
         items={seriesList}
-        activeIndex={activeIndex}
-        onEnter={applyHighlight}
-        onLeave={scheduleClearHighlight}
+        activeSet={legendActiveSet}
+        onEnter={onLegendEnter}
+        onLeave={onLegendLeave}
       />
     </div>
   );
@@ -392,7 +516,10 @@ function DutDistPassChart({
 function buildDutChartOption(
   pass: SiteBinPass,
   focusBin: string | undefined,
-  goodBinNumbers: ReadonlySet<number> | undefined
+  goodBinNumbers: ReadonlySet<number> | undefined,
+  activeBinIndices: Set<number> | null,
+  hoveredSeriesIndex: number | null,
+  hoveredSeriesRef?: { current: number | null }
 ): EChartsOption {
   const good = normalizeGoodBinSet(goodBinNumbers);
   const badBinEntries = pass.bins.filter((b) => !isGoodBinLabel(b.bin, good));
@@ -400,28 +527,63 @@ function buildDutChartOption(
   const seriesList = extractDutSeriesList({ ...pass, bins: badBinEntries });
   const xLabelBottom = bins.length > 8 ? 34 : 20;
   const gridTop = 32;
+  // When legend DUT is hovered, disable ECharts focus so per-item opacity drives visuals
+  const useCustomOpacity = activeBinIndices !== null;
 
-  const series: EChartsOption["series"] = seriesList.map((item) => ({
+  const series: EChartsOption["series"] = seriesList.map((item, seriesIdx) => ({
     name: item.seriesName,
     type: "bar",
     stack: "total",
     barMaxWidth: 16,
     barCategoryGap: "35%",
     itemStyle: { color: item.color },
-    data: bins.map((bin) => {
+    data: bins.map((bin, binIdx) => {
       const binEntry = badBinEntries.find((b) => b.bin === bin);
       const dutEntry = binEntry?.duts.find(
         (d) => String(d.dut) === item.dutKey
       );
       const val = dutEntry?.dieCount ?? 0;
-      const dimmed = focusBin !== undefined && bin !== focusBin;
+      const focusDimmed = focusBin !== undefined && bin !== focusBin;
+      // Inactive bin (hovered DUT has 0 count here): fully dim all series
+      const legendDimmed = useCustomOpacity && !activeBinIndices!.has(binIdx);
+      // Active bin, this is the hovered DUT's own segment → glow highlight
+      const isHoveredSegment =
+        useCustomOpacity &&
+        activeBinIndices!.has(binIdx) &&
+        hoveredSeriesIndex !== null &&
+        seriesIdx === hoveredSeriesIndex;
+      // Active bin but not the hovered DUT's segment: dim others to make hovered stand out
+      const otherInActiveBin =
+        useCustomOpacity &&
+        activeBinIndices!.has(binIdx) &&
+        hoveredSeriesIndex !== null &&
+        seriesIdx !== hoveredSeriesIndex;
+      if (isHoveredSegment) {
+        return {
+          value: val,
+          itemStyle: {
+            opacity: 1,
+            shadowBlur: 14,
+            shadowColor: "rgba(255,255,255,0.55)",
+            borderColor: "rgba(255,255,255,0.75)",
+            borderWidth: 1.5,
+          },
+        };
+      }
+      const opacity = focusDimmed
+        ? 0.3
+        : legendDimmed
+        ? 0.08
+        : otherInActiveBin
+        ? 0.22
+        : undefined;
       return {
         value: val,
-        itemStyle: dimmed ? { opacity: 0.3 } : undefined,
+        itemStyle: opacity !== undefined ? { opacity } : undefined,
       };
     }),
-    emphasis: DUT_SERIES_EMPHASIS,
-    blur: DUT_SERIES_BLUR,
+    emphasis: useCustomOpacity ? undefined : DUT_SERIES_EMPHASIS,
+    blur: useCustomOpacity ? undefined : DUT_SERIES_BLUR,
   }));
 
   return {
@@ -438,7 +600,7 @@ function buildDutChartOption(
     xAxis: {
       type: "category",
       data: bins,
-      axisLabel: { color: chartAxisColor, rotate: bins.length > 8 ? 30 : 0, fontSize: 9 },
+      axisLabel: { color: chartAxisColor, rotate: bins.length > 8 ? 30 : 0, fontSize: 11 },
     },
     yAxis: {
       type: "value",
@@ -455,7 +617,7 @@ function buildDutChartOption(
       splitLine: { lineStyle: { color: "rgba(240,246,252,0.06)" } },
     },
     legend: { show: false },
-    tooltip: dutDistTooltip(),
+    tooltip: dutDistTooltip(hoveredSeriesRef),
     series,
   };
 }

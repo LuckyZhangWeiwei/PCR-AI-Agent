@@ -1,3 +1,4 @@
+import { useState, useMemo } from "react";
 import "./DataTable.css";
 
 type Props = {
@@ -17,6 +18,8 @@ type Props = {
   getRowKey?: (row: Record<string, unknown>, rowIndex: number) => string | number;
   onToggleRowKey?: (key: string | number, row: Record<string, unknown>) => void;
   onToggleAllVisible?: (keys: (string | number)[], select: boolean) => void;
+  /** Show per-column text filter inputs in the header */
+  filterRow?: boolean;
 };
 
 /** omitKeys 与行内键名大小写均可匹配 */
@@ -109,16 +112,32 @@ export function DataTable({
   getRowKey,
   onToggleRowKey,
   onToggleAllVisible,
+  filterRow = false,
 }: Props) {
-  if (rows.length === 0) {
-    return <p className="data-table-empty">No rows.</p>;
-  }
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
 
   const omitLower = new Set((omitKeys ?? []).map((k) => k.toLowerCase()));
   const keysRaw = collectKeys(rows, omitLower);
   const columns = resolveColumns(keysRaw, columnOrder);
 
-  const visibleKeys = rows.map((row, i) =>
+  const filteredRows = useMemo(() => {
+    if (!filterRow) return rows;
+    const active = Object.entries(columnFilters).filter(([, v]) => v !== "");
+    if (!active.length) return rows;
+    return rows.filter((row) =>
+      active.every(([col, val]) =>
+        formatCell(cellValueForColumn(row, col))
+          .toLowerCase()
+          .includes(val.toLowerCase())
+      )
+    );
+  }, [rows, columnFilters, filterRow]);
+
+  if (rows.length === 0) {
+    return <p className="data-table-empty">No rows.</p>;
+  }
+
+  const visibleKeys = filteredRows.map((row, i) =>
     getRowKey ? getRowKey(row, i) : i
   );
   const allVisibleSelected =
@@ -147,56 +166,85 @@ export function DataTable({
               <th key={c}>{c}</th>
             ))}
           </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, i) => {
-            const rowKey = visibleKeys[i]!;
-            const selected = multiSelect
-              ? selectedRowKeys?.has(rowKey) === true
-              : selectedRowIndex != null && selectedRowIndex === i;
-            const rowClass = [
-              onRowClick || multiSelect ? "clickable" : "",
-              selected ? "selected" : "",
-            ]
-              .filter(Boolean)
-              .join(" ");
-            return (
-            <tr
-              key={String(rowKey)}
-              className={rowClass || undefined}
-              aria-selected={selected || undefined}
-              onClick={
-                multiSelect
-                  ? () => onToggleRowKey?.(rowKey, row)
-                  : onRowClick
-                  ? () => onRowClick(row, i)
-                  : undefined
-              }
-            >
-              {multiSelect ? (
-                <td
-                  className="data-table-check-col"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <input
-                    type="checkbox"
-                    aria-label="选择行"
-                    checked={selected}
-                    onChange={() => onToggleRowKey?.(rowKey, row)}
-                  />
-                </td>
-              ) : null}
+          {filterRow && (
+            <tr className="data-table-filter-row">
+              {multiSelect && <th className="data-table-check-col" aria-label="筛选行选择" />}
               {columns.map((c) => (
-                <td
-                  key={c}
-                  title={formatCell(cellValueForColumn(row, c))}
-                >
-                  {formatCell(cellValueForColumn(row, c))}
-                </td>
+                <th key={c} className="data-table-filter-th">
+                  <input
+                    type="text"
+                    className="data-table-filter-input"
+                    placeholder="筛选…"
+                    value={columnFilters[c] ?? ""}
+                    onChange={(e) =>
+                      setColumnFilters((prev) => ({ ...prev, [c]: e.target.value }))
+                    }
+                  />
+                </th>
               ))}
             </tr>
-            );
-          })}
+          )}
+        </thead>
+        <tbody>
+          {filteredRows.length === 0 ? (
+            <tr>
+              <td
+                colSpan={columns.length + (multiSelect ? 1 : 0)}
+                className="data-table-filter-empty"
+              >
+                无匹配行
+              </td>
+            </tr>
+          ) : (
+            filteredRows.map((row, i) => {
+              const rowKey = visibleKeys[i]!;
+              const selected = multiSelect
+                ? selectedRowKeys?.has(rowKey) === true
+                : selectedRowIndex != null && selectedRowIndex === i;
+              const rowClass = [
+                onRowClick || multiSelect ? "clickable" : "",
+                selected ? "selected" : "",
+              ]
+                .filter(Boolean)
+                .join(" ");
+              return (
+                <tr
+                  key={String(rowKey)}
+                  className={rowClass || undefined}
+                  aria-selected={selected}
+                  onClick={
+                    multiSelect
+                      ? () => onToggleRowKey?.(rowKey, row)
+                      : onRowClick
+                      ? () => onRowClick(row, i)
+                      : undefined
+                  }
+                >
+                  {multiSelect ? (
+                    <td
+                      className="data-table-check-col"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        aria-label="选择行"
+                        checked={selected}
+                        onChange={() => onToggleRowKey?.(rowKey, row)}
+                      />
+                    </td>
+                  ) : null}
+                  {columns.map((c) => (
+                    <td
+                      key={c}
+                      title={formatCell(cellValueForColumn(row, c))}
+                    >
+                      {formatCell(cellValueForColumn(row, c))}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })
+          )}
         </tbody>
       </table>
     </div>

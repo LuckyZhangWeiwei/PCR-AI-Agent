@@ -2,6 +2,21 @@
 
 ---
 
+## 2026-06-05 — InfDutDistPanel 交互优化 + DataTable 列筛选
+
+**完成内容：**
+- `InfDutDistPanel.tsx`：tooltip 内 DUT 列表按 die count 降序排列。
+- `InfDutDistPanel.tsx`：hover legend DUT 时，只有该 DUT count>0 的柱（bin）高亮，其余变暗；hovered DUT 对应色块加 shadowBlur + borderColor 发光效果。
+- `InfDutDistPanel.tsx`：点击柱子时，legend 中该 bin 内所有 count>0 的 DUT 同时高亮。
+- `InfDutDistPanel.tsx`：hover 柱子某段时，tooltip 中对应 DUT 行高亮（蓝色背景 + 白色加粗 + 描边），通过 `hoveredSeriesIndexRef`（stable ref）在 formatter 调用时读取，无需重建 chart option。
+- `InfDutDistPanel.tsx`：x 轴标签字号 9px → 11px；tooltip padding/行间距/列间距放宽；滚动条右侧加 `padding-right:14px` 留白。
+- `DataTable.tsx` + `DataTable.css`：新增 `filterRow` prop，表头第二行展示每列文本过滤输入框，实时筛选行，无匹配时显示"无匹配行"；重构为 hooks 组件（`useState`/`useMemo`）。
+- `InfcontrolReport.tsx`：明细行 DataTable 加 `filterRow`，支持对所有列逐列筛选。
+
+**测试：** 未运行后端测试，仅前端改动；`tsc --noEmit` 通过
+
+---
+
 ## 2026-06-05 — 标题改名 + 漏斗顺序调整 + Hostname 下钻免 Oracle 查询
 
 **完成内容：**

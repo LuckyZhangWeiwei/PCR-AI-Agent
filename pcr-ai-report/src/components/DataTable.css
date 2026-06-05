@@ -69,3 +69,42 @@
   cursor: pointer;
   accent-color: #58a6ff;
 }
+
+/* ── Column filter row ───────────────────────────────────────────────── */
+.data-table-filter-row th {
+  padding: 4px 6px;
+  background: var(--surface-3);
+}
+
+.data-table-filter-th {
+  padding: 4px 6px !important;
+}
+
+.data-table-filter-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  color: #e6edf3;
+  font-size: 11px;
+  padding: 3px 7px;
+  outline: none;
+  font-family: inherit;
+}
+
+.data-table-filter-input::placeholder {
+  color: rgba(255, 255, 255, 0.28);
+}
+
+.data-table-filter-input:focus {
+  border-color: rgba(88, 166, 255, 0.55);
+  background: rgba(88, 166, 255, 0.06);
+}
+
+.data-table-filter-empty {
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 16px !important;
+}
