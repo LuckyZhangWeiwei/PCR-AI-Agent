@@ -36,6 +36,7 @@ export type JbReplyMode =
   | "bad_bin_ranking"
   | "bin_card_attribution"
   | "card_yield_compare"
+  | "lot_yield_ranking"
   | "generic";
 
 /** 用户问在哪台机台/测试机测（JB testerId / YM hostname）。 */
@@ -83,6 +84,19 @@ export function isCardYieldCompareQuestion(text: string): boolean {
   if (/探针卡.*(更差|更好|最差|最好|更低|更高|哪.*差|哪.*好)/i.test(t)) {
     return true;
   }
+  return false;
+}
+
+/** 用户按良率排名多个 lot（最差/最低的 N 个 lot）。 */
+export function isLotYieldRankingQuestion(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  // "良品率/良率最差的N个lot" / "yield最差的lot"
+  if (/(良品率|良率|yield).*(最差|最低|worst|bottom)/i.test(t)) return true;
+  // "最差的N个lot" / "测试良率最差"
+  if (/(最差|最低).*(lot|批次)/i.test(t)) return true;
+  // "lot良率排行/排名"
+  if (/(lot|批次).*(良率|良品率|yield).*(排行|排名|ranking)/i.test(t)) return true;
   return false;
 }
 
@@ -209,7 +223,8 @@ export function jbReplySkipsCommentaryLlm(mode: JbReplyMode): boolean {
     mode === "interrupt_count" ||
     mode === "tester_machine" ||
     mode === "equipment" ||
-    mode === "bin_card_attribution"
+    mode === "bin_card_attribution" ||
+    mode === "lot_yield_ranking"
     // "card_yield_compare" 不跳过：LLM 需要推断「哪张卡更差」
   );
 }
@@ -238,6 +253,7 @@ export function detectJbReplyMode(userMessage: string): JbReplyMode {
   if (isInterruptCountQuestion(userMessage)) return "interrupt_count";
   if (isBinTrendQuestion(userMessage)) return "bin_trend";
   if (isBadBinRankingQuestion(userMessage)) return "bad_bin_ranking";
+  if (isLotYieldRankingQuestion(userMessage)) return "lot_yield_ranking";
   if (isSlotPassYieldQuestion(userMessage)) return "slot_pass_yield";
   if (isLotOverviewQuestion(userMessage)) return "lot_overview";
   return "generic";
@@ -337,6 +353,44 @@ function buildCardBadDieSummaryMarkdown(
   return `**各探针卡坏 die 汇总${lotTag}**\n\n${rows.join("\n")}`;
 }
 
+/** 按良率升序列出 lot 排名表（用于「良品率最差的 N 个 lot」）。 */
+function buildLotYieldRankingMarkdown(
+  toolPayload: Record<string, unknown>,
+  userMessage: string
+): string | null {
+  type RankEntry = {
+    lot: string;
+    device: string;
+    yieldPct: number;
+    worstSlot: number;
+    worstPassId: number;
+    testEnd: string | null;
+  };
+  const rank = toolPayload["lotYieldRankByTestEnd"] as RankEntry[] | undefined;
+  if (!rank?.length) return null;
+
+  // Extract N from "最差的5个lot" or "top 5"
+  const nMatch = userMessage.match(/top\s*(\d+)|(\d+)\s*个/i);
+  const n = nMatch
+    ? Math.min(Math.max(1, Number(nMatch[1] ?? nMatch[2])), 50)
+    : 5;
+
+  const sorted = [...rank].sort((a, b) => a.yieldPct - b.yieldPct).slice(0, n);
+  const totalLots = rank.length;
+
+  const rows = [
+    "| lot | device | 最差 (waferId / pass) | 良率% | 测试结束时间 |",
+    "|---|---|---|---|---|",
+    ...sorted.map((e) => {
+      const passLabel = `waferId ${e.worstSlot} / pass${e.worstPassId}`;
+      const testEnd = e.testEnd ? String(e.testEnd).slice(0, 10) : "—";
+      return `| ${e.lot} | ${e.device} | ${passLabel} | ${e.yieldPct.toFixed(1)}% | ${testEnd} |`;
+    }),
+  ];
+  const header = `**良率最差 ${sorted.length} 个 lot（共 ${totalLots} 个 lot，按最差 slot×pass 良率% 升序）**`;
+  return `${header}\n\n${rows.join("\n")}`;
+}
+
 /** 按卡汇总某 BIN 的坏 die 颗数（所有卡均列出，0 颗也显示）。 */
 function buildBinCardAttributionMarkdown(
   compact: SlotBadBinsCompactEntry[],
@@ -371,6 +425,13 @@ export function buildDeterministicJbTables(
 ): string | null {
   const digest = digestFromPayload(toolPayload);
   const mode = detectJbReplyMode(userMessage);
+
+  if (mode === "lot_yield_ranking") {
+    const md = buildLotYieldRankingMarkdown(toolPayload, userMessage);
+    if (md) return md;
+    // Fallback: let LLM answer from lotYieldRankByTestEnd in tool result
+    return null;
+  }
 
   if (mode === "bin_card_attribution") {
     const bin = extractBinFromUserText(userMessage);

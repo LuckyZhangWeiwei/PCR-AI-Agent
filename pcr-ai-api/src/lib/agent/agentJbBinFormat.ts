@@ -997,6 +997,11 @@ export function buildJbSessionCacheJson(wrapped: Record<string, unknown>): strin
     cache["slotBadBinsCompact"] = compact;
   }
 
+  const rank = wrapped["lotYieldRankByTestEnd"] as Array<unknown> | undefined;
+  if (rank?.length) {
+    cache["lotYieldRankByTestEnd"] = rank;
+  }
+
   if (lotScoped && summary?.length) {
     const overview = formatLotYieldOverviewMarkdown({
       ...wrapped,
