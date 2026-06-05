@@ -220,6 +220,23 @@ export function userWantsWaferMapOnly(text: string): boolean {
   return true;
 }
 
+/** Find device code for a specific lot by scanning query_jb_bins results in history. */
+function findDeviceForLot(history: ChatMessage[], lot: string): string | undefined {
+  const target = lot.trim().toUpperCase();
+  for (let i = history.length - 1; i >= 0; i--) {
+    const msg = history[i];
+    if (msg.role !== "tool" || msg.name !== "query_jb_bins") continue;
+    const parsed = tryParseJsonish(String(msg.content ?? ""));
+    if (parsed == null || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+    const rec = parsed as Record<string, unknown>;
+    const recLot = String(rec["lot"] ?? rec["LOT"] ?? "").trim().toUpperCase();
+    if (recLot !== target) continue;
+    const device = String(rec["device"] ?? "").trim();
+    if (device) return device;
+  }
+  return undefined;
+}
+
 /** Build inf_draw_wafer_map args after query_jb_bins (device/lot from payload). */
 export function buildInfDrawArgsAfterJbLookup(
   payload: Record<string, unknown>,
@@ -227,11 +244,16 @@ export function buildInfDrawArgsAfterJbLookup(
   userText: string
 ): Record<string, unknown> {
   const args: Record<string, unknown> = {};
-  const device = String(payload["device"] ?? "").trim();
-  const lot =
-    String(payload["lot"] ?? payload["LOT"] ?? "").trim() ||
-    extractLotFromUserText(userText) ||
-    "";
+  const payloadDevice = String(payload["device"] ?? "").trim();
+  const payloadLot = String(payload["lot"] ?? payload["LOT"] ?? "").trim();
+  const userLot = extractLotFromUserText(userText);
+  // User-mentioned lot takes priority over payload (payload may come from a different lot's context)
+  const lot = userLot || payloadLot || "";
+  let device = payloadDevice;
+  if (userLot && payloadLot && userLot.toUpperCase() !== payloadLot.toUpperCase()) {
+    // Lot mismatch: payload device belongs to the wrong lot — look up correct device in history
+    device = findDeviceForLot(history, userLot) || "";
+  }
   if (device) args["device"] = device;
   if (lot) args["lot"] = lot;
   const slot =
@@ -353,16 +375,29 @@ export function normalizeInfDrawWaferMapArgs(
     const passId = inferSinglePassIdFromText(userText);
     if (passId) {
       out["passes"] = passId;
-    } else if (
-      findLastInfDrawWaferMapContext(history) &&
-      extractBinNumberFromText(userText) != null &&
-      !/\bdut\b|DUT|关系|相关\s*dut/i.test(userText)
-    ) {
-      // 换 BIN 高亮（非 DUT 关系图）：只重画合成层
-      out["passes"] = "composite";
     } else {
-      const prevPasses = findLastInfDrawPassesArg(history);
-      if (prevPasses) out["passes"] = prevPasses;
+      const prevCtx = findLastInfDrawWaferMapContext(history);
+      const outSlot = slotFromRecord(out);
+      const outLot = strField(out, "lot");
+      // Composite shortcut ONLY applies when the user is changing the BIN highlight
+      // on the SAME lot+slot as the previous wafer map (not a brand-new drawing request)
+      const isSameWaferContext =
+        prevCtx != null &&
+        (outSlot == null || prevCtx.slot == null || outSlot === prevCtx.slot) &&
+        (!outLot || !prevCtx.lot || outLot.toUpperCase() === prevCtx.lot.toUpperCase());
+      if (
+        isSameWaferContext &&
+        extractBinNumberFromText(userText) != null &&
+        !/\bdut\b|DUT|关系|相关\s*dut/i.test(userText)
+      ) {
+        // 换 BIN 高亮（非 DUT 关系图，且同一片 wafer）：只重画合成层
+        out["passes"] = "composite";
+      } else if (isSameWaferContext) {
+        // Same wafer context but not a BIN-change: inherit passes from last draw
+        const prevPasses = findLastInfDrawPassesArg(history);
+        if (prevPasses) out["passes"] = prevPasses;
+      }
+      // Different lot/slot: don't inherit passes — use default "final" (full map)
     }
   }
 

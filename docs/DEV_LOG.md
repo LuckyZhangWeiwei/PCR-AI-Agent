@@ -2,7 +2,7 @@
 
 ---
 
-## 2026-06-05 — Agent JB 逐片坏 bin 排名 + lot 良率排名 + 探针卡追问答案重复修复
+## 2026-06-05 — 晶圆图 BIN 高亮丢失 + JB 逐片坏 bin 排名 + lot 良率排名 + 探针卡追问答案重复修复
 
 **完成内容：**
 - `agentJbBinFormat.ts`：`buildJbSessionCacheJson` 新增 `slotBadBinsCompact` 字段入 session cache，确保后续追问时仍能获取逐卡 BIN 细分数据（原先 session cache 缺此字段，导致逐卡归因失败）。
@@ -15,6 +15,9 @@
 - `agentJbDeterministicReply.ts`：新增 `isLotYieldRankingQuestion()`，识别「良品率最差的 N 个 lot」类问题，映射到新模式 `"lot_yield_ranking"`；输出按良率% 升序排列的 lot 排名表，跳过 LLM 解读。
 - `agentJbDeterministicReply.ts`：新增 `isPerSlotBadBinRankingQuestion()`，识别「每一片坏bin的前五名」类问题，映射到新模式 `"per_slot_bin_ranking"`；从 `slotBadBinsCompact` 按 (slot, passId) 聚合后，输出逐片 top-N 坏 bin 表，支持中文数字（前五名=5），跳过 LLM 解读。
 - `agentJbDeterministicReply.ts`：新增 `extractTopN()` 工具函数，解析「前五名/前3名/top5」中的 N，支持阿拉伯数字和中文数字。
+
+- `agentInfWaferMapTool.ts`：新增 `findDeviceForLot(history, lot)` 函数，在 history 中为指定 lot 查找 device；修复 `buildInfDrawArgsAfterJbLookup`：用户文本里的 lot 优先于 payload lot（防止 session cache 是上一个 lot/product 的 JB 数据时，拿到错误的 device+lot 画图）。
+- `agentInfWaferMapTool.ts`：修复 `normalizeInfDrawWaferMapArgs` 里 `passes=composite` 的误触发：composite 快捷路径（仅重画合成层）只在同 lot+slot 的 BIN 换亮时生效；若 lot 或 slot 与上一次 wafer map 不同（新画图请求），不继承 composite，使用默认 final（全层图）；彻底解决"跨 lot 换 BIN 仍用 composite 导致高亮消失"问题。
 
 **根因（lot 排名答非所问）：** `query_jb_bins(cardId)` 返回多 lot 时，`primaryLot` 取第一行（最近测试的 TR21625.1N），`shouldDetectClusteredBins=true` → cluster alerts 都是 TR21625.1N 的；`"generic"` 模式输出该 lot 的总览表，完全答非所问。新的 `"lot_yield_ranking"` 模式优先于 `"generic"` 截获这类问题。
 **根因（探针卡追问）：** 问题2（bin55 是哪张卡）和问题3（哪张卡 yield 最差）都被识别为 `"equipment"` 模式 → 永远输出同一张 `cardByPassId` 表，无法区分回答。
