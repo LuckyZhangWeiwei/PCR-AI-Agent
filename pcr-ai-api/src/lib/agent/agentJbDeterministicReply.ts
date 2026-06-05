@@ -63,12 +63,12 @@ export function isProbeCardQuestion(text: string): boolean {
   );
 }
 
-/** 用户问某个具体 BIN 编号是哪张探针卡测出来的（逐卡归因）。 */
+/** 用户问某个具体 BIN 编号是哪张（些）探针卡测出来的，或 BIN 与探针卡/channel 的关系（逐卡归因）。 */
 export function isBinCardAttributionQuestion(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
   if (!/\bBIN\s*\d{1,3}\b|\bbin\s*\d{1,3}\b/i.test(t)) return false;
-  return /哪张.*卡|哪个.*卡|是.*卡|哪块卡|用的.*卡|什么.*卡|属于.*卡|哪张.*探针/i.test(t);
+  return /哪张.*卡|哪个.*卡|是.*卡|哪块卡|用的.*卡|什么.*卡|属于.*卡|哪张.*探针|哪些.*卡|哪些.*探针|和.*探针.*有关|探针.*有关|卡.*有关|哪些.*channel/i.test(t);
 }
 
 /** 用户比较两张或多张探针卡的良率/坏 die（哪张更差/更好）。 */
@@ -527,7 +527,16 @@ export function buildDeterministicJbTables(
       if (compact?.length) {
         const lot = String(toolPayload["lot"] ?? "").trim() || undefined;
         const md = buildBinCardAttributionMarkdown(compact, bin, lot);
-        if (md) return md;
+        if (md) {
+          // 追问 channel/DUT 时补充引导（bin_card_attribution 只能给到卡级）
+          if (/channel|DUT|site|触点|哪个.*dut|哪个.*site/i.test(userMessage)) {
+            return (
+              md +
+              `\n\n> **DUT/channel 级分析**：上表为卡级汇总（slotBadBinsCompact）。要确认 BIN${bin} 由哪个 DUT（probe card 触点）测出，请继续提问：「BIN${bin} 与 DUT 的关系晶圆图」，系统将调用 \`query_inf_site_bin_by_dut\` 给出 DUT×BIN 细分。`
+            );
+          }
+          return md;
+        }
       }
     }
     return formatEquipmentTables(toolPayload);
