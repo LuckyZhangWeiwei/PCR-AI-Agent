@@ -2,6 +2,15 @@
 
 ---
 
+## 2026-06-06 — Agent generic/双源总结轮结构化改善（方向 A+B）
+
+**完成内容：**
+- `agentLoop.ts`：新增 `SummaryContext` 类型（`"jb" | "dual_source" | "generic"`）+ `getSummaryContext(history)` 推断函数 + `getRecentSummaryToolNames()` 工具名提取。
+- `agentLoop.ts`：新增 `DUAL_SOURCE_SYNTHESIS_NUDGE`（YM+JB 双源时强制分节：YM 侧 / JB 侧 / 综合结论）和 `GENERIC_STRUCTURED_SYNTHESIS_NUDGE`（非 JB 预计算路径时强制三节：数据摘要 / 主要发现 / 建议）。
+- `agentLoop.ts`：总结轮系统提示词追加 `summarySuffix`（根据 `summaryCtx` 选对应 nudge），`summaryUserNudge` 改为三路动态内容，双源和 generic 模式各有专用格式要求。
+
+**测试：** 全量非 Oracle 测试通过，agentLoop 相关用例 61–65 全通过；Oracle 连接测试（DPI-1047）因本机无 Oracle Client 跳过，与本次改动无关。
+
 ## 2026-06-06 — Agent 子任务模型（subAgentModel）支持
 
 **完成内容：**

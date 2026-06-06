@@ -10,7 +10,7 @@
 
 ## 待办
 
-- [ ] 服务器部署：API `npm run build + pm2:reload`；前端 `npm run pack:dist` → scp dist.tar → nginx web root（含 INF 工具瘦身 + listDefaultLimit 2000 + New Chat 滚动修复 + 探针卡追问答案重复修复）
+- [ ] 服务器部署：API `npm run build + pm2:reload`；前端 `npm run pack:dist` → scp dist.tar → nginx web root（含 INF 工具瘦身 + listDefaultLimit 2000 + New Chat 滚动修复 + 探针卡追问答案重复修复 + generic/双源总结结构化）
 - [ ] AI Agent 生产部署验证：确认 `AGENT_API_KEY` / `SILICONFLOW_API_KEY`、PM2 重启后聊天页可用；验证 `query_lot_dut_bin_agg` 工具调用正常
 - ✅ INF DUT 面板 Agent 工具：`query_inf_site_bin_by_dut` 接入 agentPrompt + agentToolHandlers — 已完成（早于本次记录）
 - ✅ Agent 新工具 query_lot_dut_bin_agg：lot 级 DUT×Bin 聚合，复用已有 lot 级 INF API，dummy 双路径 — 2026-06-02 完成
@@ -23,6 +23,7 @@
 
 ## 已完成
 
+- ✅ Agent generic/双源总结轮结构化：`getSummaryContext` 推断 `jb/dual_source/generic`，双源注入分节 nudge（YM 侧/JB 侧/综合结论），generic 注入三节 nudge（数据摘要/主要发现/建议），`summaryUserNudge` 动态化 — 2026-06-06 完成
 - ✅ Agent subAgentModel 支持：历史压缩 + 确定性表解读改用轻量子模型，Settings 新增配置项，工具选择 / 最终回答仍用主模型 — 2026-06-06 完成
 - ✅ Agent 多源时间段联查规则：agentPrompt 新增卡号/device + 时间段必须同时查 YM+JB 的规则，明确 INF 文件限制 — 2026-06-06 完成
 - ✅ Agent 主动规律/风险识别：detectAndFormatDataPatterns 检测良率趋势、BIN 集中、片位持续最差、温度敏感、换卡 BIN 偏移，自动追加到 lot_overview/card_test_overview/bad_bin_ranking/lot_yield_ranking/generic 模式输出 — 2026-06-06 完成
