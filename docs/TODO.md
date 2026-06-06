@@ -23,6 +23,7 @@
 
 ## 已完成
 
+- ✅ agentPrompt 可维护性重构：22 个命名 TypeScript const + TOC，LLM 看到文本完全不变，typecheck 通过 — 2026-06-06 完成
 - ✅ default 兜底输出优化：cluster 警示与 AI 规律识别合并至末尾；清除 formatClusteredBadBinAlertsMarkdown 指令泄漏；detectAndFormatDataPatterns 改简洁 bullet 格式 — 2026-06-06 完成
 - ✅ Agent 三项生产 Bug 修复（wafermap composite shortcut / 逐片 bin 死循环 / 指令泄漏）：移除 BIN 高亮跟画时的 passes=composite 捷径；新增 tryRunPerSlotBinRankingDirectRoute 直连路由；清除 jbBinsYieldFallbackMessage 中的 DETERMINISTIC_TABLES_HEADER — 2026-06-06 完成
 - ✅ agentPrompt 规划规则收紧：识别 device/lot/cardId 后必须立即调工具；"规划其次"仅限跨多实体对比 — 2026-06-06 完成

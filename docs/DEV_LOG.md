@@ -2,6 +2,18 @@
 
 ---
 
+## 2026-06-06 — agentPrompt 可维护性重构（22 section consts）
+
+**完成内容：**
+- `agentPrompt.ts`：将 793 行、59 KB 的单体模板字符串重构为 22 个命名 TypeScript const（`SEC_TERMS_AND_TOOLS` … `SEC_FORMAT_LIMITS`）；`buildSystemPrompt` 用 `.join("\n\n")` 组装，LLM 收到的文本**完全不变**
+- 顶部新增 TOC 注释表，列出每个 const 名 → 对应的 `##` 章节标题，方便 Ctrl+F 精准定位
+- `buildHeader` / `buildManifestSection` 提取为独立函数（仅含 `${today}` / `${manifest}` 动态部分）
+- `npm run typecheck` 通过，无编译错误
+
+**测试：** typecheck 0 错误
+
+---
+
 ## 2026-06-06 — 警示表格渲染修复 + focusBin DUT 明细置顶
 
 **完成内容：**
