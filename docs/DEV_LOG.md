@@ -2,6 +2,16 @@
 
 ---
 
+## 2026-06-06 — JB STAR 查询区 more 分隔线美化
+
+**完成内容：**
+- `index.css`：`.filter-grid-more-toggle` 改为 `grid-column: 1/-1` 撑满整行，用 `::before`/`::after` 伪元素在左右各画一条水平分隔线，文字居中；hover 时线条同步变亮。
+- `InfcontrolReport.tsx`：删除 toggle div 上多余的 `span-2` class（改由 CSS `grid-column` 控制）。
+
+**测试：** 未运行，仅前端样式调整
+
+---
+
 ## 2026-06-06 — Agent generic/双源总结轮结构化改善（方向 A+B）
 
 **完成内容：**

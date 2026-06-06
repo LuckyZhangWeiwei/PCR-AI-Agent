@@ -2174,7 +2174,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
           </label>
 
           <div
-            className="span-2 filter-grid-more-toggle"
+            className="filter-grid-more-toggle"
             onClick={() => setShowMore((s) => !s)}
           >
             <span className="filter-grid-more-arrow">{showMore ? "▼" : "▶"}</span>
