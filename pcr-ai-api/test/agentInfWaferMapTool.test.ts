@@ -113,7 +113,7 @@ test("userWantsWaferMapOnly vs lot overview", () => {
   assert.equal(userWantsWaferMapOnly("DR44117.1Y lot 概况和聚集分析"), false);
 });
 
-test("normalizeInfDrawWaferMapArgs BIN follow-up uses composite pass", () => {
+test("normalizeInfDrawWaferMapArgs BIN follow-up inherits previous passes (no composite shortcut)", () => {
   const history: ChatMessage[] = [
     {
       role: "tool",
@@ -128,7 +128,8 @@ test("normalizeInfDrawWaferMapArgs BIN follow-up uses composite pass", () => {
   assert.equal(merged.lot, "DR44117.1Y");
   assert.equal(merged.slot, 14);
   assert.equal(merged.highlight, "bin:15");
-  assert.equal(merged.passes, "composite");
+  // Previous draw had no explicit passes arg → inherit nothing → default (all layers)
+  assert.equal(merged.passes, undefined);
 });
 
 test("buildInfDrawArgsAfterJbLookup from jb payload + user slot", () => {

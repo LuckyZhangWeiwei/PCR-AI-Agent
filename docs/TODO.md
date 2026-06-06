@@ -23,6 +23,7 @@
 
 ## 已完成
 
+- ✅ Agent 三项生产 Bug 修复（wafermap composite shortcut / 逐片 bin 死循环 / 指令泄漏）：移除 BIN 高亮跟画时的 passes=composite 捷径；新增 tryRunPerSlotBinRankingDirectRoute 直连路由；清除 jbBinsYieldFallbackMessage 中的 DETERMINISTIC_TABLES_HEADER — 2026-06-06 完成
 - ✅ agentPrompt 规划规则收紧：识别 device/lot/cardId 后必须立即调工具；"规划其次"仅限跨多实体对比 — 2026-06-06 完成
 - ✅ `BRIEF_COMMENTARY_SYSTEM` 空解读根本原因修复：移除 `generate_chart` 工具提示（无 schema 时推理模型输出被 filter 剥离），加无工具约束 — 2026-06-06 完成
 - ✅ `per_slot_bin_ranking` 启用 LLM 解读：从 `jbReplySkipsCommentaryLlm` 跳过名单移出 — 2026-06-06 完成

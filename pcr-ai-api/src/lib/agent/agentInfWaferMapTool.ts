@@ -385,15 +385,10 @@ export function normalizeInfDrawWaferMapArgs(
         prevCtx != null &&
         (outSlot == null || prevCtx.slot == null || outSlot === prevCtx.slot) &&
         (!outLot || !prevCtx.lot || outLot.toUpperCase() === prevCtx.lot.toUpperCase());
-      if (
-        isSameWaferContext &&
-        extractBinNumberFromText(userText) != null &&
-        !/\bdut\b|DUT|关系|相关\s*dut/i.test(userText)
-      ) {
-        // 换 BIN 高亮（非 DUT 关系图，且同一片 wafer）：只重画合成层
-        out["passes"] = "composite";
-      } else if (isSameWaferContext) {
-        // Same wafer context but not a BIN-change: inherit passes from last draw
+      if (isSameWaferContext) {
+        // Same wafer context (BIN highlight change or follow-up): inherit previous passes.
+        // Composite shortcut removed — users switching BIN highlight expect to see the same
+        // multi-layer view they already had, not a single collapsed composite.
         const prevPasses = findLastInfDrawPassesArg(history);
         if (prevPasses) out["passes"] = prevPasses;
       }

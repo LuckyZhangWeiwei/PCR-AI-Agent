@@ -34,6 +34,7 @@ import {
   DETERMINISTIC_DATA_SECTION_TITLE,
   DETERMINISTIC_COMMENTARY_SECTION_TITLE,
   isLotOverviewQuestion,
+  isPerSlotBadBinRankingQuestion,
   isProbeCardQuestion,
   isTesterMachineQuestion,
   JB_TABLES_ONLY_FOOTER,
@@ -1098,6 +1099,27 @@ async function tryRunEquipmentDirectRoute(
 }
 
 /**
+ * 逐片坏 bin 排名直连路由：session 缓存已有 slotBadBinsCompact 时直接出表，
+ * 不经 LLM 工具调用（避免模型误选 aggregate_jb_bins 导致死循环）。
+ */
+async function tryRunPerSlotBinRankingDirectRoute(
+  sessionId: string,
+  userQuestion: string,
+  agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void
+): Promise<boolean> {
+  if (!isPerSlotBadBinRankingQuestion(userQuestion)) return false;
+  const lot = extractLotFromUserText(userQuestion);
+  const payload = lot
+    ? getCachedJbPayloadForLot(sessionId, lot)
+    : resolveJbToolPayload(sessionId);
+  if (!payload) return false;
+  const compact = payload["slotBadBinsCompact"];
+  if (!Array.isArray(compact) || compact.length === 0) return false;
+  return emitDeterministicJbTablesReply(sessionId, userQuestion, payload, agentConfig, emit);
+}
+
+/**
  * 总结轮：先 SSE 直出服务端表，再让 LLM 只写 3–8 句解读（不改表中数字）。
  * @returns true 表示已完整结束本轮（调用方应 return）。
  */
@@ -1173,11 +1195,11 @@ function jbBinsYieldFallbackMessage(
   if (payload) {
     const tables = buildDeterministicJbTables(userQuestion, payload);
     if (tables?.trim()) {
-      return `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${DETERMINISTIC_TABLES_HEADER}\n\n${tables}`;
+      return `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${tables}`;
     }
     const overview = formatLotYieldOverviewMarkdown(payload);
     if (overview) {
-      return `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${DETERMINISTIC_TABLES_HEADER}\n\n${overview}`;
+      return `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${overview}`;
     }
   }
   return formatSlotYieldMarkdownFromToolJson(String(toolMsg.content ?? ""));
@@ -1469,6 +1491,14 @@ export async function runAgentLoop(
         emit
       );
       if (equipmentDone) return;
+
+      const perSlotDone = await tryRunPerSlotBinRankingDirectRoute(
+        sessionId,
+        userQuestion,
+        agentConfig,
+        emit
+      );
+      if (perSlotDone) return;
 
       const dutBinDone = await tryRunDutBinMapDirectRoute(
         sessionId,

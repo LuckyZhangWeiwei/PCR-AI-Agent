@@ -42,7 +42,8 @@ test("planWaferMapRoute: user_turn direct draw after prior inf_draw", () => {
     assert.equal(plan.action.args.lot, LOT);
     assert.equal(plan.action.args.slot, 14);
     assert.equal(plan.action.args.highlight, "bin:15");
-    assert.equal(plan.action.args.passes, "composite");
+    // Previous draw had no explicit passes arg → inherit nothing → default (all layers)
+    assert.equal(plan.action.args.passes, undefined);
   }
 });
 

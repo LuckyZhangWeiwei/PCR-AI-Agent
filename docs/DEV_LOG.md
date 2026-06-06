@@ -2,6 +2,18 @@
 
 ---
 
+## 2026-06-06 — Agent Bug 修复：wafermap composite shortcut + 逐片 bin 循环 + 指令泄漏
+
+**完成内容：**
+- `agentInfWaferMapTool.ts`：移除 BIN highlight 跟画时强制 `passes="composite"` 的性能捷径（Bug A）。改为继承上次 inf_draw 的 passes 参数，用户切换 BIN 高亮后保持原有多层视图而非被折叠成合成层。
+- `agentLoop.ts`：新增 `tryRunPerSlotBinRankingDirectRoute`（Bug C）。"每片/每一片/各片坏 bin" 问题命中时直接从 session cache 的 `slotBadBinsCompact` 出表，绕过 LLM 工具选择（LLM 误选 `aggregate_jb_bins` 导致死循环）。
+- `agentLoop.ts`：修复 `jbBinsYieldFallbackMessage` 中 `DETERMINISTIC_TABLES_HEADER` 被拼入用户可见输出的指令泄漏（Bug 副作用）。
+- `test/agentInfWaferMapTool.test.ts`、`test/agentWaferMapRoute.test.ts`：更新两处断言以匹配新行为（`passes === undefined` 替代 `"composite"`），同步重命名测试名称。
+
+**测试：** 255 通过，1 失败（Oracle DPI-1047 预存故障，与本次无关）
+
+---
+
 ## 2026-06-06 — agentPrompt 规划规则收紧 + 工具调用硬规则
 
 **完成内容：**
