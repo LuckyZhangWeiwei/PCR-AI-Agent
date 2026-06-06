@@ -2,6 +2,21 @@
 
 ---
 
+## 2026-06-06 — Agent 子任务模型（subAgentModel）支持
+
+**完成内容：**
+- `runtimeConfig.ts`：新增 `agentSubModel` 字段（`RuntimeConfig` + 默认值 `""`，空字符串 = 与主模型相同）；支持 `AGENT_SUB_MODEL` 环境变量。
+- `agentConfig.ts`：新增 `subAgentModel: string` 字段；`resolveAgentConfig` 优先读 `override.subAgentModel`，其次 `AGENT_SUB_MODEL` env，最后 fallback 到 `model`（保持无感兼容）。
+- `agentLoop.ts`：`summarizeHistory`（历史压缩，best-effort）和 `emitDeterministicJbTablesReply` 解读调用（结构化输入/有界输出）改用 `agentConfig.subAgentModel`；工具选择轮与总结轮最终回答仍用主 `model`。
+- `useServerConfig.ts`（前端）：`ServerConfig` 新增 `agentSubModel: string`，默认 `""`。
+- `usePersistedAgentConfig.ts`（前端）：`AgentConfig` 接口新增 `subAgentModel: string`，随 POST 请求体下发给后端。
+- `App.tsx`：agentConfig 对象新增 `subAgentModel: serverConfig.agentSubModel`；Settings 新增「子任务模型」文本输入框，留空时显示 placeholder「留空 = 与主模型相同」。
+- `InfDutDistPanel.tsx`：顺手删除预存未使用函数 `computeBinDuts`（TS6133 预存错误）。
+
+**测试：** 前后端 typecheck 均通过
+
+---
+
 ## 2026-06-06 — Agent 多源时间段联查规则
 
 **完成内容：**

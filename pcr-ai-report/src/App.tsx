@@ -26,6 +26,7 @@ export default function App() {
     apiKey,
     apiBase: serverConfig.agentApiBase,
     model: serverConfig.agentModel,
+    subAgentModel: serverConfig.agentSubModel,
     maxRounds: serverConfig.maxRounds,
     streamTimeoutSec: serverConfig.streamTimeoutSec,
     clientTimeoutSec: serverConfig.clientTimeoutSec,
@@ -43,10 +44,12 @@ export default function App() {
   // Local buffers for text inputs — only PATCH server on blur
   const [agentApiBaseInput, setAgentApiBaseInput] = useState(serverConfig.agentApiBase);
   const [agentModelInput, setAgentModelInput] = useState(serverConfig.agentModel);
+  const [agentSubModelInput, setAgentSubModelInput] = useState(serverConfig.agentSubModel);
 
   // Sync text buffers when server config loads/resets
   useEffect(() => { setAgentApiBaseInput(serverConfig.agentApiBase); }, [serverConfig.agentApiBase]);
   useEffect(() => { setAgentModelInput(serverConfig.agentModel); }, [serverConfig.agentModel]);
+  useEffect(() => { setAgentSubModelInput(serverConfig.agentSubModel); }, [serverConfig.agentSubModel]);
 
   // Sync input when apiBase changes externally (resetApiBase)
   useEffect(() => { setApiBaseInput(apiBase); }, [apiBase]);
@@ -341,6 +344,20 @@ export default function App() {
               <p className="field-hint">
                 SiliconFlow 模型 ID，例如 <code>deepseek-ai/DeepSeek-V3</code>、
                 <code>MiniMax/MiniMax-M1</code>。需支持 Function Calling。
+              </p>
+              <label>
+                <span>子任务模型（历史压缩 + 表解读）</span>
+                <input
+                  type="text"
+                  value={agentSubModelInput}
+                  onChange={(e) => setAgentSubModelInput(e.target.value)}
+                  onBlur={(e) => updateServerConfig({ agentSubModel: e.target.value.trim() })}
+                  spellCheck={false}
+                  placeholder="留空 = 与主模型相同"
+                />
+              </label>
+              <p className="field-hint">
+                用于历史对话压缩与确定性表解读（不涉及工具选择和最终回答），可填轻量模型节省用量，如 <code>Qwen/Qwen3-8B</code>。留空时与主模型相同。
               </p>
 
               <hr className="settings-divider" />

@@ -376,18 +376,6 @@ function DutDistPassChart({
     [pass, focusBin, goodBinNumbers, activeBinIndices, legendHoveredDut]
   );
 
-  // ── Compute which DUT series have count>0 at a given bin index ───────────
-  const computeBinDuts = useCallback((dataIndex: number): Set<number> => {
-    const binEntry = badBinEntries[dataIndex];
-    if (!binEntry) return new Set();
-    const active = new Set<number>();
-    seriesList.forEach((item, i) => {
-      const de = binEntry.duts.find((d) => String(d.dut) === item.dutKey);
-      if ((de?.dieCount ?? 0) > 0) active.add(i);
-    });
-    return active;
-  }, [badBinEntries, seriesList]);
-
   // ── ECharts highlight helpers ─────────────────────────────────────────────
   // When activeBinIndices is set (legend hover), emphasis/blur are stripped from
   // the series option, so ECharts dispatch has no visible effect — safe to always call.

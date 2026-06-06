@@ -616,7 +616,7 @@ async function summarizeHistory(
   try {
     await streamSiliconFlow(
       {
-        model: agentConfig.model,
+        model: agentConfig.subAgentModel, // 历史压缩：低负荷任务，sub-agent 模型即可
         messages: [{ role: "user", content: prompt }],
         max_tokens: 512,  // 400-char summary ≈ 300 tokens; cap avoids silent truncation
       },
@@ -853,7 +853,7 @@ async function emitDeterministicJbTablesReply(
 
   await streamSiliconFlow(
     {
-      model: agentConfig.model,
+      model: agentConfig.subAgentModel, // 表解读：结构化输入/有界输出，sub-agent 模型即可
       messages: [
         { role: "system", content: BRIEF_COMMENTARY_SYSTEM },
         {

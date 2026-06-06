@@ -23,6 +23,7 @@
 
 ## 已完成
 
+- ✅ Agent subAgentModel 支持：历史压缩 + 确定性表解读改用轻量子模型，Settings 新增配置项，工具选择 / 最终回答仍用主模型 — 2026-06-06 完成
 - ✅ Agent 多源时间段联查规则：agentPrompt 新增卡号/device + 时间段必须同时查 YM+JB 的规则，明确 INF 文件限制 — 2026-06-06 完成
 - ✅ Agent 主动规律/风险识别：detectAndFormatDataPatterns 检测良率趋势、BIN 集中、片位持续最差、温度敏感、换卡 BIN 偏移，自动追加到 lot_overview/card_test_overview/bad_bin_ranking/lot_yield_ranking/generic 模式输出 — 2026-06-06 完成
 - ✅ Agent JB generic 兜底结构性修复：含卡号/DUT 关键词时返回 null 而非错误 lot overview — 2026-06-06 完成

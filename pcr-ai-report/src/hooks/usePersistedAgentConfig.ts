@@ -8,6 +8,8 @@ export interface AgentConfig {
   apiKey: string;
   apiBase: string;
   model: string;
+  /** 子任务模型（历史压缩 + 表解读）。等于 model 时无差异。 */
+  subAgentModel: string;
   maxRounds: number;
   streamTimeoutSec: number;
   clientTimeoutSec: number;

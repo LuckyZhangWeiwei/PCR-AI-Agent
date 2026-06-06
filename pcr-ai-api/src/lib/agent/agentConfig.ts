@@ -2,6 +2,8 @@ export interface AgentConfig {
   apiKey: string;
   apiBase: string;
   model: string;
+  /** 子任务模型：历史压缩 + 确定性表解读。等于 model 时无差异。 */
+  subAgentModel: string;
   maxRounds: number;
   /** LLM 流式 idle 超时（秒）；有 SSE 字节则重置计时 */
   streamTimeoutSec: number;
@@ -122,6 +124,10 @@ export function resolveAgentConfig(
     override?.model?.trim() ||
     process.env.AGENT_MODEL?.trim() ||
     DEFAULT_MODEL;
+  const subAgentModel =
+    override?.subAgentModel?.trim() ||
+    process.env.AGENT_SUB_MODEL?.trim() ||
+    model;
   const maxRounds = clampMaxRounds(
     override?.maxRounds ?? process.env.AGENT_MAX_ROUNDS
   );
@@ -137,6 +143,7 @@ export function resolveAgentConfig(
     apiKey,
     apiBase,
     model,
+    subAgentModel,
     maxRounds,
     streamTimeoutSec,
     streamTimeoutMs,

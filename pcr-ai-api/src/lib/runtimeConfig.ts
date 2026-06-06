@@ -5,6 +5,8 @@ export interface RuntimeConfig {
   agentEnabled: boolean;
   agentApiBase: string;
   agentModel: string;
+  /** 子任务模型：用于历史压缩 + 确定性表解读（不涉及工具选择/最终回答）。空字符串 = 与 agentModel 相同。 */
+  agentSubModel: string;
   maxRounds: number;
   streamTimeoutSec: number;
   clientTimeoutSec: number;
@@ -18,6 +20,7 @@ export const RUNTIME_CONFIG_DEFAULTS: RuntimeConfig = {
   agentEnabled: true,
   agentApiBase: "https://api.siliconflow.cn/v1",
   agentModel: "deepseek-ai/DeepSeek-V3",
+  agentSubModel: "",
   maxRounds: 5,
   streamTimeoutSec: 150,
   clientTimeoutSec: 180,
@@ -57,6 +60,10 @@ export function getConfig(): RuntimeConfig {
       (typeof f.agentModel === "string" && f.agentModel) ||
       process.env.AGENT_MODEL?.trim() ||
       D.agentModel,
+    agentSubModel:
+      (typeof f.agentSubModel === "string" ? f.agentSubModel : undefined) ??
+      process.env.AGENT_SUB_MODEL?.trim() ??
+      D.agentSubModel,
     maxRounds: num(
       f.maxRounds,
       process.env.AGENT_MAX_ROUNDS ? Number(process.env.AGENT_MAX_ROUNDS) : D.maxRounds
