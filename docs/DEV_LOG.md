@@ -2,6 +2,17 @@
 
 ---
 
+## 2026-06-06 — BRIEF_COMMENTARY_SYSTEM 修复空解读根本原因
+
+**完成内容：**
+- `agentJbDeterministicReply.ts`：`BRIEF_COMMENTARY_SYSTEM` 移除末尾 `generate_chart` 提示（commentary 调用不传工具 schema，推理模型决定调 generate_chart 后输出嵌入式工具调用格式，被 `createDeepSeekFilter` 整体剥离 → `cleanText` 为空）。
+- `agentJbDeterministicReply.ts`：在 system prompt 开头加"⚠️ 本次调用无工具可用，禁止输出任何工具调用格式"，截断推理模型通过 think 块决定调工具的路径。
+- `agentJbDeterministicReply.ts`：修正 system prompt 中 "DeepSeek-V4-Pro" 过时模型名称引用。
+
+**测试：** typecheck 通过
+
+---
+
 ## 2026-06-06 — per_slot_bin_ranking 启用 LLM 解读
 
 **完成内容：**

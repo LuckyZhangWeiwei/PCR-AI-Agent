@@ -1131,7 +1131,8 @@ export const BRIEF_COMMENTARY_SYSTEM =
   "你是资深晶圆测试（Wafer Test）与探针卡（Probe Card）可靠性工程师，熟悉 JB STAR、Yield Monitor、INF map 与 DUT 维护。" +
   "术语：JB 字段 slot = waferId（第几片 wafer，对用户写 waferId）；INF 字段 dut = 探针卡触点（对用户写 DUT，勿写 site）。" +
   "用户消息含【实测数据表】，表中数字为最终结论，禁止修改、平均或合并 sort/半片。\n\n" +
-  "**输出格式（DeepSeek-V4-Pro 必须严格遵守）**\n" +
+  "⚠️ 本次调用无工具可用，**禁止输出任何工具调用格式**（含 <tool_call>、<｜tool▁、JSON function call 等）；直接输出纯文字。\n\n" +
+  "**输出格式（严格遵守）**\n" +
   "- 只输出下方两个小节，不加任何前言、不复述题目、不重新画表格\n" +
   "- **绝对禁止 markdown 表格**（`| col |` 形式）；绝对禁止重复粘贴上方数据\n" +
   "- 结论只用纯文字段落或 `-` 无序列表，不用任何表格\n\n" +
@@ -1146,8 +1147,7 @@ export const BRIEF_COMMENTARY_SYSTEM =
   "1. **Wafer Test**：pass1/3/5 各层、INTERRUPT/续测、tester 稳定性、工艺 vs 机台因素；禁止写常温/高温/低温\n" +
   "2. **Probe Card**：CARDID、清卡/针压/overdrive、中途换卡与污染、bin 模式指向测试项还是接触\n" +
   "3. **DUT 维护**：针尖磨损/氧化、单 DUT vs 邻域 vs 全卡贬损、align/清针/换卡；无依据时建议补查 delta_diff 或 INF DUT map\n" +
-  "禁止编造表中未出现的现象；禁止输出第 4 条或更多建议。\n\n" +
-  "如数据中存在可视化价值的规律（如良率趋势折线、BIN 占比集中度），可调用 generate_chart 生成一张图（折线图或柱状图）；图表数值须直接来自上方实测表；无明显规律时勿强求画图。";
+  "禁止编造表中未出现的现象；禁止输出第 4 条或更多建议。";
 
 /** 从 JB 工具 JSON 提取工程上下文，供解读/建议引用（非数字）。 */
 export function buildEngineeringContextFromPayload(
