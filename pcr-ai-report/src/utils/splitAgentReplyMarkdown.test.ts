@@ -30,6 +30,25 @@ test("detachSummaryLikeTableRows removes summary pipe row", () => {
   assert.ok(detachedProse.includes("91.94%"));
 });
 
+test("detachSummaryLikeTableRows keeps BIN-named table rows in body", () => {
+  const md = [
+    "| Slot | pass1 良率% |",
+    "|---:|---:|",
+    "| 1 | 95% |",
+    "",
+    "### 警示 / 规律识别",
+    "",
+    "| BIN | 类型 | 说明 |",
+    "|---|---|---|",
+    "| BIN66 | 连续聚集 | waferId 8–11 |",
+    "| BIN55 | 突增 | waferId 14–15 |",
+  ].join("\n");
+  const { body, detachedProse } = detachSummaryLikeTableRows(md);
+  assert.ok(body.includes("| BIN66 |"), "BIN warning table should stay in body");
+  assert.ok(body.includes("### 警示"), "section heading should stay in body");
+  assert.equal(detachedProse, "");
+});
+
 test("splitAgentReplyMarkdown puts streamed commentary below tables", () => {
   const text = [
     "## 实测数据",

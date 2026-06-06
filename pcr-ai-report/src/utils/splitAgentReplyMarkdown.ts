@@ -64,6 +64,9 @@ export function detachSummaryLikeTableRows(md: string): {
       .split("|")
       .map((c) => c.trim())
       .filter((_, i, parts) => i > 0 && i < parts.length - 1);
+    const firstCell = cells[0] ?? "";
+    // Only strip rows whose first cell is a summary keyword; stop at data/header/separator rows
+    if (!SUMMARY_FIRST_CELL.test(firstCell)) break;
     if (cells.length) detached.unshift(cells.join(" "));
     lines.pop();
   }

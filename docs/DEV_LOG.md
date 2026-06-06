@@ -2,6 +2,17 @@
 
 ---
 
+## 2026-06-06 — 警示表格渲染修复 + focusBin DUT 明细置顶
+
+**完成内容：**
+- `splitAgentReplyMarkdown.ts`：`detachSummaryLikeTableRows` 只剥 `SUMMARY_FIRST_CELL` 匹配的行（总结/汇总/结论等），遇到 `BIN66`/`BIN55` 等非 summary 首格行立即停止，不再误删 `### 警示/规律识别` 的 markdown 表格
+- `splitAgentReplyMarkdown.test.ts`：新增 BIN 命名行保留在 body 的测试用例
+- `agentToolHandlers.ts`：`toolQueryLotDutBinAgg` 实现 `focusBin` 参数——解析 `focusBin: 55` 为 `bin55`，调用 `extractFocusBinDuts` 从 compact passes 中提取该 bin 的 DUT 明细，注入到结果对象最顶部（`focusBin` + `focusBinDuts`），避免被 `truncateResult` 截断后 LLM 看不到
+
+**测试：** 4 个前端单元测试全通过；后端 255 通过，1 失败（Oracle DPI-1047 预存故障）
+
+---
+
 ## 2026-06-06 — Session 日志合并：一个 session 一个文件
 
 **完成内容：**

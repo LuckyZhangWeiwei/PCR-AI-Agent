@@ -402,6 +402,19 @@ async function toolAggregateJbBins(
 const GOOD_BIN_AVG_THRESHOLD = 100; // avg dieCount/DUT above this ≈ good/passing bin
 const MAX_DUTS_PER_BAD_BIN = 20;
 
+/** Pull DUT breakdown for a specific bin out of compact passes — placed at top of result so it's never truncated. */
+function extractFocusBinDuts(passes: unknown[], focusBinKey: string): unknown[] {
+  const result: unknown[] = [];
+  for (const p of passes) {
+    const pass = p as { passId: number; bins?: unknown[] };
+    if (!pass.bins) continue;
+    const entry = pass.bins.find((b) => (b as { bin?: string }).bin === focusBinKey);
+    if (!entry) continue;
+    result.push({ passId: pass.passId, ...(entry as object) });
+  }
+  return result;
+}
+
 function compactSiteBinPasses(passes: SiteBinPass[]): unknown[] {
   return passes.map((pass) => ({
     passId: pass.passId,
@@ -465,6 +478,10 @@ async function toolQueryLotDutBinAgg(
   const probeCardType =
     typeof args["probeCardType"] === "string" ? args["probeCardType"].trim() : "";
 
+  const focusBinRaw = args["focusBin"];
+  const focusBinNum = typeof focusBinRaw === "number" ? Math.round(focusBinRaw) : NaN;
+  const focusBinKey = Number.isFinite(focusBinNum) ? `bin${focusBinNum}` : undefined;
+
   try {
     if (probeCardType) {
       const testEndWindow = parseSiteBinByLotTestEndWindow({});
@@ -472,11 +489,14 @@ async function toolQueryLotDutBinAgg(
         device, lot, probeCardType, passIds, testEndWindow
       );
       if (dummy !== null) {
+        const passes = compactSiteBinPasses(dummy.passes);
+        const focusBinDuts = focusBinKey ? extractFocusBinDuts(passes, focusBinKey) : undefined;
         return truncateResult(
           {
+            ...(focusBinDuts?.length ? { focusBin: focusBinKey, focusBinDuts } : {}),
             device, lot, probeCardType: dummy.probeCardType ?? probeCardType,
             waferCount: dummy.waferCount, waferSlots: dummy.waferSlots,
-            passes: compactSiteBinPasses(dummy.passes),
+            passes,
           },
           maxChars
         );
@@ -484,11 +504,14 @@ async function toolQueryLotDutBinAgg(
       const res = await runOutputSiteBinByLotForLot(
         device, lot, probeCardType, passIds, testEndWindow
       );
+      const passes = compactSiteBinPasses(res.data.passes);
+      const focusBinDuts = focusBinKey ? extractFocusBinDuts(passes, focusBinKey) : undefined;
       return truncateResult(
         {
+          ...(focusBinDuts?.length ? { focusBin: focusBinKey, focusBinDuts } : {}),
           device, lot, probeCardType: res.probeCardType ?? probeCardType,
           waferCount: res.waferCount, waferSlots: res.waferSlots,
-          passes: compactSiteBinPasses(res.data.passes),
+          passes,
           ...(res.skippedInfPaths.length > 0 ? { skippedWafers: res.skippedInfPaths.length } : {}),
         },
         maxChars
@@ -496,21 +519,27 @@ async function toolQueryLotDutBinAgg(
     } else {
       const dummy = tryResolveSiteBinByLotDummyForLotByDirectory(device, lot, passIds);
       if (dummy !== null) {
+        const passes = compactSiteBinPasses(dummy.passes);
+        const focusBinDuts = focusBinKey ? extractFocusBinDuts(passes, focusBinKey) : undefined;
         return truncateResult(
           {
+            ...(focusBinDuts?.length ? { focusBin: focusBinKey, focusBinDuts } : {}),
             device, lot,
             waferCount: dummy.waferCount, waferSlots: dummy.waferSlots,
-            passes: compactSiteBinPasses(dummy.passes),
+            passes,
           },
           maxChars
         );
       }
       const res = await runOutputSiteBinByLotForLotByDirectory(device, lot, passIds);
+      const passes = compactSiteBinPasses(res.data.passes);
+      const focusBinDuts = focusBinKey ? extractFocusBinDuts(passes, focusBinKey) : undefined;
       return truncateResult(
         {
+          ...(focusBinDuts?.length ? { focusBin: focusBinKey, focusBinDuts } : {}),
           device, lot,
           waferCount: res.waferCount, waferSlots: res.waferSlots,
-          passes: compactSiteBinPasses(res.data.passes),
+          passes,
         },
         maxChars
       );
