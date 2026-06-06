@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile, appendFile, access } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AgentSseEvent } from "./agentLoop.js";
@@ -11,9 +11,13 @@ function resolveLogDir(): string {
   return path.resolve(here, "../../../session-logs");
 }
 
-/** Build a Windows-safe timestamp string from a Date (replaces : with -). */
-function tsToFilename(d: Date): string {
-  return d.toISOString().replace(/:/g, "-").replace(/\./g, "-");
+async function fileExists(p: string): Promise<boolean> {
+  try {
+    await access(p);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 interface ToolEntry {
@@ -91,20 +95,26 @@ export class SessionLogger {
     }
   }
 
-  private buildMarkdown(): string {
-    const endTime = new Date();
-    const durationSec = ((endTime.getTime() - this.startTime.getTime()) / 1000).toFixed(1);
-
-    const lines: string[] = [
+  /** Session-level header — written only when the file is first created. */
+  private buildSessionHeader(): string {
+    return [
       `# AI Agent Session Log`,
       ``,
       `| Field | Value |`,
       `|---|---|`,
-      `| **Time** | ${this.startTime.toISOString()} |`,
       `| **Session ID** | \`${this.sessionId}\` |`,
       `| **Model** | ${this.model} |`,
-      `| **Retry** | ${this.isRetry ? "yes" : "no"} |`,
+      `| **Started** | ${this.startTime.toISOString()} |`,
       ``,
+    ].join("\n");
+  }
+
+  /** Content for this single turn (user + tools + AI response). */
+  private buildTurnContent(): string {
+    const endTime = new Date();
+    const durationSec = ((endTime.getTime() - this.startTime.getTime()) / 1000).toFixed(1);
+
+    const lines: string[] = [
       `## User`,
       ``,
       this.userMessage,
@@ -149,7 +159,6 @@ export class SessionLogger {
     }
 
     lines.push(`*Status: ${this.finalStatus} | Duration: ${durationSec}s | Ended: ${endTime.toISOString()}*`);
-
     return lines.join("\n");
   }
 
@@ -157,9 +166,18 @@ export class SessionLogger {
     try {
       const dir = resolveLogDir();
       await mkdir(dir, { recursive: true });
-      const filename = `${tsToFilename(this.startTime)}.md`;
-      const filepath = path.join(dir, filename);
-      await writeFile(filepath, this.buildMarkdown(), "utf8");
+      const filepath = path.join(dir, `${this.sessionId}.md`);
+
+      const turnContent = this.buildTurnContent();
+      const isFirst = !(await fileExists(filepath));
+
+      if (isFirst) {
+        await writeFile(filepath, this.buildSessionHeader() + "\n" + turnContent, "utf8");
+      } else {
+        const retryTag = this.isRetry ? " *(retry)*" : "";
+        const separator = `\n\n---\n\n**${this.startTime.toISOString()}**${retryTag}\n\n`;
+        await appendFile(filepath, separator + turnContent, "utf8");
+      }
     } catch (err) {
       console.error("[sessionLogger] Failed to write session log:", err);
     }

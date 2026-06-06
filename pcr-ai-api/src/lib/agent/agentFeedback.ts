@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -30,10 +30,17 @@ function defaultFeedbackFile(): string {
 async function readAll(filePath: string): Promise<FeedbackRecord[]> {
   try {
     const raw = await readFile(filePath, "utf-8");
-    return JSON.parse(raw) as FeedbackRecord[];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as FeedbackRecord[]) : [];
   } catch (err: unknown) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
-    console.error("[feedback] readAll: could not parse feedback file:", err);
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return [];
+    if (err instanceof SyntaxError || (err as NodeJS.ErrnoException).code === "ENODATA") {
+      // Corrupted / empty file — feedback is non-critical, start fresh
+      console.warn("[feedback] readAll: corrupted file, starting fresh:", (err as Error).message);
+      return [];
+    }
+    console.error("[feedback] readAll: unexpected error:", err);
     throw err;
   }
 }
@@ -49,7 +56,9 @@ export async function saveFeedback(
   await mkdir(dirname(filePath), { recursive: true });
   const existing = await readAll(filePath);
   existing.push(record);
-  await writeFile(filePath, JSON.stringify(existing, null, 2), "utf-8");
+  const tmp = `${filePath}.tmp`;
+  await writeFile(tmp, JSON.stringify(existing, null, 2), "utf-8");
+  await rename(tmp, filePath);
 }
 
 function tokenize(text: string): Set<string> {

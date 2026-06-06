@@ -157,7 +157,9 @@ agentRouter.post("/feedback", async (req, res) => {
     await saveFeedback(record);
     return res.json({ ok: true });
   } catch (err) {
-    console.error("[feedback] Failed to save:", err);
-    return sendAgentError(res, 500, "INTERNAL_ERROR", "Failed to save feedback");
+    const msg = err instanceof Error ? err.message : String(err);
+    const code = (err as NodeJS.ErrnoException).code ?? "unknown";
+    console.error(`[feedback] Failed to save (code=${code}):`, err);
+    return sendAgentError(res, 500, "INTERNAL_ERROR", `Failed to save feedback: ${code} — ${msg}`);
   }
 });

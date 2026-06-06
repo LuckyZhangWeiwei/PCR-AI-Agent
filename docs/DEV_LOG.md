@@ -2,6 +2,28 @@
 
 ---
 
+## 2026-06-06 — Session 日志合并：一个 session 一个文件
+
+**完成内容：**
+- `agentLoop.ts / sessionLogger.ts`：重构 `SessionLogger`，文件名由「每条消息时间戳」改为 `{sessionId}.md`；第一轮用 `writeFile` 写 session header + 第一轮内容，后续轮用 `appendFile` 追加分隔符 + 本轮内容，同一会话所有轮集中在一个文件中。
+
+**测试：** 255 通过，1 失败（Oracle DPI-1047 预存故障）
+
+---
+
+## 2026-06-06 — Agent 确定性输出 5 项 UI 修复 + feedback 500 修复
+
+**完成内容：**
+- `agentJbHistoryCompact.ts`：移除 `formatLotYieldOverviewMarkdown` 顶部 cluster 警示块（防止与末尾重复输出）；简化测试机台标题（去掉 "API testerId 列名说明"）；移除中断次数与 slotYieldInterrupt 两处说明文字；`formatSlotYieldPivotMarkdown` 新增单 pass 两列布局（slot 1–25 每行两片，减少垂直空间）。
+- `agentJbDeterministicReply.ts`：`buildLotOverviewTablesMarkdown` 改为调用 `withAlertsAndPatterns`（cluster 警示只在末尾追加一次）；`lot_overview` 预计算路径区分 precomputed/重建，避免双重追加。
+- `test/agentJbBadBinCluster.test.ts`：移除 `lotYieldOverviewMarkdown` 包含"警示"的断言（该字段不再直接内嵌 cluster）。
+- `agentFeedback.ts`：`readAll` 捕获 `SyntaxError`/`ENODATA` 返回 `[]`（防止空/损坏 JSON 导致 500）；`saveFeedback` 改为原子写（`.tmp` + `rename`）。
+- `routes/agent.ts`：feedback 路由错误响应附带 `code` + `message` 便于诊断。
+
+**测试：** 255 通过，1 失败（Oracle DPI-1047 预存故障）
+
+---
+
 ## 2026-06-06 — default 兜底方案输出优化：指令泄漏清除 + 警示/规律合并至末尾
 
 **完成内容：**

@@ -46,6 +46,7 @@
 - ✅ AI Agent 标签页开关（Settings toggle，localStorage 持久化）— 2026-05-27 完成
 - ✅ Settings AI Agent 配置描述清晰化（分组 + 每项说明 + 历史 cap 解耦说明）— 2026-05-27 完成
 - ✅ AI Chat 🔄 重新生成按钮：feedback 栏新增 regenerate，截断消息列表并重新提交同一问题 — 2026-05-26 完成
+- ✅ Session 日志合并：`SessionLogger` 改为按 `sessionId` 命名文件，同一会话所有轮追加到一个文件 — 2026-06-06 完成
 - ✅ AI 会话日志：每次对话请求写 markdown 文件（时间戳命名，含用户提问/工具调用/AI 回答），存 `session-logs/` — 2026-05-26 完成
 - ✅ Phase 2：JB 报表顶部坏 Bin 分布总览（`binDist` 区段）+ lot 树表"主要坏 bin"列 — 2026-05-25 完成
 - ✅ 报表重构：所有 chart drilldown 视觉标志（红色禁止圈）+ YM/JB 重复图表清理 — 2026-05-25 完成

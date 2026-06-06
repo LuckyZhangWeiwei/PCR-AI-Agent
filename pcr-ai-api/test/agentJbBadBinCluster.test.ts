@@ -53,7 +53,6 @@ describe("agentJbBadBinCluster", () => {
     const md = String(out.clusteredBadBinAlertsMarkdown ?? "");
     assert.ok(md.includes("警示"));
     assert.ok(md.includes("BIN7"));
-    assert.ok(String(out.lotYieldOverviewMarkdown).includes("警示"));
   });
 
   it("formatClusteredBadBinAlertsMarkdown has GFM separator column count matching header", () => {

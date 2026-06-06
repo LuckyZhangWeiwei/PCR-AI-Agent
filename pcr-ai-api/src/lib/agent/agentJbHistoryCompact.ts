@@ -137,13 +137,11 @@ export function formatLotTesterMarkdown(
   if (!list.length) return "";
 
   const title = focusLot?.trim()
-    ? `**${focusLot.trim()}** 测试机台（JB \`TESTERID\` / API \`testerId\`）`
-    : "**测试机台（JB TESTERID）**";
+    ? `**${focusLot.trim()}** 测试机台`
+    : "**测试机台**";
 
   const lines = [
     title,
-    "",
-    "与 Yield Monitor 的 **HOSTNAME**（API \`hostname\`）为同一物理机台，列名不同。",
     "",
     "| 批次 lot | 机台 TESTERID | 本批出现过的机台 |",
     "|---|---|---|",
@@ -177,8 +175,6 @@ export function formatTestInterruptCountMarkdown(
   const lines = [
     title,
     "",
-    "中断次数 = `testInterruptCount`（INTERRUPT 行数或 PASSNUM 续测步进）；**不是**良率表里「前半/后半」两段的数量。",
-    "",
     "| waferId | 测试层 | 中断次数 |",
     "|---:|---|---:|",
   ];
@@ -208,8 +204,6 @@ export function formatSlotYieldInterruptMarkdown(
 
   const lines = [
     title,
-    "",
-    `共 **${rows.length}** 个 (waferId×pass) 有中断/续测（次数见 **testInterruptCountMarkdown**）；**按段列出每次中断/续测**，最后 **整片正片（合并）**；多次中断勿只写前半/后半两段；良率 **0% 也写**。`,
     "",
     "| Slot | 测试层 | 段 | 总die | 好die | 坏die | 良率% |",
     "|---:|---|---:|---:|---:|---:|---:|",
@@ -274,6 +268,32 @@ export function formatSlotYieldPivotMarkdown(
     ? `**${lot}**${device ? `（${device}）` : ""} 各片良率（按测试层分列）`
     : "各片良率（按测试层分列）";
 
+  // Single-pass: two-column layout to halve table height
+  if (pivot.passIds.length === 1) {
+    const passId = pivot.passIds[0]!;
+    const passLabel = pivot.passLabels[0]!;
+    const hdr = `| Slot | ${passLabel} 良率% | 坏die合计 | Slot | ${passLabel} 良率% | 坏die合计 |`;
+    const sep2 = `|---:|---:|---:|---:|---:|---:|`;
+    const pairLines = [title, "", hdr, sep2];
+    for (let i = 0; i < pivot.slots.length; i += 2) {
+      const s1 = pivot.slots[i]!;
+      const c1 = pivot.cells[`${s1}:${passId}`];
+      const y1 = c1 ? (c1.yieldPct === null ? "—" : `${roundYieldPct(c1.yieldPct)}%`) : "—";
+      const bad1 = c1?.badDie ?? 0;
+      if (i + 1 < pivot.slots.length) {
+        const s2 = pivot.slots[i + 1]!;
+        const c2 = pivot.cells[`${s2}:${passId}`];
+        const y2 = c2 ? (c2.yieldPct === null ? "—" : `${roundYieldPct(c2.yieldPct)}%`) : "—";
+        const bad2 = c2?.badDie ?? 0;
+        pairLines.push(`| ${s1} | ${y1} | ${bad1} | ${s2} | ${y2} | ${bad2} |`);
+      } else {
+        pairLines.push(`| ${s1} | ${y1} | ${bad1} | | | |`);
+      }
+    }
+    pairLines.push("");
+    return pairLines.join("\n");
+  }
+
   const header = [
     "| Slot |",
     ...pivot.passLabels.map((l) => ` ${l} 良率% |`),
@@ -287,8 +307,6 @@ export function formatSlotYieldPivotMarkdown(
 
   const lines = [
     title,
-    "",
-    "有中断的格子为 **前/后/整（合并）** 良率（按测试时间：前半→后半→整片）。",
     "",
     header,
     sep,
@@ -332,14 +350,6 @@ export function formatLotYieldOverviewMarkdown(
   const pivotRaw = o["slotYieldPivot"] as SlotYieldPivot | undefined;
 
   const parts: string[] = [];
-  const clusterMd =
-    typeof o["clusteredBadBinAlertsMarkdown"] === "string"
-      ? o["clusteredBadBinAlertsMarkdown"]
-      : "";
-  if (clusterMd.trim()) {
-    parts.push(clusterMd.trim());
-    parts.push("");
-  }
   const testerMd =
     typeof o["testerIdMarkdown"] === "string"
       ? o["testerIdMarkdown"]

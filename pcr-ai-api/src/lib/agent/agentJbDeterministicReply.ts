@@ -271,7 +271,7 @@ export function buildLotOverviewTablesMarkdown(
   toolPayload: Record<string, unknown>
 ): string | null {
   const full = formatLotYieldOverviewMarkdown(toolPayload)?.trim();
-  if (full) return full;
+  if (full) return withAlertsAndPatterns(full, toolPayload);
   return rebuildDeterministicTablesFallback(toolPayload);
 }
 
@@ -834,7 +834,10 @@ export function buildDeterministicJbTables(
     // Without this, formatLotYieldOverviewMarkdown would skip the probe-card section
     // because cardByPassId (raw array) is not persisted in the session cache.
     const precomputed = digest.lotOverview?.trim();
-    return withPatterns(precomputed ?? buildLotOverviewTablesMarkdown(toolPayload), toolPayload);
+    // If precomputed: append alerts+patterns to it. Otherwise buildLotOverviewTablesMarkdown
+    // already calls withAlertsAndPatterns internally, so return it directly.
+    if (precomputed) return withAlertsAndPatterns(precomputed, toolPayload);
+    return buildLotOverviewTablesMarkdown(toolPayload);
   }
 
   if (mode === "generic") {
