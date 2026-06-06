@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-06-06 — default 兜底方案输出优化：指令泄漏清除 + 警示/规律合并至末尾
+
+**完成内容：**
+- `agentJbBadBinCluster.ts`：`formatClusteredBadBinAlertsMarkdown` 移除"解读与专业建议中必须首段写明..."指令文本（属 LLM 系统提示，不应出现在用户可见输出）。
+- `agentJbDeterministicReply.ts`：`detectAndFormatDataPatterns` 简化格式——去掉 `---` 分隔线和 `>` 引用块，改为 `-` 无序列表；移除"可生成趋势图"提示（简洁）。
+- `agentJbDeterministicReply.ts`：新增 `formatAlertsAndPatternsSection()`，将「聚集性/突增坏 bin 警示」与「AI 自动规律识别」合并为单节（`### 🔍 警示 / 规律识别`）。
+- `agentJbDeterministicReply.ts`：新增 `withAlertsAndPatterns()`，generic / slot_pass_yield 模式从 `withPatterns` 改用此函数，cluster 警示随规律识别同节出现在末尾。
+- `agentJbDeterministicReply.ts`：`rebuildDeterministicTablesFallback` 将 cluster 段从头部移除，改为末尾追加 `formatAlertsAndPatternsSection`；早返回的 overview 路径也改用 `withAlertsAndPatterns`。
+
+**测试：** 255 通过，1 失败（Oracle DPI-1047 预存故障）
+
+---
+
 ## 2026-06-06 — Agent Bug 修复：wafermap composite shortcut + 逐片 bin 循环 + 指令泄漏
 
 **完成内容：**

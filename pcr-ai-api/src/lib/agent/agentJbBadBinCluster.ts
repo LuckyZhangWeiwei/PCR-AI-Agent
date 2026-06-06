@@ -264,8 +264,6 @@ export function formatClusteredBadBinAlertsMarkdown(
   const lines = [
     title,
     "",
-    "以下由服务端按 **waferId(slot) 顺序** 扫描检出；解读与专业建议中 **必须首段写明**（勿仅列 lot 合计 topBadBins）。",
-    "",
     "| BIN | 测试层 | 类型 | waferId 范围 | 说明 |",
     "|---:|---:|---:|---:|---|",
   ];

@@ -872,7 +872,7 @@ export function buildDeterministicJbTables(
       }
     }
 
-    if (overview) return withPatterns(overview, toolPayload);
+    if (overview) return withAlertsAndPatterns(overview, toolPayload);
   }
 
   return rebuildDeterministicTablesFallback(toolPayload);
@@ -883,13 +883,9 @@ function rebuildDeterministicTablesFallback(
   toolPayload: Record<string, unknown>
 ): string | null {
   const overview = formatLotYieldOverviewMarkdown(toolPayload)?.trim();
-  if (overview) return overview;
+  if (overview) return withAlertsAndPatterns(overview, toolPayload);
 
   const parts: string[] = [];
-  const clusterMd = toolPayload["clusteredBadBinAlertsMarkdown"];
-  if (typeof clusterMd === "string" && clusterMd.trim()) {
-    parts.push(clusterMd.trim());
-  }
   const cardMd = toolPayload["cardByPassIdMarkdown"];
   if (typeof cardMd === "string" && cardMd.trim()) {
     parts.push(cardMd.trim());
@@ -922,6 +918,10 @@ function rebuildDeterministicTablesFallback(
   // Top bad bins ranking — essential for "what are the main bad bins" queries
   const topBadBinsMd = formatTopBadBinsMarkdown(toolPayload);
   if (topBadBinsMd) parts.push(topBadBinsMd);
+
+  // 警示 / 规律识别合并节放在末尾
+  const alertsSection = formatAlertsAndPatternsSection(toolPayload);
+  if (alertsSection) parts.push(alertsSection);
 
   return parts.length ? parts.join("\n\n") : null;
 }
@@ -1104,10 +1104,27 @@ export function detectAndFormatDataPatterns(
 
   const lines = found.map((p) => {
     const icon = p.severity === "warning" ? "⚠️" : "💡";
-    const chartHint = p.suggestChart ? "（可生成趋势图）" : "";
-    return `> ${icon} **${p.title}**${chartHint}：${p.detail}`;
+    return `- ${icon} **${p.title}**：${p.detail}`;
   });
-  return `---\n\n### 🔍 数据规律 / 风险识别\n\n${lines.join("\n\n")}`;
+  return lines.join("\n");
+}
+
+/**
+ * 合并「聚集性/突增坏 bin 警示」与「AI 自动规律识别」为一节，放在输出末尾。
+ * 两者均无数据时返回 null。
+ */
+function formatAlertsAndPatternsSection(
+  toolPayload: Record<string, unknown>
+): string | null {
+  const parts: string[] = [];
+  const clusterMd = toolPayload["clusteredBadBinAlertsMarkdown"];
+  if (typeof clusterMd === "string" && clusterMd.trim()) {
+    parts.push(clusterMd.trim());
+  }
+  const patterns = detectAndFormatDataPatterns(toolPayload);
+  if (patterns) parts.push(patterns);
+  if (parts.length === 0) return null;
+  return `### 🔍 警示 / 规律识别\n\n${parts.join("\n\n")}`;
 }
 
 /** 在基础输出后追加规律识别段（base 为 null 时直接返回 null）。 */
@@ -1118,6 +1135,16 @@ function withPatterns(
   if (!base) return base;
   const patterns = detectAndFormatDataPatterns(toolPayload);
   return patterns ? `${base}\n\n${patterns}` : base;
+}
+
+/** generic / slot_pass_yield 模式：在 overview 后追加合并警示+规律节。 */
+function withAlertsAndPatterns(
+  base: string | null,
+  toolPayload: Record<string, unknown>
+): string | null {
+  if (!base) return base;
+  const section = formatAlertsAndPatternsSection(toolPayload);
+  return section ? `${base}\n\n${section}` : base;
 }
 
 export const DETERMINISTIC_TABLES_HEADER =
