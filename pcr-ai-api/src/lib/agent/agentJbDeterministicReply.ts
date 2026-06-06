@@ -38,6 +38,7 @@ export type JbReplyMode =
   | "card_yield_compare"
   | "lot_yield_ranking"
   | "per_slot_bin_ranking"
+  | "card_test_overview"
   | "generic";
 
 /** 用户问在哪台机台/测试机测（JB testerId / YM hostname）。 */
@@ -109,6 +110,20 @@ export function isPerSlotBadBinRankingQuestion(text: string): boolean {
   const perSlice = /(每片|每一片|各片|逐片|每个.*wafer|每个.*waferId|每个.*slot)/i.test(t);
   if (!perSlice) return false;
   return /(坏\s*bin|坏die|坏\s*BIN|bad\s*bin)/i.test(t);
+}
+
+/** 用户询问某张探针卡的测试概况（卡号格式 dddd-dd/ddd + 概况关键词）。 */
+export function isCardTestOverviewQuestion(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (!/\b\d{4}-\d{2,3}\b/.test(t)) return false;
+  return /(测试情况|的情况|整体情况|使用情况|历次测试|测试结果|性能)/i.test(t);
+}
+
+/** 从用户文字提取探针卡 ID（dddd-dd/ddd 格式）。 */
+function extractCardIdFromUserText(text: string): string | null {
+  const m = text.match(/\b(\d{4}-\d{2,3})\b/);
+  return m ? m[1]! : null;
 }
 
 function formatEquipmentTables(toolPayload: Record<string, unknown>): string | null {
@@ -268,6 +283,7 @@ export function detectJbReplyMode(userMessage: string): JbReplyMode {
   if (isLotYieldRankingQuestion(userMessage)) return "lot_yield_ranking";
   if (isPerSlotBadBinRankingQuestion(userMessage)) return "per_slot_bin_ranking";
   if (isSlotPassYieldQuestion(userMessage)) return "slot_pass_yield";
+  if (isCardTestOverviewQuestion(userMessage)) return "card_test_overview";
   if (isLotOverviewQuestion(userMessage)) return "lot_overview";
   return "generic";
 }
@@ -499,6 +515,88 @@ function buildBinCardAttributionMarkdown(
   return `**BIN${bin} 坏 die 所属探针卡${lotTag}**\n\n${rows.join("\n")}`;
 }
 
+/** 探针卡测试概况：良率表 + 卡分配 + 该卡坏 die 排行 + 近期 lot 记录。 */
+function buildCardTestOverviewMarkdown(
+  toolPayload: Record<string, unknown>,
+  cardId: string
+): string | null {
+  const parts: string[] = [];
+  const lot = String(toolPayload["lot"] ?? "").trim() || undefined;
+
+  // 1. 良率总览
+  const yieldMd = toolPayload["yieldByPassIdMarkdown"];
+  if (typeof yieldMd === "string" && yieldMd.trim()) {
+    parts.push(yieldMd.trim());
+  }
+
+  // 2. 各 pass 探针卡分配
+  const cardMd = toolPayload["cardByPassIdMarkdown"];
+  if (typeof cardMd === "string" && cardMd.trim()) {
+    parts.push(cardMd.trim());
+  } else {
+    const built = formatCardByPassIdMarkdown(
+      (toolPayload["cardByPassId"] as CardByPassIdEntry[] | undefined) ?? []
+    );
+    if (built.trim()) parts.push(built.trim());
+  }
+
+  // 3. 该卡坏 die 排行（来自 slotBadBinsCompact）
+  const compact = toolPayload["slotBadBinsCompact"] as SlotBadBinsCompactEntry[] | undefined;
+  if (compact?.length) {
+    const cardEntries = compact.filter((e) => e.cardId === cardId);
+    if (cardEntries.length) {
+      const binTotals = new Map<number, number>();
+      for (const { badBins } of cardEntries) {
+        for (const { bin, dieCount } of badBins) {
+          binTotals.set(bin, (binTotals.get(bin) ?? 0) + dieCount);
+        }
+      }
+      if (binTotals.size > 0) {
+        const sorted = [...binTotals.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 10);
+        const lotTag = lot ? `（lot ${lot}）` : "";
+        const rows = [
+          "| BIN | 坏 die 颗数 |",
+          "|---|---|",
+          ...sorted.map(([b, c]) => `| BIN${b} | ${c} |`),
+        ];
+        parts.push(`**探针卡 ${cardId} 坏 die 排行${lotTag}**\n\n${rows.join("\n")}`);
+      }
+    }
+  }
+
+  // 4. 近期 lot 测试记录（按 testEnd 降序，最多 10 条）
+  type RankEntry = {
+    lot: string;
+    device: string;
+    yieldPct: number;
+    worstSlot: number;
+    worstPassId: number;
+    testEnd: string | null;
+  };
+  const rank = toolPayload["lotYieldRankByTestEnd"] as RankEntry[] | undefined;
+  if (rank?.length) {
+    const recent = [...rank]
+      .sort((a, b) =>
+        (b.testEnd ?? "").localeCompare(a.testEnd ?? "")
+      )
+      .slice(0, 10);
+    const rows = [
+      "| lot | device | 良率% | 最差片 / pass | 测试结束时间 |",
+      "|---|---|---|---|---|",
+      ...recent.map((e) => {
+        const passLabel = `waferId ${e.worstSlot} / pass${e.worstPassId}`;
+        const testEnd = e.testEnd ? String(e.testEnd).slice(0, 10) : "—";
+        return `| ${e.lot} | ${e.device} | ${e.yieldPct.toFixed(1)}% | ${passLabel} | ${testEnd} |`;
+      }),
+    ];
+    parts.push(`**近期 lot 测试记录（按 testEnd 降序）**\n\n${rows.join("\n")}`);
+  }
+
+  return parts.length ? parts.join("\n\n") : null;
+}
+
 /** 根据用户问题从工具 JSON 选出应直出的 markdown 表（不改写）。 */
 export function buildDeterministicJbTables(
   userMessage: string,
@@ -517,6 +615,15 @@ export function buildDeterministicJbTables(
   if (mode === "per_slot_bin_ranking") {
     const md = buildPerSlotBadBinRankingMarkdown(toolPayload, userMessage);
     if (md) return md;
+    return null;
+  }
+
+  if (mode === "card_test_overview") {
+    const cardId = extractCardIdFromUserText(userMessage);
+    if (cardId) {
+      const md = buildCardTestOverviewMarkdown(toolPayload, cardId);
+      if (md) return md;
+    }
     return null;
   }
 

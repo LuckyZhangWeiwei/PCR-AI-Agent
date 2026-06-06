@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-06-06 — Agent 探针卡测试概况模式（card_test_overview）
+
+**完成内容：**
+- `agentJbDeterministicReply.ts`：新增 `JbReplyMode` 值 `"card_test_overview"`，处理「8036-06 的测试情况」类探针卡概况问题（原先被 `lot_overview` 误截，输出错误 lot 的 cluster alerts）。
+- `agentJbDeterministicReply.ts`：新增 `isCardTestOverviewQuestion()`（已导出），检测用户文本含 `\b\d{4}-\d{2,3}\b` 卡号格式 + 「测试情况/的情况/整体情况/使用情况」等关键词；在 `detectJbReplyMode` 中优先于 `isLotOverviewQuestion`，防止「8036-06 的测试情况」被 `测试情况` 匹配为 lot_overview。
+- `agentJbDeterministicReply.ts`：新增私有 `extractCardIdFromUserText()`，从文本提取 `dddd-dd/ddd` 格式卡号。
+- `agentJbDeterministicReply.ts`：新增私有 `buildCardTestOverviewMarkdown()`，输出：① `yieldByPassIdMarkdown` 良率总览；② `cardByPassIdMarkdown` 各 pass 卡分配；③ 从 `slotBadBinsCompact` 过滤该卡 ID，输出该卡坏 die BIN 排行（最多 10 条）；④ 从 `lotYieldRankByTestEnd` 按 testEnd 降序输出近期 lot 记录（最多 10 条）。不跳过 LLM 解读（需要趋势分析）。
+- `agentJbDeterministicReply.ts`：`buildDeterministicJbTables` 新增 `"card_test_overview"` case，提取卡号后调用上述 helper。
+
+**测试：** 258 个测试，255 通过，1 失败（Oracle 本地未安装，预存问题）；typecheck 通过
+
+---
+
 ## 2026-06-05 — 晶圆图 BIN 高亮丢失 + JB 逐片坏 bin 排名 + lot 良率排名 + 探针卡追问答案重复修复
 
 **完成内容：**
