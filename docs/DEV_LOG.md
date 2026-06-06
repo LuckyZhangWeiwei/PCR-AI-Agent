@@ -2,6 +2,18 @@
 
 ---
 
+## 2026-06-06 — Agent 主动规律/风险识别模块
+
+**完成内容：**
+- `agentJbDeterministicReply.ts`：新增 5 个规律检测函数（`detectYieldDeclineTrend` / `detectDominantBin` / `detectPersistentBadSlot` / `detectTemperatureSensitivity` / `detectCardChangeBinShift`），从 `lotYieldRankByTestEnd` 和 `slotBadBinsCompact` 推断人眼不易察觉的规律。
+- `agentJbDeterministicReply.ts`：新增导出函数 `detectAndFormatDataPatterns()`，汇总所有规律为 blockquote 段（⚠️ 警告 / 💡 信息）；无规律时返回 null，不强求输出。
+- `agentJbDeterministicReply.ts`：新增私有 `withPatterns()` helper，在基础输出后追加规律段；接入 `lot_overview` / `card_test_overview` / `bad_bin_ranking` / `lot_yield_ranking` / `slot_pass_yield/generic` 五个模式的返回路径。
+- `agentJbDeterministicReply.ts`：`BRIEF_COMMENTARY_SYSTEM` 末尾新增一行：发现良率趋势或 BIN 集中度规律时，可调用 `generate_chart` 生成折线/柱状图；无规律时勿强求画图。
+
+**测试：** 258 个测试，255 通过，1 失败（Oracle 本地未安装，预存问题）；typecheck 通过
+
+---
+
 ## 2026-06-06 — generic 兜底结构性修复 + 探针卡 DUT 定位模式 + 探针卡测试概况模式
 
 **完成内容：**

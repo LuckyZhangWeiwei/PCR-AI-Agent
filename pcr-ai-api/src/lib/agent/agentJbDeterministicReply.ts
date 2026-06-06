@@ -681,9 +681,7 @@ export function buildDeterministicJbTables(
 
   if (mode === "lot_yield_ranking") {
     const md = buildLotYieldRankingMarkdown(toolPayload, userMessage);
-    if (md) return md;
-    // Fallback: let LLM answer from lotYieldRankByTestEnd in tool result
-    return null;
+    return withPatterns(md ?? null, toolPayload);
   }
 
   if (mode === "per_slot_bin_ranking") {
@@ -703,8 +701,7 @@ export function buildDeterministicJbTables(
   if (mode === "card_test_overview") {
     const cardId = extractCardIdFromUserText(userMessage);
     if (cardId) {
-      const md = buildCardTestOverviewMarkdown(toolPayload, cardId);
-      if (md) return md;
+      return withPatterns(buildCardTestOverviewMarkdown(toolPayload, cardId), toolPayload);
     }
     return null;
   }
@@ -778,10 +775,10 @@ export function buildDeterministicJbTables(
   if (mode === "bad_bin_ranking") {
     const topMd = formatTopBadBinsMarkdown(toolPayload);
     const overview = digest.lotOverview?.trim() || formatLotYieldOverviewMarkdown(toolPayload)?.trim();
-    if (topMd && overview) return `${overview}\n\n${topMd}`;
-    if (topMd) return topMd;
-    if (overview) return overview;
-    return rebuildDeterministicTablesFallback(toolPayload);
+    const combined =
+      topMd && overview ? `${overview}\n\n${topMd}` :
+      topMd ?? overview ?? rebuildDeterministicTablesFallback(toolPayload);
+    return withPatterns(combined, toolPayload);
   }
 
   if (mode === "interrupt_count") {
@@ -837,8 +834,7 @@ export function buildDeterministicJbTables(
     // Without this, formatLotYieldOverviewMarkdown would skip the probe-card section
     // because cardByPassId (raw array) is not persisted in the session cache.
     const precomputed = digest.lotOverview?.trim();
-    if (precomputed) return precomputed;
-    return buildLotOverviewTablesMarkdown(toolPayload);
+    return withPatterns(precomputed ?? buildLotOverviewTablesMarkdown(toolPayload), toolPayload);
   }
 
   if (mode === "generic") {
@@ -876,7 +872,7 @@ export function buildDeterministicJbTables(
       }
     }
 
-    if (overview) return overview;
+    if (overview) return withPatterns(overview, toolPayload);
   }
 
   return rebuildDeterministicTablesFallback(toolPayload);
@@ -949,6 +945,181 @@ function formatTopBadBinsMarkdown(toolPayload: Record<string, unknown>): string 
   return `**${header}**\n\n${rows.join("\n")}`;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 主动规律 / 风险识别（从缓存数据推断；无规律时返回 null，不强求输出）
+// ─────────────────────────────────────────────────────────────────────────────
+
+type DetectedPattern = {
+  severity: "warning" | "info";
+  title: string;
+  detail: string;
+  suggestChart: boolean;
+};
+
+type LotRankEntry = {
+  lot: string;
+  yieldPct: number;
+  worstSlot: number;
+  worstPassId: number;
+  testEnd: string | null;
+};
+
+/** 近期 lot 良率连续下降（取末尾 ≤5 个点，至少 3 个连续点全部下降）。 */
+function detectYieldDeclineTrend(rank: LotRankEntry[]): DetectedPattern | null {
+  const sorted = [...rank]
+    .filter((e) => e.testEnd)
+    .sort((a, b) => (a.testEnd ?? "").localeCompare(b.testEnd ?? ""))
+    .slice(-5);
+  if (sorted.length < 3) return null;
+  let declining = true;
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i]!.yieldPct >= sorted[i - 1]!.yieldPct) { declining = false; break; }
+  }
+  if (!declining) return null;
+  const first = sorted[0]!;
+  const last = sorted[sorted.length - 1]!;
+  const drop = (first.yieldPct - last.yieldPct).toFixed(1);
+  return {
+    severity: "warning",
+    title: "良率持续下降趋势",
+    detail: `近 ${sorted.length} 个 lot（${first.lot} → ${last.lot}）良率连续走低：${first.yieldPct.toFixed(1)}% → ${last.yieldPct.toFixed(1)}%，累计下降 ${drop}pp，建议核查探针卡磨损或工艺漂移。`,
+    suggestChart: true,
+  };
+}
+
+/** 单一 BIN 高度集中（topBIN 占全批坏 die ≥ 65%）。 */
+function detectDominantBin(compact: SlotBadBinsCompactEntry[]): DetectedPattern | null {
+  const byBin = new Map<number, number>();
+  let grand = 0;
+  for (const { badBins } of compact) {
+    for (const { bin, dieCount } of badBins) {
+      byBin.set(bin, (byBin.get(bin) ?? 0) + dieCount);
+      grand += dieCount;
+    }
+  }
+  if (grand === 0) return null;
+  const top = [...byBin.entries()].sort((a, b) => b[1] - a[1])[0];
+  if (!top) return null;
+  const [topBin, topCount] = top;
+  const ratio = topCount / grand;
+  if (ratio < 0.65) return null;
+  return {
+    severity: "warning",
+    title: `BIN${topBin} 单一主导（占 ${(ratio * 100).toFixed(0)}%）`,
+    detail: `BIN${topBin} 占全批坏 die 的 ${(ratio * 100).toFixed(0)}%（${topCount}/${grand} 颗），失效模式高度集中，建议优先排查 BIN${topBin} 对应测试项或探针卡接触。`,
+    suggestChart: true,
+  };
+}
+
+/** 同一 waferId 在多个 lot 中均为最差片（≥ 40% 且 ≥ 3 次）。 */
+function detectPersistentBadSlot(rank: LotRankEntry[]): DetectedPattern | null {
+  if (rank.length < 3) return null;
+  const freq = new Map<number, number>();
+  for (const { worstSlot } of rank) {
+    freq.set(worstSlot, (freq.get(worstSlot) ?? 0) + 1);
+  }
+  const top = [...freq.entries()].sort((a, b) => b[1] - a[1])[0];
+  if (!top) return null;
+  const [slot, count] = top;
+  if (count < 3 || count / rank.length < 0.4) return null;
+  return {
+    severity: "warning",
+    title: `waferId ${slot} 持续为最差片`,
+    detail: `在 ${rank.length} 个 lot 中，waferId ${slot} 有 ${count} 次（${((count / rank.length) * 100).toFixed(0)}%）为最差片位，可能存在系统性片位问题（如 chuck 温度不均或卡盘局部污染）。`,
+    suggestChart: false,
+  };
+}
+
+/** pass3（高温）平均坏 die 明显高于 pass1（≥ 1.5×），温度敏感性突出。 */
+function detectTemperatureSensitivity(compact: SlotBadBinsCompactEntry[]): DetectedPattern | null {
+  const byPass = new Map<number, { total: number; n: number }>();
+  for (const { passId, badBins } of compact) {
+    const total = badBins.reduce((s, b) => s + b.dieCount, 0);
+    if (!byPass.has(passId)) byPass.set(passId, { total: 0, n: 0 });
+    const e = byPass.get(passId)!;
+    e.total += total;
+    e.n += 1;
+  }
+  const p1 = byPass.get(1);
+  const p3 = byPass.get(3);
+  if (!p1?.n || !p3?.n) return null;
+  const avg1 = p1.total / p1.n;
+  const avg3 = p3.total / p3.n;
+  if (avg1 === 0 || avg3 < avg1 * 1.5) return null;
+  return {
+    severity: "warning",
+    title: "pass3 高温坏 die 显著偏高",
+    detail: `pass3 平均 ${avg3.toFixed(0)} 颗/片，约为 pass1（${avg1.toFixed(0)} 颗/片）的 ${(avg3 / avg1).toFixed(1)} 倍，温度敏感性明显，建议核查高温测试项阈值或探针卡高温接触可靠性。`,
+    suggestChart: false,
+  };
+}
+
+/** 多张探针卡使用时各卡主导坏 BIN 不同，提示换卡引入新失效模式。 */
+function detectCardChangeBinShift(compact: SlotBadBinsCompactEntry[]): DetectedPattern | null {
+  const byCard = new Map<string, Map<number, number>>();
+  for (const { cardId, badBins } of compact) {
+    if (!byCard.has(cardId)) byCard.set(cardId, new Map());
+    const bins = byCard.get(cardId)!;
+    for (const { bin, dieCount } of badBins) {
+      bins.set(bin, (bins.get(bin) ?? 0) + dieCount);
+    }
+  }
+  if (byCard.size < 2) return null;
+  const dominant = new Map<string, number>();
+  for (const [cardId, bins] of byCard) {
+    const top = [...bins.entries()].sort((a, b) => b[1] - a[1])[0];
+    if (top) dominant.set(cardId, top[0]);
+  }
+  if (new Set(dominant.values()).size < 2) return null;
+  const detail = [...dominant.entries()].map(([c, b]) => `${c}→BIN${b}`).join("，");
+  return {
+    severity: "info",
+    title: "换卡前后主导坏 BIN 不同",
+    detail: `本批多张探针卡的主导坏 BIN 不同（${detail}），换卡可能引入不同失效模式，建议对比换卡前后各片 BIN 分布。`,
+    suggestChart: false,
+  };
+}
+
+/**
+ * 从 toolPayload 提取数据规律。无规律时返回 null，不强求输出。
+ * 供 buildDeterministicJbTables 在适当模式下追加。
+ */
+export function detectAndFormatDataPatterns(
+  toolPayload: Record<string, unknown>
+): string | null {
+  const compact = toolPayload["slotBadBinsCompact"] as SlotBadBinsCompactEntry[] | undefined;
+  const rank = toolPayload["lotYieldRankByTestEnd"] as LotRankEntry[] | undefined;
+
+  const found: DetectedPattern[] = [];
+  if (rank?.length) {
+    const t = detectYieldDeclineTrend(rank); if (t) found.push(t);
+    const s = detectPersistentBadSlot(rank); if (s) found.push(s);
+  }
+  if (compact?.length) {
+    const d = detectDominantBin(compact); if (d) found.push(d);
+    const tp = detectTemperatureSensitivity(compact); if (tp) found.push(tp);
+    const cs = detectCardChangeBinShift(compact); if (cs) found.push(cs);
+  }
+  if (found.length === 0) return null;
+
+  const lines = found.map((p) => {
+    const icon = p.severity === "warning" ? "⚠️" : "💡";
+    const chartHint = p.suggestChart ? "（可生成趋势图）" : "";
+    return `> ${icon} **${p.title}**${chartHint}：${p.detail}`;
+  });
+  return `---\n\n### 🔍 数据规律 / 风险识别\n\n${lines.join("\n\n")}`;
+}
+
+/** 在基础输出后追加规律识别段（base 为 null 时直接返回 null）。 */
+function withPatterns(
+  base: string | null,
+  toolPayload: Record<string, unknown>
+): string | null {
+  if (!base) return base;
+  const patterns = detectAndFormatDataPatterns(toolPayload);
+  return patterns ? `${base}\n\n${patterns}` : base;
+}
+
 export const DETERMINISTIC_TABLES_HEADER =
   "以下**仅实测数据表**（服务端生成），数字与表一致；**勿在表内或表尾加「结论/解读/建议」列或长段文字**。";
 
@@ -975,7 +1146,8 @@ export const BRIEF_COMMENTARY_SYSTEM =
   "1. **Wafer Test**：pass1/3/5 各层、INTERRUPT/续测、tester 稳定性、工艺 vs 机台因素；禁止写常温/高温/低温\n" +
   "2. **Probe Card**：CARDID、清卡/针压/overdrive、中途换卡与污染、bin 模式指向测试项还是接触\n" +
   "3. **DUT 维护**：针尖磨损/氧化、单 DUT vs 邻域 vs 全卡贬损、align/清针/换卡；无依据时建议补查 delta_diff 或 INF DUT map\n" +
-  "禁止编造表中未出现的现象；禁止输出第 4 条或更多建议。";
+  "禁止编造表中未出现的现象；禁止输出第 4 条或更多建议。\n\n" +
+  "如数据中存在可视化价值的规律（如良率趋势折线、BIN 占比集中度），可调用 generate_chart 生成一张图（折线图或柱状图）；图表数值须直接来自上方实测表；无明显规律时勿强求画图。";
 
 /** 从 JB 工具 JSON 提取工程上下文，供解读/建议引用（非数字）。 */
 export function buildEngineeringContextFromPayload(
