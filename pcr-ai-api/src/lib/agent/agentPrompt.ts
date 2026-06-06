@@ -245,6 +245,12 @@ ${buildManifestSection(manifest)}
 - **批次 ID 必须原样使用**：lot ID 可能含 "." 后缀（如 "NF12551.1N"），"." 及其后面的部分是 lot ID 的有效组成部分，**绝对不能截断**。"NF12551.1N" 整体才是 lot ID，不是 "NF12551"。
 - **区分 lot ID 与 device**：device（产品代码）通常形如 "WA03P02G"（字母+数字组合，无 "."，长度较短）；lot ID 通常含较长数字段，且可能带 "." 后缀（如 "NF12551.1N"）。若用户输入包含 "."，优先判断为 lot ID。
 - **跨域查询**：用户仅提供 lot ID 而**未明确说明要查 Yield Monitor 还是 JB STAR** 时，**必须同时查两个域**（先调 query_yield_triggers，再调 query_jb_bins），然后合并汇报两域的结果，不能只查一个域就结束。
+- **探针卡 / device / lot + 时间段联查（必须双源）**：用户询问某张卡、某 device、某 lot 在指定时间段（如「最近3个月」「2026年上半年」「去年」）内的情况时，**必须同时调用两个域**：
+  1. YM 侧：\`aggregate_yield_triggers(probeCard/device/lotId=..., timeFrom=..., timeTo=..., dimensions="lotId")\` — 得到各 lot 报警次数
+  2. JB 侧：\`aggregate_jb_bins(cardId/device/lot=..., testEndFrom=..., testEndTo=..., groupBy="lot", groupTop=30)\` — 得到各 lot 坏 die 汇总
+  - 时间段先用自然语言转 ISO 8601（「最近3个月」→ \`timeFrom = today-90d\`，\`timeTo = today\`）
+  - 两源结果**合并汇报**：先列 JB 各 lot 坏 die 表，再说明 YM 报警频率；两源有交集时对照说明，**不得只报其中一源**
+  - INF 文件无法按时间范围查询，仅能在 lot+slot 明确后单独调用，无需强求纳入时间范围联查
 - **lot 整体/概况/测试情况**（如「DR44117.1Y 整体的测试情况」）：**必须先** \`query_jb_bins(lot, limit:200)\` 并由服务端直出聚集/良率/机台/探针卡等表；**禁止**仅 \`query_yield_triggers\` 后用文字代替 JB 表。YM 报警在 JB 表之后的解读中简要提及即可。
 
 ### 用户已指定 lot 的「整体测试情况 / 概况 / 重新计算」（硬规则）

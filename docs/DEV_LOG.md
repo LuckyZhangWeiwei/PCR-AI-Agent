@@ -2,6 +2,15 @@
 
 ---
 
+## 2026-06-06 — Agent 多源时间段联查规则
+
+**完成内容：**
+- `agentPrompt.ts`：新增「探针卡 / device / lot + 时间段联查（必须双源）」规则：用户询问某张卡/某 device 在某时间段内的情况时，必须同时调 `aggregate_yield_triggers`（YM 侧）和 `aggregate_jb_bins`（JB 侧），合并汇报；明确 INF 文件不支持时间范围查询，无需强求纳入。
+
+**测试：** typecheck 通过
+
+---
+
 ## 2026-06-06 — Agent 主动规律/风险识别模块
 
 **完成内容：**
