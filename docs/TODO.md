@@ -23,6 +23,7 @@
 
 ## 已完成
 
+- ✅ agentPrompt 规划规则收紧：识别 device/lot/cardId 后必须立即调工具；"规划其次"仅限跨多实体对比 — 2026-06-06 完成
 - ✅ `BRIEF_COMMENTARY_SYSTEM` 空解读根本原因修复：移除 `generate_chart` 工具提示（无 schema 时推理模型输出被 filter 剥离），加无工具约束 — 2026-06-06 完成
 - ✅ `per_slot_bin_ranking` 启用 LLM 解读：从 `jbReplySkipsCommentaryLlm` 跳过名单移出 — 2026-06-06 完成
 - ✅ 确定性表输出 UI 修复：移除 `DETERMINISTIC_TABLES_HEADER` 用户侧泄漏；空分析结论 emit fallback — 2026-06-06 完成

@@ -2,6 +2,16 @@
 
 ---
 
+## 2026-06-06 — agentPrompt 规划规则收紧 + 工具调用硬规则
+
+**完成内容：**
+- `agentPrompt.ts`：决策优先级 § 上方加全局硬规则："识别到 device/lot/cardId 后必须立即调用工具，禁止输出计划性文字后停下来等待"。
+- `agentPrompt.ts`："规划其次" 规则收紧，明确只触发"跨多个不同 device/lot/cardId 的对比"场景；显式标注 device+bin/良率/维修建议不触发（1 次工具调用，非 3 步操作）。
+
+**测试：** typecheck 通过
+
+---
+
 ## 2026-06-06 — BRIEF_COMMENTARY_SYSTEM 修复空解读根本原因
 
 **完成内容：**
