@@ -2,10 +2,11 @@
 
 ---
 
-## 2026-06-06 — Agent 探针卡测试概况模式（card_test_overview）
+## 2026-06-06 — Agent 探针卡 DUT 定位模式（card_dut_question）+ 探针卡测试概况模式（card_test_overview）
 
 **完成内容：**
 - `agentJbDeterministicReply.ts`：新增 `JbReplyMode` 值 `"card_test_overview"`，处理「8036-06 的测试情况」类探针卡概况问题（原先被 `lot_overview` 误截，输出错误 lot 的 cluster alerts）。
+- `agentJbDeterministicReply.ts`：新增 `isCardDutQuestion()`，检测卡号 + DUT/触点类关键词（「哪个dut有问题/dut异常/哪个触点」等），映射到新模式 `"card_dut_question"`；`buildCardDutQuestionMarkdown` 输出该卡 BIN 级坏 die 汇总 + 各片坏 die 排行（前 5）+ DUT 级定位引导文字（指向 `inf_draw_dut_bin_map` 而非不存在的 inf_site_stats）；跳过 LLM 解读（防止 LLM 继续调工具或建议不存在的工具）。在 `detectJbReplyMode` 中排在 `card_test_overview` 之前。
 - `agentJbDeterministicReply.ts`：新增 `isCardTestOverviewQuestion()`（已导出），检测用户文本含 `\b\d{4}-\d{2,3}\b` 卡号格式 + 「测试情况/的情况/整体情况/使用情况」等关键词；在 `detectJbReplyMode` 中优先于 `isLotOverviewQuestion`，防止「8036-06 的测试情况」被 `测试情况` 匹配为 lot_overview。
 - `agentJbDeterministicReply.ts`：新增私有 `extractCardIdFromUserText()`，从文本提取 `dddd-dd/ddd` 格式卡号。
 - `agentJbDeterministicReply.ts`：新增私有 `buildCardTestOverviewMarkdown()`，输出：① `yieldByPassIdMarkdown` 良率总览；② `cardByPassIdMarkdown` 各 pass 卡分配；③ 从 `slotBadBinsCompact` 过滤该卡 ID，输出该卡坏 die BIN 排行（最多 10 条）；④ 从 `lotYieldRankByTestEnd` 按 testEnd 降序输出近期 lot 记录（最多 10 条）。不跳过 LLM 解读（需要趋势分析）。

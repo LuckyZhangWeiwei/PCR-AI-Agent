@@ -39,6 +39,7 @@ export type JbReplyMode =
   | "lot_yield_ranking"
   | "per_slot_bin_ranking"
   | "card_test_overview"
+  | "card_dut_question"
   | "generic";
 
 /** 用户问在哪台机台/测试机测（JB testerId / YM hostname）。 */
@@ -110,6 +111,14 @@ export function isPerSlotBadBinRankingQuestion(text: string): boolean {
   const perSlice = /(每片|每一片|各片|逐片|每个.*wafer|每个.*waferId|每个.*slot)/i.test(t);
   if (!perSlice) return false;
   return /(坏\s*bin|坏die|坏\s*BIN|bad\s*bin)/i.test(t);
+}
+
+/** 用户询问某张探针卡中哪个 DUT 有问题（卡号 + DUT/site 类关键词）。 */
+export function isCardDutQuestion(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (!/\b\d{4}-\d{2,3}\b/.test(t)) return false;
+  return /(哪个.*dut|dut.*哪个|哪个.*site|site.*哪个|dut.*问题|dut.*坏|哪个.*触点|触点.*问题|dut.*失效|哪个.*不良|dut.*异常)/i.test(t);
 }
 
 /** 用户询问某张探针卡的测试概况（卡号格式 dddd-dd/ddd + 概况关键词）。 */
@@ -251,7 +260,8 @@ export function jbReplySkipsCommentaryLlm(mode: JbReplyMode): boolean {
     mode === "equipment" ||
     mode === "bin_card_attribution" ||
     mode === "lot_yield_ranking" ||
-    mode === "per_slot_bin_ranking"
+    mode === "per_slot_bin_ranking" ||
+    mode === "card_dut_question"
     // "card_yield_compare" 不跳过：LLM 需要推断「哪张卡更差」
   );
 }
@@ -283,6 +293,7 @@ export function detectJbReplyMode(userMessage: string): JbReplyMode {
   if (isLotYieldRankingQuestion(userMessage)) return "lot_yield_ranking";
   if (isPerSlotBadBinRankingQuestion(userMessage)) return "per_slot_bin_ranking";
   if (isSlotPassYieldQuestion(userMessage)) return "slot_pass_yield";
+  if (isCardDutQuestion(userMessage)) return "card_dut_question";
   if (isCardTestOverviewQuestion(userMessage)) return "card_test_overview";
   if (isLotOverviewQuestion(userMessage)) return "lot_overview";
   return "generic";
@@ -515,6 +526,69 @@ function buildBinCardAttributionMarkdown(
   return `**BIN${bin} 坏 die 所属探针卡${lotTag}**\n\n${rows.join("\n")}`;
 }
 
+/** 探针卡 DUT 定位：该卡坏 die 汇总 + 最差片排行 + 引导用户继续问 DUT 晶圆图。 */
+function buildCardDutQuestionMarkdown(
+  toolPayload: Record<string, unknown>,
+  cardId: string
+): string | null {
+  const compact = toolPayload["slotBadBinsCompact"] as SlotBadBinsCompactEntry[] | undefined;
+  const lot = String(toolPayload["lot"] ?? "").trim() || undefined;
+  const parts: string[] = [];
+
+  if (compact?.length) {
+    const cardEntries = compact.filter((e) => e.cardId === cardId);
+    if (cardEntries.length) {
+      // 1. 该卡 BIN 级坏 die 汇总
+      const cardSummary = buildCardBadDieSummaryMarkdown(cardEntries, lot);
+      if (cardSummary) parts.push(cardSummary);
+
+      // 2. 该卡各片坏 die 合计排行（找最差片，供用户继续提问）
+      const bySlot = new Map<string, { slot: number; passId: number; total: number }>();
+      for (const { slot, passId, badBins } of cardEntries) {
+        const key = `${slot}:${passId}`;
+        if (!bySlot.has(key)) bySlot.set(key, { slot, passId, total: 0 });
+        bySlot.get(key)!.total += badBins.reduce((s, b) => s + b.dieCount, 0);
+      }
+      const worstSlots = [...bySlot.values()]
+        .filter((e) => e.total > 0)
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 5);
+      if (worstSlots.length) {
+        const lotTag = lot ? `（lot ${lot}）` : "";
+        const rows = [
+          "| waferId | 测试层 | 总坏 die 颗数 |",
+          "|---|---|---|",
+          ...worstSlots.map((e) => `| waferId ${e.slot} | pass${e.passId} | ${e.total} |`),
+        ];
+        parts.push(`**探针卡 ${cardId} 各片坏 die 排行${lotTag}（前 5）**\n\n${rows.join("\n")}`);
+      }
+
+      // 3. DUT 级定位引导
+      const worst = worstSlots[0];
+      if (worst) {
+        parts.push(
+          `> **DUT 级定位**：以上为 BIN 级汇总，无法直接指出具体触点。` +
+          `要确认哪个 DUT 有问题，请继续提问：\n` +
+          `> 「画出 waferId ${worst.slot} 的 DUT 坏 bin 图」\n` +
+          `> 系统将调用 INF DUT×BIN 晶圆图（inf_draw_dut_bin_map），直观显示各触点坏 die 颜色。`
+        );
+      } else {
+        parts.push(
+          `> **DUT 级定位**：以上为 BIN 级汇总。要确认哪个 DUT 有问题，请提问：「画出某片 wafer 的 DUT 坏 bin 图」。`
+        );
+      }
+      return parts.join("\n\n");
+    }
+  }
+
+  // 无 slotBadBinsCompact 数据时：直接给出引导
+  return (
+    `> **DUT 级定位**：当前 session 未包含探针卡 ${cardId} 的逐片 BIN 数据。` +
+    `请先查询该卡对应的 lot（如 \`query_jb_bins(cardId="${cardId}")\`），` +
+    `再提问：「画出某片 wafer 的 DUT 坏 bin 图」。`
+  );
+}
+
 /** 探针卡测试概况：良率表 + 卡分配 + 该卡坏 die 排行 + 近期 lot 记录。 */
 function buildCardTestOverviewMarkdown(
   toolPayload: Record<string, unknown>,
@@ -615,6 +689,14 @@ export function buildDeterministicJbTables(
   if (mode === "per_slot_bin_ranking") {
     const md = buildPerSlotBadBinRankingMarkdown(toolPayload, userMessage);
     if (md) return md;
+    return null;
+  }
+
+  if (mode === "card_dut_question") {
+    const cardId = extractCardIdFromUserText(userMessage);
+    if (cardId) {
+      return buildCardDutQuestionMarkdown(toolPayload, cardId);
+    }
     return null;
   }
 
