@@ -251,7 +251,7 @@ export function isSlotPassYieldQuestion(text: string): boolean {
   return false;
 }
 
-/** 服务端表已覆盖用户问题时，不再调 LLM 解读（避免 120s 超时）。lot_overview 需要表+简短解读，不在此列。 */
+/** 服务端表已覆盖用户问题时，不再调 LLM 解读（避免超时）。lot_overview / per_slot_bin_ranking 需要跨片规律分析，不在此列。 */
 export function jbReplySkipsCommentaryLlm(mode: JbReplyMode): boolean {
   return (
     mode === "bad_bin_ranking" ||
@@ -260,8 +260,8 @@ export function jbReplySkipsCommentaryLlm(mode: JbReplyMode): boolean {
     mode === "equipment" ||
     mode === "bin_card_attribution" ||
     mode === "lot_yield_ranking" ||
-    mode === "per_slot_bin_ranking" ||
     mode === "card_dut_question"
+    // "per_slot_bin_ranking" 已移出：50 行跨片数据 LLM 最有价值（BIN 规律/异常片/pass 对比）
     // "card_yield_compare" 不跳过：LLM 需要推断「哪张卡更差」
   );
 }

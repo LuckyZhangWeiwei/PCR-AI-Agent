@@ -23,6 +23,7 @@
 
 ## 已完成
 
+- ✅ `per_slot_bin_ranking` 启用 LLM 解读：从 `jbReplySkipsCommentaryLlm` 跳过名单移出 — 2026-06-06 完成
 - ✅ 确定性表输出 UI 修复：移除 `DETERMINISTIC_TABLES_HEADER` 用户侧泄漏；空分析结论 emit fallback — 2026-06-06 完成
 - ✅ Agent generic/双源总结轮结构化：`getSummaryContext` 推断 `jb/dual_source/generic`，双源注入分节 nudge（YM 侧/JB 侧/综合结论），generic 注入三节 nudge（数据摘要/主要发现/建议），`summaryUserNudge` 动态化 — 2026-06-06 完成
 - ✅ Agent subAgentModel 支持：历史压缩 + 确定性表解读改用轻量子模型，Settings 新增配置项，工具选择 / 最终回答仍用主模型 — 2026-06-06 完成

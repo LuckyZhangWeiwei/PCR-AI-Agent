@@ -2,6 +2,15 @@
 
 ---
 
+## 2026-06-06 — per_slot_bin_ranking 启用 LLM 解读
+
+**完成内容：**
+- `agentJbDeterministicReply.ts`：`per_slot_bin_ranking` 从 `jbReplySkipsCommentaryLlm` 跳过名单移出，改为调 LLM 解读（跨 50 行逐片 Top5 BIN 数据最需要规律总结与异常片识别）。
+
+**测试：** typecheck 通过，未重跑全量测试
+
+---
+
 ## 2026-06-06 — 确定性表输出：指令泄漏 + 空分析结论修复
 
 **完成内容：**
