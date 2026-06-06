@@ -23,6 +23,7 @@
 
 ## 已完成
 
+- ✅ 确定性表输出 UI 修复：移除 `DETERMINISTIC_TABLES_HEADER` 用户侧泄漏；空分析结论 emit fallback — 2026-06-06 完成
 - ✅ Agent generic/双源总结轮结构化：`getSummaryContext` 推断 `jb/dual_source/generic`，双源注入分节 nudge（YM 侧/JB 侧/综合结论），generic 注入三节 nudge（数据摘要/主要发现/建议），`summaryUserNudge` 动态化 — 2026-06-06 完成
 - ✅ Agent subAgentModel 支持：历史压缩 + 确定性表解读改用轻量子模型，Settings 新增配置项，工具选择 / 最终回答仍用主模型 — 2026-06-06 完成
 - ✅ Agent 多源时间段联查规则：agentPrompt 新增卡号/device + 时间段必须同时查 YM+JB 的规则，明确 INF 文件限制 — 2026-06-06 完成

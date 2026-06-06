@@ -828,7 +828,7 @@ async function emitDeterministicJbTablesReply(
     options?.withCommentaryLlm ??
     !jbReplySkipsCommentaryLlm(mode);
 
-  const tablesBlock = `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${DETERMINISTIC_TABLES_HEADER}\n\n${tables}`;
+  const tablesBlock = `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${tables}`;
   emit({ type: "status", message: "正在输出服务端预计算表…" });
   emitTextInChunks(tablesBlock, emit);
 
@@ -885,13 +885,21 @@ async function emitDeterministicJbTablesReply(
   commFilter.finalize();
   const commentary = commFilter.cleanText.trim();
 
-  // 标题已 SSE 流出，history 必须包含，否则下一轮 LLM 上下文与用户所见不一致
-  let full = tablesBlock + `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n`;
+  // 标题已 SSE 流出；若解读为空则 emit fallback，保持用户所见与 history 一致
+  let commentaryOrFallback: string;
   if (commentary) {
-    full += commentary;
-  } else if (streamError) {
-    full += `*（解读与专业建议生成失败：${streamError.slice(0, 120)}；请以实测数据表为准。）*`;
+    commentaryOrFallback = commentary;
+  } else {
+    commentaryOrFallback = streamError
+      ? `*（解读生成失败：${streamError.slice(0, 120)}；以上实测数据表为准。）*`
+      : `*（模型未返回解读；以上实测数据表为准。）*`;
+    emit({ type: "text", delta: commentaryOrFallback });
   }
+
+  const full =
+    tablesBlock +
+    `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n` +
+    commentaryOrFallback;
 
   appendMessages(sessionId, { role: "assistant", content: full });
   emit({ type: "done" });

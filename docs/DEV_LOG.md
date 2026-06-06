@@ -2,6 +2,16 @@
 
 ---
 
+## 2026-06-06 — 确定性表输出：指令泄漏 + 空分析结论修复
+
+**完成内容：**
+- `agentLoop.ts`：`tryRunDeterministicJbSummary` 的 `tablesBlock` 移除 `DETERMINISTIC_TABLES_HEADER`（该文字是给 LLM 的约束指令，不应出现在用户可见的 SSE 输出中）。
+- `agentLoop.ts`：解读 LLM 调用后，若 `commentary` 为空（模型返回空或被 filter 吞掉）或 `streamError` 有值，通过 SSE `{ type: "text" }` emit fallback 提示（之前只写入 history，用户看到的是空白"分析结论"段落）。
+
+**测试：** 255 通过，1 失败（Oracle DPI-1047 预存故障，与本次无关）
+
+---
+
 ## 2026-06-06 — JB STAR 查询区 more 分隔线美化
 
 **完成内容：**
