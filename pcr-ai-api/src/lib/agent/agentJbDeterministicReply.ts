@@ -841,6 +841,17 @@ export function buildDeterministicJbTables(
     return buildLotOverviewTablesMarkdown(toolPayload);
   }
 
+  if (mode === "generic") {
+    // 问题中含明确卡号（dddd-dd/ddd）或 DUT/触点关键词时，
+    // 缓存的 lotOverview 几乎必然是错误 lot 的数据——直接返回 null，
+    // 让 LLM 在总结轮从原始工具 JSON 作答（总结轮禁止再调工具）。
+    const asksSpecificCard = /\b\d{4}-\d{2,3}\b/.test(userMessage);
+    const asksDut = /(dut|触点)/i.test(userMessage);
+    if (asksSpecificCard || asksDut) {
+      return null;
+    }
+  }
+
   if (mode === "slot_pass_yield" || mode === "generic") {
     const overview =
       digest.lotOverview?.trim() ||

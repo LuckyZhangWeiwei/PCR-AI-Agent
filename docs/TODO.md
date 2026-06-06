@@ -23,6 +23,7 @@
 
 ## 已完成
 
+- ✅ Agent JB generic 兜底结构性修复：含卡号/DUT 关键词时返回 null 而非错误 lot overview — 2026-06-06 完成
 - ✅ Agent JB 探针卡 DUT 定位模式（card_dut_question）：「8036-06 中哪个dut有问题」直出该卡坏 die 汇总 + 各片排行 + DUT 晶圆图引导，跳过 LLM 解读 — 2026-06-06 完成
 - ✅ Agent JB 探针卡测试概况模式（card_test_overview）：「8036-06 的测试情况」由错误 lot cluster alerts 改为 yieldByPassId + 卡分配 + 该卡坏 die 排行 + 近期 lot 记录 — 2026-06-06 完成
 - ✅ Agent JB/Wafermap 四项 Bug 修复：lot 概况探针卡缺失、追问 probecard 重复输出总览表、晶圆图 BIN highlight "7号bin"格式失效、单 passId wafermap 不展开中断/复测段 — 2026-06-04 完成
