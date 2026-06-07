@@ -30,7 +30,6 @@ import {
   buildDeterministicJbTables,
   buildEngineeringContextFromPayload,
   detectJbReplyMode,
-  DETERMINISTIC_TABLES_HEADER,
   DETERMINISTIC_DATA_SECTION_TITLE,
   DETERMINISTIC_COMMENTARY_SECTION_TITLE,
   isLotOverviewQuestion,

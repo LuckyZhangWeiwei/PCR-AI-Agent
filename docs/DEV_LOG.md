@@ -2,6 +2,16 @@
 
 ---
 
+## 2026-06-07 — 回答质量修复：unused import 清除 + 专业建议长度指引
+
+**完成内容：**
+- `agentLoop.ts`：移除 `DETERMINISTIC_TABLES_HEADER` 的 unused import（泄漏 fix 早已在代码侧完成，此行 import 为遗留死代码，清除避免混淆）
+- `agentPrompt.ts` `SEC_OUTPUT_FORMAT`：新增长度指引——`### 专业建议` ≤ 3 条、每条 ≤ 2 句、直接写操作步骤不复述数据；坏 BIN 列表 top 8 即可，超出部分一行概括
+
+**测试：** 255 通过，1 失败（Oracle DPI-1047 预存故障，与本次无关）
+
+---
+
 ## 2026-06-06 — agentPrompt 可维护性重构（22 section consts）
 
 **完成内容：**
