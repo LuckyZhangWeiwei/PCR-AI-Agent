@@ -45,6 +45,10 @@ import {
   formatClusteredBadBinAlertsMarkdown,
   type ClusteredBadBinAlert,
 } from "./agentJbBadBinCluster.js";
+import {
+  CARD_DEGRADATION_SIGNAL_GUIDE,
+  type CardDegradationSignal,
+} from "./agentCrossdomainInsights.js";
 
 export { jbYieldCoreFields } from "./agentJbYieldCore.js";
 
@@ -512,7 +516,10 @@ const LOT_QUERY_FULL_ROWS_GUIDE =
 
 export function wrapJbQueryResultForAgent(
   rows: Record<string, unknown>[],
-  meta?: { lotScopedFullRows?: boolean }
+  meta?: {
+    lotScopedFullRows?: boolean;
+    cardDegradationSignal?: CardDegradationSignal | null;
+  }
 ): Record<string, unknown> {
   const slotSet = new Set<number>();
   const lotSlotPairs = new Set<string>();
@@ -601,6 +608,12 @@ export function wrapJbQueryResultForAgent(
     _slotsByPassGuide: SLOTS_BY_PASS_GUIDE,
     _badBinSlotTrendsGuide: BAD_BIN_SLOT_TRENDS_GUIDE,
     _clusteredBadBinAlertsGuide: CLUSTERED_BAD_BIN_ALERTS_GUIDE,
+    ...(meta?.cardDegradationSignal
+      ? {
+          _cardDegradationSignalGuide: CARD_DEGRADATION_SIGNAL_GUIDE,
+          cardDegradationSignal: meta.cardDegradationSignal,
+        }
+      : {}),
     ...(meta?.lotScopedFullRows
       ? { _lotQueryGuide: LOT_QUERY_FULL_ROWS_GUIDE, lotQueryFullRows: true }
       : {}),
@@ -796,6 +809,7 @@ export function serializeJbQueryResultForAgent(
   delete withoutRows["recentLotsByTestEnd"];
   delete withoutRows["lotYieldRankByTestEnd"];
   delete withoutRows["binTotalsByLot"];
+  delete withoutRows["cardDegradationSignal"];
   delete withoutRows["cardChangesBySlotPass"];
   for (const k of Object.keys(withoutRows)) {
     if (k.startsWith("_") && k.endsWith("Guide")) delete withoutRows[k];

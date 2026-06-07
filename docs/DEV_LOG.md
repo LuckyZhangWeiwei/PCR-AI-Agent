@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-06-07 — 探针卡跨域退化信号（JB 良率 + YM 触发趋势关联）
+
+**完成内容：**
+- `agentCrossdomainInsights.ts`（新建）：`buildCardDegradationSignal(jbRows, ymRows, cardId)` — 算法关联同一卡多 lot 的 YM 触发频次趋势与 JB 最差片良率趋势；早/晚段均值比较，输出 `signalStrength`（strong/moderate/none）+ `evidence`（10 lot 时间倒序）+ 预渲染 `summaryMarkdown`；`CARD_DEGRADATION_SIGNAL_GUIDE` 约束 LLM 引用具体数字、禁止因果推断
+- `agentToolHandlers.ts`：`fetchYmRowsForCard` helper（Dummy + Oracle 双路径）；`toolQueryJbBins` 在有 `cardId` 无 `lot` 时并发拉 YM 并计算信号，结果传入 `wrapJbQueryResultForAgent`
+- `agentJbBinFormat.ts`：`wrapJbQueryResultForAgent` 接受 `meta.cardDegradationSignal`，输出 `_cardDegradationSignalGuide` + `cardDegradationSignal`；slim 序列化路径同步删除该字段
+- `agentPrompt.ts`：新增 `SEC_CROSS_DOMAIN_INSIGHTS` 节（位于 SEC_BIN_COMPARE 与 SEC_BIN_BY_SLOT 之间），按 signalStrength 分级给出回复规则与反幻觉约束
+- `test/agentCrossdomainInsights.test.ts`（新建）：10 个测试覆盖 null 返回条件、strong/none 信号检测、jbOnlyLots 计数、evidence 倒序、markdown 结构
+
+**测试：** 264 通过，1 失败（Oracle DPI-1047 预存故障，与本次无关）
+
+---
+
 ## 2026-06-07 — binTotalsByLot 泛化替换 bin10Vs66ByLot
 
 **完成内容：**

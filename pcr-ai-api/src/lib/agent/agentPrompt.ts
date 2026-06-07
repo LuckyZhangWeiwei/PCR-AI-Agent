@@ -24,6 +24,7 @@
 // ║  SEC_WORST_CARD        哪张卡最差/报警最多/坏 die 最多                    ║
 // ║  SEC_CARD_LOTS         某张卡最近测试的 lot                               ║
 // ║  SEC_BIN_COMPARE       按 lot 对比两个 BIN                               ║
+// ║  SEC_CROSS_DOMAIN_INSIGHTS  探针卡退化信号（JB良率+YM触发跨域关联）      ║
 // ║  SEC_BIN_BY_SLOT       按 slot 分析某一 BIN                              ║
 // ║  SEC_ENG_TIPS          工程经验参考（诊断辅助）                           ║
 // ║  SEC_OUTPUT_FORMAT     输出版式（数据 vs 结论分栏）                       ║
@@ -740,6 +741,34 @@ const SEC_BIN_COMPARE = `\
 - 结论须 **逐 lot 列表**（lot、binA 颗数、binB 颗数、谁多），并给汇总：多少 lot 上 binA>binB、多少 lot 上 binB>binA、多少 lot 相等
 - **禁止**用 \`aggregate_jb_bins\` 的 top 表代替：该表每行是 **(lot, 单个 bin)** 的排名，**不能**横向对比同一 lot 的两个 bin 总量`;
 
+// ─── SEC_CROSS_DOMAIN_INSIGHTS ─────────────────────────────────────────────
+// 探针卡退化信号（JB 良率趋势 + YM 触发趋势跨域关联）
+
+const SEC_CROSS_DOMAIN_INSIGHTS = `\
+## 探针卡退化风险自动检测（cardDegradationSignal）
+
+**触发条件**：\`query_jb_bins(cardId)\` 有多 lot 数据时，工具结果自动包含 \`cardDegradationSignal\` 字段。
+
+字段含义：
+- \`ymTrend\`：该探针卡 YM Monitor 触发频次的跨 lot 趋势（rising/stable/falling/insufficient_data）
+- \`jbYieldTrend\`：JB STAR 最差片良率的跨 lot 趋势（falling/stable/rising/insufficient_data）
+- \`signalStrength\`：综合信号强度
+
+### 回复规则（反幻觉约束）
+
+| signalStrength | 要求 |
+|---|---|
+| **strong** | 必须首段写明「探针卡 X 检出退化信号」，并引用 evidence 中的 lot 数、良率变化幅度、YM 触发次数变化；建议提示工程师进一步确认 |
+| **moderate** | 须提示关注，说明哪一项指标有变化趋势，另一项稳定 |
+| **none** | 不得做退化结论，可一句话说明「算法未检出明显退化信号」 |
+| **insufficient_data** | 说明数据不足以判断（lot 数不足或 YM 覆盖率低） |
+
+**禁止因果推断**：所有结论限于「两指标变化方向一致，建议关注」，禁止写「因为 YM 触发增多所以良率降低」。
+
+**引用 summaryMarkdown**：该字段已含预渲染表格（lot、测试结束日期、JB 最差片良率%、YM 触发次数），可直接引用，无需重新排版。
+
+**需进一步确认时**：可再调 \`query_yield_triggers(probeCard: "<cardId>", timeFrom, timeTo)\` 获取完整 YM 历史，或调 \`query_lot_dut_bin_agg\` 确认坏 bin 在哪个 DUT 集中。`;
+
 // ─── SEC_BIN_BY_SLOT ───────────────────────────────────────────────────────
 // 按 slot 分析某一 BIN 的逐片趋势（badBinSlotTrends，禁用 slotBadBinsCompact）
 
@@ -936,6 +965,7 @@ export function buildSystemPrompt(manifest?: DataManifest): string {
     SEC_WORST_CARD,
     SEC_CARD_LOTS,
     SEC_BIN_COMPARE,
+    SEC_CROSS_DOMAIN_INSIGHTS,
     SEC_BIN_BY_SLOT,
     SEC_ENG_TIPS,
     SEC_OUTPUT_FORMAT,

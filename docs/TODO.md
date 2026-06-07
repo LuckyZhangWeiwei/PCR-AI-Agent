@@ -7,6 +7,7 @@
 | 1 | 服务器部署新版本 | `npm run build + pm2:reload`（API）；`npm run pack:dist` → scp + tar xf（前端） |
 | 2 | AI Agent 生产部署验证 | 确认 `AGENT_API_KEY`、`AGENT_STREAM_TIMEOUT_MS`（默认 120s）、PM2 重启后聊天可用；验证 query_lot_dut_bin_agg 工具正常调用 |
 | 3 | YM 确定性摘要路径 | 类似 JB 的 tryRunDeterministicJbSummary，服务端直出表，LLM 仅写解读 |
+| 4 | 跨域退化信号：阈值调优 + 生产验证 | agentCrossdomainInsights.ts 早/晚段阈值（±2pp / ×1.4）需用真实卡历史数据验证；coverageRatio 计算依赖 YM LOTID 与 JB LOT 格式一致 |
 
 ## 待办
 

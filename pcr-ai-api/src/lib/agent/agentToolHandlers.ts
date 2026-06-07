@@ -60,6 +60,10 @@ import {
   wrapJbQueryResultForAgent,
 } from "./agentJbBinFormat.js";
 import {
+  buildCardDegradationSignal,
+  type CardDegradationSignal,
+} from "./agentCrossdomainInsights.js";
+import {
   clampToolResultMaxChars,
   DEFAULT_TOOL_RESULT_MAX_CHARS,
 } from "./agentConfig.js";
@@ -227,6 +231,31 @@ async function toolAggregateYieldTriggers(
   return truncateResult({ totalRowsMatching: total, groups }, maxChars);
 }
 
+/** 获取指定探针卡的 YM 原始行（仅用于跨域关联，不需要 enrich）。失败返回空数组。 */
+async function fetchYmRowsForCard(
+  cardId: string
+): Promise<Record<string, unknown>[]> {
+  const params = { probeCard: cardId };
+  const parsed = parseYieldMonitorTriggerV3Query(params);
+  if (!parsed.ok) return [];
+  const limit = 200;
+  if (yieldMonitorTriggersUseDummy()) {
+    return filterYieldMonitorDummyRowsV3(
+      parsed.applied,
+      limit
+    ) as Record<string, unknown>[];
+  }
+  const sql = buildYieldMonitorTriggersV3Sql(parsed.whereSql);
+  return withProbeWebConnection(async (conn) => {
+    const result = await conn.execute(
+      sql,
+      { ...parsed.binds, lim: limit },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+    return (result.rows ?? []) as Record<string, unknown>[];
+  }).catch(() => []);
+}
+
 /** 指定 lot 时须取全量行，否则 TESTEND DESC + limit 会丢掉较早的 sort1（passId=1）行。 */
 function isJbLotScopedAgentQuery(args: Record<string, unknown>): boolean {
   return Boolean(String(args["lot"] ?? "").trim());
@@ -263,13 +292,33 @@ async function toolQueryJbBins(
   const parsed = parseInfcontrolLayerBinsV3Query(queryInput);
   if (!parsed.ok) return `查询参数错误: ${parsed.error}`;
 
+  // 跨域退化信号：仅在 cardId 存在且无 lot 过滤时（多 lot 趋势分析才有意义）
+  const cardIdForInsight =
+    !lotScoped && typeof args["cardId"] === "string"
+      ? args["cardId"].trim()
+      : "";
+
+  async function computeCardSignal(
+    enrichedRows: Record<string, unknown>[]
+  ): Promise<CardDegradationSignal | null> {
+    if (!cardIdForInsight || enrichedRows.length === 0) return null;
+    try {
+      const ymRows = await fetchYmRowsForCard(cardIdForInsight);
+      return buildCardDegradationSignal(enrichedRows, ymRows, cardIdForInsight);
+    } catch {
+      return null;
+    }
+  }
+
   if (infcontrolLayerBinsUseDummy()) {
     const matching = filterInfcontrolLayerBinV3DummyRowsMatching(parsed.applied);
     const rows = (lotScoped ? matching : filterInfcontrolLayerBinV3DummyRows(parsed.applied, limit)).map(
       (r) => enrichJbRow(r as Record<string, unknown>)
     );
+    const cardDegradationSignal = await computeCardSignal(rows);
     const wrapped = wrapJbQueryResultForAgent(rows, {
       lotScopedFullRows: lotScoped,
+      cardDegradationSignal,
     });
     options?.onJbBinsWrapped?.(wrapped);
     return serializeJbQueryResultForAgent(wrapped, maxChars);
@@ -287,8 +336,10 @@ async function toolQueryJbBins(
     return (result.rows ?? []) as Record<string, unknown>[];
   });
   const enriched = rows.map(enrichJbRow);
+  const cardDegradationSignal = await computeCardSignal(enriched);
   const wrapped = wrapJbQueryResultForAgent(enriched, {
     lotScopedFullRows: lotScoped,
+    cardDegradationSignal,
   });
   options?.onJbBinsWrapped?.(wrapped);
   return serializeJbQueryResultForAgent(wrapped, maxChars);
