@@ -4,7 +4,6 @@ import { enrichInfcontrolLayerBinRowV2 } from "../src/lib/passBinSemantics.js";
 import { badDieFromJbRow } from "../src/lib/jbYieldCalc.js";
 import {
   buildTopBadBins,
-  buildBin10Vs66ByLot,
   buildCardByPassId,
   buildCardChangesBySlotPass,
   buildRecentLotsByTestEnd,
@@ -466,42 +465,6 @@ describe("agentJbBinFormat", () => {
     assert.deepEqual(out.topBadBins, buildTopBadBins(rows, 15));
   });
 
-  it("buildBin10Vs66ByLot sums per lot across slots", () => {
-    const rows = [
-      {
-        LOT: "TR13069.1F",
-        DEVICE: "WA01",
-        SLOT: 1,
-        bins: [
-          { n: 66, value: 3000, isGoodBin: false },
-          { n: 10, value: 100, isGoodBin: false },
-        ],
-      },
-      {
-        LOT: "TR13069.1F",
-        DEVICE: "WA01",
-        SLOT: 2,
-        bins: [
-          { n: 66, value: 2000, isGoodBin: false },
-          { n: 10, value: 4000, isGoodBin: false },
-        ],
-      },
-      {
-        LOT: "TR13073.1Y",
-        DEVICE: "WA01",
-        SLOT: 1,
-        bins: [{ n: 66, value: 5000, isGoodBin: false }],
-      },
-    ] as Record<string, unknown>[];
-    const out = buildBin10Vs66ByLot(rows);
-    const t1 = out.find((x) => x.lot === "TR13069.1F")!;
-    assert.equal(t1.bin10, 4100);
-    assert.equal(t1.bin66, 5000);
-    assert.equal(t1.bin10GtBin66, false);
-    const t2 = out.find((x) => x.lot === "TR13073.1Y")!;
-    assert.equal(t2.bin10, 0);
-    assert.equal(t2.bin66, 5000);
-  });
 
   it("wrapJbQueryResultForAgent includes lotYieldRankByTestEnd", () => {
     const out = wrapJbQueryResultForAgent([
@@ -536,7 +499,7 @@ describe("agentJbBinFormat", () => {
     assert.ok(Math.abs(rank[1]!.yieldPct - 80) < 0.1);
   });
 
-  it("wrapJbQueryResultForAgent includes bin10Vs66ByLot", () => {
+  it("wrapJbQueryResultForAgent includes binTotalsByLot", () => {
     const out = wrapJbQueryResultForAgent([
       {
         LOT: "L1",
@@ -548,9 +511,15 @@ describe("agentJbBinFormat", () => {
         ],
       },
     ] as Record<string, unknown>[]);
-    assert.ok(String(out._bin10Vs66ByLotGuide).includes("bin10Vs66ByLot"));
-    const cmp = out.bin10Vs66ByLot as Array<{ lot: string; bin10GtBin66: boolean }>;
-    assert.equal(cmp[0]!.bin10GtBin66, true);
+    assert.ok(String(out._binTotalsByLotGuide).includes("binTotalsByLot"));
+    const totals = out.binTotalsByLot as Array<{ lot: string; badBins: Array<{ bin: number; dieCount: number }> }>;
+    const l1 = totals[0]!;
+    assert.equal(l1.lot, "L1");
+    const bin10 = l1.badBins.find((b) => b.bin === 10)?.dieCount ?? 0;
+    const bin66 = l1.badBins.find((b) => b.bin === 66)?.dieCount ?? 0;
+    assert.equal(bin10, 50);
+    assert.equal(bin66, 10);
+    assert.ok(bin10 > bin66);
   });
 
   it("lot-scoped serialize keeps yield pivot not binBySlot when over limit", () => {

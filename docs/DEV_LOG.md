@@ -2,6 +2,18 @@
 
 ---
 
+## 2026-06-07 — binTotalsByLot 泛化替换 bin10Vs66ByLot
+
+**完成内容：**
+- `agentJbBinFormat.ts`：删除硬编码的 `buildBin10Vs66ByLot` 函数与 `LotBinPairCompareEntry` 类型；输出字段改为 `binTotalsByLot`（复用已有 `buildBinTotalsByLot`，每 lot 给出全部坏 bin 的 `{ bin, dieCount }` 数组），Guide 描述同步更新
+- `agentPrompt.ts` `SEC_BIN_COMPARE`：引导改为从 `binTotalsByLot[].badBins` 按 bin 编号查 dieCount；覆盖任意 bin 对，删除原「其它 bin 对须手算」的 workaround
+- `agentToolSchemas.ts`：`aggregate_jb_bins` description 禁用说明从「BIN10 vs BIN66」改为「任意两个 bin 的 by-lot 对比（用 binTotalsByLot）」
+- `test/agentJbBinFormat.test.ts`：删除 `buildBin10Vs66ByLot` 直接调用测试；包装器测试改为验证 `binTotalsByLot` 结构（BIN10=50 / BIN66=10 可正确读取）
+
+**测试：** 254 通过，1 失败（Oracle DPI-1047 预存故障，与本次无关）
+
+---
+
 ## 2026-06-07 — 警示/规律识别节 markdown 渲染修复
 
 **完成内容：**

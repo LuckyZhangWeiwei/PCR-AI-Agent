@@ -107,7 +107,7 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "aggregate_jb_bins",
       description:
-        "对 JB STAR 按维度聚合坏 bin die 数。**必填** lot/device/cardId/slot 之一作范围过滤，禁止无过滤调用（否则为全库数据）。用户已指定 lot 时必传 lot。单 lot 概况/坏 bin Top 排名：用 query_jb_bins(lot) 读 topBadBins，勿用本工具。禁止：最近 N lot（用 recentLotsByTestEnd）、BIN10 vs BIN66（用 bin10Vs66ByLot）。",
+        "对 JB STAR 按维度聚合坏 bin die 数。**必填** lot/device/cardId/slot 之一作范围过滤，禁止无过滤调用（否则为全库数据）。用户已指定 lot 时必传 lot。单 lot 概况/坏 bin Top 排名：用 query_jb_bins(lot) 读 topBadBins，勿用本工具。禁止：最近 N lot（用 recentLotsByTestEnd）、任意两个 bin 的 by-lot 对比（用 binTotalsByLot）。",
       parameters: {
         type: "object",
         properties: {

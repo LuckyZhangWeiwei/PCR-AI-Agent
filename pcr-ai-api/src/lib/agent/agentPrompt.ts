@@ -729,16 +729,16 @@ const SEC_CARD_LOTS = `\
 - **两侧都为空时**，才可以说"在 JB STAR 与 Yield Monitor 中均未找到该卡的记录，请确认卡号"；同时建议用 \`get_filter_values(domain:"jb", field:"cardId")\` 查可用卡号列表`;
 
 // ─── SEC_BIN_COMPARE ───────────────────────────────────────────────────────
-// 按 lot 对比两个 BIN（bin10Vs66ByLot 预计算字段）
+// 按 lot 对比任意两个 BIN（binTotalsByLot 预计算字段）
 
 const SEC_BIN_COMPARE = `\
-## 按 lot 对比两个 BIN（如「BIN10 是否多于 BIN66，by lot」）
+## 按 lot 对比任意两个 BIN（如「BIN10 是否多于 BIN66，by lot」）
 
 - **必须** \`query_jb_bins(cardId: "7747-01", limit: 200)\`（或已锁定 \`lot\` 时 \`query_jb_bins(lot, limit: 200)\`）
-- **直接读** **\`bin10Vs66ByLot\`**：每 lot 一行，字段 \`bin10\` / \`bin66\` / \`diff\`（bin10−bin66）/ \`bin10GtBin66\`
-- 结论须 **逐 lot 列表**（lot、BIN10 颗数、BIN66 颗数、谁多），并给汇总：多少 lot 上 BIN10>BIN66、多少 lot 上 BIN66>BIN10、多少 lot 相等
-- **禁止**用 \`aggregate_jb_bins\` 的 top 表代替：该表每行是 **(lot, 单个 bin)** 的排名，**不能**横向对比同一 lot 的 BIN10 与 BIN66 总量
-- 需要对比 **其它 bin 对**（非 10/66）：说明当前工具预计算 **bin10Vs66ByLot**；可扩展或从同一 \`query_jb_bins\` 的 \`rows\` / \`slotBadBinsCompact\` 按 lot 手算（同一 lot 跨 slot 相加）`;
+- **直接读** **\`binTotalsByLot\`**：每 lot 一行，\`badBins\` 数组含该 lot 跨 slot/pass 汇总的各坏 bin \`{ bin, dieCount }\`
+- 对比两个 bin：从 \`badBins\` 按 \`bin\` 编号查 \`dieCount\`，两者相减得 diff；该 bin 未出现视为 0
+- 结论须 **逐 lot 列表**（lot、binA 颗数、binB 颗数、谁多），并给汇总：多少 lot 上 binA>binB、多少 lot 上 binB>binA、多少 lot 相等
+- **禁止**用 \`aggregate_jb_bins\` 的 top 表代替：该表每行是 **(lot, 单个 bin)** 的排名，**不能**横向对比同一 lot 的两个 bin 总量`;
 
 // ─── SEC_BIN_BY_SLOT ───────────────────────────────────────────────────────
 // 按 slot 分析某一 BIN 的逐片趋势（badBinSlotTrends，禁用 slotBadBinsCompact）

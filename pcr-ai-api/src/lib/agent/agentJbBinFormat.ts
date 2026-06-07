@@ -111,15 +111,6 @@ export type RecentLotByTestEndEntry = {
   slotCount: number;
 };
 
-export type LotBinPairCompareEntry = {
-  lot: string;
-  device: string;
-  bin10: number;
-  bin66: number;
-  /** bin10 − bin66；正数表示 BIN10 更多 */
-  diff: number;
-  bin10GtBin66: boolean;
-};
 
 const BIN_SCHEMA_HINT =
   "每条: bin=BINDie编号(通常较小), dieCount=该BIN的die颗数(可很大); 禁止写成 BIN{dieCount} {bin}颗";
@@ -139,8 +130,8 @@ const RECENT_LOTS_GUIDE =
 const TESTER_BY_LOT_GUIDE =
   "testerByLot / testerIdMarkdown：JB STAR 机台=INFLAYERBINLIST.TESTERID（API testerId）。用户问「在哪台机台/测试机测」须读本表；与 Yield Monitor 的 HOSTNAME（API hostname）为同一机台不同列名。";
 
-const BIN10_VS66_BY_LOT_GUIDE =
-  "bin10Vs66ByLot：按 lot 汇总全部匹配行（跨 slot/pass 相加）的 BIN10 与 BIN66 dieCount 及 diff=bin10−bin66。问「by lot BIN10 是否多于 BIN66」时读此字段；禁止用 aggregate 表格里单列 BIN66 代表整 lot。";
+const BIN_TOTALS_BY_LOT_GUIDE =
+  "binTotalsByLot：按 lot 汇总全部匹配行（跨 slot/pass 相加）的各坏 bin dieCount，每 lot 一行，badBins=[{bin,dieCount}]。对比任意两个 bin（如 BIN10 vs BIN66）：从 badBins 按 bin 编号查 dieCount，相减得 diff，缺失视为 0；禁止用 aggregate 排名表做横向对比。";
 
 const LOT_YIELD_RANK_GUIDE = lotYieldRankFieldGuide();
 
@@ -438,20 +429,6 @@ export function buildBinTotalsByLot(
     }));
 }
 
-/** 按 lot 对比 BIN10 与 BIN66 总量（用户常问「by lot 谁多」）。 */
-export function buildBin10Vs66ByLot(
-  rows: Record<string, unknown>[]
-): LotBinPairCompareEntry[] {
-  const out: LotBinPairCompareEntry[] = [];
-  for (const { lot, device, badBins } of buildBinTotalsByLot(rows)) {
-    const bin10 = badBins.find((b) => b.bin === 10)?.dieCount ?? 0;
-    const bin66 = badBins.find((b) => b.bin === 66)?.dieCount ?? 0;
-    if (bin10 === 0 && bin66 === 0) continue;
-    const diff = bin10 - bin66;
-    out.push({ lot, device, bin10, bin66, diff, bin10GtBin66: diff > 0 });
-  }
-  return out.sort((a, b) => b.diff - a.diff);
-}
 
 export function normalizeBinsForAgent(bins: unknown): AgentJbBinEntry[] {
   if (!Array.isArray(bins)) return [];
@@ -562,7 +539,7 @@ export function wrapJbQueryResultForAgent(
   const cardByPassId = buildCardByPassId(rows);
   const recentLotsByTestEnd = buildRecentLotsByTestEnd(rows, 20);
   const testerByLot = buildTesterByLot(rows);
-  const bin10Vs66ByLot = buildBin10Vs66ByLot(rows);
+  const binTotalsByLot = buildBinTotalsByLot(rows);
   const distinctLotCount = new Set(
     rows
       .map((r) => String(r["LOT"] ?? r["lot"] ?? "").trim())
@@ -612,7 +589,7 @@ export function wrapJbQueryResultForAgent(
     _cardChangesBySlotPassGuide: CARD_CHANGES_BY_SLOT_PASS_GUIDE,
     _cardByPassIdGuide: CARD_BY_PASS_ID_GUIDE,
     _recentLotsGuide: RECENT_LOTS_GUIDE,
-    _bin10Vs66ByLotGuide: BIN10_VS66_BY_LOT_GUIDE,
+    _binTotalsByLotGuide: BIN_TOTALS_BY_LOT_GUIDE,
     _lotYieldRankGuide: LOT_YIELD_RANK_GUIDE,
     _topBadBinsGuide: TOP_BAD_BINS_GUIDE,
     _yieldByPassGuide: yieldByPassFieldGuide(),
@@ -640,7 +617,7 @@ export function wrapJbQueryResultForAgent(
       testerByLot.length > 0
         ? formatLotTesterMarkdown(testerByLot, primaryLot || undefined)
         : undefined,
-    bin10Vs66ByLot,
+    binTotalsByLot,
     cardChangesBySlotPass,
     cardByPassId,
     slotYieldSummary,
@@ -818,7 +795,7 @@ export function serializeJbQueryResultForAgent(
   delete withoutRows["slotBadBinsCompact"];
   delete withoutRows["recentLotsByTestEnd"];
   delete withoutRows["lotYieldRankByTestEnd"];
-  delete withoutRows["bin10Vs66ByLot"];
+  delete withoutRows["binTotalsByLot"];
   delete withoutRows["cardChangesBySlotPass"];
   for (const k of Object.keys(withoutRows)) {
     if (k.startsWith("_") && k.endsWith("Guide")) delete withoutRows[k];
@@ -826,7 +803,7 @@ export function serializeJbQueryResultForAgent(
   withoutRows["rowsOmitted"] = true;
   withoutRows["rowCount"] = rowCount;
   withoutRows["_rowsNote"] =
-    "明细 rows 已省略以控制体积；请用 lotYieldRankByTestEnd、slotYieldSummary、recentLotsByTestEnd、cardByPassId、cardChangesBySlotPass、bin10Vs66ByLot、slotBadBinsCompact、binBySlot、distinctLotSlotCount、distinctSlots";
+    "明细 rows 已省略以控制体积；请用 lotYieldRankByTestEnd、slotYieldSummary、recentLotsByTestEnd、cardByPassId、cardChangesBySlotPass、binTotalsByLot、slotBadBinsCompact、binBySlot、distinctLotSlotCount、distinctSlots";
 
   const slim = fitsLimit(withoutRows, maxChars);
   if (slim) return slim;
