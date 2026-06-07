@@ -2,6 +2,18 @@
 
 ---
 
+## 2026-06-07 — 警示/规律识别节 markdown 渲染修复
+
+**完成内容：**
+- `agentLoop.ts`：`jbReplySkipsCommentaryLlm` 路径改为在 `tablesBlock` 后发送 `## 分析结论` 分隔符 + 纯文字页脚，取代原 `JB_TABLES_ONLY_FOOTER`（含 `---` 的格式）
+- `agentJbDeterministicReply.ts`：移除不再使用的 `JB_TABLES_ONLY_FOOTER` 常量导出
+- 根本原因：无 `## 分析结论` 时，`splitAgentReplyMarkdown` 的 `detachProseAfterMarkdownTables` 会把 `### 🔍 警示 / 规律识别` 节（含 cluster 告警表和 patterns bullet）移入 `commentaryMarkdown`，而 CSS `.ai-md-commentary table { display: none }` 会隐藏表格；现在始终有 `## 分析结论` 分隔符，`### 🔍` 节始终落在 `dataMarkdown`
+- `splitAgentReplyMarkdown.test.ts`：新增 2 个测试覆盖 patterns-only 和 cluster+patterns 两种路径
+
+**测试：** 6 个前端 splitAgentReplyMarkdown 单元测试通过，0 失败；API typecheck 0 错误
+
+---
+
 ## 2026-06-07 — 回答质量修复：unused import 清除 + 专业建议长度指引
 
 **完成内容：**

@@ -36,7 +36,6 @@ import {
   isPerSlotBadBinRankingQuestion,
   isProbeCardQuestion,
   isTesterMachineQuestion,
-  JB_TABLES_ONLY_FOOTER,
   jbReplySkipsCommentaryLlm,
   parseJbToolPayload,
   resolveJbToolPayload,
@@ -833,8 +832,14 @@ async function emitDeterministicJbTablesReply(
   emitTextInChunks(tablesBlock, emit);
 
   if (!withCommentary) {
-    const full = tablesBlock + JB_TABLES_ONLY_FOOTER;
-    emitTextInChunks(JB_TABLES_ONLY_FOOTER, emit);
+    // Include ## 分析结论 separator so splitAgentReplyMarkdown always has a clear split point,
+    // keeping ### 🔍 警示 / 规律识别 in dataMarkdown (otherwise detachProseAfterMarkdownTables
+    // would move the section to commentaryMarkdown where tables are CSS-hidden).
+    const tableOnlyNote =
+      `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n` +
+      `*以上为服务端实测表。如需某 BIN 逐片趋势或晶圆图，请继续提问。*`;
+    const full = tablesBlock + tableOnlyNote;
+    emit({ type: "text", delta: tableOnlyNote });
     appendMessages(sessionId, { role: "assistant", content: full });
     emit({ type: "done" });
     return true;

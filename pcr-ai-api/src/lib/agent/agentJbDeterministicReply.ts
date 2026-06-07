@@ -275,9 +275,6 @@ export function buildLotOverviewTablesMarkdown(
   return rebuildDeterministicTablesFallback(toolPayload);
 }
 
-export const JB_TABLES_ONLY_FOOTER =
-  "\n\n---\n\n*以上为服务端实测表。如需某 BIN 逐片趋势或晶圆图，请继续提问。*";
-
 export function detectJbReplyMode(userMessage: string): JbReplyMode {
   // Specific attribution/compare modes take priority over generic equipment check
   if (isBinCardAttributionQuestion(userMessage)) return "bin_card_attribution";
