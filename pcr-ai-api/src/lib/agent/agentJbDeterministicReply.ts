@@ -1178,6 +1178,67 @@ function detectCardChangeBinShift(compact: SlotBadBinsCompactEntry[]): DetectedP
 }
 
 /**
+ * 相同卡类型（4位型号相同）在同一 pass 中，不同物理卡出现相同主导坏 BIN。
+ *
+ * 触发场景：
+ *   - 同 lot 同 pass 发生换卡（不同槽位范围各用一张卡），两张卡型号相同
+ *   - 同 slot+pass 被同型号的不同卡重测（再测场景）
+ * 两张不同物理卡出现相同失效 BIN 模式 → 排除探针卡个体因素 →
+ * 极度可能是测试机台或测试程序问题。
+ */
+function detectSameCardTypeSameBin(compact: SlotBadBinsCompactEntry[]): DetectedPattern | null {
+  // 从 cardId 提取4位型号前缀（"7747-03" → "7747"；匹配失败则取整串）
+  function cardTypeOf(id: string): string {
+    return id.match(/^(\d{4})-/)?.[1] ?? id;
+  }
+
+  // 按 (cardType, passId) 分组：收集该型号该 pass 下所有物理卡及各自的坏 BIN 汇总
+  const groups = new Map<string, { cards: Map<string, Map<number, number>> }>();
+  for (const { passId, cardId, badBins } of compact) {
+    const ct = cardTypeOf(cardId);
+    const gk = `${ct}|${passId}`;
+    if (!groups.has(gk)) groups.set(gk, { cards: new Map() });
+    const { cards } = groups.get(gk)!;
+    if (!cards.has(cardId)) cards.set(cardId, new Map());
+    const bins = cards.get(cardId)!;
+    for (const { bin, dieCount } of badBins) {
+      bins.set(bin, (bins.get(bin) ?? 0) + dieCount);
+    }
+  }
+
+  for (const [gk, { cards }] of groups) {
+    if (cards.size < 2) continue; // 需要 2 张以上不同物理卡
+
+    // 取每张卡的主导 BIN（top-1）
+    const topBins: number[] = [];
+    for (const bins of cards.values()) {
+      const top = [...bins.entries()].sort((a, b) => b[1] - a[1])[0];
+      if (top) topBins.push(top[0]);
+    }
+    if (topBins.length < 2) continue;
+
+    // 所有物理卡的 top-1 BIN 必须一致
+    const sharedBin = topBins[0]!;
+    if (!topBins.every((b) => b === sharedBin)) continue;
+
+    const [ct, passIdStr] = gk.split("|") as [string, string];
+    const passId = Number(passIdStr);
+    const cardList = [...cards.keys()].join("、");
+    return {
+      severity: "warning",
+      title: `同型号卡 ${ct} 在 pass${passId} 均以 BIN${sharedBin} 为主导失效`,
+      detail:
+        `${cards.size} 张同型号探针卡（${cardList}）在 pass${passId} 的主导坏 BIN 均为 BIN${sharedBin}。` +
+        `不同物理卡出现相同 BIN 失效模式，已排除探针卡个体因素，` +
+        `**极度可能是测试机台或测试程序问题**——建议优先核查机台状态与测试程序版本，` +
+        `并对比各张卡对应槽位的 DUT 坏 die 分布（可请求晶圆图或 DUT×BIN 关系图）。`,
+      suggestChart: true,
+    };
+  }
+  return null;
+}
+
+/**
  * 从 toolPayload 提取数据规律。无规律时返回 null，不强求输出。
  * 供 buildDeterministicJbTables 在适当模式下追加。
  */
@@ -1196,6 +1257,7 @@ export function detectAndFormatDataPatterns(
     const d = detectDominantBin(compact); if (d) found.push(d);
     const tp = detectTemperatureSensitivity(compact); if (tp) found.push(tp);
     const cs = detectCardChangeBinShift(compact); if (cs) found.push(cs);
+    const sct = detectSameCardTypeSameBin(compact); if (sct) found.push(sct);
   }
   if (found.length === 0) return null;
 
