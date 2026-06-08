@@ -1135,7 +1135,9 @@ async function tryRunDeterministicJbSummary(
 ): Promise<boolean> {
   const history = getHistory(sessionId);
   const lastTool = lastToolMessage(history);
-  if (lastTool?.name !== "query_jb_bins") return false;
+  // aggregate_jb_bins: use session cache (from earlier query_jb_bins in session)
+  // rather than the aggregate result itself, which is in different format.
+  if (lastTool?.name !== "query_jb_bins" && lastTool?.name !== "aggregate_jb_bins") return false;
 
   const payload = resolveJbToolPayload(
     sessionId,

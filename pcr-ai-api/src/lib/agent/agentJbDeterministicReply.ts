@@ -28,6 +28,7 @@ export type AgentTablesDigest = {
 
 export type JbReplyMode =
   | "lot_overview"
+  | "single_slot"
   | "bin_trend"
   | "slot_pass_yield"
   | "interrupt_count"
@@ -199,6 +200,50 @@ export function extractBinFromUserText(text: string): number | null {
   return null;
 }
 
+/**
+ * 用户问某一**特定片** wafer 的情况（第N片 / waferId N / slot N）。
+ * 必须高于 isLotOverviewQuestion 检查，避免"第二片的测试情况"被误判为 lot_overview。
+ */
+export function isSingleSlotQuestion(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  // "第N片" / "第二片" / "waferId 3" / "slot 3的" etc.
+  if (!/第\s*[一二三四五六七八九十百\d]+\s*片|waferId\s*\d+|slot\s*\d+/i.test(t)) return false;
+  // 不适用于「每片」「各片」「逐片」这类全批枚举
+  if (/每\s*片|每一片|各\s*片|逐\s*片/i.test(t)) return false;
+  return true;
+}
+
+/** 从用户文字提取 waferId（slot）编号；中文数字一~九也支持。 */
+export function extractSlotFromUserText(text: string): number | null {
+  const chMap: Record<string, number> = {
+    一: 1, 二: 2, 三: 3, 四: 4, 五: 5,
+    六: 6, 七: 7, 八: 8, 九: 9, 十: 10,
+    十一: 11, 十二: 12, 十三: 13, 十四: 14, 十五: 15,
+    十六: 16, 十七: 17, 十八: 18, 十九: 19, 二十: 20,
+    二十一: 21, 二十二: 22, 二十三: 23, 二十四: 24, 二十五: 25,
+  };
+  // Arabic: "第 15 片" / "waferId 15" / "slot 15"
+  const arabic = text.match(/(?:第\s*(\d+)\s*片|waferId\s*(\d+)|slot\s*(\d+))/i);
+  if (arabic) {
+    const n = Number(arabic[1] ?? arabic[2] ?? arabic[3]);
+    if (Number.isFinite(n) && n >= 1 && n <= 25) return n;
+  }
+  // Chinese: "第二片"
+  for (const [ch, num] of Object.entries(chMap)) {
+    if (new RegExp(`第\\s*${ch}\\s*片`).test(text)) return num;
+  }
+  return null;
+}
+
+/**
+ * 条件性/假设性推理问题（「如果两张卡都...」「若出现...下一步怎么」）。
+ * 这类问题需要 LLM 领域推理，不能被 equipment 模式吃掉后跳过 LLM。
+ */
+function isConditionalReasoningQuestion(text: string): boolean {
+  return /如果|假设|假如|都.*出现|同样.*出现|都.*失效|都.*bin|两张.*都|下一步.*怎么|怎么办|该.*怎么|怎么处理|怎么排查|排查方向|下一步|我.*需要.*做|如何处理/i.test(text);
+}
+
 /** 是否 lot 整体/概况类问题（非单一 BIN 趋势）。 */
 export function isLotOverviewQuestion(text: string): boolean {
   const t = text.trim();
@@ -231,6 +276,8 @@ export function isBinTrendQuestion(text: string): boolean {
   if (/有多少|多少颗|多少\s*die|坏\s*die|坏\s*bin|各\s*片|片的|wafer.*bin|bin.*wafer/i.test(text)) return true;
   // Interrupt-segment BIN questions
   if (/中断|interrupt|前半|后半|续测|半段/i.test(text)) return true;
+  // "对BINxxx进行统计" — statistics of a specific BIN across wafers
+  if (/统计/i.test(text)) return true;
   return false;
 }
 
@@ -276,6 +323,8 @@ export function buildLotOverviewTablesMarkdown(
 }
 
 export function detectJbReplyMode(userMessage: string): JbReplyMode {
+  // 条件性/假设性推理问题（「如果两张卡都...下一步怎么做」）须走 LLM，不能被 equipment 短路
+  if (isConditionalReasoningQuestion(userMessage)) return "generic";
   // Specific attribution/compare modes take priority over generic equipment check
   if (isBinCardAttributionQuestion(userMessage)) return "bin_card_attribution";
   if (isCardYieldCompareQuestion(userMessage)) return "card_yield_compare";
@@ -292,6 +341,8 @@ export function detectJbReplyMode(userMessage: string): JbReplyMode {
   if (isSlotPassYieldQuestion(userMessage)) return "slot_pass_yield";
   if (isCardDutQuestion(userMessage)) return "card_dut_question";
   if (isCardTestOverviewQuestion(userMessage)) return "card_test_overview";
+  // 单片问题必须在 lot_overview 之前检查，避免「第二片的测试情况」触发 lot_overview
+  if (isSingleSlotQuestion(userMessage)) return "single_slot";
   if (isLotOverviewQuestion(userMessage)) return "lot_overview";
   return "generic";
 }
@@ -824,6 +875,52 @@ export function buildDeterministicJbTables(
     );
     if (onDemand?.trim()) return onDemand;
     return null;
+  }
+
+  if (mode === "single_slot") {
+    const slot = extractSlotFromUserText(userMessage);
+    if (slot == null) return buildLotOverviewTablesMarkdown(toolPayload); // fallback
+    const lot = String(toolPayload["lot"] ?? "").trim() || undefined;
+    const device = String(toolPayload["device"] ?? "").trim() || undefined;
+    const parts: string[] = [];
+
+    // 1. 该片良率（中断片 or 无中断片）
+    const summary = toolPayload["slotYieldSummary"] as SlotYieldSummaryEntry[] | undefined;
+    const slotRows = summary?.filter((r) => r.slot === slot) ?? [];
+    const hasInterrupt = slotRows.some((r) => r.hasInterrupt);
+
+    if (hasInterrupt) {
+      // 重新渲染只含该 slot 的中断表
+      const interruptMd = formatSlotYieldInterruptMarkdown(slotRows, lot, device);
+      if (interruptMd.trim()) parts.push(interruptMd.trim());
+    } else if (slotRows.length) {
+      const lotTag = lot ? `（lot ${lot}${device ? ` ${device}` : ""}）` : "";
+      const header = `**waferId ${slot} 良率${lotTag}**\n\n| Slot | 测试层 | 良率% | 坏die |\n|---:|---|---:|---:|`;
+      const rows = slotRows.map(
+        (r) => `| ${r.slot} | pass${r.passId} | ${r.yieldPct != null ? r.yieldPct.toFixed(2) + "%" : "—"} | ${r.badDie ?? "—"} |`
+      );
+      parts.push([header, ...rows].join("\n"));
+    }
+
+    // 2. 涉及该 slot 的 BIN 警示
+    const alerts = toolPayload["clusteredBadBinAlerts"] as ClusteredBadBinAlert[] | undefined;
+    const relevantAlerts = alerts?.filter(
+      (a) => slot >= a.slotStart && slot <= a.slotEnd
+    ) ?? [];
+    if (relevantAlerts.length) {
+      const alertsMd = toolPayload["clusteredBadBinAlertsMarkdown"];
+      if (typeof alertsMd === "string" && alertsMd.trim()) {
+        parts.push(alertsMd.trim()); // 输出全部警示表（含该片的行）
+      }
+    }
+
+    // 3. 探针卡与机台（简短上下文）
+    const cardMd = toolPayload["cardByPassIdMarkdown"];
+    if (typeof cardMd === "string" && cardMd.trim()) parts.push(cardMd.trim());
+    const testerMd = toolPayload["testerIdMarkdown"];
+    if (typeof testerMd === "string" && testerMd.trim()) parts.push(testerMd.trim());
+
+    return parts.length ? parts.join("\n\n") : buildLotOverviewTablesMarkdown(toolPayload);
   }
 
   if (mode === "lot_overview") {
