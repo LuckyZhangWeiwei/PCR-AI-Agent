@@ -2,6 +2,17 @@
 
 ---
 
+## 2026-06-08 — Agent prompt 三项诊断质量修复
+
+**完成内容：**
+- `agentPrompt.ts` `SEC_ENG_TIPS`：新增「多张卡对比 → 根因定位」子节 — 两张不同探针卡在同一 DUT、同一 BIN 失效时，优先排查机台（tester），而非探针卡；用对比表覆盖四种场景（两卡同 DUT/BIN → 机台；单卡失效消失 → 该卡问题；两卡全卡下降 → load board；两卡失效 DUT 不同 → 各自排查）
+- `agentPrompt.ts` `SEC_LOT_ID`：新增「用户问某一片 wafer 的问题/情况」规则 — 触发条件为问句含明确片号；要求分析段只聚焦该片中断/BIN突增/良率偏差，禁止把 25 片宽表、机台表粘贴到分析里当背景
+- `agentPrompt.ts` `SEC_OUTPUT_FORMAT`：新增禁止在用户可见文字中暴露内部工具名规则 — `### 专业建议` / `### 数据解读` 等段落严禁出现 `inf_draw_dut_bin_map(...)`、`inf_bin_spatial(...)` 等函数调用语法，改用「可继续追问『…』」的自然语言引导
+
+**测试：** typecheck 通过，未运行 unit tests（prompt-only 改动）
+
+---
+
 ## 2026-06-07 — 探针卡跨域退化信号（JB 良率 + YM 触发趋势关联）
 
 **完成内容：**
