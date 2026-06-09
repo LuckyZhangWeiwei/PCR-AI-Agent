@@ -2,6 +2,18 @@
 
 ---
 
+## 2026-06-09 — Agent prompt 两项修复（重复图表请求 + 常见 fail bin 排行表缺失）
+
+**完成内容：**
+- `agentPrompt.ts` `SEC_CHART_RULES`：新增「用户直接要求图表时必须重新生成」规则 — 用户明确说「画图」「yield 对比图」「by slot 图」等时，即使本次会话已生成过相同图表，也必须重新调用 `generate_chart`；禁止回复「图表已在上方生成，请查看」；重复请求表明图表可能未渲染
+- `agentPrompt.ts` 聚集性坏 bin 规则（line 867 区域）：新增「必须」规则 — 用户问「常见 fail bin」「实测失效」「坏 bin 排行」时必须先给出 `topBadBins` 全 lot 坏 bin 总量排名表（按 dieCount 降序），再附 cluster 警示；cluster 警示不能代替排行表；仅从 cluster 警示提取少数 bin 号不能作为「常见 fail bin」的完整答案
+
+**背景**：Session 日志（mq6cv0pg）回顾：①用户连问 3 次「DR43102.1H yield 对比图 by slot」，第 2、3 次 agent 只说「图表已在上方生成」未重新生成；②用户问「常见的 fail bin」agent 只展示了 cluster 警示（BIN15/BIN43）而未输出 `topBadBins` 完整排行表
+
+**测试：** typecheck 通过，未运行 unit tests（prompt-only 改动）
+
+---
+
 ## 2026-06-09 — Agent prompt 三项修复（BIN×DUT 二维表格 + 历史上下文丢失 + 反引号语法错误）
 
 **完成内容：**
