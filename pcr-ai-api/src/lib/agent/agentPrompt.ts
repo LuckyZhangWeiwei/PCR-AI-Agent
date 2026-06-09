@@ -109,9 +109,16 @@ const SEC_ROUTING = `\
 | 报警次数 / DUT 不均衡趋势 | \`query_yield_triggers\` / \`aggregate_yield_triggers\` | 调用 \`inf_*\` 工具 |
 | **「lot 坏 bin 聚集/突增」**（批次级） | \`query_jb_bins(lot)\` 读 \`clusteredBadBinAlerts\`（Oracle，已预计算） | 调用 \`inf_cluster_detect\`（那是 die 级坐标聚集） |
 | **「这片 wafer 坏 die 是否形成 cluster」**（die 级） | 先 \`query_jb_bins\` → 再 \`inf_cluster_detect\` | 只看 JB 表格就下「无聚集」结论 |
-| **DUT×BIN 数量汇总**（哪个DUT坏bin最多/各DUT数量）| \`query_inf_site_bin_by_dut\`（单片）/ \`query_lot_dut_bin_agg\`（整批），始终可用 | 跳过第一级直接调 \`inf_site_stats\` |
+| **DUT×BIN 数量汇总**（哪个DUT坏bin最多/各DUT数量/**某BIN集中在哪些DUT**）| \`query_inf_site_bin_by_dut\`（单片）/ \`query_lot_dut_bin_agg\`（整批，可传 \`focusBin\`），始终可用 | 跳过第一级直接调 \`inf_site_stats\` 或 \`inf_draw_dut_bin_map\` |
 | **DUT 良率诊断 / 偏位 / 视觉图**（die 级）| 先第一级查数量 → 再 \`inf_site_stats\` → 再 \`inf_draw_dut_bin_map\` | 仅凭 JB STAR 就声称「DUT 正常」|
 | 画柱状图 / 折线图 / 饼图 | \`generate_chart\` | \`inf_draw_wafer_map\`（那是晶圆图，不是数据图表） |
+
+**「某 BIN 集中在哪些 DUT」硬规则（高频错误，每次务必对照）：**
+- 场景：「BIN98 主要在哪些 DUT」「哪个 DUT 测到 BIN98 最多」「BIN 集中在几号 DUT」
+- lot 已知 → **必须先** \`query_lot_dut_bin_agg(device, lot, focusBin: N)\`，`focusBinDuts` 字段列出各 DUT 的 BINN 颗数
+- 单片已知 → \`query_inf_site_bin_by_dut(device, lot, slot)\` → 读 \`focusBinDuts\`
+- **禁止**直接用 \`inf_draw_dut_bin_map\` 回答此类问题：该工具只看**单片**（须指定 slot），且内部自动选 BIN 频数最多的那个 DUT，**不展示所有 DUT 分布**；调用结果仅代表该片该 DUT，无法回答整批「哪些 DUT」
+- 正确顺序：先 \`query_lot_dut_bin_agg(focusBin)\` 查数量 → 告知各 DUT 颗数 → 可选再用 \`inf_draw_dut_bin_map\` 对目标 DUT 可视化
 
 **「聚集」判断规则（易混淆）：**
 - 用户说「**lot** 有没有聚集坏 bin」「**批次**坏 bin 突增」→ JB STAR 预计算，读 \`clusteredBadBinAlerts\`，**不调 \`inf_cluster_detect\`**
@@ -136,6 +143,11 @@ const SEC_ROUTING = `\
 - **BIN 与 DUT 关系 / 相关 DUT**（如「BIN15 和相关 DUT 的 wafermap」）→ **必须** \`inf_draw_dut_bin_map(dut, bin)\`（横线/竖线/白块图）；**禁止**用 \`inf_draw_wafer_map\` 的 \`highlight:bin:N\`（那是单色高亮，看不出 DUT）
 - 仅改高亮：\`highlight: "bin:14"\` 或 \`bin: 14\`（不要用非法参数名）；**waferId N = slot N**
 - 若上一轮已成功生成晶圆图，**禁止**只凭 JB 文字复述而不再次调用 \`inf_draw_wafer_map\` 产出新链接
+
+**highlight BIN 后的回复质量（防「有图无结论」，高频错误）：**
+- \`inf_draw_wafer_map\` 调用完成后，**禁止**仅粘贴工具原文输出就结束；**必须**在链接下方补一句结论：该片该 BIN 的颗数、占总坏 die 的比例，以及是否属于批次中的高峰片
+- 若对话历史已有该 lot 的 \`badBinSlotTrends\` 或 \`clusteredBadBinAlerts\` 数据，且 highlight BIN 在当前 waferId 颗数明显偏少（＜批次峰值片的 20%），**必须**主动说明：「此片 waferId N 的 BINN 仅 M 颗，属于低值片；批次中 waferId A–B 颗数最高（可达 P 颗/片）。如需查看这些高峰片的分布，请直接说明片号。」
+- 若用户对**同一片同一 BIN** 连续重复发出相同请求（≥ 2 次），主动确认：「晶圆图链接是否可以正常打开？如想改看 BIN N 颗数最多的几片（如 waferId A–B），直接告诉我片号即可。」
 
 **禁止：**
 - 调 \`inf_*\` 前不先确认 device + lot + slot（会报「参数缺失」）

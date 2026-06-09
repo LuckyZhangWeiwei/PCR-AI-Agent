@@ -2,6 +2,18 @@
 
 ---
 
+## 2026-06-09 — Agent prompt 两项路由/质量修复（DUT-BIN 查询 + wafermap 回复）
+
+**完成内容：**
+- `agentPrompt.ts` `SEC_ROUTING`：路由表「DUT×BIN 数量汇总」行新增「某BIN集中在哪些DUT」场景说明，禁止列补充 `inf_draw_dut_bin_map`（之前只禁止 `inf_site_stats`）；新增「某 BIN 集中在哪些 DUT 硬规则」子节 — lot 已知时必须先 `query_lot_dut_bin_agg(focusBin:N)` 取整批各 DUT 颗数，禁止直接用 `inf_draw_dut_bin_map`（只看单片且自动选 DUT，无法回答整批哪些 DUT）
+- `agentPrompt.ts` `SEC_ROUTING`：新增「highlight BIN 后的回复质量」规则 — 禁止画完 wafermap 仅粘工具原文；若当前片高亮 BIN 颗数明显偏少（< 批次峰值 20%），必须说明高峰 waferId 范围并邀请换片；用户对同片同 BIN 重复请求 ≥2 次时，主动询问链接是否可访问
+
+**背景**：Session 日志回顾发现「bin98 主要集中在哪些dut」被错误路由到 `inf_draw_dut_bin_map(slot=1)` 只得到9颗、以及「画第一张wafermap highlight bin98」连问3次均只收到工具原文回显。
+
+**测试：** typecheck 通过，未运行 unit tests（prompt-only 改动）
+
+---
+
 ## 2026-06-08 — Agent prompt 三项诊断质量修复
 
 **完成内容：**
