@@ -33,6 +33,26 @@
   letter-spacing: 0.02em;
 }
 
+.data-table th.data-table-sortable {
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.data-table th.data-table-sortable:hover {
+  color: var(--text, #e6edf3);
+}
+
+.data-table-sort-icon {
+  opacity: 0.4;
+  font-size: 11px;
+}
+
+.data-table th.data-table-sortable:hover .data-table-sort-icon,
+.data-table th.data-table-sortable .data-table-sort-icon:not(:empty) {
+  opacity: 0.8;
+}
+
 .data-table tr:hover td {
   background: rgba(88, 166, 255, 0.06);
 }

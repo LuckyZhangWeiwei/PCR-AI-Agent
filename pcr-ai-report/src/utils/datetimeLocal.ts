@@ -27,6 +27,17 @@ export function formatChartDayLabel(raw: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+/** ISO UTC string → "YYYY-MM-DD HH:mm:ss" in China Standard Time (UTC+8). */
+export function formatDatetimeChinaTime(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(String(iso));
+  if (isNaN(d.getTime())) return String(iso ?? "");
+  const cstMs = d.getTime() + 8 * 60 * 60 * 1000;
+  const c = new Date(cstMs);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${c.getUTCFullYear()}-${p(c.getUTCMonth() + 1)}-${p(c.getUTCDate())} ${p(c.getUTCHours())}:${p(c.getUTCMinutes())}:${p(c.getUTCSeconds())}`;
+}
+
 /** Chart axis label for a single aggregate dimension value */
 export function formatAggregateDimLabel(dim: string, raw: string): string {
   if (dim === "timeDay") return formatChartDayLabel(raw);

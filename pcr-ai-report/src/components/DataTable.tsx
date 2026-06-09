@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import "./DataTable.css";
 
 type Props = {
@@ -20,6 +20,8 @@ type Props = {
   onToggleAllVisible?: (keys: (string | number)[], select: boolean) => void;
   /** Show per-column text filter inputs in the header */
   filterRow?: boolean;
+  /** Per-column display formatters. Only affects rendered text, not the underlying row data. */
+  columnFormatters?: Record<string, (v: unknown) => string>;
 };
 
 /** omitKeys 与行内键名大小写均可匹配 */
@@ -100,6 +102,8 @@ function formatCell(v: unknown): string {
   return s;
 }
 
+type SortState = { col: string; dir: "asc" | "desc" } | null;
+
 export function DataTable({
   rows,
   columnOrder,
@@ -113,12 +117,27 @@ export function DataTable({
   onToggleRowKey,
   onToggleAllVisible,
   filterRow = false,
+  columnFormatters,
 }: Props) {
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+  const [sort, setSort] = useState<SortState>(null);
+
+  const handleHeaderClick = useCallback((col: string) => {
+    setSort((prev) => {
+      if (!prev || prev.col !== col) return { col, dir: "asc" };
+      if (prev.dir === "asc") return { col, dir: "desc" };
+      return null;
+    });
+  }, []);
 
   const omitLower = new Set((omitKeys ?? []).map((k) => k.toLowerCase()));
   const keysRaw = collectKeys(rows, omitLower);
   const columns = resolveColumns(keysRaw, columnOrder);
+
+  const formatCellWithOverride = (col: string, v: unknown): string => {
+    const fn = columnFormatters?.[col];
+    return fn ? fn(v) : formatCell(v);
+  };
 
   const filteredRows = useMemo(() => {
     if (!filterRow) return rows;
@@ -126,18 +145,33 @@ export function DataTable({
     if (!active.length) return rows;
     return rows.filter((row) =>
       active.every(([col, val]) =>
-        formatCell(cellValueForColumn(row, col))
+        formatCellWithOverride(col, cellValueForColumn(row, col))
           .toLowerCase()
           .includes(val.toLowerCase())
       )
     );
-  }, [rows, columnFilters, filterRow]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, columnFilters, filterRow, columnFormatters]);
+
+  const sortedRows = useMemo(() => {
+    if (!sort) return filteredRows;
+    const { col, dir } = sort;
+    const sign = dir === "asc" ? 1 : -1;
+    return [...filteredRows].sort((a, b) => {
+      const av = formatCellWithOverride(col, cellValueForColumn(a, col));
+      const bv = formatCellWithOverride(col, cellValueForColumn(b, col));
+      const an = Number(av), bn = Number(bv);
+      if (!isNaN(an) && !isNaN(bn)) return sign * (an - bn);
+      return sign * av.localeCompare(bv, undefined, { numeric: true, sensitivity: "base" });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredRows, sort, columnFormatters]);
 
   if (rows.length === 0) {
     return <p className="data-table-empty">No rows.</p>;
   }
 
-  const visibleKeys = filteredRows.map((row, i) =>
+  const visibleKeys = sortedRows.map((row, i) =>
     getRowKey ? getRowKey(row, i) : i
   );
   const allVisibleSelected =
@@ -162,9 +196,22 @@ export function DataTable({
                 />
               </th>
             ) : null}
-            {columns.map((c) => (
-              <th key={c}>{c}</th>
-            ))}
+            {columns.map((c) => {
+              const isSorted = sort?.col === c;
+              return (
+                <th
+                  key={c}
+                  className="data-table-sortable"
+                  onClick={() => handleHeaderClick(c)}
+                  title={`按 ${c} 排序`}
+                >
+                  {c}
+                  <span className="data-table-sort-icon">
+                    {isSorted ? (sort!.dir === "asc" ? " ▲" : " ▼") : " ⇅"}
+                  </span>
+                </th>
+              );
+            })}
           </tr>
           {filterRow && (
             <tr className="data-table-filter-row">
@@ -196,7 +243,7 @@ export function DataTable({
               </td>
             </tr>
           ) : (
-            filteredRows.map((row, i) => {
+            sortedRows.map((row, i) => {
               const rowKey = visibleKeys[i]!;
               const selected = multiSelect
                 ? selectedRowKeys?.has(rowKey) === true
@@ -236,9 +283,9 @@ export function DataTable({
                   {columns.map((c) => (
                     <td
                       key={c}
-                      title={formatCell(cellValueForColumn(row, c))}
+                      title={formatCellWithOverride(c, cellValueForColumn(row, c))}
                     >
-                      {formatCell(cellValueForColumn(row, c))}
+                      {formatCellWithOverride(c, cellValueForColumn(row, c))}
                     </td>
                   ))}
                 </tr>

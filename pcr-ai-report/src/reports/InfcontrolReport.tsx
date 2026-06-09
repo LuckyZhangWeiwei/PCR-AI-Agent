@@ -34,7 +34,7 @@ import {
   rankBarChartHeight,
   verticalBarChartGrid,
 } from "../theme/chartTheme";
-import { datetimeLocalToIso } from "../utils/datetimeLocal";
+import { datetimeLocalToIso, formatDatetimeChinaTime } from "../utils/datetimeLocal";
 import { drillFromTree, storeDrillTab } from "../utils/drillAggregate";
 import {
   collectGoodBinNumbersFromJbRow,
@@ -1481,7 +1481,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
           MASK:          r.MASK ?? "—",
           LOT:           r.LOT ?? "",
           SLOT:          r.SLOT ?? "",
-          PROBECARDTYPE: r.PROBECARDTYPE ?? "—",
           CARDID:        r.CARDID ?? "",
           PASSID:        r.PASSID ?? "",
           "Yield%":      yp !== null ? `${yp.toFixed(1)}%` : "—",
@@ -1943,11 +1942,11 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                 "DEVICE",
                 "LOT",
                 "SLOT",
-                "PROBECARDTYPE",
                 "CARDID",
                 "PASSID",
                 "Yield%",
               ]}
+              columnFormatters={{ TESTEND: (v) => formatDatetimeChinaTime(String(v ?? "")) }}
             />
           )}
         </div>

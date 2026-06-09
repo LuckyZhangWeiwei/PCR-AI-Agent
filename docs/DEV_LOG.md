@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-06-09 — JB 明细表 TESTEND 转 CST + 删除 PROBECARDTYPE + DataTable 列排序
+
+**完成内容：**
+- `datetimeLocal.ts`：新增 `formatDatetimeChinaTime`，将 UTC ISO 字符串加 8 小时格式化为 `"YYYY-MM-DD HH:mm:ss"`（CST）
+- `DataTable.tsx`：新增 `columnFormatters` prop，仅影响单元格显示和列筛选文本，不修改底层 row 数据（行内匹配逻辑不受影响）
+- `DataTable.tsx`：新增列排序功能，点击表头循环切换升序 ▲ / 降序 ▼ / 无排序；数字列按数值比较，其余按字符串本地化排序
+- `DataTable.css`：排序图标样式（`data-table-sortable` / `data-table-sort-icon`）
+- `InfcontrolReport.tsx`：明细表 TESTEND 列传入 `columnFormatters` 转 CST 显示；从行数据和 `columnOrder` 同时删除 PROBECARDTYPE 列
+
+**测试：** tsc --noEmit 通过，无运行时测试（纯前端显示改动）
+
+---
+
 ## 2026-06-09 — 「常见 fail bin」确定性路径修复（英文模式匹配 + topBadBins + 恢复 LLM 解读）
 
 **完成内容：**
