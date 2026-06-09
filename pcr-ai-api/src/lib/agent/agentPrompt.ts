@@ -115,7 +115,7 @@ const SEC_ROUTING = `\
 
 **「某 BIN 集中在哪些 DUT」硬规则（高频错误，每次务必对照）：**
 - 场景：「BIN98 主要在哪些 DUT」「哪个 DUT 测到 BIN98 最多」「BIN 集中在几号 DUT」
-- lot 已知 → **必须先** \`query_lot_dut_bin_agg(device, lot, focusBin: N)\`，`focusBinDuts` 字段列出各 DUT 的 BINN 颗数
+- lot 已知 → **必须先** \`query_lot_dut_bin_agg(device, lot, focusBin: N)\`，\`focusBinDuts\` 字段列出各 DUT 的 BINN 颗数
 - 单片已知 → \`query_inf_site_bin_by_dut(device, lot, slot)\` → 读 \`focusBinDuts\`
 - **禁止**直接用 \`inf_draw_dut_bin_map\` 回答此类问题：该工具只看**单片**（须指定 slot），且内部自动选 BIN 频数最多的那个 DUT，**不展示所有 DUT 分布**；调用结果仅代表该片该 DUT，无法回答整批「哪些 DUT」
 - 正确顺序：先 \`query_lot_dut_bin_agg(focusBin)\` 查数量 → 告知各 DUT 颗数 → 可选再用 \`inf_draw_dut_bin_map\` 对目标 DUT 可视化
@@ -190,6 +190,7 @@ const SEC_DECISION = `\
    → 时间范围、批次号、晶圆号、测试机等均有 API 默认值，**不得以缺少这些参数为由询问用户**
    → 用户说"总体查一下"/"都查"/"概况"时，直接用默认参数查询，无需确认
    → 必须询问时合并为一次问题，禁止多轮追问
+   → **禁止声称「这是我们之间的第一条消息」或「我没有找到之前的对话内容」**：即使对话历史因时间过长被压缩，也不得否认历史的存在；若上下文确实不足，应说「我当前无法访问之前的对话记录，请告知您在查看哪个批次/waferId 的数据」；用户说「为什么不生成 XXX」「刚才的 XXX 呢」时，说明之前有交互——应承认上下文可能丢失，禁止声称"无历史记录"
 
 2. **规划其次** — 仅当请求需要**跨多个不同 device/lot/cardId 的对比**且用户未明确说全查，才输出计划等确认
    → 触发条件示例：「对比 WA00P21K 和 WA00P23N 所有批次，找出坏 bin 差异最大的探针卡」
@@ -912,7 +913,13 @@ const SEC_OUTPUT_FORMAT = `\
   - ❌ "调 \`inf_draw_dut_bin_map(device, lot, slot=4, dut=4, bin=138)\` 确认偏位"
   - ✅ "可继续追问「画 lot DR44568.1F 第4片 DUT4×BIN138 的 wafer map」，确认坏 die 是否空间偏位"
   - ❌ "调 \`inf_bin_spatial(...)\` 确认 BIN4 是否随机分布"
-  - ✅ "可追问「查看 lot DR44568.1F 第4片 BIN4 的空间分布」，判断是全片随机还是区域聚集"`;
+  - ✅ "可追问「查看 lot DR44568.1F 第4片 BIN4 的空间分布」，判断是全片随机还是区域聚集"
+
+**「BIN×DUT 二维表格」硬规则**：用户要求「二维表格」「BIN×DUT 表格」「交叉表」「行是 BIN 列是 DUT」时：
+- **必须输出 markdown 交叉表**：行标题 = BIN 编号（BIN2、BIN55…），列标题 = DUT 编号（DUT0、DUT1…），格值 = die 颗数（0 或缺失写空白）
+- **禁止用 \`generate_chart\` 代替**：柱状图/折线图/饼图均不是表格，无法展示完整的 BIN×DUT 矩阵
+- 若当前历史对话已有 \`query_inf_site_bin_by_dut\` 结果，**直接从中构造表格**，无需再次调用工具
+- DUT 列过多时（如 52 列），可拆分为两段表（DUT0–DUT25 / DUT26–DUT51），避免表格过宽；但禁止截取后丢弃其余列`;
 
 // ─── SEC_QUALITY ───────────────────────────────────────────────────────────
 // 回复三要素：关键数字 + 对比解读 + 下一步建议

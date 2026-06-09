@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-06-09 — Agent prompt 三项修复（BIN×DUT 二维表格 + 历史上下文丢失 + 反引号语法错误）
+
+**完成内容：**
+- `agentPrompt.ts` `SEC_OUTPUT_FORMAT`：新增「BIN×DUT 二维表格」硬规则 — 用户要求「二维表格」「BIN×DUT 交叉表」时必须输出 markdown 表格（行=BIN，列=DUT，格值=die颗数），禁止用 `generate_chart` 代替；历史对话已有 `query_inf_site_bin_by_dut` 结果时直接构造表格无需再调工具；DUT 列过多（52列）时可拆分两段但禁止丢弃其余列
+- `agentPrompt.ts` `SEC_DECISION`：澄清优先规则新增子条款 — 禁止声称「这是我们之间的第一条消息」/「我没有找到之前的对话内容」；上下文不足时应说「我当前无法访问之前的对话记录，请告知是哪个批次/waferId」；用户说「为什么不生成XXX」/「刚才的XXX呢」说明之前有交互，应承认上下文丢失而非否认历史
+- `agentPrompt.ts` line 118：修复 pre-existing 语法错误 — `\`focusBinDuts\`` 未转义反引号导致 TypeScript 模板字符串解析报错（TS1005），顺手修复
+
+**背景**：Session 日志（mq4x4n2x）回顾：①「完了吗」时 agent 用 `generate_chart` 柱状图代替「二维表格」；②会话隔夜后（19小时后）agent 声称「无历史记录」；③typecheck 预先存在语法错误
+
+**测试：** typecheck 通过，未运行 unit tests（prompt-only 改动）
+
+---
+
 ## 2026-06-09 — Agent prompt 两项路由/质量修复（DUT-BIN 查询 + wafermap 回复）
 
 **完成内容：**
