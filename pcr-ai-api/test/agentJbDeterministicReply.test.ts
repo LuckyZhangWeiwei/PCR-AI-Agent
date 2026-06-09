@@ -66,6 +66,24 @@ describe("agentJbDeterministicReply", () => {
       detectJbReplyMode("DR45459.1A 用几号卡，在哪个机器测试的"),
       "equipment"
     );
+    // English "fail bin" variants → bad_bin_ranking
+    assert.equal(
+      detectJbReplyMode("DR43102.1H 实测失效情况,以及常见的fail bin"),
+      "bad_bin_ranking"
+    );
+    assert.equal(
+      detectJbReplyMode("这批主要的fail bin有哪些"),
+      "bad_bin_ranking"
+    );
+    assert.equal(
+      detectJbReplyMode("常见fail bin排行"),
+      "bad_bin_ranking"
+    );
+    // Specific BIN number → should NOT be bad_bin_ranking (goes to bin_trend)
+    assert.notEqual(
+      detectJbReplyMode("BIN55 的 fail bin 情况"),
+      "bad_bin_ranking"
+    );
   });
 
   it("buildDeterministicJbTables equipment includes card and tester", () => {

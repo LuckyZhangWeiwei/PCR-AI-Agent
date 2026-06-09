@@ -2,6 +2,20 @@
 
 ---
 
+## 2026-06-09 — 「常见 fail bin」确定性路径修复（英文模式匹配 + topBadBins + 恢复 LLM 解读）
+
+**完成内容：**
+- `agentJbDeterministicReply.ts` `isBadBinRankingQuestion`：新增英文 `fail bin` 变体正则 — 原函数仅匹配中文「坏 bin」，导致「常见的 fail bin」走 `generic` 路径（无 topBadBins）；现覆盖 `常见.*fail\s*bin` / `主要.*fail\s*bin` / `实测.*fail\s*bin` 等模式
+- `agentJbDeterministicReply.ts` `bad_bin_ranking` 输出：`withPatterns` → `withAlertsAndPatterns`，确保 cluster 警示（`clusteredBadBinAlertsMarkdown`）进入确定性输出，与 LLM 路径一致
+- `agentJbDeterministicReply.ts` `jbReplySkipsCommentaryLlm`：将 `bad_bin_ranking` 移出跳过名单，恢复 LLM 工程解读（`### 数据解读 / ### 专业建议`），满足「不能比现在的回答差」约束
+- `test/agentJbDeterministicReply.test.ts`：新增 4 个断言覆盖英文 fail bin 路由（正向×3 + 有具体 BIN 号不触发×1）
+
+**背景**：根本原因分析——`tryRunDeterministicJbSummary` 在总结轮调用 `detectJbReplyMode` 时，因正则未覆盖英文返回 `generic`；`generic` 路径不含 `topBadBins` 表，LLM 也未从 JSON 中提取，导致「常见 fail bin」回答缺失排行表
+
+**测试：** 264 通过，1 预先存在失败（aggregate_jb_bins scope guard，与本次改动无关）
+
+---
+
 ## 2026-06-09 — Agent prompt 两项修复（重复图表请求 + 常见 fail bin 排行表缺失）
 
 **完成内容：**

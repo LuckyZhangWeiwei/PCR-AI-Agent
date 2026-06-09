@@ -257,13 +257,15 @@ export function isLotOverviewQuestion(text: string): boolean {
   return /整体|概况|测试情况|重新计算|lot\s*概况|批次.*情况/i.test(t);
 }
 
-/** 用户问「主要坏 bin」「坏 bin 排行/排名」类问题（无具体 bin 编号）。 */
+/** 用户问「主要坏 bin」「坏 bin 排行/排名」「常见 fail bin」类问题（无具体 bin 编号）。 */
 export function isBadBinRankingQuestion(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
   if (extractBinFromUserText(t) != null) return false; // 有具体 bin 号走 bin_trend
-  return /主要.*坏\s*bin|坏\s*bin.*主要|坏\s*bin.*排行|排行.*坏\s*bin|坏\s*bin.*排名|排名.*坏\s*bin|top.*bad.*bin|主要.*bad\s*bin|哪些.*坏\s*bin|坏\s*bin.*哪些|坏die.*排行|排行.*坏die/i.test(
-    t
+  return (
+    /主要.*坏\s*bin|坏\s*bin.*主要|坏\s*bin.*排行|排行.*坏\s*bin|坏\s*bin.*排名|排名.*坏\s*bin|top.*bad.*bin|主要.*bad\s*bin|哪些.*坏\s*bin|坏\s*bin.*哪些|坏die.*排行|排行.*坏die/i.test(t) ||
+    // 英文 "fail bin" 变体：「常见的 fail bin」「主要 fail bin」「实测 fail bin」
+    /常见.*fail\s*bin|fail\s*bin.*常见|主要.*fail\s*bin|fail\s*bin.*主要|实测.*fail\s*bin|fail\s*bin.*失效|fail\s*bin.*排|哪些.*fail\s*bin|fail\s*bin.*哪些/i.test(t)
   );
 }
 
@@ -298,10 +300,10 @@ export function isSlotPassYieldQuestion(text: string): boolean {
   return false;
 }
 
-/** 服务端表已覆盖用户问题时，不再调 LLM 解读（避免超时）。lot_overview / per_slot_bin_ranking 需要跨片规律分析，不在此列。 */
+/** 服务端表已覆盖用户问题时，不再调 LLM 解读（避免超时）。lot_overview / per_slot_bin_ranking / bad_bin_ranking 需要工程分析，不在此列。 */
 export function jbReplySkipsCommentaryLlm(mode: JbReplyMode): boolean {
   return (
-    mode === "bad_bin_ranking" ||
+    // bad_bin_ranking 移出：「常见 fail bin / 坏 bin 排行」常与「实测失效情况」合问，LLM 解读有价值
     mode === "interrupt_count" ||
     mode === "tester_machine" ||
     mode === "equipment" ||
@@ -826,7 +828,7 @@ export function buildDeterministicJbTables(
     const combined =
       topMd && overview ? `${overview}\n\n${topMd}` :
       topMd ?? overview ?? rebuildDeterministicTablesFallback(toolPayload);
-    return withPatterns(combined, toolPayload);
+    return withAlertsAndPatterns(combined, toolPayload);
   }
 
   if (mode === "interrupt_count") {
