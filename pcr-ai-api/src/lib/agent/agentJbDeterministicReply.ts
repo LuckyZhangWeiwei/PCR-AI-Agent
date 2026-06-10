@@ -48,7 +48,7 @@ export function isTesterMachineQuestion(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
   if (
-    /哪台|哪个.*机台|在哪.*机台|哪.*机器|在哪个.*测试|测试机|机台|tester|hostname|TESTERID|HOSTNAME/i.test(
+    /哪台|哪个.*机台|在哪.*机台|哪.*机器|测试机|机台|tester|hostname|TESTERID|HOSTNAME/i.test(
       t
     )
   ) {

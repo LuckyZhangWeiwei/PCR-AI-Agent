@@ -165,8 +165,18 @@ export function buildDieMap(
   const bf = readNlFormat(binLayer);
   const sf = siteLayer ? readNlFormat(siteLayer) : null;
 
+  // nTouchCount layer: per-die touchdown count (decimal, space-separated)
+  const touchLayer = findLayer(mapResult, "nTouchCount");
+  const tf = touchLayer ? readNlFormat(touchLayer) : null;
+
   const binRows = binLayer.keys("RowData");
   const siteRows = siteLayer?.keys("RowData") ?? [];
+  const touchRows = touchLayer?.keys("RowData") ?? [];
+
+  // Pre-split touch rows (always non-packed in practice; guard anyway)
+  const touchToks: Array<string[] | null> = touchRows.map((row) =>
+    tf && !tf.fPacked ? row.split(" ").filter((s) => s.length > 0) : null
+  );
 
   const dies: DieEntry[] = [];
 
@@ -201,7 +211,30 @@ export function buildDieMap(
         }
       }
 
-      dies.push({ x: colIdx + iColMin, y: rowIdx + iRowMin, bin, isGood: goodBins.has(bin), site, touchCount: null });
+      let touchCount: number | null = null;
+      if (tf && rowIdx < touchRows.length) {
+        if (tf.fPacked) {
+          const row = touchRows[rowIdx]!;
+          if (colIdx < row.length) {
+            const tc = row[colIdx]!;
+            if (tc !== tf.offPad && tc !== tf.onPad) {
+              const n = parseInt(tc, tf.iBase);
+              if (!isNaN(n)) touchCount = n;
+            }
+          }
+        } else {
+          const toks = touchToks[rowIdx];
+          if (toks && colIdx < toks.length) {
+            const tc = toks[colIdx]!;
+            if (tc[0] !== tf.offPad && tc[0] !== tf.onPad) {
+              const n = parseInt(tc, tf.iBase);
+              if (!isNaN(n)) touchCount = n;
+            }
+          }
+        }
+      }
+
+      dies.push({ x: colIdx + iColMin, y: rowIdx + iRowMin, bin, isGood: goodBins.has(bin), site, touchCount });
     }
   }
   return dies;

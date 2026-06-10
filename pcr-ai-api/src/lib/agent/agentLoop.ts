@@ -810,6 +810,36 @@ async function applyWaferMapRoutePlan(
   return finishWaferMapDraw(sessionId, action.args, history, emit);
 }
 
+/**
+ * 从 streamSiliconFlow 错误消息提取人类可读摘要。
+ * 支持 "HTTP 4xx: {json}" 格式（七牛云、SiliconFlow 等）。
+ */
+function cleanStreamErrorMessage(raw: string): string {
+  try {
+    const m = raw.match(/^(HTTP \d+):\s*(\{[\s\S]*)/);
+    if (m) {
+      const prefix = m[1];
+      const jsonStr = m[2]!;
+      let msg: string | undefined;
+      try {
+        const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
+        const errObj = parsed["error"] as Record<string, unknown> | undefined;
+        msg =
+          (typeof errObj?.["message"] === "string" ? errObj["message"] : undefined) ??
+          (typeof parsed["message"] === "string" ? parsed["message"] : undefined);
+      } catch {
+        // 截断 JSON：用正则直接提取 message 值
+        const mm = jsonStr.match(/"message"\s*:\s*"([^"]+)/);
+        if (mm) msg = mm[1];
+      }
+      if (msg) {
+        return `${prefix}: ${msg.slice(0, 80)}${msg.length > 80 ? "…" : ""}`;
+      }
+    }
+  } catch { /* ignore */ }
+  return raw.slice(0, 100);
+}
+
 /** 直出 JB 服务端表；可选跳过解读 LLM（lot 概况等）。 */
 async function emitDeterministicJbTablesReply(
   sessionId: string,
@@ -896,7 +926,7 @@ async function emitDeterministicJbTablesReply(
     commentaryOrFallback = commentary;
   } else {
     commentaryOrFallback = streamError
-      ? `*（解读生成失败：${streamError.slice(0, 120)}；以上实测数据表为准。）*`
+      ? `*（解读生成失败：${cleanStreamErrorMessage(streamError)}；以上实测数据表为准。）*`
       : `*（模型未返回解读；以上实测数据表为准。）*`;
     emit({ type: "text", delta: commentaryOrFallback });
   }
@@ -1085,8 +1115,36 @@ async function tryRunLotOverviewDirectRoute(
 }
 
 /**
+ * 判断用户是否在询问 BIN 对应的测试项（BIN→test item 映射）。
+ * 该信息存储在测试程序（test program）中，不在 JB STAR / Yield Monitor 数据库里。
+ * 必须同时满足：提到 BIN 编号 AND 问的是测试项/测试内容。
+ */
+function isTestItemMappingQuestion(text: string): boolean {
+  if (!/\bbin\s*\d{1,3}\b/i.test(text)) return false;
+  return /测试项|test\s*item|什么测试|哪个测试项|哪种测试|测试内容|测试名称|失效.*测试|测试.*失效|bin.*是什么测试/i.test(text);
+}
+
+/**
+ * 判断用户是否在请求跨批次/多 lot/时间范围的新数据查询。
+ * 此类问题不能用 session 缓存（单批次数据）直接作答。
+ */
+function requiresNewDataQuery(text: string): boolean {
+  // 跨 tester / 机台 比较
+  if (/不同.*(tester|机台|测试机)/i.test(text)) return true;
+  // 多批次列表
+  if (/(各批次|所有批次|多批次|批次.*列表|列表.*批次)/i.test(text)) return true;
+  // 时间范围 + 批次
+  if (/(三周|一个月|两个月|三个月|过去\s*\d+\s*(天|周|月)|最近\s*\d+\s*(天|周|月)).*(批次|lot)/i.test(text)) return true;
+  // 消息中含 2 个以上明确的 lot ID（如 DR45487.1K、DR45246.1N...）
+  const lots = text.match(/\b[A-Z]{2}\d{5}\.\d[A-Z]\b/g) ?? [];
+  if (lots.length >= 2) return true;
+  return false;
+}
+
+/**
  * 探针卡 / 机台 直连路由：用户追问 "probecard是什么" 等时，直接从 session 缓存输出
  * equipment 表，不走 LLM，避免 LLM 用历史上下文把上一轮的 lot 总览表重复输出一次。
+ * 注意：跨批次/时间范围/多 lot 查询不适用，此时 session 缓存仅含单批次数据。
  */
 async function tryRunEquipmentDirectRoute(
   sessionId: string,
@@ -1097,6 +1155,7 @@ async function tryRunEquipmentDirectRoute(
   if (!isProbeCardQuestion(userQuestion) && !isTesterMachineQuestion(userQuestion)) {
     return false;
   }
+  if (requiresNewDataQuery(userQuestion)) return false;
   const payload = resolveJbToolPayload(sessionId);
   if (!payload) return false;
   return emitDeterministicJbTablesReply(sessionId, userQuestion, payload, agentConfig, emit);
@@ -1479,6 +1538,16 @@ export async function runAgentLoop(
         emit
       );
       if (recovered) return;
+    }
+
+    if (isTestItemMappingQuestion(userQuestion)) {
+      const msg =
+        "BIN 编号与测试项的对应关系存储在测试程序（test program）中，JB STAR / Yield Monitor 数据库不包含该映射，系统无法告知 BIN 对应的具体测试项名称。\n\n" +
+        "如需了解，请在 Uflex / J750 测试机上查阅 Pattern/Flow 定义，或联系测试工程师获取对应产品的测试程序文档。";
+      emitTextInChunks(msg, emit);
+      appendMessages(sessionId, { role: "assistant", content: msg });
+      emit({ type: "done" });
+      return;
     }
 
     if (!awaitingSummary) {
