@@ -418,7 +418,8 @@ export const INF_DRAW_AGENT_SCHEMAS = INF_TOOL_SCHEMAS.filter(
   (s) =>
     (s.function.name as string) === "inf_draw_wafer_map" ||
     (s.function.name as string) === "inf_draw_dut_bin_map" ||
-    (s.function.name as string) === "inf_site_stats"
+    (s.function.name as string) === "inf_site_stats" ||
+    (s.function.name as string) === "inf_touch_analysis"
 );
 
 // ── Dispatch ───────────────────────────────────────────────────────────────

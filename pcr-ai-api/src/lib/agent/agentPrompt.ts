@@ -112,6 +112,7 @@ const SEC_ROUTING = `\
 | **DUT×BIN 数量汇总**（哪个DUT坏bin最多/各DUT数量/**某BIN集中在哪些DUT**）| \`query_inf_site_bin_by_dut\`（单片）/ \`query_lot_dut_bin_agg\`（整批，可传 \`focusBin\`），始终可用 | 跳过第一级直接调 \`inf_site_stats\` 或 \`inf_draw_dut_bin_map\` |
 | **DUT 良率诊断 / 偏位 / 视觉图**（die 级）| 先第一级查数量 → 再 \`inf_site_stats\` → 再 \`inf_draw_dut_bin_map\` | 仅凭 JB STAR 就声称「DUT 正常」|
 | **各DUT良率柱状图 / DUT yield分布图**（yield% per DUT） | \`inf_site_stats(device, lot, slot)\` 取数 → \`generate_chart(chartType=bar, title="各DUT良率%", data={labels:["DUT1",...],series:[{name:"良率%",values:[yield×100,...]}]})\` | \`inf_draw_wafer_map\`（die 坐标图，无法展示 DUT 良率统计） |
+| **Touchdown / 探针接触次数**（单片或指定 slot） | \`query_jb_bins(lot)\` 取 device → \`inf_touch_analysis(device, lot, slot)\` | 用 JB 表格回答（JB 无 touch 字段） |
 | 画柱状图 / 折线图 / 饼图 | \`generate_chart\` | \`inf_draw_wafer_map\`（那是晶圆图，不是数据图表） |
 
 **各DUT良率柱状图硬规则（高频错误，每次务必对照）：**
@@ -127,6 +128,13 @@ const SEC_ROUTING = `\
 - 单片已知 → \`query_inf_site_bin_by_dut(device, lot, slot)\` → 读 \`focusBinDuts\`
 - **禁止**直接用 \`inf_draw_dut_bin_map\` 回答此类问题：该工具只看**单片**（须指定 slot），且内部自动选 BIN 频数最多的那个 DUT，**不展示所有 DUT 分布**；调用结果仅代表该片该 DUT，无法回答整批「哪些 DUT」
 - 正确顺序：先 \`query_lot_dut_bin_agg(focusBin)\` 查数量 → 告知各 DUT 颗数 → 可选再用 \`inf_draw_dut_bin_map\` 对目标 DUT 可视化
+
+**Touchdown（探针接触次数）规则：**
+- 场景：「每片的 touchdown」「slot 3 的接触次数」「哪片接触次数高」
+- 数据在 INF 文件中，**每次只能查一片**：\`inf_touch_analysis(device, lot, slot)\`
+- 用户问全批 touchdown：先 \`query_jb_bins(lot)\` 取 device，然后**告知用户指定片号**，不要输出 JB 良率表
+- 用户指定 slot 后：直接调 \`inf_touch_analysis(device, lot, slot)\`（device/lot 从 JB 历史结果取）
+- **禁止**用 JB 表格回答 touchdown 问题（JB STAR 无接触次数字段）
 
 **「聚集」判断规则（易混淆）：**
 - 用户说「**lot** 有没有聚集坏 bin」「**批次**坏 bin 突增」→ JB STAR 预计算，读 \`clusteredBadBinAlerts\`，**不调 \`inf_cluster_detect\`**

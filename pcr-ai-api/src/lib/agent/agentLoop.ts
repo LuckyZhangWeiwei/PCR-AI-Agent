@@ -1160,6 +1160,11 @@ function userWantsDutYieldChart(text: string): boolean {
   return /(柱|图|chart|bar|分布)/i.test(text);
 }
 
+/** 用户是否在问 touchdown（探针接触次数）。 */
+function isTouchdownQuestion(text: string): boolean {
+  return /touchdown|接触次数|探针接触|touch\s*count/i.test(text);
+}
+
 const DUT_YIELD_CHART_NUDGE =
   "用户需要各 DUT 良率柱状图（yield bar chart per DUT/site）。请按以下固定步骤：\n" +
   "1. 调用 `inf_site_stats(device, lot, slot)` 取 per-DUT 良率数据（device/lot/slot 来自历史 query_jb_bins 结果）\n" +
@@ -1412,6 +1417,8 @@ const INF_KEYWORDS = [
   "dut_bin_map", "dutbin",
   // DUT yield chart (inf_site_stats + generate_chart)
   "dut良率", "dut yield", "各dut", "每个dut", "良率柱状", "yield柱状", "yield分布图", "yield图",
+  // Touchdown / touch count analysis (inf_touch_analysis)
+  "touchdown", "接触次数", "探针接触", "touch count",
   // Tool name prefix (model explicitly naming tools)
   "inf_draw",
   // INF file reference
@@ -1677,6 +1684,36 @@ export async function runAgentLoop(
       // Summary 轮：inf_site_stats 已完成，直接生成 DUT 良率柱状图
       const chartDone = await tryRunDutYieldChartDirectRoute(sessionId, userQuestion, history, emit);
       if (chartDone) return;
+    } else if (
+      awaitingSummary &&
+      isTouchdownQuestion(userQuestion) &&
+      (lastTool?.name === "query_jb_bins" || lastTool?.name === "aggregate_jb_bins")
+    ) {
+      // Touchdown 问题：JB 数据已拿到 device/lot，但 touch 数据在 INF 文件中，需逐片调用
+      const jbPayload = resolveJbToolPayload(sessionId, String(lastTool.content ?? ""));
+      const lot = jbPayload ? String(jbPayload["lot"] ?? "") : "";
+      const device = jbPayload ? String(jbPayload["device"] ?? "") : "";
+      const slotSet = new Set<number>();
+      if (jbPayload) {
+        const summary = (jbPayload["slotYieldSummary"] as Array<{ slot: number }> | undefined) ?? [];
+        summary.forEach((r) => slotSet.add(r.slot));
+      }
+      const slots = [...slotSet].sort((a, b) => a - b);
+      const slotHint = slots.length > 0
+        ? `，共 ${slots.length} 片（slot ${slots[0]}–${slots[slots.length - 1]}）`
+        : "";
+      const deviceHint = device ? `（${device}）` : "";
+      const msg = [
+        `已查询到 lot **${lot}**${deviceHint}${slotHint}。`,
+        "",
+        "**Touchdown（探针接触次数）** 记录在各片 wafer 的 INF 文件中，需逐片调用 `inf_touch_analysis` 查询，无法一次性返回全部片数据。",
+        "",
+        "请告知需要查哪几片（如「第1片」「slot 3、5、12」），我将逐片列出各 DUT 的平均接触次数统计。",
+      ].join("\n");
+      emitTextInChunks(msg, emit);
+      appendMessages(sessionId, { role: "assistant", content: msg });
+      emit({ type: "done" });
+      return;
     }
 
     if (awaitingSummary && !waferPlan.skipJbDeterministicSummary) {
