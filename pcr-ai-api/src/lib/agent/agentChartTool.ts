@@ -193,6 +193,21 @@ export function inferGenerateChartArgsFromHistory(
       dutHint = dutHint ?? extractDutNumberFromText(msg.content);
       binHint = binHint ?? extractBinHintFromText(msg.content);
     }
+    if (msg.role === "tool" && msg.name === "inf_site_stats") {
+      const parsed = tryParseJsonish(String(msg.content ?? ""));
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+      const sitesRaw = (parsed as Record<string, unknown>).sites;
+      if (!Array.isArray(sitesRaw) || sitesRaw.length === 0) continue;
+      const sites = sitesRaw as Array<{ site_id: number; yield: number }>;
+      const labels = sites.map((s) => `DUT${s.site_id}`);
+      const values = sites.map((s) => +(s.yield * 100).toFixed(2));
+      const chartType =
+        typeof args.chartType === "string" && args.chartType.trim()
+          ? args.chartType.trim()
+          : "bar";
+      const title = String(args.title ?? "").trim() || "各DUT良率%";
+      return { chartType, title, data: { labels, series: [{ name: "良率%", values }] } };
+    }
     if (msg.role === "tool" && msg.name === "query_inf_site_bin_by_dut") {
       const inf = parseInfSiteBinToolJson(String(msg.content ?? ""));
       if (!inf) continue;

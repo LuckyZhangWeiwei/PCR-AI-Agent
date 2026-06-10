@@ -14,7 +14,7 @@ import { TOOL_SCHEMAS, INF_TOOL_SCHEMAS } from "./agentToolSchemas.js";
 import { runTool, type ChartSentinel, type ClarificationSentinel } from "./agentToolHandlers.js";
 import { buildSystemPrompt } from "./agentPrompt.js";
 import { fetchOrCacheManifest } from "./agentManifest.js";
-import { generateChartArgsHaveData } from "./agentChartTool.js";
+import { buildChartOption, generateChartArgsHaveData, tryParseJsonish } from "./agentChartTool.js";
 import { streamSiliconFlow, type CollectedToolCall } from "./agentStream.js";
 import { buildFeedbackInjection } from "./agentFeedback.js";
 import { buildJbSessionCacheJson } from "./agentJbBinFormat.js";
@@ -747,6 +747,45 @@ async function tryRunDutBinMapDirectRoute(
   }
 }
 
+/**
+ * Summary 轮：inf_site_stats 已完成，直接生成 DUT 良率柱状图，不走 LLM。
+ */
+async function tryRunDutYieldChartDirectRoute(
+  sessionId: string,
+  userQuestion: string,
+  history: ChatMessage[],
+  emit: (event: AgentSseEvent) => void
+): Promise<boolean> {
+  if (!userWantsDutYieldChart(userQuestion)) return false;
+  const lastTool = lastToolMessage(history);
+  if (lastTool?.name !== "inf_site_stats") return false;
+
+  const parsed = tryParseJsonish(String(lastTool.content ?? ""));
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+  const sitesRaw = (parsed as Record<string, unknown>).sites;
+  if (!Array.isArray(sitesRaw) || sitesRaw.length === 0) return false;
+
+  const sites = sitesRaw as Array<{ site_id: number; yield: number }>;
+  const labels = sites.map((s) => `DUT${s.site_id}`);
+  const values = sites.map((s) => +(s.yield * 100).toFixed(2));
+  const data = { labels, series: [{ name: "良率%", values }] };
+
+  try {
+    emit({ type: "status", message: "正在生成DUT良率柱状图…" });
+    const option = buildChartOption("bar", "各DUT良率%", data);
+    emit({ type: "chart", option });
+    const minY = Math.min(...values);
+    const maxY = Math.max(...values);
+    const content = `[图表已生成] 各DUT良率% 柱状图（${sites.length}个DUT，良率范围 ${minY.toFixed(1)}%–${maxY.toFixed(1)}%）`;
+    emitTextInChunks(content, emit);
+    appendMessages(sessionId, { role: "assistant", content });
+    emit({ type: "done" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** 执行 inf_draw_wafer_map 并结束本轮（不经过 LLM / JB 大表）。 */
 async function finishWaferMapDraw(
   sessionId: string,
@@ -1114,6 +1153,20 @@ async function tryRunLotOverviewDirectRoute(
   );
 }
 
+/** 用户是否在请求 DUT 良率柱状图/分布图（需 inf_site_stats + generate_chart bar）。 */
+function userWantsDutYieldChart(text: string): boolean {
+  if (!/(dut|site)/i.test(text)) return false;
+  if (!/(yield|良率)/i.test(text)) return false;
+  return /(柱|图|chart|bar|分布)/i.test(text);
+}
+
+const DUT_YIELD_CHART_NUDGE =
+  "用户需要各 DUT 良率柱状图（yield bar chart per DUT/site）。请按以下固定步骤：\n" +
+  "1. 调用 `inf_site_stats(device, lot, slot)` 取 per-DUT 良率数据（device/lot/slot 来自历史 query_jb_bins 结果）\n" +
+  "2. 收到结果后，调用 `generate_chart(chartType=\"bar\", title=\"各DUT良率%\", data={labels:[\"DUT1\",\"DUT2\",...], series:[{name:\"良率%\",values:[yield%,...]}]})`\n" +
+  "   - yield 字段为 0–1 小数，乘以 100 换算为百分比；labels 用 DUT{site_id} 格式\n" +
+  "**禁止调用 `inf_draw_wafer_map`**（那是 die 坐标空间图，无法展示每 DUT 良率统计柱状）。";
+
 /**
  * 判断用户是否在询问 BIN 对应的测试项（BIN→test item 映射）。
  * 该信息存储在测试程序（test program）中，不在 JB STAR / Yield Monitor 数据库里。
@@ -1357,6 +1410,8 @@ const INF_KEYWORDS = [
   // DUT×BIN relationship map (inf_draw_dut_bin_map)
   "dut和bin", "dut与bin", "dut×bin", "bin和dut",
   "dut_bin_map", "dutbin",
+  // DUT yield chart (inf_site_stats + generate_chart)
+  "dut良率", "dut yield", "各dut", "每个dut", "良率柱状", "yield柱状", "yield分布图", "yield图",
   // Tool name prefix (model explicitly naming tools)
   "inf_draw",
   // INF file reference
@@ -1618,6 +1673,10 @@ export async function runAgentLoop(
       appendMessages(sessionId, { role: "assistant", content: msg });
       emit({ type: "done" });
       return;
+    } else if (awaitingSummary && userWantsDutYieldChart(userQuestion) && lastTool?.name === "inf_site_stats") {
+      // Summary 轮：inf_site_stats 已完成，直接生成 DUT 良率柱状图
+      const chartDone = await tryRunDutYieldChartDirectRoute(sessionId, userQuestion, history, emit);
+      if (chartDone) return;
     }
 
     if (awaitingSummary && !waferPlan.skipJbDeterministicSummary) {
@@ -1644,6 +1703,12 @@ export async function runAgentLoop(
       !sessionCanDrawDutBinMap(history, userQuestion)
         ? `\n\n${DUT_BIN_MAP_JB_LOOKUP_NUDGE}`
         : "";
+    const dutYieldChartNudge =
+      !awaitingSummary &&
+      userWantsDutYieldChart(userQuestion) &&
+      !history.some((m) => m.role === "tool" && m.name === "inf_site_stats")
+        ? `\n\n${DUT_YIELD_CHART_NUDGE}`
+        : "";
     const lotOverviewNudge =
       !awaitingSummary && isLotOverviewQuestion(userQuestion)
         ? `\n\n${LOT_OVERVIEW_JB_NUDGE}`
@@ -1654,7 +1719,7 @@ export async function runAgentLoop(
       : "";
     const systemContent = awaitingSummary
       ? `${basePrompt}\n\n${SUMMARIZE_NUDGE}${summarySuffix}`
-      : `${basePrompt}${waferJbNudge}${dutBinNudge}${lotOverviewNudge}`;
+      : `${basePrompt}${waferJbNudge}${dutBinNudge}${dutYieldChartNudge}${lotOverviewNudge}`;
 
     const messages: ChatMessage[] = [
       { role: "system", content: systemContent },

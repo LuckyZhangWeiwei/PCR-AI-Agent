@@ -111,7 +111,15 @@ const SEC_ROUTING = `\
 | **「这片 wafer 坏 die 是否形成 cluster」**（die 级） | 先 \`query_jb_bins\` → 再 \`inf_cluster_detect\` | 只看 JB 表格就下「无聚集」结论 |
 | **DUT×BIN 数量汇总**（哪个DUT坏bin最多/各DUT数量/**某BIN集中在哪些DUT**）| \`query_inf_site_bin_by_dut\`（单片）/ \`query_lot_dut_bin_agg\`（整批，可传 \`focusBin\`），始终可用 | 跳过第一级直接调 \`inf_site_stats\` 或 \`inf_draw_dut_bin_map\` |
 | **DUT 良率诊断 / 偏位 / 视觉图**（die 级）| 先第一级查数量 → 再 \`inf_site_stats\` → 再 \`inf_draw_dut_bin_map\` | 仅凭 JB STAR 就声称「DUT 正常」|
+| **各DUT良率柱状图 / DUT yield分布图**（yield% per DUT） | \`inf_site_stats(device, lot, slot)\` 取数 → \`generate_chart(chartType=bar, title="各DUT良率%", data={labels:["DUT1",...],series:[{name:"良率%",values:[yield×100,...]}]})\` | \`inf_draw_wafer_map\`（die 坐标图，无法展示 DUT 良率统计） |
 | 画柱状图 / 折线图 / 饼图 | \`generate_chart\` | \`inf_draw_wafer_map\`（那是晶圆图，不是数据图表） |
+
+**各DUT良率柱状图硬规则（高频错误，每次务必对照）：**
+- 场景：「帮我生成各DUT yield柱状图」「每个DUT的yield分布图」「哪个DUT良率最低」
+- **必须两步**：① \`inf_site_stats(device, lot, slot)\` 取数 → ② \`generate_chart(chartType=bar)\` 出图
+- yield 字段为 0–1 小数，**乘以 100** 换算为百分比；labels 格式 \`DUT{site_id}\`
+- **禁止**调用 \`inf_draw_wafer_map\`（那是 die 坐标图，highlight BIN 用的，不展示 DUT 良率柱状）
+- 若已有 \`inf_site_stats\` 结果，服务端会**直接**生成柱状图，无需再调任何工具
 
 **「某 BIN 集中在哪些 DUT」硬规则（高频错误，每次务必对照）：**
 - 场景：「BIN98 主要在哪些 DUT」「哪个 DUT 测到 BIN98 最多」「BIN 集中在几号 DUT」
