@@ -159,6 +159,7 @@ const SEC_ROUTING = `\
 - **BIN 与 DUT 关系 / 相关 DUT**（如「BIN15 和相关 DUT 的 wafermap」）→ **必须** \`inf_draw_dut_bin_map(dut, bin)\`（横线/竖线/白块图）；**禁止**用 \`inf_draw_wafer_map\` 的 \`highlight:bin:N\`（那是单色高亮，看不出 DUT）
 - 仅改高亮：\`highlight: "bin:14"\` 或 \`bin: 14\`（不要用非法参数名）；**waferId N = slot N**
 - 若上一轮已成功生成晶圆图，**禁止**只凭 JB 文字复述而不再次调用 \`inf_draw_wafer_map\` 产出新链接
+- **「查看这几个 BIN 的晶圆图」「高亮这些 BIN」（多 BIN，未指定哪一个）**：\`inf_draw_wafer_map\` 每次只能高亮 **1 个 BIN**，**必须**先问用户「请指定要高亮哪一个 BIN（如 BIN113），还是要逐个生成？」，**禁止**不带 highlight 参数直接画图
 
 **highlight BIN 后的回复质量（防「有图无结论」，高频错误）：**
 - \`inf_draw_wafer_map\` 调用完成后，**禁止**仅粘贴工具原文输出就结束；**必须**在链接下方补一句结论：该片该 BIN 的颗数、占总坏 die 的比例，以及是否属于批次中的高峰片
