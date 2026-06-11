@@ -2,6 +2,16 @@
 
 ---
 
+## 2026-06-11 — Agent 页面链接点击导致页面变空修复
+
+**完成内容：**
+- `AiAgentReport.tsx` `makeAgentMarkdownComponents`：所有 `<a>` 加 `onClick` — `e.preventDefault()` + `window.open(..., "_blank", "noopener,noreferrer")`，彻底阻断浏览器弹窗拦截退化成当前页跳转（原仅靠 `target="_blank"`）；`href` 为空时渲染 `<span>` 防止空链接点击
+- `AiAgentReport.tsx` `downloadMarkdown`：`a` 元素改为 `appendChild` → `click` → `removeChild` + `setTimeout(() => revokeObjectURL, 100ms)`，修复部分浏览器 detached 元素 click 不触发下载的问题
+
+**测试：** tsc --noEmit 通过，无运行时测试（纯前端交互改动）
+
+---
+
 ## 2026-06-09 — JB 明细表 TESTEND 转 CST + 删除 PROBECARDTYPE + DataTable 列排序
 
 **完成内容：**
