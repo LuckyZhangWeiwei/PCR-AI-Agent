@@ -895,9 +895,11 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
 
             if (msg.kind === "tool") {
               // Orphan tool message (not preceded by an ai message) — rare fallback.
+              // Capture i by value; the while-loop var is shared across iterations.
+              const toolIdx = i;
               rendered.push(
-                <div key={i} className="ai-msg ai-msg--tool">
-                  <button type="button" className="ai-tool-toggle" onClick={() => toggleTool(i)}>
+                <div key={toolIdx} className="ai-msg ai-msg--tool">
+                  <button type="button" className="ai-tool-toggle" onClick={() => toggleTool(toolIdx)}>
                     🔧 {msg.name} {msg.open ? "▲" : "▼"}
                   </button>
                   {msg.open && msg.summary && <div className="ai-tool-detail">{msg.summary}</div>}
