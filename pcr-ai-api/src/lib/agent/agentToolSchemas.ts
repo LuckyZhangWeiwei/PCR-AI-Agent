@@ -215,7 +215,7 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "get_filter_values",
       description:
-        "查询某个筛选维度的可用值列表（如探针卡、批次号、测试机等）。在需要精确筛选但不知道具体值时调用。不要用它查 device 或时间范围——那些已在系统提示词的数据快照中。",
+        "查询某个筛选维度的可用值列表。支持 field=\"device\" + filterBy.mask 按 device 末 4 位查找匹配的完整 device 代码（按 TESTEND 最新排序）。其他字段查探针卡/批次号/测试机等。",
       parameters: {
         type: "object",
         properties: {
@@ -227,12 +227,13 @@ export const TOOL_SCHEMAS = [
           field: {
             type: "string",
             description:
-              "yield 支持: probeCard, probeCardType, hostname, lotId；jb 支持: cardId, probeCardType, testerId, lot",
+              "yield 支持: probeCard, probeCardType, hostname, lotId, device；jb 支持: cardId, probeCardType, testerId, lot, device。field=\"device\" 须配合 filterBy.mask 使用",
           },
           filterBy: {
             type: "object",
-            description: "可选前置过滤，如 { device: 'WA03P02G' }",
+            description: "可选过滤：mask（device 末 4 位，配合 field=\"device\" 使用）、device、probeCardType",
             properties: {
+              mask: { type: "string", description: "device 末 4 位，如 \"N06Z\"，配合 field=\"device\" 使用" },
               device: { type: "string" },
               probeCardType: { type: "string" },
             },

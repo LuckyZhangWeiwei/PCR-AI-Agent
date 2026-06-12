@@ -2,6 +2,21 @@
 
 ---
 
+## 2026-06-12 — get_filter_values 支持 field=device 按 mask 从 Oracle 查最新 device 代码
+
+**完成内容：**
+- `agentFilterValuesTool.ts`：新增 `field:"device"` + `filterBy:{mask:"N06Z"}` 支持，两域（yield/jb）均实现 Oracle 路径和 Dummy 路径
+  - Oracle yield 路径：`YMWEB_YIELDMONITORTRIGGER` 按 `SUBSTR(DEVICE,-4)=mask` 过滤，`GROUP BY DEVICE ORDER BY MAX(TESTEND) DESC`
+  - Oracle JB 路径：`INFCONTROL⋈INFLAYERBINLIST` 同逻辑，TESTEND 在 INFLAYERBINLIST 表
+  - Dummy 路径：yield 用 `TIME_STAMP`，JB 用 `TESTEND`，同样按最新日期排序
+  - 返回格式：`"WC21N06Z (最近: 2026-06-01)"` 方便 agent 直接取用 device 代码
+- `agentToolSchemas.ts`：更新 `get_filter_values` schema，补充 `field:"device"` 和 `filterBy.mask` 文档
+- `agentPrompt.ts` `SEC_MASK` 情况B：改为先调 `get_filter_values(field:"device", filterBy:{mask})` 查真实 device 代码，取代之前的前缀猜测策略
+
+**测试：** 267 个测试，264 通过，1 失败（OCI 库环境限制，无关本次改动），2 跳过
+
+---
+
 ## 2026-06-12 — generate_chart 崩溃修复 + mask 查询策略改进
 
 **完成内容：**
