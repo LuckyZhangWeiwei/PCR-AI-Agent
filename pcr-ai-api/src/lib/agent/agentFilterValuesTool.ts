@@ -47,6 +47,19 @@ function countDistinct(rawValues: string[], limit: number): {
 
 // ─── device-by-mask shared helper ────────────────────────────────────────────
 
+/**
+ * Extract the mask (last 4 chars) from the base segment of a device code.
+ * If device contains '-' or '_', only the part before the first separator is used.
+ * e.g. "WC21P51A-V2" → base "WC21P51A" → mask "P51A"
+ *      "WA13N06Z_R1" → base "WA13N06Z" → mask "N06Z"
+ *      "WC21P51A"    → base "WC21P51A" → mask "P51A"
+ */
+function deviceMask(device: string): string {
+  const sepIdx = device.search(/[-_]/);
+  const base = sepIdx >= 0 ? device.slice(0, sepIdx) : device;
+  return base.slice(-4).toUpperCase();
+}
+
 function dummyDeviceByMask(
   domain: "yield" | "jb",
   rows: { device: string; testEnd: string }[],
@@ -57,11 +70,11 @@ function dummyDeviceByMask(
     return { domain, field: "device", values: [], totalDistinct: 0 };
   }
   const maskUpper = mask.toUpperCase();
-  // Collect distinct devices whose last-4-chars match, track latest testEnd per device
+  // Collect distinct devices whose base-segment last-4-chars match, track latest testEnd per device
   const latest = new Map<string, string>();
   for (const { device, testEnd } of rows) {
     if (!device) continue;
-    if (device.toUpperCase().slice(-4) !== maskUpper) continue;
+    if (deviceMask(device) !== maskUpper) continue;
     const prev = latest.get(device);
     if (!prev || testEnd > prev) latest.set(device, testEnd);
   }
@@ -159,7 +172,7 @@ async function oracleYieldDeviceByMask(
       FROM YMWEB_YIELDMONITORTRIGGER t
       WHERE UPPER(TRIM(t."TYPE")) = 'DELTA_DIFF'
         AND NOT REGEXP_LIKE(t.LOTID, '^(kk|gg|c)', 'i')
-        AND UPPER(SUBSTR(TRIM(t.DEVICE), -4)) = :mask
+        AND UPPER(SUBSTR(REGEXP_SUBSTR(TRIM(t.DEVICE), '^[^-_]+'), -4)) = :mask
         AND t.DEVICE IS NOT NULL AND TRIM(t.DEVICE) != ''
       GROUP BY t.DEVICE
     )
@@ -270,7 +283,7 @@ async function oracleJbDeviceByMask(
       WHERE UPPER(TRIM(t2.PASSTYPE)) IN ('TEST', 'INTERRUPT')
         AND UPPER(TRIM(t2.LAYERNAME)) <> 'ABANDONED'
         AND NOT REGEXP_LIKE(t1.LOT, '^(kk|gg|c)', 'i')
-        AND UPPER(SUBSTR(TRIM(t1.DEVICE), -4)) = :mask
+        AND UPPER(SUBSTR(REGEXP_SUBSTR(TRIM(t1.DEVICE), '^[^-_]+'), -4)) = :mask
         AND t1.DEVICE IS NOT NULL AND TRIM(t1.DEVICE) != ''
       GROUP BY t1.DEVICE
     )

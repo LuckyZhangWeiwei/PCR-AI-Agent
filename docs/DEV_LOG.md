@@ -2,6 +2,17 @@
 
 ---
 
+## 2026-06-12 — mask 提取规则修正：首个 - 或 _ 之前的基础段后 4 位
+
+**完成内容：**
+- `agentFilterValuesTool.ts` `deviceMask()`：新增辅助函数，先截取 device 中首个 `-`/`_` 之前的基础段，再取末 4 位；Dummy 路径改用此函数替代 `.slice(-4)`
+- `agentFilterValuesTool.ts` Oracle SQL（yield/jb）：`SUBSTR(TRIM(DEVICE),-4)` 改为 `SUBSTR(REGEXP_SUBSTR(TRIM(DEVICE),'^[^-_]+'),-4)`，与 Dummy 逻辑一致
+- `agentPrompt.ts` SEC_MASK：更新 mask 定义，新增带 `-`/`_` 的示例（WC21P51A-V2 → P51A、WA13N06Z_R1 → N06Z）
+
+**测试：** 267 个测试，264 通过，1 失败（OCI 库环境限制，无关本次改动），2 跳过
+
+---
+
 ## 2026-06-12 — get_filter_values 支持 field=device 按 mask 从 Oracle 查最新 device 代码
 
 **完成内容：**

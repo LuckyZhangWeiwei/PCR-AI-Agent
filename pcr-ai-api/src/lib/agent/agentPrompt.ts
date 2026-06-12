@@ -418,7 +418,8 @@ const SEC_LOT_ID = `\
 const SEC_MASK = `\
 ## device 后缀标识（mask）
 
-- **mask** = device 字符串的**后 4 位**（如 "WA03P02G" → "P02G"）。
+- **mask** = device **基础段**的后 4 位。基础段 = device 中首个 \`-\` 或 \`_\` 之前的部分（若无则整个 device）。
+  例："WA03P02G" → 基础段 "WA03P02G" → mask "P02G"；"WC21P51A-V2" → 基础段 "WC21P51A" → mask "P51A"；"WA13N06Z_R1" → 基础段 "WA13N06Z" → mask "N06Z"。
 - 业务含义：同一个 mask 对应同一产品系列的后缀标识；不同 device 代码可能共享相同 mask。
 - **API 返回值**：v3/v4 列表行含 MASK 字段；聚合结果中若 device 为分组维度，parts 内也有 mask 字段。
 - **用户给 4 位字母数字串**（无 "."、无 "-"、不像 lot）→ 优先判断为 mask，区分以下两种情况处理：
