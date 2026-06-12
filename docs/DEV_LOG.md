@@ -2,6 +2,20 @@
 
 ---
 
+## 2026-06-12 — Agent 质量改进：6 项修复（截断标记 / 空结果回退 / lot 参数名 / 机台重试 / generate_chart / aggregate_jb_bins）
+
+**完成内容：**
+- `agentToolHandlers.ts` `truncateResult`：截断后缀改为明确标注省略字符数和完整字符数，并提示"以上为不完整数据，勿假设省略部分内容"
+- `agentPrompt.ts` `SEC_DATA_RULES`：新增「通用查询返回空时的回退策略」子节（检查格式→扩大时间→换域→ask_clarification，四步禁直接报错）
+- `agentPrompt.ts` `SEC_LOT_ID`：新增 `query_yield_triggers` 用 `lotId`、`query_jb_bins`/`aggregate_jb_bins` 用 `lot` 的参数名区分提示
+- `agentPrompt.ts` 机台名称规则：步骤5 由"尝试更短子串"改为**必须立即重试**，新增步骤6（两次均空才 ask_clarification）
+- `agentToolSchemas.ts` `generate_chart`：新增"调用前必须已有真实数值，禁止传空数组或占位符"
+- `agentToolSchemas.ts` `aggregate_jb_bins`：新增"若用户未给出任何范围条件，必须先 ask_clarification 询问再调用"
+
+**测试：** typecheck 通过，无运行时变更
+
+---
+
 ## 2026-06-12 — 机台名标准化规则扩充：补充 J750/MST/UFLEX 系列及台号推导示例
 
 **完成内容：**

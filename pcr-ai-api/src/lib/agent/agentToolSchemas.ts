@@ -107,7 +107,7 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "aggregate_jb_bins",
       description:
-        "对 JB STAR 按维度聚合坏 bin die 数。**必填** lot/device/cardId/slot 之一作范围过滤，禁止无过滤调用（否则为全库数据）。用户已指定 lot 时必传 lot。单 lot 概况/坏 bin Top 排名：用 query_jb_bins(lot) 读 topBadBins，勿用本工具。禁止：最近 N lot（用 recentLotsByTestEnd）、任意两个 bin 的 by-lot 对比（用 binTotalsByLot）。",
+        "对 JB STAR 按维度聚合坏 bin die 数。**必填** lot/device/cardId/slot 之一作范围过滤，禁止无过滤调用（否则为全库数据）。若用户未给出任何范围条件，**必须先 ask_clarification 询问**再调用，禁止无过滤调用（服务端将直接报错）。用户已指定 lot 时必传 lot。单 lot 概况/坏 bin Top 排名：用 query_jb_bins(lot) 读 topBadBins，勿用本工具。禁止：最近 N lot（用 recentLotsByTestEnd）、任意两个 bin 的 by-lot 对比（用 binTotalsByLot）。",
       parameters: {
         type: "object",
         properties: {
@@ -144,7 +144,7 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "generate_chart",
       description:
-        "根据数据生成 ECharts 图表。占比 pie 可传顶层 labels+values；或 data:{labels,series}。刚执行 query_inf_site_bin_by_dut 后画 DUT 占比可只传 chartType=pie 与含 DUT 编号的 title。",
+        "根据数据生成 ECharts 图表。占比 pie 可传顶层 labels+values；或 data:{labels,series}。刚执行 query_inf_site_bin_by_dut 后画 DUT 占比可只传 chartType=pie 与含 DUT 编号的 title。**调用前必须已有真实数值**；禁止传空数组或占位符——若数据未获取，先调相关查询工具。",
       parameters: {
         type: "object",
         properties: {

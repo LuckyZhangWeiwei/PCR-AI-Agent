@@ -109,9 +109,12 @@ function clampLimit(raw: unknown, defaultVal: number, max: number): number {
 function truncateResult(obj: unknown, maxChars: number): string {
   try {
     const s = JSON.stringify(obj);
-    return s.length > maxChars
-      ? s.slice(0, maxChars) + "…(truncated)"
-      : s;
+    if (s.length <= maxChars) return s;
+    const omitted = s.length - maxChars;
+    return (
+      s.slice(0, maxChars) +
+      `…[数据已截断：省略了末尾 ${omitted} 字符（共 ${s.length} 字符），以上为不完整数据，请基于可见部分作答，勿假设省略部分的内容]`
+    );
   } catch {
     return "(结果序列化失败)";
   }

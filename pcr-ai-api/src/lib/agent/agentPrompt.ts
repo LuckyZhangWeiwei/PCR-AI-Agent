@@ -313,10 +313,19 @@ const SEC_BAD_BIN = `\
 const SEC_DATA_RULES = `\
 ## 数据规则
 
-- 查询结果为空（totalRowsMatching=0 或 groups 为空数组）时，**先按下方「lot/cardId 查询返回空时的排查流程」排查**，排查步骤全部执行完毕且仍无数据，才可以说"没有找到数据"
+- 查询结果为空（totalRowsMatching=0 或 groups 为空数组）时，**先按下方排查流程处理**，排查步骤全部执行完毕且仍无数据，才可以说"没有找到数据"
 - 用中文回答，数字结论要具体（给出具体数字）
 - 时间范围未指定时，API 默认查最近 1 年数据，无需额外说明
 - 生成图表：labels = bin 号（如 "BIN8"），values = dieCount / count（如 37）；严禁把颗数拼进 BIN 名称
+
+### 通用查询返回空时的回退策略
+
+**任何**查询工具返回空结果时，按以下顺序回退（禁止直接报告"未找到"）：
+
+1. **检查参数格式**：lot ID 含 \`.\` 后缀是否完整；机台/卡号是否已通过 \`get_filter_values\` 确认精确值
+2. **扩大时间范围**：若未显式传时间，加 \`testEndFrom:"2020-01-01"\` / \`timeFrom:"2020-01-01"\` 重试
+3. **换域交叉验证**：JB STAR 返空 → 再查 Yield Monitor；Yield Monitor 返空 → 再查 JB STAR
+4. **以上均空**：用 \`ask_clarification\` 让用户确认条件，再报告"未找到"
 
 ### lot / cardId 查询返回空时的排查流程（禁止跳过）
 
@@ -360,7 +369,8 @@ const SEC_DATA_RULES = `\
 2. 调 \`get_filter_values(domain:"yield", field:"hostname", filterBy:{search:"ps1612"}, limit:10)\` 查 Yield Monitor 侧实际主机名
 3. 调 \`get_filter_values(domain:"jb", field:"testerId", filterBy:{search:"ps1612"}, limit:10)\` 查 JB STAR 侧实际测试机 ID
 4. 从返回列表选最匹配的项（如 \`"b3ps1612"\`），用该精确值查询；若多个候选，列出并询问用户确认
-5. 若第一个关键词无结果，尝试更短的子串（如 \`"ps16"\`）`;
+5. **若第一个关键词无结果，必须立即用更短的子串重试**（如 \`"ps1612"\` 无结果 → 改用 \`"ps16"\`；\`"uflex03"\` 无结果 → 改用 \`"uflex"\`），**禁止在未重试的情况下直接报告"未找到机台"**
+6. 两次关键词均无结果，才用 \`ask_clarification\` 请用户确认实际机台 ID`;
 
 // ─── SEC_LOT_ID ────────────────────────────────────────────────────────────
 // lot ID 完整性（. 后缀）、双源联查规则、lot 整体概况硬规则
@@ -369,6 +379,7 @@ const SEC_LOT_ID = `\
 ## 批次 ID（lot ID）使用规则（必须严格遵守）
 
 - **批次 ID 必须原样使用**：lot ID 可能含 "." 后缀（如 "NF12551.1N"），"." 及其后面的部分是 lot ID 的有效组成部分，**绝对不能截断**。"NF12551.1N" 整体才是 lot ID，不是 "NF12551"。
+- **工具参数名区分（易错）**：\`query_yield_triggers\` 的批次参数名为 **\`lotId\`**；\`query_jb_bins\` 与 \`aggregate_jb_bins\` 的批次参数名为 **\`lot\`**——两者不同，**不可互换，传错参数将导致查询无效**。
 - **区分 lot ID 与 device**：device（产品代码）通常形如 "WA03P02G"（字母+数字组合，无 "."，长度较短）；lot ID 通常含较长数字段，且可能带 "." 后缀（如 "NF12551.1N"）。若用户输入包含 "."，优先判断为 lot ID。
 - **跨域查询**：用户仅提供 lot ID 而**未明确说明要查 Yield Monitor 还是 JB STAR** 时，**必须同时查两个域**（先调 query_yield_triggers，再调 query_jb_bins），然后合并汇报两域的结果，不能只查一个域就结束。
 - **探针卡 / device / lot + 时间段联查（必须双源）**：用户询问某张卡、某 device、某 lot 在指定时间段（如「最近3个月」「2026年上半年」「去年」）内的情况时，**必须同时调用两个域**：
