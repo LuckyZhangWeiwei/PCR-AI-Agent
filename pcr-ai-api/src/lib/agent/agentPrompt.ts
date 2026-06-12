@@ -349,12 +349,18 @@ const SEC_DATA_RULES = `\
 - 两侧都空，才可报告"未找到该 lot 的记录，请确认 lot ID"并建议用 \`get_filter_values\` 查可用 lot 列表
 
 **机台名称标准化（必须执行）：**
-用户描述测试机的方式各异，系统内实际存储格式可能完全不同。**禁止直接把用户的原始机台描述作为 hostname 或 testerId 参数传入工具。** 必须先：
-1. 从用户描述中提取数字或字母关键词（如"PS1600第12台"→ "1612"；"T12PS16" → "ps16" 或 "1612"；"PS1600" → "1600"）
-2. 调 \`get_filter_values(domain:"yield", field:"hostname", filterBy:{search:"1612"}, limit:10)\` 查 Yield Monitor 侧实际主机名
-3. 调 \`get_filter_values(domain:"jb", field:"testerId", filterBy:{search:"1612"}, limit:10)\` 查 JB STAR 侧实际测试机 ID
-4. 从返回列表选最匹配的项（如 "b3ps1612"），用该精确值查询；若多个候选，列出并询问用户确认
-5. 若第一个关键词返回空，尝试更短的子串（如 "1600" 匹配所有 PS1600 系列）`;
+系统内实际机台 ID 格式为 \`b3ps16XX\`（PS16 系列）、\`b3uflexXX\`（UFLEX）、\`b3flexXX\`（FLEX）等，用户描述通常与此不同。**禁止直接把用户的原始机台描述作为 hostname 或 testerId 参数传入工具。** 必须先：
+1. 从用户描述推导搜索关键词（大小写不敏感）；系统支持机台系列：PS16、UFLEX、FLEX、J750、MST、93K：
+   - "PS1600第12台" / "PS1600-12" / "T12PS16" → 关键词 \`"ps1612"\`（ps + 系列号前两位16 + 台号12）
+   - "PS1600" 无台号 → 关键词 \`"ps16"\`（匹配全部 PS16 系列）
+   - "UFLEX第3台" / "UFLEX3" → 关键词 \`"uflex03"\`（无台号时用 \`"uflex"\`）
+   - "J750第5台" / "J750-5" → 关键词 \`"j75005"\` 或先用 \`"j750"\`（不确定格式时先查系列名再看实际返回格式）
+   - "MST第2台" / "MST2" → 关键词 \`"mst02"\` 或先用 \`"mst"\`（同上）
+   - 若对台号零填充位数不确定，先用系列名搜索，查看实际格式后再精确匹配
+2. 调 \`get_filter_values(domain:"yield", field:"hostname", filterBy:{search:"ps1612"}, limit:10)\` 查 Yield Monitor 侧实际主机名
+3. 调 \`get_filter_values(domain:"jb", field:"testerId", filterBy:{search:"ps1612"}, limit:10)\` 查 JB STAR 侧实际测试机 ID
+4. 从返回列表选最匹配的项（如 \`"b3ps1612"\`），用该精确值查询；若多个候选，列出并询问用户确认
+5. 若第一个关键词无结果，尝试更短的子串（如 \`"ps16"\`）`;
 
 // ─── SEC_LOT_ID ────────────────────────────────────────────────────────────
 // lot ID 完整性（. 后缀）、双源联查规则、lot 整体概况硬规则
