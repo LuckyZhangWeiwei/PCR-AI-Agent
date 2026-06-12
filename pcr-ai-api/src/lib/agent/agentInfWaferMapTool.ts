@@ -152,8 +152,9 @@ function latestUserBinHint(history: ChatMessage[]): number | undefined {
   return undefined;
 }
 
-/** waferId / slot from user text (e.g. 第1片、wafer 14). */
+/** waferId / slot from user text (e.g. 第1片、第一片、wafer 14). */
 export function extractSlotFromUserText(text: string): number | undefined {
+  // Arabic: "第 1 片", "slot=14", etc.
   const patterns = [
     /第\s*(\d+)\s*片/i,
     /wafer\s*id\s*[=:]?\s*(\d+)/i,
@@ -164,6 +165,17 @@ export function extractSlotFromUserText(text: string): number | undefined {
   for (const p of patterns) {
     const m = p.exec(text);
     if (m) return Number(m[1]);
+  }
+  // Chinese ordinals: 第一片, 第二片, ..., 第二十五片
+  const chMap: Record<string, number> = {
+    一: 1, 二: 2, 三: 3, 四: 4, 五: 5,
+    六: 6, 七: 7, 八: 8, 九: 9, 十: 10,
+    十一: 11, 十二: 12, 十三: 13, 十四: 14, 十五: 15,
+    十六: 16, 十七: 17, 十八: 18, 十九: 19, 二十: 20,
+    二十一: 21, 二十二: 22, 二十三: 23, 二十四: 24, 二十五: 25,
+  };
+  for (const [ch, num] of Object.entries(chMap)) {
+    if (new RegExp(`第\\s*${ch}\\s*片`).test(text)) return num;
   }
   return undefined;
 }

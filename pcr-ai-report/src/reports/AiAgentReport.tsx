@@ -16,8 +16,10 @@ function downloadMarkdown(text: string, title: string): void {
   const a = document.createElement("a");
   a.href = url;
   a.download = `${safe}.md`;
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 100);
 }
 
 function downloadChartPng(instance: ECharts, title: string): void {
@@ -38,15 +40,20 @@ function makeAgentMarkdownComponents(apiBase: string) {
     s: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
     // Wafer map links (/wafermaps/xxx.html) → prepend apiBase + open new tab
     a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
-      if (href && href.startsWith("/wafermaps/")) {
+      if (!href) return <span>{children}</span>;
+      const openNew = (e: React.MouseEvent) => {
+        e.preventDefault();
+        window.open((e.currentTarget as HTMLAnchorElement).href, "_blank", "noopener,noreferrer");
+      };
+      if (href.startsWith("/wafermaps/")) {
         const base = apiBase.replace(/\/$/, "");
         return (
-          <a href={`${base}${href}`} target="_blank" rel="noopener noreferrer" className="ai-wafermap-link">
+          <a href={`${base}${href}`} target="_blank" rel="noopener noreferrer" className="ai-wafermap-link" onClick={openNew}>
             {children}
           </a>
         );
       }
-      return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
+      return <a href={href} target="_blank" rel="noopener noreferrer" onClick={openNew}>{children}</a>;
     },
   };
 }
@@ -888,9 +895,11 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
 
             if (msg.kind === "tool") {
               // Orphan tool message (not preceded by an ai message) — rare fallback.
+              // Capture i by value; the while-loop var is shared across iterations.
+              const toolIdx = i;
               rendered.push(
-                <div key={i} className="ai-msg ai-msg--tool">
-                  <button type="button" className="ai-tool-toggle" onClick={() => toggleTool(i)}>
+                <div key={toolIdx} className="ai-msg ai-msg--tool">
+                  <button type="button" className="ai-tool-toggle" onClick={() => toggleTool(toolIdx)}>
                     🔧 {msg.name} {msg.open ? "▲" : "▼"}
                   </button>
                   {msg.open && msg.summary && <div className="ai-tool-detail">{msg.summary}</div>}

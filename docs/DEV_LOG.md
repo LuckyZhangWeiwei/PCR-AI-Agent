@@ -2,6 +2,25 @@
 
 ---
 
+## 2026-06-11 — Agent 页面 query_jb_bins 按钮点击导致页面变空（闭包 Bug）修复
+
+**完成内容：**
+- `AiAgentReport.tsx` 渲染循环 orphan tool 分支：`onClick={() => toggleTool(i)}` 中 `i` 为 `while` 循环外层变量，被闭包按引用捕获，循环结束后 `i === messages.length`，点击时 `copy[messages.length]` 为 `undefined`，`m.kind` 抛 `TypeError`，React 无 error boundary → 页面变空白。修复：在分支入口加 `const toolIdx = i`，用值快照替代引用捕获，`onClick` 改为 `toggleTool(toolIdx)`，`key` 同步替换
+
+**测试：** tsc --noEmit 通过，无运行时测试（纯前端逻辑修复）
+
+---
+
+## 2026-06-11 — Agent 页面链接点击导致页面变空修复
+
+**完成内容：**
+- `AiAgentReport.tsx` `makeAgentMarkdownComponents`：所有 `<a>` 加 `onClick` — `e.preventDefault()` + `window.open(..., "_blank", "noopener,noreferrer")`，彻底阻断浏览器弹窗拦截退化成当前页跳转（原仅靠 `target="_blank"`）；`href` 为空时渲染 `<span>` 防止空链接点击
+- `AiAgentReport.tsx` `downloadMarkdown`：`a` 元素改为 `appendChild` → `click` → `removeChild` + `setTimeout(() => revokeObjectURL, 100ms)`，修复部分浏览器 detached 元素 click 不触发下载的问题
+
+**测试：** tsc --noEmit 通过，无运行时测试（纯前端交互改动）
+
+---
+
 ## 2026-06-09 — JB 明细表 TESTEND 转 CST + 删除 PROBECARDTYPE + DataTable 列排序
 
 **完成内容：**

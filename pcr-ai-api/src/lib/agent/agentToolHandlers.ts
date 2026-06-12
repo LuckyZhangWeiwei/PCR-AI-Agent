@@ -451,7 +451,8 @@ async function toolAggregateJbBins(
  *  - Skip bins with totalDieCount = 0.
  */
 const GOOD_BIN_AVG_THRESHOLD = 100; // avg dieCount/DUT above this ≈ good/passing bin
-const MAX_DUTS_PER_BAD_BIN = 20;
+const MAX_DUTS_PER_BAD_BIN = 8;    // top DUTs shown per bad bin; 8 is enough for DUT comparison
+const MAX_BAD_BINS_DETAIL = 15;    // limit full-DUT-breakdown to top N bad bins by totalDieCount
 
 /** Pull DUT breakdown for a specific bin out of compact passes — placed at top of result so it's never truncated. */
 function extractFocusBinDuts(passes: unknown[], focusBinKey: string): unknown[] {
@@ -467,44 +468,53 @@ function extractFocusBinDuts(passes: unknown[], focusBinKey: string): unknown[] 
 }
 
 function compactSiteBinPasses(passes: SiteBinPass[]): unknown[] {
-  return passes.map((pass) => ({
-    passId: pass.passId,
-    bins: pass.bins
-      .map((b) => {
-        const total = b.duts.reduce((s, d) => s + d.dieCount, 0);
-        if (total === 0) return null;
-        const dutCount = b.duts.length;
-        const avg = dutCount > 0 ? total / dutCount : 0;
+  return passes.map((pass) => {
+    // Separate good bins (summary only) and bad bins (full DUT breakdown)
+    type MappedBin = { bin: string; isGoodBin?: boolean; totalDieCount: number; [k: string]: unknown };
+    const mapped: (MappedBin | null)[] = pass.bins.map((b) => {
+      const total = b.duts.reduce((s, d) => s + d.dieCount, 0);
+      if (total === 0) return null;
+      const dutCount = b.duts.length;
+      const avg = dutCount > 0 ? total / dutCount : 0;
 
-        if (avg > GOOD_BIN_AVG_THRESHOLD) {
-          // Good / passing bin — summarise only
-          const min = b.duts.reduce((m, d) => Math.min(m, d.dieCount), Infinity);
-          const max = b.duts.reduce((m, d) => Math.max(m, d.dieCount), 0);
-          return {
-            bin: b.bin,
-            isGoodBin: true,
-            dutCount,
-            totalDieCount: total,
-            minPerDut: min === Infinity ? 0 : min,
-            maxPerDut: max,
-          };
-        }
+      if (avg > GOOD_BIN_AVG_THRESHOLD) {
+        // Good / passing bin — summary only
+        const min = b.duts.reduce((m, d) => Math.min(m, d.dieCount), Infinity);
+        const max = b.duts.reduce((m, d) => Math.max(m, d.dieCount), 0);
+        return { bin: b.bin, isGoodBin: true, dutCount, totalDieCount: total, minPerDut: min === Infinity ? 0 : min, maxPerDut: max };
+      }
+      return { bin: b.bin, dutCount, totalDieCount: total, avgPerDut: Math.round(avg), _duts: b.duts };
+    });
 
-        // Bad bin — top N DUTs by dieCount desc
-        const sorted = [...b.duts].sort((a, z) => z.dieCount - a.dieCount);
-        const top = sorted.slice(0, MAX_DUTS_PER_BAD_BIN);
-        const extra = sorted.length - top.length;
-        return {
-          bin: b.bin,
-          dutCount,
-          totalDieCount: total,
-          avgPerDut: Math.round(avg),
-          duts: top,
-          ...(extra > 0 ? { moreDuts: `另有 ${extra} 个 DUT 未展示（dieCount 较低）` } : {}),
-        };
-      })
-      .filter(Boolean),
-  }));
+    const valid = mapped.filter(Boolean) as MappedBin[];
+    const goodBins = valid.filter((b) => b.isGoodBin);
+    const badBins  = valid.filter((b) => !b.isGoodBin);
+
+    // Sort bad bins by totalDieCount desc; only show full DUT breakdown for top N
+    badBins.sort((a, b) => b.totalDieCount - a.totalDieCount);
+    const detailBins = badBins.slice(0, MAX_BAD_BINS_DETAIL);
+    const summaryBins = badBins.slice(MAX_BAD_BINS_DETAIL);
+
+    const formattedDetail = detailBins.map((b) => {
+      const rawDuts = (b["_duts"] as Array<{ site: number; dieCount: number }>) ?? [];
+      const sorted = [...rawDuts].sort((a, z) => z.dieCount - a.dieCount);
+      const top = sorted.slice(0, MAX_DUTS_PER_BAD_BIN);
+      const extra = sorted.length - top.length;
+      const { _duts: _d, ...rest } = b;
+      void _d;
+      return { ...rest, duts: top, ...(extra > 0 ? { moreDuts: `另有 ${extra} 个 DUT 未展示` } : {}) };
+    });
+
+    const formattedSummary = summaryBins.map(({ _duts: _d, ...rest }) => { void _d; return { ...rest, dutBreakdownOmitted: true }; });
+    const extraNote = summaryBins.length > 0
+      ? [{ note: `另有 ${summaryBins.length} 个低频坏 BIN 仅含汇总（无 DUT 明细）` }]
+      : [];
+
+    return {
+      passId: pass.passId,
+      bins: [...goodBins, ...formattedDetail, ...formattedSummary, ...extraNote],
+    };
+  });
 }
 
 async function toolQueryLotDutBinAgg(
