@@ -32,13 +32,16 @@ function clampLimit(raw: unknown): number {
   return Math.min(Math.max(1, Math.round(n)), MAX_LIMIT);
 }
 
-function countDistinct(rawValues: string[], limit: number): {
+function countDistinct(rawValues: string[], limit: number, search?: string): {
   values: string[];
   totalDistinct: number;
 } {
+  const searchUpper = search?.toUpperCase();
   const counts = new Map<string, number>();
   for (const v of rawValues) {
-    if (v) counts.set(v, (counts.get(v) ?? 0) + 1);
+    if (!v) continue;
+    if (searchUpper && !v.toUpperCase().includes(searchUpper)) continue;
+    counts.set(v, (counts.get(v) ?? 0) + 1);
   }
   const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
   const values = sorted.slice(0, limit).map(([v, cnt]) => `${v} (${cnt}次)`);
@@ -115,7 +118,7 @@ function dummyYield(
     }
   });
 
-  const { values, totalDistinct } = countDistinct(raw, limit);
+  const { values, totalDistinct } = countDistinct(raw, limit, filterBy["search"]);
   return { domain: "yield", field, values, totalDistinct };
 }
 
@@ -155,7 +158,7 @@ function dummyJb(
     }
   });
 
-  const { values, totalDistinct } = countDistinct(raw, limit);
+  const { values, totalDistinct } = countDistinct(raw, limit, filterBy["search"]);
   return { domain: "jb", field, values, totalDistinct };
 }
 
@@ -225,6 +228,10 @@ async function oracleYield(
 
   let sql: string;
   if (field === "probeCardType") {
+    const searchCond = filterBy["search"]
+      ? `AND UPPER(sub.pct) LIKE '%' || UPPER(:search) || '%'`
+      : "";
+    if (filterBy["search"]) binds["search"] = filterBy["search"];
     sql = `
       SELECT grp_key, cnt, COUNT(*) OVER () AS total_distinct
       FROM (
@@ -235,6 +242,7 @@ async function oracleYield(
           WHERE ${where}
         ) sub
         WHERE sub.pct IS NOT NULL AND sub.pct != ''
+        ${searchCond}
         GROUP BY sub.pct
       )
       ORDER BY cnt DESC
@@ -244,6 +252,10 @@ async function oracleYield(
     const col = field === "probeCard" ? "t.PROBECARD"
       : field === "hostname" ? "t.HOSTNAME"
       : "t.LOTID";
+    const searchCond = filterBy["search"]
+      ? `AND UPPER(TRIM(${col})) LIKE '%' || UPPER(:search) || '%'`
+      : "";
+    if (filterBy["search"]) binds["search"] = filterBy["search"];
     sql = `
       SELECT grp_key, cnt, COUNT(*) OVER () AS total_distinct
       FROM (
@@ -251,6 +263,7 @@ async function oracleYield(
         FROM YMWEB_YIELDMONITORTRIGGER t
         WHERE ${where}
           AND ${col} IS NOT NULL AND TRIM(${col}) != ''
+          ${searchCond}
         GROUP BY ${col}
       )
       ORDER BY cnt DESC
@@ -338,6 +351,10 @@ async function oracleJb(
 
   let sql: string;
   if (field === "probeCardType") {
+    const searchCond = filterBy["search"]
+      ? `AND UPPER(sub.pct) LIKE '%' || UPPER(:search) || '%'`
+      : "";
+    if (filterBy["search"]) binds["search"] = filterBy["search"];
     sql = `
       SELECT grp_key, cnt, COUNT(*) OVER () AS total_distinct
       FROM (
@@ -347,21 +364,28 @@ async function oracleJb(
           ${fromClause}
         ) sub
         WHERE sub.pct IS NOT NULL AND sub.pct != ''
+        ${searchCond}
         GROUP BY sub.pct
       )
       ORDER BY cnt DESC
       FETCH FIRST :lim ROWS ONLY
     `;
   } else {
+    // TESTERID is on INFLAYERBINLIST (t2), not INFCONTROL (t1)
     const col = field === "cardId" ? "t1.CARDID"
-      : field === "testerId" ? "t1.TESTERID"
+      : field === "testerId" ? "t2.TESTERID"
       : "t1.LOT";
+    const searchCond = filterBy["search"]
+      ? `AND UPPER(TRIM(${col})) LIKE '%' || UPPER(:search) || '%'`
+      : "";
+    if (filterBy["search"]) binds["search"] = filterBy["search"];
     sql = `
       SELECT grp_key, cnt, COUNT(*) OVER () AS total_distinct
       FROM (
         SELECT ${col} AS grp_key, COUNT(*) AS cnt
         ${fromClause}
           AND ${col} IS NOT NULL AND TRIM(${col}) != ''
+          ${searchCond}
         GROUP BY ${col}
       )
       ORDER BY cnt DESC
@@ -398,6 +422,7 @@ export async function runGetFilterValues(
     if (fb["device"] != null) filterBy["device"] = String(fb["device"]);
     if (fb["probeCardType"] != null) filterBy["probeCardType"] = String(fb["probeCardType"]);
     if (fb["mask"] != null) filterBy["mask"] = String(fb["mask"]).trim().toUpperCase();
+    if (fb["search"] != null) filterBy["search"] = String(fb["search"]).trim();
   }
 
   if (domain === "yield") {

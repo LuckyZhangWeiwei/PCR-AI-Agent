@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-06-12 — get_filter_values 加 search 模糊查询 + 修 TESTERID 列错误 + 机台名标准化规则
+
+**完成内容：**
+- `agentFilterValuesTool.ts` `countDistinct`：新增 `search` 可选参数，做大小写不敏感的包含过滤（Dummy 路径）
+- `agentFilterValuesTool.ts` Oracle yield/jb：新增 `filterBy.search` → `UPPER(...) LIKE '%'||UPPER(:search)||'%'` 条件，支持 hostname/testerId/probeCard/lot/cardId 等字段的模糊匹配
+- `agentFilterValuesTool.ts` `oracleJb`：修复 `t1.TESTERID` → `t2.TESTERID`（TESTERID 在 INFLAYERBINLIST，不在 INFCONTROL），消除之前触发的 `ORA-00904` 错误
+- `agentToolSchemas.ts`：`filterBy` 新增 `search` 字段文档
+- `agentPrompt.ts` `SEC_DATA_RULES`：新增「机台名称标准化」硬规则——禁止直接用用户原始机台描述作参数，先调 `get_filter_values(field:"hostname"/"testerId", filterBy:{search:关键词})` 获取实际 ID，再查询
+
+**测试：** 267 个测试，264 通过，1 失败（OCI 库环境限制），2 跳过
+
+---
+
 ## 2026-06-12 — mask 提取规则修正：首个 - 或 _ 之前的基础段后 4 位
 
 **完成内容：**

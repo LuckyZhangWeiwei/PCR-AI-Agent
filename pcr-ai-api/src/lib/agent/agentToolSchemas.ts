@@ -231,9 +231,10 @@ export const TOOL_SCHEMAS = [
           },
           filterBy: {
             type: "object",
-            description: "可选过滤：mask（device 末 4 位，配合 field=\"device\" 使用）、device、probeCardType",
+            description: "可选过滤：search（对返回值做模糊匹配，如 hostname/testerId 用于机台名搜索）、mask（配合 field=\"device\"）、device、probeCardType",
             properties: {
-              mask: { type: "string", description: "device 末 4 位，如 \"N06Z\"，配合 field=\"device\" 使用" },
+              search: { type: "string", description: "对目标字段值做大小写不敏感的包含匹配，如 \"1600\" 可筛出所有含 1600 的 hostname/testerId" },
+              mask: { type: "string", description: "device 末 4 位（基础段），如 \"N06Z\"，配合 field=\"device\" 使用" },
               device: { type: "string" },
               probeCardType: { type: "string" },
             },

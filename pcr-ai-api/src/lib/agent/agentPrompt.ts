@@ -346,7 +346,15 @@ const SEC_DATA_RULES = `\
 
 **⑥ 跨域查询**
 - JB STAR 所有步骤仍空时，查 Yield Monitor 侧（\`query_yield_triggers(lotId: "NF12592.1Y")\`）
-- 两侧都空，才可报告"未找到该 lot 的记录，请确认 lot ID"并建议用 \`get_filter_values\` 查可用 lot 列表`;
+- 两侧都空，才可报告"未找到该 lot 的记录，请确认 lot ID"并建议用 \`get_filter_values\` 查可用 lot 列表
+
+**机台名称标准化（必须执行）：**
+用户描述测试机的方式各异，系统内实际存储格式可能完全不同。**禁止直接把用户的原始机台描述作为 hostname 或 testerId 参数传入工具。** 必须先：
+1. 从用户描述中提取数字或字母关键词（如"PS1600第12台"→ "1612"；"T12PS16" → "ps16" 或 "1612"；"PS1600" → "1600"）
+2. 调 \`get_filter_values(domain:"yield", field:"hostname", filterBy:{search:"1612"}, limit:10)\` 查 Yield Monitor 侧实际主机名
+3. 调 \`get_filter_values(domain:"jb", field:"testerId", filterBy:{search:"1612"}, limit:10)\` 查 JB STAR 侧实际测试机 ID
+4. 从返回列表选最匹配的项（如 "b3ps1612"），用该精确值查询；若多个候选，列出并询问用户确认
+5. 若第一个关键词返回空，尝试更短的子串（如 "1600" 匹配所有 PS1600 系列）`;
 
 // ─── SEC_LOT_ID ────────────────────────────────────────────────────────────
 // lot ID 完整性（. 后缀）、双源联查规则、lot 整体概况硬规则
