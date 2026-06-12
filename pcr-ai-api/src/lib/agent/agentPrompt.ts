@@ -431,9 +431,10 @@ const SEC_MASK = `\
   - 禁止直接查询、禁止凭快照 top-10 猜测后直接下结论
 
 **情况 B — mask + 定向条件**（用户同时给出了 lot 号 / cardId / 具体 BIN 编号之一）：
-  1. 先从快照或 \`get_filter_values\` 找出后 4 位等于该 mask 的完整 device 代码
-  2. 用匹配到的 device 代码作 device 参数查询，结论中注明"即 mask=P02G 的产品"
-  3. 若同一 mask 对应多个 device，合并查询或逐一列出，不要只查其中一个就下结论`;
+  1. 先从快照找出后 4 位等于该 mask 的完整 device 代码；若快照无匹配，**依次尝试** WC / WA / WB / WD 前缀 + 常见中段（如"WC21N06Z"、"WA13N06Z"等）直接调用查询工具，哪个返回非空就用哪个
+  2. 注意：\`get_filter_values\` 不支持 device 字段，不要尝试用它查 device；若上一步所有猜测均返回空，则使用 \`ask_clarification\` 询问用户提供完整 device 代码
+  3. 用匹配到的 device 代码作 device 参数查询，结论中注明"即 mask=P02G 的产品"
+  4. 若同一 mask 对应多个 device，合并查询或逐一列出，不要只查其中一个就下结论`;
 
 // ─── SEC_DOMAIN ────────────────────────────────────────────────────────────
 // 探针卡层级 / 维度选择 / Pass-sort 映射 / INF DUT / Lot 级 DUT /

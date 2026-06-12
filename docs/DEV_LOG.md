@@ -2,6 +2,18 @@
 
 ---
 
+## 2026-06-12 — generate_chart 崩溃修复 + mask 查询策略改进
+
+**完成内容：**
+- `agentChartTool.ts` `normalizeGenerateChartArgs`：新增解包 `{"arguments":"...JSON..."}` 单键包装。DeepSeek-V4-Flash 有时以 GLM 风格把完整 args 作为字符串放在 `arguments` 键下，导致 `data`/`labels` 为 undefined，错误走入 history 推断路径
+- `agentChartTool.ts` `chartDataFromRecord`：改为返回全部 series（原仅取第一条），支持多组对比柱状图
+- `agentChartTool.ts` `buildDutShareChartData`：新增对 compact 格式 `_duts` 字段及无 duts good bin 的防护，消除 `binEntry.duts is not iterable` crash（来源：当 generate_chart args 未被正确解析时，history 推断路径取 compact INF 结果并访问 `.duts`）
+- `agentPrompt.ts` `SEC_MASK` 情况 B：明确 `get_filter_values` 不支持 device 字段；改为依次尝试 WC/WA/WB/WD 常见前缀查询，全部返回空才用 `ask_clarification` 反问
+
+**测试：** 267 个测试，264 通过，1 失败（OCI 库环境限制，与本次改动无关），2 跳过
+
+---
+
 ## 2026-06-11 — Agent 页面 query_jb_bins 按钮点击导致页面变空（闭包 Bug）修复
 
 **完成内容：**

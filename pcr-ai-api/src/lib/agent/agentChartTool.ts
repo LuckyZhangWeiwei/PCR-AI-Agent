@@ -1,7 +1,7 @@
 // pcr-ai-api/src/lib/agent/agentChartTool.ts
 
 import type { ChatMessage } from "./agentHistory.js";
-import type { SiteBinPass } from "../outputSiteBinByLot.js";
+import type { SiteBinPass, SiteBinDutEntry } from "../outputSiteBinByLot.js";
 
 export interface ChartData {
   labels: string[];
@@ -60,21 +60,17 @@ function chartDataFromRecord(d: Record<string, unknown>): ChartData | null {
   }
 
   if (Array.isArray(labels) && Array.isArray(series) && series.length > 0) {
-    const first = series[0];
-    if (first != null && typeof first === "object" && !Array.isArray(first)) {
-      const s0 = first as Record<string, unknown>;
-      const sValues = tryParseJsonish(s0.values);
-      if (Array.isArray(sValues)) {
-        return {
-          labels: labels.map((l) => String(l)),
-          series: [
-            {
-              name: String(s0.name ?? "series"),
-              values: asNumberArray(sValues),
-            },
-          ],
-        };
-      }
+    const allSeries = series
+      .filter((s) => s != null && typeof s === "object" && !Array.isArray(s))
+      .map((s) => {
+        const s0 = s as Record<string, unknown>;
+        const sValues = tryParseJsonish(s0.values);
+        if (!Array.isArray(sValues)) return null;
+        return { name: String(s0.name ?? "series"), values: asNumberArray(sValues) };
+      })
+      .filter(Boolean) as { name: string; values: number[] }[];
+    if (allSeries.length > 0) {
+      return { labels: labels.map((l) => String(l)), series: allSeries };
     }
   }
 
@@ -85,6 +81,17 @@ function chartDataFromRecord(d: Record<string, unknown>): ChartData | null {
 export function normalizeGenerateChartArgs(
   args: Record<string, unknown>
 ): Record<string, unknown> {
+  // Unwrap GLM-style { "arguments": "...JSON..." } wrapping produced by some models.
+  const keys = Object.keys(args);
+  if (keys.length === 1 && keys[0] === "arguments" && typeof args.arguments === "string") {
+    try {
+      const inner = JSON.parse(args.arguments) as unknown;
+      if (inner && typeof inner === "object" && !Array.isArray(inner)) {
+        args = inner as Record<string, unknown>;
+      }
+    } catch { /* keep original */ }
+  }
+
   const chartType =
     typeof args.chartType === "string" && args.chartType.trim()
       ? args.chartType.trim()
@@ -159,7 +166,13 @@ export function buildDutShareChartData(
   for (const pass of passes) {
     for (const binEntry of pass.bins) {
       if (binKey && String(binEntry.bin).toLowerCase() !== binKey) continue;
-      for (const { dut: d, dieCount } of binEntry.duts) {
+      // compact format stores duts as `_duts`; good bins may have no duts at all
+      const duts: SiteBinDutEntry[] =
+        (Array.isArray(binEntry.duts) ? binEntry.duts : null) ??
+        (Array.isArray((binEntry as unknown as Record<string, unknown>)._duts)
+          ? (binEntry as unknown as Record<string, unknown>)._duts as SiteBinDutEntry[]
+          : []);
+      for (const { dut: d, dieCount } of duts) {
         if (typeof d !== "number") continue;
         if (d === dut) dutSum += dieCount;
         else otherSum += dieCount;
