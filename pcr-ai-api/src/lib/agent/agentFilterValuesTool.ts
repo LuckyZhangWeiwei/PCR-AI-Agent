@@ -128,10 +128,7 @@ function dummyJb(
   limit: number
 ): FilterValuesResult {
   if (field === "device") {
-    const jbRows = getInfcontrolLayerBinDummyRows().filter((r) => {
-      const pt = String(r.PASSTYPE).trim().toUpperCase();
-      return pt === "TEST" || pt === "INTERRUPT";
-    });
+    const jbRows = getInfcontrolLayerBinDummyRows();
     return dummyDeviceByMask("jb", jbRows.map((r) => ({
       device: String(r.DEVICE ?? "").trim(),
       testEnd: String(r.TESTEND ?? "").trim(),
@@ -293,9 +290,7 @@ async function oracleJbDeviceByMask(
       SELECT t1.DEVICE AS grp_key, MAX(t2.TESTEND) AS last_test
       FROM INFCONTROL t1
       JOIN INFLAYERBINLIST t2 ON t1.KEYNUMBER = t2.KEYNUMBER
-      WHERE UPPER(TRIM(t2.PASSTYPE)) IN ('TEST', 'INTERRUPT')
-        AND UPPER(TRIM(t2.LAYERNAME)) <> 'ABANDONED'
-        AND NOT REGEXP_LIKE(t1.LOT, '^(kk|gg|c)', 'i')
+      WHERE NOT REGEXP_LIKE(t1.LOT, '^(kk|gg|c)', 'i')
         AND UPPER(SUBSTR(REGEXP_REPLACE(TRIM(t1.DEVICE), '[-_].*', ''), -4)) = :mask
         AND t1.DEVICE IS NOT NULL AND TRIM(t1.DEVICE) != ''
       GROUP BY t1.DEVICE
