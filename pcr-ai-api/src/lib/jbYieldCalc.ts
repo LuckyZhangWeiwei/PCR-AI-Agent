@@ -755,6 +755,21 @@ export function slotYieldPivotFieldGuide(): string {
   return SLOT_YIELD_PIVOT_GUIDE;
 }
 
+/** 各片良率简表：有中断时展示首段 TEST（interruptHalf），整片合并见 interruptSegments。 */
+export function slotPivotDisplayMetrics(
+  entry: SlotYieldSummaryEntry
+): JbYieldMetrics {
+  if (entry.hasInterrupt && entry.interruptHalf) {
+    return entry.interruptHalf;
+  }
+  return {
+    grossDie: entry.grossDie,
+    badDie: entry.badDie,
+    goodDie: entry.goodDie,
+    yieldPct: entry.yieldPct,
+  };
+}
+
 const SLOT_YIELD_INTERRUPT_GUIDE =
   "slotYieldInterruptMarkdown：有中断时按 interruptSegments 逐段输出（多次中断：中断1…N→续测→整片合并；0%也写）。禁止仅报后半或把 2 段当成中断次数。";
 

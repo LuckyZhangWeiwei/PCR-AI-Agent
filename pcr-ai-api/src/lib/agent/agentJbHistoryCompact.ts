@@ -5,6 +5,7 @@ import {
   buildSlotYieldInterruptRows,
   buildSlotYieldPivot,
   passIdSortLabel,
+  slotPivotDisplayMetrics,
   type JbYieldMetrics,
   type SlotYieldSummaryEntry,
   type SlotYieldPivot,
@@ -17,6 +18,19 @@ import { jbYieldCoreFields } from "./agentJbYieldCore.js";
 function roundYieldPct(v: number | null): number | null {
   if (v === null || !Number.isFinite(v)) return null;
   return Math.round(v * 100) / 100;
+}
+
+function pivotCellFromSummary(
+  slot: number,
+  passId: number,
+  summary?: SlotYieldSummaryEntry[]
+): { yieldPct: number | null; badDie: number } {
+  const e = summary?.find((s) => s.slot === slot && s.passId === passId);
+  if (e) {
+    const m = slotPivotDisplayMetrics(e);
+    return { yieldPct: m.yieldPct, badDie: m.badDie };
+  }
+  return { yieldPct: null, badDie: 0 };
 }
 
 function passSortLabel(passId: number): string {
@@ -277,14 +291,16 @@ export function formatSlotYieldPivotMarkdown(
     const pairLines = [title, "", hdr, sep2];
     for (let i = 0; i < pivot.slots.length; i += 2) {
       const s1 = pivot.slots[i]!;
-      const c1 = pivot.cells[`${s1}:${passId}`];
-      const y1 = c1 ? (c1.yieldPct === null ? "—" : `${roundYieldPct(c1.yieldPct)}%`) : "—";
-      const bad1 = c1?.badDie ?? 0;
+      const p1 = pivotCellFromSummary(s1, passId, summary);
+      const y1 =
+        p1.yieldPct === null ? "—" : `${roundYieldPct(p1.yieldPct)}%`;
+      const bad1 = p1.badDie;
       if (i + 1 < pivot.slots.length) {
         const s2 = pivot.slots[i + 1]!;
-        const c2 = pivot.cells[`${s2}:${passId}`];
-        const y2 = c2 ? (c2.yieldPct === null ? "—" : `${roundYieldPct(c2.yieldPct)}%`) : "—";
-        const bad2 = c2?.badDie ?? 0;
+        const p2 = pivotCellFromSummary(s2, passId, summary);
+        const y2 =
+          p2.yieldPct === null ? "—" : `${roundYieldPct(p2.yieldPct)}%`;
+        const bad2 = p2.badDie;
         pairLines.push(`| ${s1} | ${y1} | ${bad1} | ${s2} | ${y2} | ${bad2} |`);
       } else {
         pairLines.push(`| ${s1} | ${y1} | ${bad1} | | | |`);
@@ -404,6 +420,8 @@ export function formatLotYieldOverviewMarkdown(
         summary.some((e) => e.testInterruptCount > 0) &&
         noInterrupt.length === summary.length
           ? "无中断 slot 良率（按测试层分列）"
+          : summary.some((e) => e.hasInterrupt && e.interruptHalf)
+            ? "无中断 slot 良率（按测试层分列）"
           : noInterrupt.length > 0 && noInterrupt.length < summary.length
             ? "无中断 slot 良率（按测试层分列）"
             : "各片良率（按测试层分列）";

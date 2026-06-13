@@ -17,7 +17,7 @@ import { fetchOrCacheManifest } from "./agentManifest.js";
 import { buildChartOption, generateChartArgsHaveData, tryParseJsonish } from "./agentChartTool.js";
 import { streamSiliconFlow, type CollectedToolCall } from "./agentStream.js";
 import { buildFeedbackInjection } from "./agentFeedback.js";
-import { buildJbSessionCacheJson } from "./agentJbBinFormat.js";
+import { storeJbQuerySessionCache, jbWrappedIsEmptyQuery } from "./agentJbBinFormat.js";
 import {
   compactJbBinsForHistory,
   compactJbCacheForHistory,
@@ -62,7 +62,6 @@ import {
 } from "./agentDutBinMapRoute.js";
 import {
   getJbToolRawJson,
-  storeJbToolRawJson,
 } from "./agentJbSessionCache.js";
 import {
   planWaferMapRoute,
@@ -1025,8 +1024,7 @@ async function tryRunWaferMapWithAutoDeviceLookup(
       toolResultMaxChars: agentConfig.toolResultMaxChars,
       history: getHistory(sessionId),
       onJbBinsWrapped: (wrapped) => {
-        jbCacheForHistory = buildJbSessionCacheJson(wrapped);
-        storeJbToolRawJson(sessionId, jbCacheForHistory);
+        jbCacheForHistory = storeJbQuerySessionCache(sessionId, wrapped);
       },
     });
     const rawContent =
@@ -1100,8 +1098,7 @@ async function tryRunLotOverviewDirectRoute(
         toolResultMaxChars: agentConfig.toolResultMaxChars,
         history: getHistory(sessionId),
         onJbBinsWrapped: (wrapped) => {
-          jbCacheForHistory = buildJbSessionCacheJson(wrapped);
-          storeJbToolRawJson(sessionId, jbCacheForHistory);
+          jbCacheForHistory = storeJbQuerySessionCache(sessionId, wrapped);
         },
       });
       const rawContent =
@@ -1316,6 +1313,7 @@ function jbBinsYieldFallbackMessage(
     sessionId,
     String(toolMsg.content ?? "")
   );
+  if (payload && jbWrappedIsEmptyQuery(payload)) return null;
   if (payload) {
     const tables = buildDeterministicJbTables(userQuestion, payload);
     if (tables?.trim()) {
@@ -2145,8 +2143,7 @@ export async function runAgentLoop(
               toolResultMaxChars: agentConfig.toolResultMaxChars,
               history: getHistory(sessionId),
               onJbBinsWrapped: (wrapped) => {
-                jbCacheForHistory = buildJbSessionCacheJson(wrapped);
-                storeJbToolRawJson(sessionId, jbCacheForHistory);
+                jbCacheForHistory = storeJbQuerySessionCache(sessionId, wrapped);
               },
             });
             if (

@@ -27,6 +27,7 @@ import {
   formatSlotYieldPivotMarkdown,
   formatYieldByPassSection,
 } from "./agentJbHistoryCompact.js";
+import { clearJbToolRawJson, storeJbToolRawJson } from "./agentJbSessionCache.js";
 import {
   jbYieldCoreFields,
   jbYieldCoreFieldsForSerialize,
@@ -962,6 +963,51 @@ export function serializeJbQueryResultForAgent(
  * 总结轮专用：在 serialize 截断之前缓存 markdown / 摘要（不含 rows）。
  * 避免 toolResult 超限时丢失 lotYieldOverviewMarkdown / badBinSlotTrends。
  */
+export function jbWrappedHasYieldData(wrapped: Record<string, unknown>): boolean {
+  const summary = wrapped["slotYieldSummary"] as SlotYieldSummaryEntry[] | undefined;
+  if (summary && summary.length > 0) return true;
+  const rows = wrapped["rows"];
+  if (Array.isArray(rows) && rows.length > 0) return true;
+  const count = Number(wrapped["count"] ?? 0);
+  return Number.isFinite(count) && count > 0;
+}
+
+/** 显式零行 query_jb_bins 回传（非探针卡/机台等元数据片段）。 */
+export function jbWrappedIsEmptyQuery(wrapped: Record<string, unknown>): boolean {
+  if (Array.isArray(wrapped["cardByPassId"]) && wrapped["cardByPassId"].length > 0) {
+    return false;
+  }
+  if (Array.isArray(wrapped["testerByLot"]) && wrapped["testerByLot"].length > 0) {
+    return false;
+  }
+  if (Array.isArray(wrapped["_trendRows"]) && wrapped["_trendRows"].length > 0) {
+    return false;
+  }
+  const summary = wrapped["slotYieldSummary"] as SlotYieldSummaryEntry[] | undefined;
+  if (summary && summary.length > 0) return false;
+  const overview = wrapped["lotYieldOverviewMarkdown"];
+  if (typeof overview === "string" && overview.trim()) return false;
+  const rows = wrapped["rows"];
+  if (Array.isArray(rows) && rows.length > 0) return false;
+  const count = Number(wrapped["count"]);
+  if (Number.isFinite(count) && count === 0) return true;
+  return false;
+}
+
+/** 无实测行时不写入会话缓存，避免空查询后仍直出旧 lot 表。 */
+export function storeJbQuerySessionCache(
+  sessionId: string,
+  wrapped: Record<string, unknown>
+): string | undefined {
+  if (!jbWrappedHasYieldData(wrapped)) {
+    clearJbToolRawJson(sessionId);
+    return undefined;
+  }
+  const json = buildJbSessionCacheJson(wrapped);
+  storeJbToolRawJson(sessionId, json);
+  return json;
+}
+
 export function buildJbSessionCacheJson(wrapped: Record<string, unknown>): string {
   const lotScoped = Boolean(wrapped["lotQueryFullRows"]);
   const summary = wrapped["slotYieldSummary"] as
@@ -976,7 +1022,7 @@ export function buildJbSessionCacheJson(wrapped: Record<string, unknown>): strin
 
   const cache: Record<string, unknown> = {
     ...jbYieldCoreFields(wrapped),
-    _jbSessionCacheVersion: 4,
+    _jbSessionCacheVersion: 5,
   };
 
   if (summary?.length) {
