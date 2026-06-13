@@ -12,6 +12,10 @@ export const TOOL_SCHEMAS = [
         type: "object",
         properties: {
           device: { type: "string", description: "产品代码，如 WA03P02G" },
+          mask: {
+            type: "string",
+            description: "device 末 4 位 mask（如 P02G），与 device 二选一；用于按产品系列后缀查询",
+          },
           lotId: { type: "string", description: "批次 ID，原样传入完整字符串，含 '.' 后缀（如 'NF12551.1N'），不可截断" },
           wafer: { type: "string", description: "晶圆编号" },
           hostname: { type: "string", description: "测试机名称" },
@@ -51,6 +55,10 @@ export const TOOL_SCHEMAS = [
             description: "返回 top N 组，默认 10，最大 25",
           },
           device: { type: "string" },
+          mask: {
+            type: "string",
+            description: "device 末 4 位 mask（如 P02G），与 device 二选一",
+          },
           lotId: { type: "string", description: "批次 ID，原样传入完整字符串，含 '.' 后缀（如 'NF12551.1N'），不可截断" },
           wafer: { type: "string" },
           hostname: { type: "string" },
@@ -74,6 +82,10 @@ export const TOOL_SCHEMAS = [
         type: "object",
         properties: {
           device: { type: "string", description: "产品代码" },
+          mask: {
+            type: "string",
+            description: "device 末 4 位 mask（如 P02G），与 device 二选一",
+          },
           lot: { type: "string", description: "批次 ID，原样传入完整字符串，含 '.' 后缀（如 'NF12551.1N'），不可截断" },
           slot: { type: "number", description: "晶圆槽位号" },
           cardId: { type: "string", description: "探针卡 ID（CARDID）" },
@@ -121,6 +133,10 @@ export const TOOL_SCHEMAS = [
             description: "返回 top N 组，默认 10，最大 50",
           },
           device: { type: "string" },
+          mask: {
+            type: "string",
+            description: "device 末 4 位 mask（如 P02G），与 device 二选一；可作为范围过滤",
+          },
           lot: { type: "string", description: "批次 ID，原样传入完整字符串，含 '.' 后缀（如 'NF12551.1N'），不可截断" },
           slot: { type: "number" },
           cardId: { type: "string" },
@@ -215,7 +231,7 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "get_filter_values",
       description:
-        "查询某个筛选维度的可用值列表。支持 field=\"device\" + filterBy.mask 按 device 末 4 位查找匹配的完整 device 代码（按最近测试时间排序：yield 域用 TIME_STAMP，jb 域用 TESTEND）。其他字段查探针卡/批次号/测试机等。",
+        "查询某个筛选维度的可用值列表。field=\"device\" 时用 mask（如 P02G）查找完整 device 代码（yield 按 TIME_STAMP、jb 按 TESTEND 最近排序）。mask 可写在 filterBy.mask 或顶层 mask 参数。",
       parameters: {
         type: "object",
         properties: {
@@ -227,7 +243,11 @@ export const TOOL_SCHEMAS = [
           field: {
             type: "string",
             description:
-              "yield 支持: probeCard, probeCardType, hostname, lotId, device；jb 支持: cardId, probeCardType, testerId, lot, device。field=\"device\" 须配合 filterBy.mask 使用",
+              "yield 支持: probeCard, probeCardType, hostname, lotId, device；jb 支持: cardId, probeCardType, testerId, lot, device。field=\"device\" 须传 mask",
+          },
+          mask: {
+            type: "string",
+            description: "device 末 4 位（如 P02G）；field=\"device\" 时可放顶层，等价于 filterBy.mask",
           },
           filterBy: {
             type: "object",

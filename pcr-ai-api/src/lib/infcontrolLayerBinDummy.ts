@@ -10,7 +10,7 @@ import {
 import { loadInfcontrolLayerBinRowsFromJbStartXlsx } from "./dummyRowsFromExcel.js";
 import { listApisForceOracleNoDummy } from "./listDummyRuntime.js";
 import { probeCardTypeLeadingSegment } from "./probeCardTypeLeadingSegment.js";
-import { deviceMask } from "./deviceMask.js";
+import { deviceMask, deviceMatchesMask } from "./deviceMask.js";
 import { rowMatchesInfcontrolBinColumnFilters } from "./infcontrolBinColumnFilters.js";
 
 /**
@@ -469,9 +469,7 @@ export function filterInfcontrolLayerBinV3DummyRowsMatching(
 
   if (applied.mask !== undefined) {
     const want = String(applied.mask).trim().toUpperCase();
-    rows = rows.filter(
-      (r) => String(r.DEVICE ?? "").trim().slice(-4).toUpperCase() === want
-    );
+    rows = rows.filter((r) => deviceMatchesMask(r.DEVICE, want));
   }
 
   if (applied.probeCardType !== undefined) {

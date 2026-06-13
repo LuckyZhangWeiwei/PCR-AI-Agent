@@ -10,6 +10,11 @@ import {
   getInfcontrolLayerBinDummyRows,
 } from "../infcontrolLayerBinDummy.js";
 import { probeCardTypeLeadingSegment } from "../probeCardTypeLeadingSegment.js";
+import {
+  deviceMatchesMask,
+  deviceMaskOracleWhere,
+  looksLikeDeviceMaskToken,
+} from "../deviceMask.js";
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
@@ -25,6 +30,7 @@ interface FilterValuesResult {
   field: string;
   values: string[];
   totalDistinct: number;
+  hint?: string;
 }
 
 function clampLimit(raw: unknown): number {
@@ -50,17 +56,32 @@ function countDistinct(rawValues: string[], limit: number, search?: string): {
 
 // ─── device-by-mask shared helper ────────────────────────────────────────────
 
-/**
- * Extract the mask (last 4 chars) from the base segment of a device code.
- * If device contains '-' or '_', only the part before the first separator is used.
- * e.g. "WC21P51A-V2" → base "WC21P51A" → mask "P51A"
- *      "WA13N06Z_R1" → base "WA13N06Z" → mask "N06Z"
- *      "WC21P51A"    → base "WC21P51A" → mask "P51A"
- */
-function deviceMask(device: string): string {
-  const sepIdx = device.search(/[-_]/);
-  const base = sepIdx >= 0 ? device.slice(0, sepIdx) : device;
-  return base.slice(-4).toUpperCase();
+function resolveDeviceMaskArg(
+  field: string,
+  args: Record<string, unknown>,
+  filterBy: Record<string, string | undefined>
+): string | undefined {
+  if (field !== "device") return filterBy["mask"];
+
+  if (filterBy["mask"]) return filterBy["mask"];
+
+  if (args["mask"] != null) {
+    return String(args["mask"]).trim().toUpperCase();
+  }
+
+  if (filterBy["search"]) return filterBy["search"].toUpperCase();
+  if (args["search"] != null) {
+    return String(args["search"]).trim().toUpperCase();
+  }
+
+  const devCandidate =
+    filterBy["device"] ??
+    (args["device"] != null ? String(args["device"]).trim() : undefined);
+  if (devCandidate && looksLikeDeviceMaskToken(devCandidate)) {
+    return devCandidate.toUpperCase();
+  }
+
+  return undefined;
 }
 
 function dummyDeviceByMask(
@@ -73,11 +94,10 @@ function dummyDeviceByMask(
     return { domain, field: "device", values: [], totalDistinct: 0 };
   }
   const maskUpper = mask.toUpperCase();
-  // Collect distinct devices: match by base-segment last-4-chars OR by substring containment
   const latest = new Map<string, string>();
   for (const { device, testEnd } of rows) {
     if (!device) continue;
-    if (deviceMask(device) !== maskUpper && !device.toUpperCase().includes(maskUpper)) continue;
+    if (!deviceMatchesMask(device, maskUpper)) continue;
     const prev = latest.get(device);
     if (!prev || testEnd > prev) latest.set(device, testEnd);
   }
@@ -95,6 +115,15 @@ function dummyYield(
   limit: number
 ): FilterValuesResult {
   if (field === "device") {
+    if (!filterBy["mask"]) {
+      return {
+        domain: "yield",
+        field: "device",
+        values: [],
+        totalDistinct: 0,
+        hint: 'field="device" 需要 filterBy.mask（如 "P02G"）或顶层 mask 参数',
+      };
+    }
     return dummyDeviceByMask("yield", getYieldMonitorTriggerDummyRows().map((r) => ({
       device: String(r.DEVICE ?? "").trim(),
       testEnd: String(r.TIME_STAMP ?? "").trim(),
@@ -128,6 +157,15 @@ function dummyJb(
   limit: number
 ): FilterValuesResult {
   if (field === "device") {
+    if (!filterBy["mask"]) {
+      return {
+        domain: "jb",
+        field: "device",
+        values: [],
+        totalDistinct: 0,
+        hint: 'field="device" 需要 filterBy.mask（如 "P02G"）或顶层 mask 参数',
+      };
+    }
     const jbRows = getInfcontrolLayerBinDummyRows();
     return dummyDeviceByMask("jb", jbRows.map((r) => ({
       device: String(r.DEVICE ?? "").trim(),
@@ -172,10 +210,7 @@ async function oracleYieldDeviceByMask(
       FROM YMWEB_YIELDMONITORTRIGGER t
       WHERE UPPER(TRIM(t."TYPE")) = 'DELTA_DIFF'
         AND NOT REGEXP_LIKE(t.LOTID, '^(kk|gg|c)', 'i')
-        AND (
-          UPPER(SUBSTR(REGEXP_REPLACE(TRIM(t.DEVICE), '[-_].*', ''), -4)) = :mask
-          OR UPPER(TRIM(t.DEVICE)) LIKE '%' || :mask || '%'
-        )
+        AND ${deviceMaskOracleWhere("t.DEVICE", "mask")}
         AND t.DEVICE IS NOT NULL AND TRIM(t.DEVICE) != ''
       GROUP BY t.DEVICE
     )
@@ -203,7 +238,15 @@ async function oracleYield(
 ): Promise<FilterValuesResult> {
   if (field === "device") {
     const mask = filterBy["mask"] ?? "";
-    if (!mask) return { domain: "yield", field: "device", values: [], totalDistinct: 0 };
+    if (!mask) {
+      return {
+        domain: "yield",
+        field: "device",
+        values: [],
+        totalDistinct: 0,
+        hint: 'field="device" 需要 filterBy.mask（如 "P02G"）或顶层 mask 参数',
+      };
+    }
     return oracleYieldDeviceByMask(mask, limit);
   }
 
@@ -294,10 +337,7 @@ async function oracleJbDeviceByMask(
       FROM INFCONTROL t1
       JOIN INFLAYERBINLIST t2 ON t1.KEYNUMBER = t2.KEYNUMBER
       WHERE NOT REGEXP_LIKE(t1.LOT, '^(kk|gg|c)', 'i')
-        AND (
-          UPPER(SUBSTR(REGEXP_REPLACE(TRIM(t1.DEVICE), '[-_].*', ''), -4)) = :mask
-          OR UPPER(TRIM(t1.DEVICE)) LIKE '%' || :mask || '%'
-        )
+        AND ${deviceMaskOracleWhere("t1.DEVICE", "mask")}
         AND t1.DEVICE IS NOT NULL AND TRIM(t1.DEVICE) != ''
       GROUP BY t1.DEVICE
     )
@@ -325,7 +365,15 @@ async function oracleJb(
 ): Promise<FilterValuesResult> {
   if (field === "device") {
     const mask = filterBy["mask"] ?? "";
-    if (!mask) return { domain: "jb", field: "device", values: [], totalDistinct: 0 };
+    if (!mask) {
+      return {
+        domain: "jb",
+        field: "device",
+        values: [],
+        totalDistinct: 0,
+        hint: 'field="device" 需要 filterBy.mask（如 "P02G"）或顶层 mask 参数',
+      };
+    }
     return oracleJbDeviceByMask(mask, limit);
   }
 
@@ -418,15 +466,20 @@ export async function runGetFilterValues(
   // Safely coerce filterBy values to strings — LLM may pass numbers or nulls.
   const rawFilterBy = args["filterBy"];
   const filterBy: Record<string, string | undefined> = {};
-  if (rawFilterBy !== null && typeof rawFilterBy === "object") {
+  if (typeof rawFilterBy === "string" && rawFilterBy.trim() !== "") {
+    filterBy["mask"] = rawFilterBy.trim().toUpperCase();
+  } else if (rawFilterBy !== null && typeof rawFilterBy === "object") {
     const fb = rawFilterBy as Record<string, unknown>;
     if (fb["device"] != null) filterBy["device"] = String(fb["device"]);
     if (fb["probeCardType"] != null) filterBy["probeCardType"] = String(fb["probeCardType"]);
     if (fb["mask"] != null) filterBy["mask"] = String(fb["mask"]).trim().toUpperCase();
     if (fb["search"] != null) filterBy["search"] = String(fb["search"]).trim();
-    // field="device" 时 LLM 有时传 search 而非 mask；将 search 提升为 mask（大小写均可）
-    if (field === "device" && filterBy["mask"] == null && filterBy["search"] != null) {
-      filterBy["mask"] = filterBy["search"].toUpperCase();
+  }
+
+  if (field === "device") {
+    const resolvedMask = resolveDeviceMaskArg(field, args, filterBy);
+    if (resolvedMask) {
+      filterBy["mask"] = resolvedMask;
       delete filterBy["search"];
     }
   }
