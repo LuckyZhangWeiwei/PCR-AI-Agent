@@ -1422,7 +1422,43 @@ function mergeStructuredWithEmbedded(
 
 /** True when the last history turn is tool output awaiting a text summary. */
 export function historyAwaitingToolSummary(history: ChatMessage[]): boolean {
-  return history.length > 0 && history[history.length - 1].role === "tool";
+  if (history.length === 0) return false;
+  const last = history[history.length - 1];
+  if (last.role !== "tool") return false;
+  // If the only data-fetch result so far is a single get_filter_values with
+  // empty values, don't force summary yet — let the model query another domain.
+  if (last.name === "get_filter_values") {
+    const parsed = tryParseJsonish(String(last.content ?? ""));
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      !Array.isArray(parsed) &&
+      Array.isArray((parsed as Record<string, unknown>)["values"]) &&
+      ((parsed as Record<string, unknown>)["values"] as unknown[]).length === 0
+    ) {
+      // Count how many consecutive empty get_filter_values tool messages trail the history.
+      // Allow one retry round; if already had an empty result before, force summary.
+      let emptyCount = 0;
+      for (let i = history.length - 1; i >= 0; i--) {
+        const msg = history[i];
+        if (msg.role !== "tool" || msg.name !== "get_filter_values") break;
+        const p = tryParseJsonish(String(msg.content ?? ""));
+        if (
+          p &&
+          typeof p === "object" &&
+          !Array.isArray(p) &&
+          Array.isArray((p as Record<string, unknown>)["values"]) &&
+          ((p as Record<string, unknown>)["values"] as unknown[]).length === 0
+        ) {
+          emptyCount++;
+        } else {
+          break;
+        }
+      }
+      if (emptyCount < 2) return false; // give model one more round to try another domain
+    }
+  }
+  return true;
 }
 
 // ── Tool schema selector ───────────────────────────────────────────────────
