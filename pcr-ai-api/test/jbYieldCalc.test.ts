@@ -400,4 +400,122 @@ describe("jbYieldCalc", () => {
     assert.equal(s.goodDie, 2708);
     assert.ok(s.yieldPct !== null && Math.abs(s.yieldPct - 91.15) < 0.1);
   });
+
+  it("same PASSNUM multi TEST resume: 前半/后半/整片, not per-row 续测段", () => {
+    const mk = (i: number, good: number, bad: number) => ({
+      SLOT: 1,
+      PASSID: 1,
+      PASSNUM: 1,
+      PASSTYPE: "TEST",
+      GROSSDIE: 370,
+      PASSBIN: "1",
+      TESTEND: `2026-06-01T10:${String(i).padStart(2, "0")}:00.000Z`,
+      bins: [
+        { n: 1, value: good, isGoodBin: true },
+        { n: 5, value: bad, isGoodBin: false },
+      ],
+    });
+    const rows = [mk(0, 270, 100), mk(1, 299, 71), mk(2, 300, 70)];
+    const summary = buildSlotYieldSummary(rows);
+    const s = summary[0]!;
+    assert.equal(s.hasInterrupt, true);
+    assert.equal(s.testInterruptCount, 2);
+    const segs = s.interruptSegments!;
+    assert.equal(segs.length, 3);
+    assert.equal(segs[0]!.label, "前半段");
+    assert.equal(segs[0]!.metrics.grossDie, 370);
+    assert.equal(segs[1]!.label, "后半段");
+    assert.equal(segs[1]!.metrics.grossDie, 740);
+    assert.equal(segs[2]!.label, "整片正片（合并）");
+    assert.equal(segs[2]!.metrics.grossDie, 1110);
+    assert.ok(!segs.some((x) => x.label.startsWith("续测段")));
+  });
+
+  it("object bins map: bad die counted for yield", () => {
+    const row = {
+      GROSSDIE: 370,
+      PASSTYPE: "TEST",
+      PASSBIN: "1-2",
+      bins: {
+        "1": { value: 300, isGood: true },
+        "5": { value: 70, isGood: false },
+      },
+    };
+    assert.equal(badDieFromJbRow(row), 70);
+    const m = computeJbYieldMetrics([row]);
+    assert.ok(m.yieldPct !== null && Math.abs(m.yieldPct - 81.08) < 0.1);
+  });
+
+  it("excludes PASSID=99 Current layer from slotYieldSummary", () => {
+    const rows = [
+      {
+        SLOT: 1,
+        PASSID: 1,
+        PASSNUM: 1,
+        PASSTYPE: "TEST",
+        GROSSDIE: 370,
+        PASSBIN: "1",
+        bins: [{ n: 1, value: 308, isGoodBin: true }, { n: 5, value: 62, isGoodBin: false }],
+      },
+      {
+        SLOT: 1,
+        PASSID: 1,
+        PASSNUM: 2,
+        PASSTYPE: "RETESTBIN",
+        GROSSDIE: 10,
+        PASSBIN: "1",
+        bins: [{ n: 1, value: 7, isGoodBin: true }],
+      },
+      {
+        SLOT: 1,
+        PASSID: 99,
+        PASSNUM: 99,
+        PASSTYPE: "NA",
+        LAYERNAME: "Current",
+        GROSSDIE: 370,
+        PASSBIN: "1",
+        bins: { "1": { value: 312, isGood: true } },
+      },
+    ];
+    const summary = buildSlotYieldSummary(rows);
+    assert.equal(summary.length, 1);
+    assert.equal(summary[0]!.passId, 1);
+    assert.equal(summary[0]!.hasInterrupt, false);
+    assert.equal(summary[0]!.testInterruptCount, 1);
+    assert.equal(summary[0]!.badDie, 62);
+    assert.ok(
+      summary[0]!.yieldPct !== null &&
+        Math.abs(summary[0]!.yieldPct - 83.24) < 0.1
+    );
+  });
+
+  it("NF13137 pattern: single TEST + RETESTBIN uses TEST row yield (slot 2)", () => {
+    const rows = [
+      {
+        SLOT: 2,
+        PASSID: 1,
+        PASSNUM: 1,
+        PASSTYPE: "TEST",
+        GROSSDIE: 370,
+        PASSBIN: "1-2",
+        bins: [
+          { n: 1, value: 291, isGoodBin: true },
+          { n: 5, value: 79, isGoodBin: false },
+        ],
+      },
+      {
+        SLOT: 2,
+        PASSID: 1,
+        PASSNUM: 2,
+        PASSTYPE: "RETESTBIN",
+        GROSSDIE: 18,
+        PASSBIN: "1-2",
+        bins: [{ n: 1, value: 10, isGoodBin: true }],
+      },
+    ];
+    const s = buildSlotYieldSummary(rows)[0]!;
+    assert.equal(s.hasInterrupt, false);
+    assert.equal(s.badDie, 79);
+    assert.ok(s.yieldPct !== null && Math.abs(s.yieldPct - 78.65) < 0.1);
+  });
 });

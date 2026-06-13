@@ -23,6 +23,33 @@ function addGoodIndex(good: Set<number>, raw: unknown): void {
   if (Number.isInteger(v) && v >= 0 && v <= 255) good.add(v);
 }
 
+function binsArrayFromJbRow(row: Record<string, unknown>): BinCell[] {
+  const bins = row.bins;
+  if (Array.isArray(bins)) {
+    return bins.filter(
+      (cell) => cell != null && typeof cell === "object"
+    ) as BinCell[];
+  }
+  if (bins != null && typeof bins === "object") {
+    const out: BinCell[] = [];
+    for (const [key, cell] of Object.entries(bins as Record<string, unknown>)) {
+      if (cell == null || typeof cell !== "object") continue;
+      const n = Number(key);
+      if (!Number.isInteger(n) || n < 0 || n > 255) continue;
+      const c = cell as BinCell & { isGood?: boolean };
+      out.push({
+        n,
+        value: c.value ?? c.dieCount,
+        dieCount: c.dieCount ?? c.value,
+        isGoodBin: c.isGoodBin ?? c.isGood,
+        isGood: c.isGood ?? c.isGoodBin,
+      });
+    }
+    return out;
+  }
+  return [];
+}
+
 /** 单行良品 bin 下标（BIN1 + PASSBIN 段 + bins[].isGoodBin）。 */
 export function goodBinIndicesForJbRow(row: Record<string, unknown>): Set<number> {
   const good = new Set<number>();
@@ -31,15 +58,11 @@ export function goodBinIndicesForJbRow(row: Record<string, unknown>): Set<number
     row.PASSBIN ?? row.passbin ?? row.PassBin ?? row.PASS_BIN;
   for (const n of parsePassBinHyphenGoodBins(passBin)) good.add(n);
 
-  const bins = row.bins;
-  if (Array.isArray(bins)) {
-    for (const cell of bins) {
-      if (cell == null || typeof cell !== "object") continue;
-      const c = cell as BinCell;
-      const n = Number(c.n ?? (c as { bin?: number }).bin);
-      if (!Number.isInteger(n) || n < 0 || n > 255) continue;
-      if (c.isGoodBin === true || c.isGood === true) good.add(n);
-    }
+  for (const cell of binsArrayFromJbRow(row)) {
+    const c = cell as BinCell;
+    const n = Number(c.n ?? (c as { bin?: number }).bin);
+    if (!Number.isInteger(n) || n < 0 || n > 255) continue;
+    if (c.isGoodBin === true || c.isGood === true) good.add(n);
   }
   return good;
 }
@@ -48,8 +71,8 @@ export function goodBinIndicesForJbRow(row: Record<string, unknown>): Set<number
 export function badDieFromJbRow(row: Record<string, unknown>): number {
   const good = goodBinIndicesForJbRow(row);
   let total = 0;
-  const bins = row.bins;
-  if (!Array.isArray(bins)) return 0;
+  const bins = binsArrayFromJbRow(row);
+  if (!bins.length) return 0;
   for (const cell of bins) {
     if (cell == null || typeof cell !== "object") continue;
     const c = cell as BinCell;
@@ -70,6 +93,13 @@ function grossDieFromRow(row: Record<string, unknown>): number {
 export function isInterruptPasstype(row: Record<string, unknown>): boolean {
   return (
     String(row.PASSTYPE ?? row.passtype ?? "").trim().toUpperCase() === "INTERRUPT"
+  );
+}
+
+/** 中断后仅复测失败 die 的小 pass；不参与前后半分段良率。 */
+export function isRetestBinPasstype(row: Record<string, unknown>): boolean {
+  return (
+    String(row.PASSTYPE ?? row.passtype ?? "").trim().toUpperCase() === "RETESTBIN"
   );
 }
 
@@ -97,10 +127,8 @@ export function sumBadBinDieOnRows(
 ): number {
   let total = 0;
   for (const row of rows) {
-    const bins = row.bins;
-    if (!Array.isArray(bins)) continue;
     const good = goodBinIndicesForJbRow(row);
-    for (const cell of bins) {
+    for (const cell of binsArrayFromJbRow(row)) {
       if (cell == null || typeof cell !== "object") continue;
       const c = cell as BinCell;
       const n = Number(c.n ?? (c as { bin?: number }).bin);
@@ -193,19 +221,43 @@ export function splitPassGroupIntoHalves(
     return { segmented: false, firstHalfRows: [], secondHalfRows: [] };
   }
 
-  const passNums = group.map(passNumFromJbRow);
+  const retestRows = group.filter(isRetestBinPasstype);
+  const testRows = group.filter(
+    (r) => !isInterruptPasstype(r) && !isRetestBinPasstype(r)
+  );
+  // 单次 TEST + RETESTBIN：正片良率取满片 TEST 行（MAX GROSSDIE），RETESTBIN 仅复测失败 die。
+  if (
+    retestRows.length > 0 &&
+    testRows.length === 1 &&
+    retestRows.length + testRows.length === group.length
+  ) {
+    return { segmented: false, firstHalfRows: [], secondHalfRows: [] };
+  }
+
+  const passNums = group
+    .filter((r) => !isRetestBinPasstype(r))
+    .map(passNumFromJbRow);
   const minPn = Math.min(...passNums);
   const maxPn = Math.max(...passNums);
 
   if (maxPn > minPn) {
     return {
       segmented: true,
-      firstHalfRows: group.filter((r) => passNumFromJbRow(r) === minPn),
-      secondHalfRows: group.filter((r) => passNumFromJbRow(r) > minPn),
+      firstHalfRows: group.filter(
+        (r) => !isRetestBinPasstype(r) && passNumFromJbRow(r) === minPn
+      ),
+      secondHalfRows: group.filter(
+        (r) => !isRetestBinPasstype(r) && passNumFromJbRow(r) > minPn
+      ),
     };
   }
 
-  const sorted = [...group].sort((a, b) => testEndMs(a) - testEndMs(b));
+  const sorted = [...group]
+    .filter((r) => !isRetestBinPasstype(r))
+    .sort((a, b) => testEndMs(a) - testEndMs(b));
+  if (sorted.length < 2) {
+    return { segmented: false, firstHalfRows: [], secondHalfRows: [] };
+  }
   return {
     segmented: true,
     firstHalfRows: [sorted[0]!],
@@ -362,7 +414,7 @@ function sortGroupRowsByTime(rows: Record<string, unknown>[]): Record<string, un
 }
 
 /**
- * 同 (slot,passId) 有序段：多行 INTERRUPT → 中断1…N；多 passNum → 各段；否则前半→后半→整片。
+ * 同 (slot,passId) 有序段：多行 INTERRUPT → 中断1…N；否则前半→后半→整片（同 PASSNUM 多行续测也合并为前后半，禁止逐行续测段）。
  */
 export function buildYieldInterruptSegments(
   group: Record<string, unknown>[]
@@ -383,51 +435,6 @@ export function buildYieldInterruptSegments(
     }
     segs.push({ label: "整片正片（合并）", metrics: whole });
     return segs;
-  }
-
-  const passNums = [...new Set(sorted.map(passNumFromJbRow))].sort((a, b) => a - b);
-  if (passNums.length >= 3) {
-    const segs: YieldInterruptSegment[] = passNums.map((pn, i) => {
-      const rows = sorted.filter((r) => passNumFromJbRow(r) === pn);
-      const label = `续测段${i + 1}(passNum${pn})`;
-      return { label, metrics: segmentMetrics(rows) };
-    });
-    segs.push({ label: "整片正片（合并）", metrics: whole });
-    return segs;
-  }
-
-  if (passNums.length === 2) {
-    const split = splitPassGroupIntoHalves(group);
-    if (!split.segmented) return undefined;
-    const segs: YieldInterruptSegment[] = [
-      { label: "前半段", metrics: segmentMetrics(split.firstHalfRows) },
-    ];
-    if (split.secondHalfRows.length) {
-      segs.push({ label: "后半段", metrics: segmentMetrics(split.secondHalfRows) });
-    }
-    segs.push({ label: "整片正片（合并）", metrics: whole });
-    return segs;
-  }
-
-  if (sorted.length >= 2 && passNums.length === 1) {
-    const testRows = sorted.filter((r) => !isInterruptPasstype(r));
-    if (testRows.length >= 2) {
-      const segs: YieldInterruptSegment[] = [];
-      if (interruptRows.length === 1) {
-        segs.push({
-          label: "中断1",
-          metrics: segmentMetrics(interruptRows),
-        });
-      }
-      for (let i = 0; i < testRows.length; i++) {
-        segs.push({
-          label: `续测段${i + 1}`,
-          metrics: segmentMetrics([testRows[i]!]),
-        });
-      }
-      segs.push({ label: "整片正片（合并）", metrics: whole });
-      return segs;
-    }
   }
 
   const split = splitPassGroupIntoHalves(group);
@@ -467,11 +474,29 @@ function slotPassGroupKey(slot: number, passId: number): string {
   return `${slot}\0${passId}`;
 }
 
+/** 良率汇总用行：排除 Current 层（PASSID≥99 / LAYERNAME=Current / PASSTYPE=NA）。 */
+export function yieldSummaryEligibleRow(
+  row: Record<string, unknown>
+): boolean {
+  const passId = passIdFromJbRow(row);
+  if (passId >= 99) return false;
+  const passtype = String(row.PASSTYPE ?? row.passtype ?? "")
+    .trim()
+    .toUpperCase();
+  if (passtype === "NA") return false;
+  const layer = String(row.LAYERNAME ?? row.layerName ?? "")
+    .trim()
+    .toUpperCase();
+  if (layer === "CURRENT") return false;
+  return true;
+}
+
 export function buildSlotYieldSummary(
   rows: Record<string, unknown>[]
 ): SlotYieldSummaryEntry[] {
+  const eligible = rows.filter(yieldSummaryEligibleRow);
   const bySlotPass = new Map<string, Record<string, unknown>[]>();
-  for (const row of rows) {
+  for (const row of eligible) {
     const slot = Number(row.SLOT ?? row.slot);
     if (!Number.isFinite(slot) || slot <= 0) continue;
     const passId = passIdFromJbRow(row);
@@ -490,9 +515,7 @@ export function buildSlotYieldSummary(
     const passId = Number(passStr);
     const groupRows = bySlotPass.get(key)!;
     const b = computeJbYieldBreakdown(groupRows);
-    const testInterruptCount = b.hasInterrupt
-      ? countTestInterruptEvents(groupRows)
-      : 0;
+    const testInterruptCount = countTestInterruptEvents(groupRows);
     const entry: SlotYieldSummaryEntry = {
       slot,
       passId,

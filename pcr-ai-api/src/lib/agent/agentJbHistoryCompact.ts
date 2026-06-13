@@ -398,7 +398,28 @@ export function formatLotYieldOverviewMarkdown(
     (summary.length > 0 ? buildSlotYieldPivot(summary) : undefined);
   if (pivot && pivot.passIds.length > 0) {
     const noInterrupt = summary.filter((e) => !e.hasInterrupt);
-    if (noInterrupt.length > 0) {
+    if (pivot.passIds.length === 1) {
+      const pivotAll = buildSlotYieldPivot(summary);
+      const titlePart =
+        summary.some((e) => e.testInterruptCount > 0) &&
+        noInterrupt.length === summary.length
+          ? "无中断 slot 良率（按测试层分列）"
+          : noInterrupt.length > 0 && noInterrupt.length < summary.length
+            ? "无中断 slot 良率（按测试层分列）"
+            : "各片良率（按测试层分列）";
+      const pivotRows =
+        noInterrupt.length > 0 && noInterrupt.length < summary.length
+          ? buildSlotYieldPivot(noInterrupt)
+          : pivotAll;
+      if (pivotRows.slots.length > 0) {
+        parts.push(
+          formatSlotYieldPivotMarkdown(pivotRows, lot, device, summary).replace(
+            "各片良率（按测试层分列）",
+            titlePart
+          )
+        );
+      }
+    } else if (noInterrupt.length > 0) {
       const pivotNoInt = buildSlotYieldPivot(noInterrupt);
       if (pivotNoInt.slots.length > 0) {
         parts.push(
@@ -408,7 +429,7 @@ export function formatLotYieldOverviewMarkdown(
           )
         );
       }
-    } else if (pivot.passIds.length > 1) {
+    } else {
       parts.push(formatSlotYieldPivotMarkdown(pivot, lot, device, summary));
     }
   }
