@@ -456,9 +456,11 @@ const SEC_MASK = `\
     ②时间范围**或**批次号（如"需要查哪段时间或哪个批次？"）
   - 禁止直接查询、禁止凭快照 top-10 猜测后直接下结论
 
-**情况 B — mask + 定向条件**（用户同时给出了 lot 号 / cardId / 具体 BIN 编号之一）：
-  1. 先调 \`get_filter_values(domain:"yield", field:"device", filterBy:{mask:"N06Z"}, limit:5)\` 获取后 4 位匹配的完整 device 代码列表（按最近测试时间排序）；若 yield 域返回空或报错，再查 \`get_filter_values(domain:"jb", field:"device", filterBy:{mask:"N06Z"}, limit:5)\`
-  2. 若两域均返回空或报错，则用 \`ask_clarification\` 告知用户未找到对应 device，请提供完整代码
+**情况 B — mask + 定向条件**（用户同时给出了 lot 号 / cardId / 具体 BIN 编号之一，或询问"最近 N 周/月"的测试情况）：
+  1. **同一轮同时调用两个域**（禁止先查一个再等结果；先后调用会导致第一个结果触发 summary 轮，无法再查第二个）：
+     - \`get_filter_values(domain:"yield", field:"device", filterBy:{mask:"N06Z"}, limit:5)\`
+     - \`get_filter_values(domain:"jb",   field:"device", filterBy:{mask:"N06Z"}, limit:5)\`
+  2. 若两域均返回空，则用 \`ask_clarification\` 告知用户未找到对应 device，请提供完整代码
   3. 用返回列表中的 device 代码（取第一个或前几个）作 device 参数查询，结论中注明"即 mask=N06Z 的产品"
   4. 若同一 mask 对应多个 device，合并查询或逐一列出，不要只查其中一个就下结论`;
 
