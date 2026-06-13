@@ -1438,26 +1438,25 @@ export function historyAwaitingToolSummary(history: ChatMessage[]): boolean {
       Array.isArray((parsed as Record<string, unknown>)["values"]) &&
       ((parsed as Record<string, unknown>)["values"] as unknown[]).length === 0
     ) {
-      // Count how many consecutive empty get_filter_values tool messages trail the history.
-      // Allow one retry round; if already had an empty result before, force summary.
-      let emptyCount = 0;
-      for (let i = history.length - 1; i >= 0; i--) {
-        const msg = history[i];
-        if (msg.role !== "tool" || msg.name !== "get_filter_values") break;
-        const p = tryParseJsonish(String(msg.content ?? ""));
-        if (
-          p &&
-          typeof p === "object" &&
-          !Array.isArray(p) &&
-          Array.isArray((p as Record<string, unknown>)["values"]) &&
-          ((p as Record<string, unknown>)["values"] as unknown[]).length === 0
-        ) {
-          emptyCount++;
-        } else {
-          break;
-        }
+      // Look back past the assistant(tool_calls) turn to find the previous tool message.
+      // If it was also an empty get_filter_values, both domains came back empty → force summary.
+      let prevToolIdx = -1;
+      for (let i = history.length - 2; i >= 0; i--) {
+        if (history[i].role === "tool") { prevToolIdx = i; break; }
+        if (history[i].role === "user") break;
       }
-      if (emptyCount < 2) return false; // give model one more round to try another domain
+      if (prevToolIdx < 0) return false; // first empty result → give one more round
+      const prevMsg = history[prevToolIdx];
+      if (prevMsg.name !== "get_filter_values") return false; // different tool before → keep going
+      const prevParsed = tryParseJsonish(String(prevMsg.content ?? ""));
+      if (
+        !prevParsed ||
+        typeof prevParsed !== "object" ||
+        Array.isArray(prevParsed) ||
+        !Array.isArray((prevParsed as Record<string, unknown>)["values"]) ||
+        ((prevParsed as Record<string, unknown>)["values"] as unknown[]).length > 0
+      ) return false; // previous result had data → keep going
+      return true; // two consecutive empty get_filter_values → force summary
     }
   }
   return true;

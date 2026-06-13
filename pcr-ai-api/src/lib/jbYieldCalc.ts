@@ -515,7 +515,7 @@ export function buildSlotYieldSummary(
     const passId = Number(passStr);
     const groupRows = bySlotPass.get(key)!;
     const b = computeJbYieldBreakdown(groupRows);
-    const testInterruptCount = countTestInterruptEvents(groupRows);
+    const testInterruptCount = b.hasInterrupt ? countTestInterruptEvents(groupRows) : 0;
     const entry: SlotYieldSummaryEntry = {
       slot,
       passId,

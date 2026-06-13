@@ -10,7 +10,7 @@ import {
 import { loadInfcontrolLayerBinRowsFromJbStartXlsx } from "./dummyRowsFromExcel.js";
 import { listApisForceOracleNoDummy } from "./listDummyRuntime.js";
 import { probeCardTypeLeadingSegment } from "./probeCardTypeLeadingSegment.js";
-import { deviceMask, deviceMatchesMask } from "./deviceMask.js";
+import { deviceBaseMask, deviceMatchesMask } from "./deviceMask.js";
 import { rowMatchesInfcontrolBinColumnFilters } from "./infcontrolBinColumnFilters.js";
 
 /**
@@ -374,7 +374,7 @@ function valueForInfcontrolDimension(
     case "passNum":
       return String(row.PASSNUM);
     case "mask":
-      return deviceMask(String(row.DEVICE ?? "")) ?? "";
+      return deviceBaseMask(String(row.DEVICE ?? "")) ?? "";
     default: {
       const _e: never = d;
       return _e;
@@ -414,7 +414,7 @@ export function aggregateInfcontrolLayerBinDummyRows(
         }
       }
       if (groupBy.includes("device")) {
-        parts["mask"] = deviceMask(String(row.DEVICE ?? "")) ?? "";
+        parts["mask"] = deviceBaseMask(String(row.DEVICE ?? "")) ?? "";
       }
       const key = groupBy
         .map((d) => parts[d])
@@ -524,7 +524,7 @@ export function filterInfcontrolLayerBinV3DummyRowsMatching(
   return rows.map((r) => ({
     ...r,
     PROBECARDTYPE: probeCardTypeLeadingSegment(r.CARDID),
-    MASK: deviceMask(r.DEVICE),
+    MASK: deviceBaseMask(r.DEVICE),
   }));
 }
 
@@ -574,7 +574,7 @@ export function aggregateInfcontrolLayerBinV3FromRows(
         }
       }
       if (groupBy.includes("device")) {
-        parts["mask"] = deviceMask(String(row.DEVICE ?? "")) ?? "";
+        parts["mask"] = deviceBaseMask(String(row.DEVICE ?? "")) ?? "";
       }
       const key = groupBy
         .map((d) => parts[d])
