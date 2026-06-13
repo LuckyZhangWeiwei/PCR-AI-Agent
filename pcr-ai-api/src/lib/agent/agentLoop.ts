@@ -1345,7 +1345,11 @@ function emitFilterValuesEmptyFallback(
   if (!Array.isArray(p["values"]) || (p["values"] as unknown[]).length > 0) return false;
   const domain = String(p["domain"] ?? "");
   const field = String(p["field"] ?? "");
-  const domainLabel = domain === "yield" ? "Yield Monitor" : domain === "jb" ? "JB STAR" : domain;
+  const domainLabel =
+    domain === "yield" ? "Yield Monitor"
+    : domain === "jb" ? "JB STAR"
+    : domain === "both" ? "Yield Monitor 与 JB STAR（合并）"
+    : domain;
   const msg = `当前 ${domainLabel} 数据域未找到符合条件的 ${field} 记录（返回 0 条）。\n\n可能原因：\n- 该产品代码在近期无测试数据\n- 筛选条件（mask/时间范围）过窄\n\n建议确认完整 device 代码后重试，或扩大查询时间范围。`;
   appendMessages(sessionId, { role: "assistant", content: msg });
   emit({ type: "text", delta: msg });

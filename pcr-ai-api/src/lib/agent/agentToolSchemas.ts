@@ -231,14 +231,15 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "get_filter_values",
       description:
-        "查询某个筛选维度的可用值列表。field=\"device\" 时用 mask（如 P02G）查找完整 device 代码（yield 按 TIME_STAMP、jb 按 TESTEND 最近排序）。mask 可写在 filterBy.mask 或顶层 mask 参数。",
+        "查询某个筛选维度的可用值列表。field=\"device\"+mask 时优先 domain=\"both\"（一次合并 Yield+JB，避免漏掉只出现在单域的 device，如 N84R→WC06N84R+WC07N84R）。mask 可写在 filterBy.mask 或顶层 mask。",
       parameters: {
         type: "object",
         properties: {
           domain: {
             type: "string",
-            enum: ["yield", "jb"],
-            description: "数据域：yield = Yield Monitor；jb = JB STAR",
+            enum: ["yield", "jb", "both"],
+            description:
+              "数据域：yield = Yield Monitor；jb = JB STAR；both = 合并两域（field=device+mask 时推荐，防止单域漏 device）",
           },
           field: {
             type: "string",

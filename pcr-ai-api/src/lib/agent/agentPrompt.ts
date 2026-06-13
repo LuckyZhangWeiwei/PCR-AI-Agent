@@ -457,13 +457,13 @@ const SEC_MASK = `\
   - 禁止直接查询、禁止凭快照 top-10 猜测后直接下结论
 
 **情况 B — mask + 定向条件**（用户同时给出了 lot 号 / cardId / 具体 BIN 编号之一，或询问"最近 N 周/月"的测试情况）：
-  1. **同一轮同时调用两个域**（禁止先查一个再等结果；先后调用会导致第一个结果触发 summary 轮，无法再查第二个）：
-     - \`get_filter_values(domain:"yield", field:"device", filterBy:{mask:"N06Z"}, limit:5)\`（mask 也可放顶层 \`mask:"N06Z"\`）
-     - \`get_filter_values(domain:"jb",   field:"device", filterBy:{mask:"N06Z"}, limit:5)\`
-  2. 若两域均返回空，可改用 \`query_yield_triggers(mask:"N06Z", timeFrom, timeTo)\` / \`query_jb_bins(mask:"N06Z", testEndFrom, testEndTo)\` 直接按 mask 查询（无需完整 device 代码）
-  3. 若仍为空，则用 \`ask_clarification\` 告知用户未找到对应 device，请提供完整代码
-  4. 用返回列表中的 device 代码（取第一个或前几个）作 device 参数查询，结论中注明"即 mask=N06Z 的产品"
-  5. 若同一 mask 对应多个 device，合并查询或逐一列出，不要只查其中一个就下结论`;
+  1. **一次调用合并两域**（禁止分两次只查 yield 或只查 jb，会漏掉只出现在另一域的 device，例如 N84R 在 Yield 可能是 WC07N84R、在 JB 可能是 WC06N84R）：
+     - \`get_filter_values(domain:"both", field:"device", filterBy:{mask:"N06Z"}, limit:10)\`（mask 也可放顶层）
+  2. 若返回 \`totalDistinct>1\`，后续查询**必须**用 \`mask="N06Z"\`（query_yield_triggers / query_jb_bins），或**分别查每个 device**；禁止只取列表第一个 device 就下结论
+  3. 若返回空，可改用 \`query_yield_triggers(mask:"N06Z", timeFrom, timeTo)\` / \`query_jb_bins(mask:"N06Z", testEndFrom, testEndTo)\` 直接按 mask 查询
+  4. 若仍为空，则用 \`ask_clarification\` 告知用户未找到对应 device，请提供完整代码
+  5. 结论中列出 \`devices[]\` 中的**全部** device（含各域最近日期），注明"即 mask=N06Z 的产品"
+  6. 禁止因单域无数据就报告"完全没有测试记录"——须先查 domain=both 或两域 mask 直查`;
 
 // ─── SEC_DOMAIN ────────────────────────────────────────────────────────────
 // 探针卡层级 / 维度选择 / Pass-sort 映射 / INF DUT / Lot 级 DUT /

@@ -135,3 +135,25 @@ test("jb/device resolves mask P02G in Dummy mode", async () => {
   const result = JSON.parse(raw) as { values: string[]; totalDistinct: number };
   assert.ok(result.totalDistinct >= 1, "jb dummy should also match P02G");
 });
+
+test("both/device merges yield+jb mask hits (N84R: WC07 in yield, WC06 in jb)", async () => {
+  const raw = await runGetFilterValues({
+    domain: "both",
+    field: "device",
+    filterBy: { mask: "N84R" },
+    limit: 10,
+  });
+  const result = JSON.parse(raw) as {
+    domain: string;
+    values: string[];
+    totalDistinct: number;
+    devices?: Array<{ device: string; lastYield: string | null; lastJb: string | null }>;
+    note?: string;
+  };
+  assert.equal(result.domain, "both");
+  assert.ok(result.totalDistinct >= 2, `expected >=2 devices, got ${result.totalDistinct}`);
+  const codes = (result.devices ?? []).map((d) => d.device);
+  assert.ok(codes.includes("WC06N84R"), `missing WC06N84R in ${codes.join(",")}`);
+  assert.ok(codes.includes("WC07N84R"), `missing WC07N84R in ${codes.join(",")}`);
+  assert.ok(result.note?.includes("mask N84R"));
+});
