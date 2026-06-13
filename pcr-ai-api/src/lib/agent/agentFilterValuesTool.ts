@@ -171,7 +171,7 @@ async function oracleYieldDeviceByMask(
   const sql = `
     SELECT grp_key, last_test, COUNT(*) OVER () AS total_distinct
     FROM (
-      SELECT t.DEVICE AS grp_key, MAX(t.TESTEND) AS last_test
+      SELECT t.DEVICE AS grp_key, MAX(t.TIME_STAMP) AS last_test
       FROM YMWEB_YIELDMONITORTRIGGER t
       WHERE UPPER(TRIM(t."TYPE")) = 'DELTA_DIFF'
         AND NOT REGEXP_LIKE(t.LOTID, '^(kk|gg|c)', 'i')
@@ -423,6 +423,11 @@ export async function runGetFilterValues(
     if (fb["probeCardType"] != null) filterBy["probeCardType"] = String(fb["probeCardType"]);
     if (fb["mask"] != null) filterBy["mask"] = String(fb["mask"]).trim().toUpperCase();
     if (fb["search"] != null) filterBy["search"] = String(fb["search"]).trim();
+    // field="device" 时 LLM 有时传 search 而非 mask；将 search 提升为 mask（大小写均可）
+    if (field === "device" && filterBy["mask"] == null && filterBy["search"] != null) {
+      filterBy["mask"] = filterBy["search"].toUpperCase();
+      delete filterBy["search"];
+    }
   }
 
   if (domain === "yield") {

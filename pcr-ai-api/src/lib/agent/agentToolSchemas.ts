@@ -215,7 +215,7 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "get_filter_values",
       description:
-        "查询某个筛选维度的可用值列表。支持 field=\"device\" + filterBy.mask 按 device 末 4 位查找匹配的完整 device 代码（按 TESTEND 最新排序）。其他字段查探针卡/批次号/测试机等。",
+        "查询某个筛选维度的可用值列表。支持 field=\"device\" + filterBy.mask 按 device 末 4 位查找匹配的完整 device 代码（按最近测试时间排序：yield 域用 TIME_STAMP，jb 域用 TESTEND）。其他字段查探针卡/批次号/测试机等。",
       parameters: {
         type: "object",
         properties: {
