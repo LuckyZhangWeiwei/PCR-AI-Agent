@@ -1329,6 +1329,30 @@ function jbBinsYieldFallbackMessage(
   return formatSlotYieldMarkdownFromToolJson(String(toolMsg.content ?? ""));
 }
 
+/**
+ * 总结轮 LLM 空输出时：若最后一个工具为 get_filter_values 且返回空列表，
+ * 直接输出"未找到数据"提示，避免「模型未返回分析结论」报错。
+ */
+function emitFilterValuesEmptyFallback(
+  sessionId: string,
+  lastTool: ChatMessage | undefined,
+  emit: (event: AgentSseEvent) => void
+): boolean {
+  if (lastTool?.name !== "get_filter_values") return false;
+  const parsed = tryParseJsonish(String(lastTool.content ?? ""));
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+  const p = parsed as Record<string, unknown>;
+  if (!Array.isArray(p["values"]) || (p["values"] as unknown[]).length > 0) return false;
+  const domain = String(p["domain"] ?? "");
+  const field = String(p["field"] ?? "");
+  const domainLabel = domain === "yield" ? "Yield Monitor" : domain === "jb" ? "JB STAR" : domain;
+  const msg = `当前 ${domainLabel} 数据域未找到符合条件的 ${field} 记录（返回 0 条）。\n\n可能原因：\n- 该产品代码在近期无测试数据\n- 筛选条件（mask/时间范围）过窄\n\n建议确认完整 device 代码后重试，或扩大查询时间范围。`;
+  appendMessages(sessionId, { role: "assistant", content: msg });
+  emit({ type: "text", delta: msg });
+  emit({ type: "done" });
+  return true;
+}
+
 /** 总结轮 LLM 空输出时：直出服务端表（无解读），避免「模型未返回分析结论」。 */
 function finishWithJbServerTablesFallback(
   sessionId: string,
@@ -1967,6 +1991,9 @@ export async function runAgentLoop(
             ) {
               return;
             }
+            if (emitFilterValuesEmptyFallback(sessionId, lastToolMessage(getHistory(sessionId)), emit)) {
+              return;
+            }
             emit({
               type: "error",
               message:
@@ -2000,6 +2027,9 @@ export async function runAgentLoop(
           return;
         }
         if (finishWithJbServerTablesFallback(sessionId, userQuestion, emit)) {
+          return;
+        }
+        if (emitFilterValuesEmptyFallback(sessionId, lastTool, emit)) {
           return;
         }
         emit({
