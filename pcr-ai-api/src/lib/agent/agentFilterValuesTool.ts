@@ -73,11 +73,11 @@ function dummyDeviceByMask(
     return { domain, field: "device", values: [], totalDistinct: 0 };
   }
   const maskUpper = mask.toUpperCase();
-  // Collect distinct devices whose base-segment last-4-chars match, track latest testEnd per device
+  // Collect distinct devices: match by base-segment last-4-chars OR by substring containment
   const latest = new Map<string, string>();
   for (const { device, testEnd } of rows) {
     if (!device) continue;
-    if (deviceMask(device) !== maskUpper) continue;
+    if (deviceMask(device) !== maskUpper && !device.toUpperCase().includes(maskUpper)) continue;
     const prev = latest.get(device);
     if (!prev || testEnd > prev) latest.set(device, testEnd);
   }
@@ -172,7 +172,10 @@ async function oracleYieldDeviceByMask(
       FROM YMWEB_YIELDMONITORTRIGGER t
       WHERE UPPER(TRIM(t."TYPE")) = 'DELTA_DIFF'
         AND NOT REGEXP_LIKE(t.LOTID, '^(kk|gg|c)', 'i')
-        AND UPPER(SUBSTR(REGEXP_REPLACE(TRIM(t.DEVICE), '[-_].*', ''), -4)) = :mask
+        AND (
+          UPPER(SUBSTR(REGEXP_REPLACE(TRIM(t.DEVICE), '[-_].*', ''), -4)) = :mask
+          OR UPPER(TRIM(t.DEVICE)) LIKE '%' || :mask || '%'
+        )
         AND t.DEVICE IS NOT NULL AND TRIM(t.DEVICE) != ''
       GROUP BY t.DEVICE
     )
@@ -291,7 +294,10 @@ async function oracleJbDeviceByMask(
       FROM INFCONTROL t1
       JOIN INFLAYERBINLIST t2 ON t1.KEYNUMBER = t2.KEYNUMBER
       WHERE NOT REGEXP_LIKE(t1.LOT, '^(kk|gg|c)', 'i')
-        AND UPPER(SUBSTR(REGEXP_REPLACE(TRIM(t1.DEVICE), '[-_].*', ''), -4)) = :mask
+        AND (
+          UPPER(SUBSTR(REGEXP_REPLACE(TRIM(t1.DEVICE), '[-_].*', ''), -4)) = :mask
+          OR UPPER(TRIM(t1.DEVICE)) LIKE '%' || :mask || '%'
+        )
         AND t1.DEVICE IS NOT NULL AND TRIM(t1.DEVICE) != ''
       GROUP BY t1.DEVICE
     )
