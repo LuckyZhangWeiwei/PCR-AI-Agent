@@ -175,7 +175,7 @@ async function oracleYieldDeviceByMask(
       FROM YMWEB_YIELDMONITORTRIGGER t
       WHERE UPPER(TRIM(t."TYPE")) = 'DELTA_DIFF'
         AND NOT REGEXP_LIKE(t.LOTID, '^(kk|gg|c)', 'i')
-        AND UPPER(SUBSTR(REGEXP_SUBSTR(TRIM(t.DEVICE), '^[^-_]+'), -4)) = :mask
+        AND UPPER(SUBSTR(REGEXP_REPLACE(TRIM(t.DEVICE), '[-_].*', ''), -4)) = :mask
         AND t.DEVICE IS NOT NULL AND TRIM(t.DEVICE) != ''
       GROUP BY t.DEVICE
     )
@@ -296,7 +296,7 @@ async function oracleJbDeviceByMask(
       WHERE UPPER(TRIM(t2.PASSTYPE)) IN ('TEST', 'INTERRUPT')
         AND UPPER(TRIM(t2.LAYERNAME)) <> 'ABANDONED'
         AND NOT REGEXP_LIKE(t1.LOT, '^(kk|gg|c)', 'i')
-        AND UPPER(SUBSTR(REGEXP_SUBSTR(TRIM(t1.DEVICE), '^[^-_]+'), -4)) = :mask
+        AND UPPER(SUBSTR(REGEXP_REPLACE(TRIM(t1.DEVICE), '[-_].*', ''), -4)) = :mask
         AND t1.DEVICE IS NOT NULL AND TRIM(t1.DEVICE) != ''
       GROUP BY t1.DEVICE
     )
