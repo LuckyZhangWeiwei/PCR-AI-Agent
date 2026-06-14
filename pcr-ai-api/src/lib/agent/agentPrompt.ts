@@ -206,8 +206,8 @@ const SEC_DECISION = `\
 
    **必问场景 A — 仅有 mask（device 后缀），无完整 device 代码，且是宽泛问题：**
    - 触发条件：用户只给 4~8 位后缀（如"N06Z"、"P02G"、"N18J"）而没有给完整 device（如 WC13N06Z），且提问是"测试情况"/"常见 fail"/"有什么问题"/"概况"等宽泛意图
-   - **必须问**：①完整 device 代码是什么（可列出候选，如"WC13N06Z 还是其他型号？"）；②时间范围或批次号
-   - **例外（不问直接执行）**：用户已给出 lot 号 / cardId / 具体 BIN 编号等定向条件 → 按 SEC_MASK 规则自动匹配 device 后查询
+   - **必须先调 \`get_filter_values\` 取精确候选，再按需询问**（详见 SEC_MASK 情况 A 的 4 步流程）
+   - **例外（不问直接执行）**：用户已给出 lot 号 / cardId / 具体 BIN 编号等定向条件 → 按 SEC_MASK 情况 B 规则自动匹配 device 后查询
 
    **必问场景 B — device 产品代码完全未知且历史对话中也找不到**
    - 如历史对话存在但上下文丢失，说"我当前无法访问之前的记录"，询问 device/lot
@@ -450,24 +450,25 @@ const SEC_MASK = `\
 - **用户给 4 位字母数字串**（无 "."、无 "-"、不像 lot）→ 优先判断为 mask，区分以下两种情况处理：
 
 **情况 A — mask + 宽泛意图**（如"N06Z 的测试情况"、"N06Z 常见 fail"、"P02G 有什么问题"）：
-  - mask 本身**不是** API 过滤参数，且数据库中后缀匹配的 device 可能有多个（或不在快照 top-10 中）
-  - **必须** \`ask_clarification\`，一次问清：
-    ①完整 device 代码（如"请问是 WC13N06Z 还是其他型号？"，可列出快照中已知的候选）
-    ②时间范围**或**批次号（如"需要查哪段时间或哪个批次？"）
+  - mask 本身**不是** API 过滤参数，数据库中该后缀匹配的 device 可能有多个（或不在快照 top-10 中）
+  - **必须先取精确候选，再按需问清**（共 4 步）：
+    1. 调 \`get_filter_values(domain:"both", field:"device", filterBy:{mask:"N06Z"}, limit:10)\` 取候选列表
+    2. 若 \`totalDistinct === 1\`：直接使用该 device，通过 \`ask_clarification\` 仅询问时间范围/批次号
+    3. 若 \`totalDistinct > 1\`：调 \`ask_clarification(question:"请选择要查询的完整 device 代码", options: devices[].device)\`，前端渲染为按钮；用户选定后，下一轮若时间范围仍未给出，再询问
+    4. 若 \`totalDistinct === 0\`：\`ask_clarification\` 告知未找到匹配 device，请用户提供完整代码
   - 禁止直接查询、禁止凭快照 top-10 猜测后直接下结论
 
 **情况 B — mask + 定向条件**（用户同时给出了 lot 号 / cardId / 具体 BIN 编号之一，或询问"最近 N 周/月"的测试情况）：
   1. **一次调用合并两域**（禁止分两次只查 yield 或只查 jb，会漏掉只出现在另一域的 device，例如 N84R 在 Yield 可能是 WC07N84R、在 JB 可能是 WC06N84R）：
      - \`get_filter_values(domain:"both", field:"device", filterBy:{mask:"N06Z"}, limit:10)\`（mask 也可放顶层）
-  2. 若返回 \`totalDistinct > 1\`，调用：
-     \`ask_clarification(question:"请选择要查询的完整 device 代码", options: devices)\`
-     将 \`devices[].device\` 列表传入 \`options\`，前端渲染为按钮供用户点选。
-     **\`options\` 仅用于此 mask 消歧场景，其他 ask_clarification 调用不传 options。**
-  3. 若返回 \`totalDistinct>1\`，后续查询**必须**用 \`mask="N06Z"\`（query_yield_triggers / query_jb_bins），或**分别查每个 device**；禁止只取列表第一个 device 就下结论
+  2. 若返回 \`totalDistinct > 1\`：调 \`ask_clarification(question:"请选择要查询的完整 device 代码", options: devices[].device)\`，前端渲染为按钮供用户点选（时间范围/批次号由定向条件已覆盖，无需再问）
+  3. 若 \`totalDistinct > 1\`，后续查询**必须**用 \`mask="N06Z"\`（query_yield_triggers / query_jb_bins），或**分别查每个 device**；禁止只取列表第一个 device 就下结论
   4. 若返回空，可改用 \`query_yield_triggers(mask:"N06Z", timeFrom, timeTo)\` / \`query_jb_bins(mask:"N06Z", testEndFrom, testEndTo)\` 直接按 mask 查询
   5. 若仍为空，则用 \`ask_clarification\` 告知用户未找到对应 device，请提供完整代码
   6. 结论中列出 \`devices[]\` 中的**全部** device（含各域最近日期），注明"即 mask=N06Z 的产品"
-  7. 禁止因单域无数据就报告"完全没有测试记录"——须先查 domain=both 或两域 mask 直查`;
+  7. 禁止因单域无数据就报告"完全没有测试记录"——须先查 domain=both 或两域 mask 直查
+
+> **\`options\` 参数仅限以上 mask 消歧场景（情况 A 步骤 3 / 情况 B 步骤 2）；其他 ask_clarification 调用禁止传 options。**`;
 
 // ─── SEC_DOMAIN ────────────────────────────────────────────────────────────
 // 探针卡层级 / 维度选择 / Pass-sort 映射 / INF DUT / Lot 级 DUT /
