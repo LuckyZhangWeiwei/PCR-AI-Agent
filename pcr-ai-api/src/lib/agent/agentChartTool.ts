@@ -14,6 +14,7 @@ export interface ChartSentinel {
 
 export interface ClarificationSentinel {
   __clarification: string;
+  __clarification_options?: string[];
 }
 
 /** Parse JSON array/object strings from GLM arg_value / tool arguments. */

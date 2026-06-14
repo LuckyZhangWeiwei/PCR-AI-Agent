@@ -171,6 +171,8 @@ interface ErrorMessage {
 interface ClarificationMessage {
   kind: "clarification";
   question: string;
+  options?: string[];
+  chosen?: string;
 }
 type ChatMessage =
   | UserMessage
@@ -189,6 +191,7 @@ interface SseEvent {
   option?: EChartsOption;
   message?: string;
   question?: string;
+  options?: string[];
 }
 
 function formatAgentErrorMessage(
@@ -406,13 +409,14 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
         break;
       case "clarification": {
         const question = event.question ?? "";
+        const options = Array.isArray(event.options) ? event.options : undefined;
         setMessages((prev) => {
           const copy = [...prev];
           const last = copy[copy.length - 1];
           if (last && last.kind === "ai" && last.text === "") {
-            copy[copy.length - 1] = { kind: "clarification", question };
+            copy[copy.length - 1] = { kind: "clarification", question, options };
           } else {
-            copy.push({ kind: "clarification", question });
+            copy.push({ kind: "clarification", question, options });
           }
           return copy;
         });
@@ -956,10 +960,35 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
             }
 
             if (msg.kind === "clarification") {
+              const clarIdx = i;
               rendered.push(
                 <div key={i} className="ai-msg ai-msg--clarification">
                   <div className="ai-avatar ai-avatar--ai"><RobotAvatar /></div>
-                  <div className="ai-clarification-bubble">❓ {msg.question}</div>
+                  <div className="ai-clarification-bubble">
+                    <span>❓ {msg.question}</span>
+                    {msg.options && msg.options.length > 0 && (
+                      <div className="ai-clarification-options">
+                        {msg.options.map((opt) => (
+                          <button
+                            key={opt}
+                            type="button"
+                            className={`ai-clarification-option${msg.chosen === opt ? " ai-clarification-option--chosen" : ""}`}
+                            disabled={!!msg.chosen || loading}
+                            onClick={() => {
+                              setMessages((prev) =>
+                                prev.map((m, idx) =>
+                                  idx === clarIdx ? { ...m, chosen: opt } : m
+                                )
+                              );
+                              void submitAgentRequest({ text: opt });
+                            }}
+                          >
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
               i++;
