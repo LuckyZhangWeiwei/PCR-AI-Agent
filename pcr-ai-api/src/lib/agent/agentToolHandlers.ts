@@ -718,7 +718,12 @@ export async function runTool(
     case "ask_clarification": {
       const question = String(args["question"] ?? "").trim();
       if (!question) return "ask_clarification 参数错误: question 不能为空";
-      return { __clarification: question };
+      const rawOpts = args["options"];
+      const options: string[] | undefined =
+        Array.isArray(rawOpts) && rawOpts.length > 0
+          ? rawOpts.map(String).filter(Boolean)
+          : undefined;
+      return { __clarification: question, ...(options ? { __clarification_options: options } : {}) };
     }
     case "get_filter_values":
       return runGetFilterValues(args);

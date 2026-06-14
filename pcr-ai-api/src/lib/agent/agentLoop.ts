@@ -75,7 +75,7 @@ export type AgentSseEvent =
   | { type: "tool_start"; name: string; args: Record<string, unknown> }
   | { type: "tool_result"; name: string; summary: string }
   | { type: "chart"; option: object }
-  | { type: "clarification"; question: string }
+  | { type: "clarification"; question: string; options?: string[] }
   | { type: "done" }
   | { type: "error"; message: string };
 // Max chars stored in session history per tool result — intentionally smaller than
@@ -2158,7 +2158,8 @@ export async function runAgentLoop(
               "__clarification" in toolResult
             ) {
               const question = (toolResult as ClarificationSentinel).__clarification;
-              emit({ type: "clarification", question });
+              const clarOptions = (toolResult as ClarificationSentinel).__clarification_options;
+              emit({ type: "clarification", question, ...(clarOptions ? { options: clarOptions } : {}) });
               historyContent = `[已向用户提问：${question}]`;
             } else {
               const rawContent =

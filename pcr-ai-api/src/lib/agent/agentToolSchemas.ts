@@ -221,6 +221,12 @@ export const TOOL_SCHEMAS = [
             type: "string",
             description: "向用户提出的澄清问题",
           },
+          options: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "候选 device 列表（mask 查到多个完整 device 时使用）；前端渲染为可点选按钮，每项为用户选择后发送的文本；其他场景不传",
+          },
         },
         required: ["question"],
       },
