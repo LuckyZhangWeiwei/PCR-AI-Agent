@@ -8,9 +8,9 @@
 
 ## 背景
 
-现有 `ask_clarification` 工具只接受 `question: string`，前端渲染为纯文字气泡（❓），用户必须手动输入回复。当 agent 查到多个候选 device（或 tester、lot 等）时，体验较差——用户需要复制粘贴候选值。
+用户经常只给出 device mask（如 "N06Z"、"P02G"），系统通过 `get_filter_values(field:"device", filterBy:{mask:…})` 查到多个完整 device 代码（如 WC13N06Z、WC07N06Z）。现有流程中 agent 调用 `ask_clarification` 仅能输出纯文字气泡（❓），用户需手动复制粘贴候选值回复，体验差。
 
-目标：agent 可选传 `options: string[]`，前端渲染为可点选按钮 chip，点击直接提交该值作为用户消息，agent 继续下一轮查询。
+**目标**：在 mask → 多 device 这一具体场景下，agent 调用 `ask_clarification` 时附带 `options: string[]`（候选 device 列表），前端渲染为可点选按钮 chip，点击直接提交该值，agent 继续下一轮查询。`options` 仅在此场景使用，其他 `ask_clarification` 调用不传。
 
 ---
 
@@ -46,7 +46,7 @@ Agent 下一轮以 "WC13N06Z" 为用户输入，查询 yield/bin/DUT
 options: {
   type: "array",
   items: { type: "string" },
-  description: "可选的候选值列表，前端将渲染为可点选按钮；每项为用户选择后发送的文本",
+  description: "候选 device 列表（mask 查到多个完整 device 时使用）；前端渲染为可点选按钮，每项为用户选择后发送的文本；其他场景不传",
 },
 ```
 
@@ -81,9 +81,9 @@ emit({ type: "clarification", question, options: toolResult.__clarification_opti
 
 ### 4. `agentPrompt.ts`
 
-在 `ask_clarification` 使用说明段落末尾补充：
+在「必问场景 A」（mask + 宽泛意图）的处理步骤中，补充 `options` 用法：
 
-> 有明确候选列表时（如 `get_filter_values` 返回多个 device），可传 `options` 数组；前端会将每项渲染为可点按钮，用户点击即提交该值。无候选时省略 `options`。
+> **mask + 宽泛意图时**：先调 `get_filter_values(domain:"both", field:"device", filterBy:{mask:"…"})` 取候选 device 列表；若返回 `totalDistinct > 1`，调 `ask_clarification(question:"请选择要查询的完整 device 代码", options: devices)` —— 将候选 device 列表传入 `options`，前端渲染为按钮供用户点选。`options` **仅用于此 mask 消歧场景**，其他 `ask_clarification` 调用不传 `options`。
 
 ---
 
@@ -199,3 +199,4 @@ case "clarification": {
 - 前端直接调用 REST API 绕过 agent（已确认走 A 路径：agent 继续下一轮）
 - 多选（checkbox）模式
 - 图标/描述文字等富选项格式
+- 将 `options` 用于 device 以外的场景（tester、lot、passId 等——本期不做）
