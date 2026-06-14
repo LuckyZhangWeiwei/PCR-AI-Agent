@@ -481,12 +481,46 @@ describe("jbYieldCalc", () => {
     assert.equal(summary.length, 1);
     assert.equal(summary[0]!.passId, 1);
     assert.equal(summary[0]!.hasInterrupt, false);
-    assert.equal(summary[0]!.testInterruptCount, 1);
+    assert.equal(summary[0]!.testInterruptCount, 0);
     assert.equal(summary[0]!.badDie, 62);
     assert.ok(
       summary[0]!.yieldPct !== null &&
         Math.abs(summary[0]!.yieldPct - 83.24) < 0.1
     );
+  });
+
+  it("does not merge rows from different lots into fake interrupt", () => {
+    const rows = [
+      {
+        LOT: "LOT_A",
+        SLOT: 1,
+        PASSID: 1,
+        PASSTYPE: "TEST",
+        GROSSDIE: 1365,
+        bins: [
+          { n: 1, value: 1200, isGoodBin: true },
+          { n: 6, value: 165, isGoodBin: false },
+        ],
+      },
+      {
+        LOT: "LOT_B",
+        SLOT: 1,
+        PASSID: 1,
+        PASSTYPE: "TEST",
+        GROSSDIE: 8190,
+        bins: [
+          { n: 1, value: 7000, isGoodBin: true },
+          { n: 6, value: 1190, isGoodBin: false },
+        ],
+      },
+    ];
+    const summary = buildSlotYieldSummary(rows);
+    assert.equal(summary.length, 2);
+    assert.equal(summary.every((e) => !e.hasInterrupt), true);
+    const lotA = summary.find((e) => e.lot === "LOT_A")!;
+    const lotB = summary.find((e) => e.lot === "LOT_B")!;
+    assert.equal(lotA.grossDie, 1365);
+    assert.equal(lotB.grossDie, 8190);
   });
 
   it("NF13137 pattern: single TEST + RETESTBIN uses TEST row yield (slot 2)", () => {

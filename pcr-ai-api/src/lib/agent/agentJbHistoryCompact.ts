@@ -329,8 +329,7 @@ export function formatSlotYieldPivotMarkdown(
   ];
   for (const slot of pivot.slots) {
     const cells = pivot.passIds.map((passId) => {
-      const c = pivot.cells[`${slot}:${passId}`];
-      if (!c) return " — |";
+      const p = pivotCellFromSummary(slot, passId, summary);
       const e = summary?.find((s) => s.slot === slot && s.passId === passId);
       if (e?.hasInterrupt && e.interruptHalf) {
         const whole =
@@ -342,12 +341,12 @@ export function formatSlotYieldPivotMarkdown(
         return ` ${first}前/${second}后/${whole}整 |`;
       }
       const y =
-        c.yieldPct === null ? "—" : `${roundYieldPct(c.yieldPct)}%`;
+        p.yieldPct === null ? "—" : `${roundYieldPct(p.yieldPct)}%`;
       return ` ${y} |`;
     });
     let badSum = 0;
     for (const passId of pivot.passIds) {
-      badSum += pivot.cells[`${slot}:${passId}`]?.badDie ?? 0;
+      badSum += pivotCellFromSummary(slot, passId, summary).badDie;
     }
     lines.push(`| ${slot} |${cells.join("")} ${badSum} |`);
   }
@@ -412,44 +411,8 @@ export function formatLotYieldOverviewMarkdown(
   const pivot =
     pivotRaw ??
     (summary.length > 0 ? buildSlotYieldPivot(summary) : undefined);
-  if (pivot && pivot.passIds.length > 0) {
-    const noInterrupt = summary.filter((e) => !e.hasInterrupt);
-    if (pivot.passIds.length === 1) {
-      const pivotAll = buildSlotYieldPivot(summary);
-      const titlePart =
-        summary.some((e) => e.testInterruptCount > 0) &&
-        noInterrupt.length === summary.length
-          ? "无中断 slot 良率（按测试层分列）"
-          : summary.some((e) => e.hasInterrupt && e.interruptHalf)
-            ? "无中断 slot 良率（按测试层分列）"
-          : noInterrupt.length > 0 && noInterrupt.length < summary.length
-            ? "无中断 slot 良率（按测试层分列）"
-            : "各片良率（按测试层分列）";
-      const pivotRows =
-        noInterrupt.length > 0 && noInterrupt.length < summary.length
-          ? buildSlotYieldPivot(noInterrupt)
-          : pivotAll;
-      if (pivotRows.slots.length > 0) {
-        parts.push(
-          formatSlotYieldPivotMarkdown(pivotRows, lot, device, summary).replace(
-            "各片良率（按测试层分列）",
-            titlePart
-          )
-        );
-      }
-    } else if (noInterrupt.length > 0) {
-      const pivotNoInt = buildSlotYieldPivot(noInterrupt);
-      if (pivotNoInt.slots.length > 0) {
-        parts.push(
-          formatSlotYieldPivotMarkdown(pivotNoInt, lot, device, summary).replace(
-            "各片良率（按测试层分列）",
-            "无中断 slot 良率（按测试层分列）"
-          )
-        );
-      }
-    } else {
-      parts.push(formatSlotYieldPivotMarkdown(pivot, lot, device, summary));
-    }
+  if (pivot && pivot.passIds.length > 0 && pivot.slots.length > 0) {
+    parts.push(formatSlotYieldPivotMarkdown(pivot, lot, device, summary));
   }
 
   if (parts.length === 0) {
