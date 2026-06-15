@@ -12,7 +12,7 @@ import {
 } from "./agentHistory.js";
 import { TOOL_SCHEMAS, INF_TOOL_SCHEMAS } from "./agentToolSchemas.js";
 import { runTool, type ChartSentinel, type ClarificationSentinel } from "./agentToolHandlers.js";
-import { buildSystemPrompt } from "./agentPrompt.js";
+import { buildSystemPrompt, classifyIntent } from "./agentPrompt.js";
 import { fetchOrCacheManifest } from "./agentManifest.js";
 import { buildChartOption, generateChartArgsHaveData, tryParseJsonish } from "./agentChartTool.js";
 import { streamSiliconFlow, type CollectedToolCall } from "./agentStream.js";
@@ -1856,7 +1856,9 @@ export async function runAgentLoop(
     // Inject nudge into the system prompt for the summary round — avoid a
     // trailing system message after tool turns, which is non-standard and can
     // cause empty responses on some providers (SiliconFlow/DeepSeek).
-    const basePrompt = buildSystemPrompt(manifest) + feedbackInjection;
+    const firstUserMsg = history.find((m) => m.role === "user")?.content ?? undefined;
+    const intent = classifyIntent(userQuestion, firstUserMsg);
+    const basePrompt = buildSystemPrompt(manifest, intent) + feedbackInjection;
     const waferJbNudge =
       !awaitingSummary && waferPlan.action.kind === "need_jb_lookup"
         ? `\n\n${WAFER_MAP_JB_LOOKUP_NUDGE}`

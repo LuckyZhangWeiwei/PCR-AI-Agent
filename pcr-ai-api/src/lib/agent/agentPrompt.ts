@@ -3,7 +3,9 @@
 // System prompt for the NXP ATTJ WaferTest AI agent.
 //
 // EDIT GUIDE — find the const whose name matches the section you want to change,
-//              then edit it in isolation. Do NOT touch buildSystemPrompt() ordering.
+//              then edit it in isolation. Section ordering inside buildSystemPrompt()
+//              is preserved; classifyIntent() controls which sections are injected
+//              per-turn based on the user's inferred intent.
 //
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  Section map (each → one named const below)                             ║
@@ -218,7 +220,7 @@ const SEC_DECISION = `\
    → 用户给了完整 device + "总体查一下"/"都查"/"概况"时，直接用默认参数查询，无需确认
    → 必须询问时合并为一次问题，禁止多轮追问
    → **禁止声称「这是我们之间的第一条消息」或「我没有找到之前的对话内容」**：即使对话历史因时间过长被压缩，也不得否认历史的存在；若上下文确实不足，应说「我当前无法访问之前的对话记录，请告知您在查看哪个批次/waferId 的数据」；用户说「为什么不生成 XXX」「刚才的 XXX 呢」时，说明之前有交互——应承认上下文可能丢失，禁止声称"无历史记录"
-   → **ask_clarification 选项回复（高频错误，禁止对调）**：若上一轮调用了 `ask_clarification` 并列出了编号选项（1/2/3…），用户回复单个数字（如 "1"）时，**必须将其理解为选项序号**，即用户选择了第 1 个选项所描述的条件；**禁止**将该数字误读为 passId、waferId、slot、lot 尾号等参数值。典型错误：选项1=pass3，用户回复"1" → 错误：「确认您要查 pass1」；正确：「按选项1执行，查 pass3（passId=3）」。
+   → **ask_clarification 选项回复（高频错误，禁止对调）**：若上一轮调用了 \`ask_clarification\` 并列出了编号选项（1/2/3…），用户回复单个数字（如 "1"）时，**必须将其理解为选项序号**，即用户选择了第 1 个选项所描述的条件；**禁止**将该数字误读为 passId、waferId、slot、lot 尾号等参数值。典型错误：选项1=pass3，用户回复"1" → 错误：「确认您要查 pass1」；正确：「按选项1执行，查 pass3（passId=3）」。
 
 2. **规划其次** — 仅当请求需要**跨多个不同 device/lot/cardId 的对比**且用户未明确说全查，才输出计划等确认
    → 触发条件示例：「对比 WA00P21K 和 WA00P23N 所有批次，找出坏 bin 差异最大的探针卡」
@@ -1096,14 +1098,14 @@ const SEC_COMMON_ERRORS = `\
 ✅ "⚠ waferId 15→16 BIN7 突增 12→89 颗（连续聚集），lot 合计 320 颗中约 55% 集中在 waferId 14–18；建议查 INF DUT map 确认接触区域。"
 
 **【错误 E】工具输出被截断时作出不可验证的结论（禁止）—— 双向错误**
-❌ **方向1（无中生有→无数据）**：工具 JSON 末尾含 `...` 或字段被截断 → 直接写"BIN126 无测试数据，无法分析"
+❌ **方向1（无中生有→无数据）**：工具 JSON 末尾含 \`...\` 或字段被截断 → 直接写"BIN126 无测试数据，无法分析"
 ❌ **方向2（无中生有→编造数值）**：工具 JSON 被截断，DUT 明细根本未出现在可见输出中 → 结论写"BIN8 集中在 DUT13 共 68 die，BIN126 集中在 DUT20 共 64 die"（这些数字来自截断的不可见部分，属于幻觉）
-✅ 截断时正确处理：套用标准模板句「工具结果已截断（可见内容止于 `xxx` 字段），DUT 级明细不完整；如需精确分布，请追问「单独分析 BIN8 的 DUT 分布」」；只基于可见内容描述，禁止用截断部分不可见的 DUT 编号、die 数、BIN 计数做具体结论
+✅ 截断时正确处理：套用标准模板句「工具结果已截断（可见内容止于 \`xxx\` 字段），DUT 级明细不完整；如需精确分布，请追问「单独分析 BIN8 的 DUT 分布」」；只基于可见内容描述，禁止用截断部分不可见的 DUT 编号、die 数、BIN 计数做具体结论
 规则：只要工具 JSON 输出不完整（末尾省略、字段被截），**既不能说"无数据"，也不能引用截断部分未显示的具体数值**；只能基于可见内容进行描述
 
 **【错误 F】专业建议中编造机台名称 / 卡号（禁止幻觉）**
 ❌ 专业建议写"b3uflex23 该段测试程序稳定性…" — "b3uflex23" 未出现在工具结果中，属于凭空编造
-✅ 机台名称只能引用工具结果中实际出现的 `TESTERID`（如 `testerIdMarkdown` / `testerByLot`）；若工具未返回具体机台 ID，写"使用的测试机（见上方机台表）"，绝不捏造具体 ID
+✅ 机台名称只能引用工具结果中实际出现的 \`TESTERID\`（如 \`testerIdMarkdown\` / \`testerByLot\`）；若工具未返回具体机台 ID，写"使用的测试机（见上方机台表）"，绝不捏造具体 ID
 
 **【错误 G】结论声称时间范围但工具未传时间参数（禁止时间幻觉）**
 ❌ 调用 \`query_yield_triggers(mask:"N84R")\` 未传 timeFrom/timeTo → 结论写"近一个月的测试记录显示…"
@@ -1119,34 +1121,90 @@ const SEC_FORMAT_LIMITS = `\
 - **严禁**在回复中使用 Markdown 图片语法 \`![...](url)\`，图片无法在界面显示
 - 图表只能通过 generate_chart 工具生成，不要用文字图片替代`;
 
+// ─── intent classification ──────────────────────────────────────────────────
+
+/**
+ * Intent inferred from the user message. Controls which prompt sections are
+ * injected this turn — sections irrelevant to the intent are omitted to keep
+ * the prompt lean and improve model compliance on the sections that remain.
+ *
+ * - lot_bin    : analyzing a specific lot's bin / yield / slot data
+ * - mask_query : device discovery by 4-char mask token (e.g. "N84R")
+ * - card_probe : probe-card health / Yield Monitor trigger queries
+ * - wafer_map  : wafer map / cluster / die-distribution view
+ * - general    : fallback — all sections included (safe default)
+ */
+export type PromptIntent = "lot_bin" | "mask_query" | "card_probe" | "wafer_map" | "general";
+
+/**
+ * Classify the user's intent from the current message (and optional first
+ * session message for follow-up context). Returns "general" when uncertain.
+ */
+export function classifyIntent(userQuestion: string, historyFirst?: string): PromptIntent {
+  const raw = userQuestion.trim();
+  const q = raw.toLowerCase();
+
+  // Short follow-ups ("1", "好的", "继续", "是" — ≤6 chars) inherit the intent
+  // from the original question that started this session.
+  if (raw.length <= 6 && historyFirst && historyFirst !== raw) {
+    return classifyIntent(historyFirst);
+  }
+
+  // Wafer map / cluster / die distribution (highest priority)
+  if (/晶圆图|wafer\s*map|cluster|聚集|die\s*(坐标|分布)|inf_draw/.test(q)) return "wafer_map";
+
+  // Probe-card health / Yield Monitor trigger queries
+  if (/探针卡|probe\s*card|哪张卡|卡号|最差.*(卡|card)|报警最多|yield\s*monitor|触发次数|ym触发|dut.*不均/.test(q)) return "card_probe";
+
+  // Lot ID present (XX12345.1X) → lot + bin analysis
+  if (/\b[A-Z]{2}\d{5}\.\d[A-Z]\b/.test(raw)) return "lot_bin";
+
+  // Standalone 4-char mask token (N84R, P02G…) without a lot ID
+  // Exclude BINxx names and tokens embedded in longer identifiers
+  if (/(?<!\w)(?!BIN\d)[A-Z][A-Z0-9]{3}(?!\w)/.test(raw)) return "mask_query";
+
+  // Generic lot/bin keywords without a specific lot ID
+  if (/\blot\b|批次|bin\d+|坏.?bin|良率分析|yield.*分析/.test(q)) return "lot_bin";
+
+  return "general";
+}
+
 // ─── assembler ─────────────────────────────────────────────────────────────
 
-export function buildSystemPrompt(manifest?: DataManifest): string {
+export function buildSystemPrompt(manifest?: DataManifest, intent: PromptIntent = "general"): string {
   const today = new Date().toISOString().slice(0, 10);
+
+  // is() returns true when intent matches any listed value, or when intent is "general"
+  // (the safe fallback that includes every section).
+  const is = (...intents: PromptIntent[]) => intent === "general" || intents.includes(intent);
+
   return [
+    // ── always-on ──────────────────────────────────────────────────────────
     buildHeader(manifest, today),
     SEC_TERMS_AND_TOOLS,
     SEC_ROUTING,
-    SEC_YIELD_TRIGGERS,
+    // ── intent-gated ───────────────────────────────────────────────────────
+    is("lot_bin", "card_probe")               && SEC_YIELD_TRIGGERS,
     SEC_DECISION,
     SEC_TWO_TABLES,
-    SEC_BAD_BIN,
+    is("lot_bin", "mask_query", "wafer_map")  && SEC_BAD_BIN,
     SEC_DATA_RULES,
     SEC_LOT_ID,
-    SEC_MASK,
+    is("lot_bin", "mask_query")               && SEC_MASK,
     SEC_DOMAIN,
-    SEC_WAFER_ENUM,
-    SEC_WORST_CARD,
-    SEC_CARD_LOTS,
-    SEC_BIN_COMPARE,
-    SEC_CROSS_DOMAIN_INSIGHTS,
-    SEC_BIN_BY_SLOT,
-    SEC_ENG_TIPS,
+    is("lot_bin", "wafer_map")                && SEC_WAFER_ENUM,
+    is("card_probe")                          && SEC_WORST_CARD,
+    is("card_probe")                          && SEC_CARD_LOTS,
+    intent === "general"                      && SEC_BIN_COMPARE,
+    is("lot_bin", "card_probe")               && SEC_CROSS_DOMAIN_INSIGHTS,
+    is("lot_bin", "wafer_map")                && SEC_BIN_BY_SLOT,
+    is("lot_bin", "mask_query", "card_probe") && SEC_ENG_TIPS,
+    // ── always-on ──────────────────────────────────────────────────────────
     SEC_OUTPUT_FORMAT,
     SEC_QUALITY,
-    SEC_FILTER_VALUES,
+    is("mask_query", "card_probe")            && SEC_FILTER_VALUES,
     SEC_CHART_RULES,
     SEC_COMMON_ERRORS,
     SEC_FORMAT_LIMITS,
-  ].join("\n\n");
+  ].filter(Boolean).join("\n\n");
 }
