@@ -120,6 +120,10 @@ export function passNumFromJbRow(row: Record<string, unknown>): number {
   return Number.isFinite(v) && v > 0 ? Math.round(v) : 1;
 }
 
+export function lotFromJbRow(row: Record<string, unknown>): string {
+  return String(row.LOT ?? row.lot ?? "").trim();
+}
+
 /** 多行合计指定坏 bin 的 dieCount（含 INTERRUPT/续测各行）。 */
 export function sumBadBinDieOnRows(
   rows: Record<string, unknown>[],
@@ -376,6 +380,8 @@ export type YieldInterruptSegment = {
 };
 
 export type SlotYieldSummaryEntry = {
+  /** 批次；多 lot 行集时与 slot 共同唯一标识一片 wafer */
+  lot?: string;
   slot: number;
   /** PASSID：sort1→1，sort2→3，sort3→5 */
   passId: number;
@@ -397,7 +403,7 @@ export type SlotYieldSummaryEntry = {
 };
 
 const SLOT_YIELD_GUIDE =
-  "slotYieldSummary：每条=一片 wafer 的一个测试层 (slot, passId)。testInterruptCount=中断次数；有中断时读 interruptSegments（多次中断逐段：中断1…中断N→续测→整片合并）或 slotYieldInterruptMarkdown，禁止把 2 段当成 2 次。JSON 仍含 interruptHalf/completionHalf 摘要。查 BIN 见 badBinSlotTrends。";
+  "slotYieldSummary：每条=一片 wafer 的一个测试层 (lot, slot, passId)；禁止跨 lot 合并同 slot。testInterruptCount=中断次数；有中断时读 interruptSegments（多次中断逐段：中断1…中断N→续测→整片合并）或 slotYieldInterruptMarkdown，禁止把 2 段当成 2 次。JSON 仍含 interruptHalf/completionHalf 摘要。查 BIN 见 badBinSlotTrends。";
 
 const TEST_INTERRUPT_COUNT_GUIDE =
   "testInterruptCountMarkdown / slotYieldSummary[].testInterruptCount：各 wafer×pass 的中断次数；用户问「中断几次」必须读本表数字，禁止用前半/后半两段推断次数。";
@@ -470,8 +476,12 @@ export function computeJbYieldBreakdown(rows: Record<string, unknown>[]): {
   };
 }
 
-function slotPassGroupKey(slot: number, passId: number): string {
-  return `${slot}\0${passId}`;
+function slotPassGroupKey(
+  lot: string,
+  slot: number,
+  passId: number
+): string {
+  return `${lot}\0${slot}\0${passId}`;
 }
 
 /** 良率汇总用行：排除 Current 层（PASSID≥99 / LAYERNAME=Current / PASSTYPE=NA）。 */
@@ -500,23 +510,27 @@ export function buildSlotYieldSummary(
     const slot = Number(row.SLOT ?? row.slot);
     if (!Number.isFinite(slot) || slot <= 0) continue;
     const passId = passIdFromJbRow(row);
-    const key = slotPassGroupKey(slot, passId);
+    const lot = lotFromJbRow(row);
+    const key = slotPassGroupKey(lot, slot, passId);
     if (!bySlotPass.has(key)) bySlotPass.set(key, []);
     bySlotPass.get(key)!.push(row);
   }
   const out: SlotYieldSummaryEntry[] = [];
   for (const key of [...bySlotPass.keys()].sort((a, b) => {
-    const [s1, p1] = a.split("\0").map(Number);
-    const [s2, p2] = b.split("\0").map(Number);
-    return s1 - s2 || p1 - p2;
+    const [lotA, s1, p1] = a.split("\0");
+    const [lotB, s2, p2] = b.split("\0");
+    const lotCmp = lotA.localeCompare(lotB);
+    if (lotCmp !== 0) return lotCmp;
+    return Number(s1) - Number(s2) || Number(p1) - Number(p2);
   })) {
-    const [slotStr, passStr] = key.split("\0");
+    const [lot, slotStr, passStr] = key.split("\0");
     const slot = Number(slotStr);
     const passId = Number(passStr);
     const groupRows = bySlotPass.get(key)!;
     const b = computeJbYieldBreakdown(groupRows);
     const testInterruptCount = b.hasInterrupt ? countTestInterruptEvents(groupRows) : 0;
     const entry: SlotYieldSummaryEntry = {
+      ...(lot ? { lot } : {}),
       slot,
       passId,
       grossDie: b.wholeWafer.grossDie,

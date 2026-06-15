@@ -515,6 +515,26 @@ const PASS_IDS_PRESENT_GUIDE =
 const LOT_QUERY_FULL_ROWS_GUIDE =
   "指定 lot 查询已拉取该 lot 全部匹配行（不限 200、默认 TESTEND 自 2020 起）；整体良率须读 lotYieldOverviewMarkdown / yieldByPassIdMarkdown（每层 sort 一行），禁止把多层 die 相加成一个「整体良率」。";
 
+const MULTI_LOT_YIELD_SCOPE_GUIDE =
+  "多 lot 行集（mask/device 未指定 lot）：良率/中断/探针卡表仅针对 primary lot（TESTEND 最新批）；须读 recentLotsByTestEnd / lotYieldRankByTestEnd 列全部 lot，或对各 lot 分别 query_jb_bins(lot)。";
+
+/** mask/device 多 lot 时：良率表仅算 primary lot，避免跨 lot 合并同 slot。 */
+export function rowsForYieldAggregates(
+  rows: Record<string, unknown>[],
+  opts: {
+    primaryLot: string;
+    distinctLotCount: number;
+    lotScopedFullRows?: boolean;
+  }
+): Record<string, unknown>[] {
+  if (opts.lotScopedFullRows || opts.distinctLotCount <= 1) return rows;
+  const lot = opts.primaryLot.trim();
+  if (!lot) return rows;
+  return rows.filter(
+    (r) => String(r["LOT"] ?? r["lot"] ?? "").trim() === lot
+  );
+}
+
 export function wrapJbQueryResultForAgent(
   rows: Record<string, unknown>[],
   meta?: {
@@ -537,17 +557,6 @@ export function wrapJbQueryResultForAgent(
   // Correct wafer count: distinct (lot, slot) pairs — not just slot numbers.
   // distinctSlots.length undercounts when different lots share the same slot number.
   const distinctLotSlotCount = lotSlotPairs.size;
-  const slotYieldSummary = buildSlotYieldSummary(rows);
-  const yieldByPassId = buildYieldByPassId(rows);
-  const slotYieldPivot = buildSlotYieldPivot(slotYieldSummary);
-  const lotYieldRankByTestEnd = buildLotYieldRank(rows, 20);
-  const slotBadBinsCompact = buildSlotBadBinsCompact(rows);
-  const topBadBins = buildTopBadBins(rows, 15);
-  const cardChangesBySlotPass = buildCardChangesBySlotPass(rows);
-  const cardByPassId = buildCardByPassId(rows);
-  const recentLotsByTestEnd = buildRecentLotsByTestEnd(rows, 20);
-  const testerByLot = buildTesterByLot(rows);
-  const binTotalsByLot = buildBinTotalsByLot(rows);
   const distinctLotCount = new Set(
     rows
       .map((r) => String(r["LOT"] ?? r["lot"] ?? "").trim())
@@ -557,40 +566,58 @@ export function wrapJbQueryResultForAgent(
   const primaryDevice = String(
     rows[0]?.["DEVICE"] ?? rows[0]?.["device"] ?? ""
   ).trim();
+  const yieldRows = rowsForYieldAggregates(rows, {
+    primaryLot,
+    distinctLotCount,
+    lotScopedFullRows: meta?.lotScopedFullRows,
+  });
+  const slotYieldSummary = buildSlotYieldSummary(yieldRows);
+  const yieldByPassId = buildYieldByPassId(yieldRows);
+  const slotYieldPivot = buildSlotYieldPivot(slotYieldSummary);
+  const lotYieldRankByTestEnd = buildLotYieldRank(rows, 20);
+  const slotBadBinsCompact = buildSlotBadBinsCompact(yieldRows);
+  const topBadBins = buildTopBadBins(yieldRows, 15);
+  const cardChangesBySlotPass = buildCardChangesBySlotPass(yieldRows);
+  const cardByPassId = buildCardByPassId(yieldRows);
+  const recentLotsByTestEnd = buildRecentLotsByTestEnd(rows, 20);
+  const testerByLot = buildTesterByLot(rows);
+  const binTotalsByLot = buildBinTotalsByLot(rows);
   const shouldDetectClusteredBins =
     Boolean(meta?.lotScopedFullRows) ||
     distinctLotCount === 1 ||
     Boolean(primaryLot);
   const clusteredBadBinAlerts: ClusteredBadBinAlert[] = shouldDetectClusteredBins
-    ? buildClusteredBadBinAlerts(
-        primaryLot
-          ? rows.filter(
-              (r) =>
-                String(r["LOT"] ?? r["lot"] ?? "").trim() === primaryLot
-            )
-          : rows,
-        topBadBins
-      )
+    ? buildClusteredBadBinAlerts(yieldRows, topBadBins)
     : [];
   const passIdSet = new Set<number>();
-  for (const r of rows) {
+  for (const r of yieldRows) {
     const pid = passIdFromJbRow(r);
     if (pid > 0) passIdSet.add(pid);
   }
   const passIdsPresent = [...passIdSet].sort((a, b) => a - b);
-  const slotsByPassId = buildSlotsByPassId(rows);
+  const slotsByPassId = buildSlotsByPassId(yieldRows);
   const badBinSlotTrends = meta?.lotScopedFullRows
     ? buildBadBinSlotTrends(
-        rows,
+        yieldRows,
         topBadBins,
         primaryLot || undefined,
         primaryDevice || undefined,
         15
       )
     : [];
+  const multiLotYieldScope =
+    distinctLotCount > 1 && !meta?.lotScopedFullRows;
   const result: Record<string, unknown> = {
     lot: primaryLot || undefined,
     device: primaryDevice || undefined,
+    ...(multiLotYieldScope
+      ? {
+          _multiLotYieldScopeGuide: MULTI_LOT_YIELD_SCOPE_GUIDE,
+          multiLotYieldScope: true,
+          multiLotYieldScopeLot: primaryLot || undefined,
+          multiLotDistinctCount: distinctLotCount,
+        }
+      : {}),
     _binFieldGuide: BIN_SCHEMA_HINT,
     _slotYieldGuide: slotYieldSummaryFieldGuide(),
     _slotBadBinsCompactGuide: SLOT_BAD_BINS_COMPACT_GUIDE,
@@ -692,6 +719,9 @@ export function wrapJbQueryResultForAgent(
     if (tid) result.testerId = tid;
   }
   if (meta?.lotScopedFullRows) {
+    const overview = formatLotYieldOverviewMarkdown(result);
+    if (overview) result.lotYieldOverviewMarkdown = overview;
+  } else if (multiLotYieldScope && yieldRows.length > 0) {
     const overview = formatLotYieldOverviewMarkdown(result);
     if (overview) result.lotYieldOverviewMarkdown = overview;
   }

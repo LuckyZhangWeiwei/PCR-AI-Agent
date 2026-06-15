@@ -436,6 +436,47 @@ describe("agentJbBinFormat", () => {
     assert.deepEqual(recent.map((x) => x.lot), ["B", "A"]);
   });
 
+  it("wrapJbQueryResultForAgent scopes yield tables to primary lot when multi-lot", () => {
+    const rows = [
+      {
+        LOT: "LOT_A",
+        DEVICE: "WB01P11C",
+        SLOT: 1,
+        PASSID: 1,
+        PASSTYPE: "TEST",
+        GROSSDIE: 1365,
+        TESTEND: "2026-06-14T00:00:00.000Z",
+        bins: [
+          { n: 1, value: 1265, isGoodBin: true },
+          { n: 6, value: 100, isGoodBin: false },
+        ],
+      },
+      {
+        LOT: "LOT_B",
+        DEVICE: "WB01P11C",
+        SLOT: 1,
+        PASSID: 1,
+        PASSTYPE: "TEST",
+        GROSSDIE: 8190,
+        TESTEND: "2026-06-01T00:00:00.000Z",
+        bins: [
+          { n: 1, value: 7000, isGoodBin: true },
+          { n: 6, value: 1190, isGoodBin: false },
+        ],
+      },
+    ] as Record<string, unknown>[];
+    const out = wrapJbQueryResultForAgent(rows);
+    assert.equal(out.multiLotYieldScope, true);
+    assert.equal(out.lot, "LOT_A");
+    const summary = out.slotYieldSummary as Array<{ lot?: string; hasInterrupt: boolean }>;
+    assert.equal(summary.length, 1);
+    assert.equal(summary[0]!.lot, "LOT_A");
+    assert.equal(summary[0]!.hasInterrupt, false);
+    const byPass = out.yieldByPassId as Array<{ grossDie: number }>;
+    assert.equal(byPass[0]!.grossDie, 1365);
+    assert.equal(out.distinctLotCount, 2);
+  });
+
   it("buildTopBadBins sums bad bins across rows in scope", () => {
     const rows = [
       {
