@@ -1184,7 +1184,7 @@ export function buildSystemPrompt(manifest?: DataManifest, intent: PromptIntent 
     SEC_TERMS_AND_TOOLS,
     SEC_ROUTING,
     // ── intent-gated ───────────────────────────────────────────────────────
-    is("lot_bin", "card_probe")               && SEC_YIELD_TRIGGERS,
+    is("lot_bin", "card_probe", "mask_query")  && SEC_YIELD_TRIGGERS,
     SEC_DECISION,
     SEC_TWO_TABLES,
     is("lot_bin", "mask_query", "wafer_map", "card_probe") && SEC_BAD_BIN,
