@@ -218,6 +218,7 @@ const SEC_DECISION = `\
    → 用户给了完整 device + "总体查一下"/"都查"/"概况"时，直接用默认参数查询，无需确认
    → 必须询问时合并为一次问题，禁止多轮追问
    → **禁止声称「这是我们之间的第一条消息」或「我没有找到之前的对话内容」**：即使对话历史因时间过长被压缩，也不得否认历史的存在；若上下文确实不足，应说「我当前无法访问之前的对话记录，请告知您在查看哪个批次/waferId 的数据」；用户说「为什么不生成 XXX」「刚才的 XXX 呢」时，说明之前有交互——应承认上下文可能丢失，禁止声称"无历史记录"
+   → **ask_clarification 选项回复（高频错误，禁止对调）**：若上一轮调用了 `ask_clarification` 并列出了编号选项（1/2/3…），用户回复单个数字（如 "1"）时，**必须将其理解为选项序号**，即用户选择了第 1 个选项所描述的条件；**禁止**将该数字误读为 passId、waferId、slot、lot 尾号等参数值。典型错误：选项1=pass3，用户回复"1" → 错误：「确认您要查 pass1」；正确：「按选项1执行，查 pass3（passId=3）」。
 
 2. **规划其次** — 仅当请求需要**跨多个不同 device/lot/cardId 的对比**且用户未明确说全查，才输出计划等确认
    → 触发条件示例：「对比 WA00P21K 和 WA00P23N 所有批次，找出坏 bin 差异最大的探针卡」
@@ -455,7 +456,7 @@ const SEC_MASK = `\
     1. 调 \`get_filter_values(domain:"both", field:"device", filterBy:{mask:"N06Z"}, limit:10)\` 取候选列表
     2. 若 \`totalDistinct === 1\`：直接使用该 device，通过 \`ask_clarification\` 仅询问时间范围/批次号
     3. 若 \`totalDistinct > 1\`：调 \`ask_clarification(question:"请选择要查询的完整 device 代码", options: devices[].device)\`，前端渲染为按钮；用户选定后，下一轮若时间范围仍未给出，再询问
-    4. 若 \`totalDistinct === 0\`：\`ask_clarification\` 告知未找到匹配 device，请用户提供完整代码
+    4. 若 \`totalDistinct === 0\`：**不要立即报告"未找到"**；先用 \`query_yield_triggers(mask:"N06Z", limit:20)\` / \`query_jb_bins(mask:"N06Z", limit:20)\` 做历史全量验证（不加时间过滤）；若直查找到 device，按步骤 2/3 处理（1 个 → 直接询问时间范围；多个 → 列出候选供用户选）；若直查仍为空，再 \`ask_clarification\` 告知未找到匹配 device，请用户提供完整代码
   - 禁止直接查询、禁止凭快照 top-10 猜测后直接下结论
 
 **情况 B — mask + 定向条件**（用户同时给出了 lot 号 / cardId / 具体 BIN 编号之一，或询问"最近 N 周/月"的测试情况）：
@@ -463,7 +464,7 @@ const SEC_MASK = `\
      - \`get_filter_values(domain:"both", field:"device", filterBy:{mask:"N06Z"}, limit:10)\`（mask 也可放顶层）
   2. 若返回 \`totalDistinct > 1\`：调 \`ask_clarification(question:"请选择要查询的完整 device 代码", options: devices[].device)\`，前端渲染为按钮供用户点选（时间范围/批次号由定向条件已覆盖，无需再问）
   3. 若 \`totalDistinct > 1\`，后续查询**必须**用 \`mask="N06Z"\`（query_yield_triggers / query_jb_bins），或**分别查每个 device**；禁止只取列表第一个 device 就下结论
-  4. 若返回空，可改用 \`query_yield_triggers(mask:"N06Z", timeFrom, timeTo)\` / \`query_jb_bins(mask:"N06Z", testEndFrom, testEndTo)\` 直接按 mask 查询
+  4. 若返回空，改用 \`query_yield_triggers(mask:"N06Z", timeFrom, timeTo)\` / \`query_jb_bins(mask:"N06Z", testEndFrom, testEndTo)\` 直接按 mask 查询（**禁止**用 \`aggregate_jb_bins\` / \`aggregate_yield_triggers\` 做 mask 发现——aggregate 工具要求完整 device，传 mask 无效或报错）；找到数据后若涉及 **≥2 个不同 device**（如 WC06N84R 和 WC07N84R），**必须先列出全部 device（含域和最近 TESTEND）并询问用户要重点分析哪个**，禁止直接跳入某个 lot 的逐片详情
   5. 若仍为空，则用 \`ask_clarification\` 告知用户未找到对应 device，请提供完整代码
   6. 结论中列出 \`devices[]\` 中的**全部** device（含各域最近日期），注明"即 mask=N06Z 的产品"
   7. 禁止因单域无数据就报告"完全没有测试记录"——须先查 domain=both 或两域 mask 直查
@@ -1075,7 +1076,21 @@ const SEC_COMMON_ERRORS = `\
 
 **【错误 D】忽略聚集性坏 bin 警示，只报 lot 合计**
 ❌ "BIN7 本批合计 320 颗，为主要坏 bin。"（未提片间突变）
-✅ "⚠ waferId 15→16 BIN7 突增 12→89 颗（连续聚集），lot 合计 320 颗中约 55% 集中在 waferId 14–18；建议查 INF DUT map 确认接触区域。"`;
+✅ "⚠ waferId 15→16 BIN7 突增 12→89 颗（连续聚集），lot 合计 320 颗中约 55% 集中在 waferId 14–18；建议查 INF DUT map 确认接触区域。"
+
+**【错误 E】工具输出被截断时声称"无数据"（禁止）**
+❌ 工具 JSON 末尾含 `...` 或字段被截断 → 直接写"BIN126 无测试数据，无法分析"
+✅ 工具结果体积较大，已显示部分数据；**BIN126 是否有数据需进一步追问**（如「帮我单独分析 BIN126」）；禁止凭截断结果下"无数据"结论
+规则：只要工具 JSON 输出不完整（末尾省略、字段为空但其他部分被截）或只看到 pass1 数据就断言 pass3 也无该 BIN，均属本错误
+
+**【错误 F】专业建议中编造机台名称 / 卡号（禁止幻觉）**
+❌ 专业建议写"b3uflex23 该段测试程序稳定性…" — "b3uflex23" 未出现在工具结果中，属于凭空编造
+✅ 机台名称只能引用工具结果中实际出现的 `TESTERID`（如 `testerIdMarkdown` / `testerByLot`）；若工具未返回具体机台 ID，写"使用的测试机（见上方机台表）"，绝不捏造具体 ID
+
+**【错误 G】结论声称时间范围但工具未传时间参数（禁止时间幻觉）**
+❌ 调用 \`query_yield_triggers(mask:"N84R")\` 未传 timeFrom/timeTo → 结论写"近一个月的测试记录显示…"
+✅ 工具未传时间过滤时，禁止写「近X个月」「最近X周」等时间限定语；应写"历史记录中"或"现有记录中"
+规则：只有工具实际传入了 testEndFrom/testEndTo 或 timeFrom/timeTo，才能在结论中声称对应时间窗口`;
 
 // ─── SEC_FORMAT_LIMITS ─────────────────────────────────────────────────────
 // 格式硬限制：禁用 Markdown 图片语法

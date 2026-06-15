@@ -1543,6 +1543,7 @@ const SUMMARIZE_NUDGE =
   "- 禁止画 `| col |` markdown 表格（含「结论」列）\n" +
   "- 禁止逐行复述数据表里的每个数字（只点明异常值/对比）\n" +
   "- 禁止合并 pass1/3/5 的 die 成「整体良率」——各 pass 独立报告\n" +
+  "- **禁止编造机台名称**：专业建议中的 TESTERID（如 b3uflexXX、b3ps16XX）只能来自工具返回的 `testerIdMarkdown`/`testerByLot`/`testerId` 字段；若工具未返回具体机台，写「测试机见上方机台表」，绝不凭空捏造 ID\n" +
   "**聚集性坏 bin**：工具 JSON 含 clusteredBadBinAlerts 或有警示表时，数据解读**首句必须**点明 BIN、waferId 范围与类型，禁止只报 lot 合计。\n" +
   "**良率**：只引用 slotYieldPivotMarkdown / slotYieldInterruptMarkdown / slotYieldSummary[].yieldPct；禁止用坏 die 颗数代替良率%；禁止写常温/高温/低温（用 pass1/3/5）。";
 
