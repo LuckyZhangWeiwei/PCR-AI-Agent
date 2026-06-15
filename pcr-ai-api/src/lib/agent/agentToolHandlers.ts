@@ -41,7 +41,7 @@ import {
   buildInfcontrolLayerBinsV3SqlFullMatching,
 } from "../apiV3ListSql.js";
 import { probeCardTypeLeadingSegment } from "../probeCardTypeLeadingSegment.js";
-import { deviceMask } from "../deviceMask.js";
+import { deviceBaseMask } from "../deviceMask.js";
 import { addDutNumberToYieldMonitorV3Row } from "../yieldTriggerLabelDut.js";
 import { enrichInfcontrolLayerBinRowV2 } from "../passBinSemantics.js";
 import {
@@ -109,9 +109,12 @@ function clampLimit(raw: unknown, defaultVal: number, max: number): number {
 function truncateResult(obj: unknown, maxChars: number): string {
   try {
     const s = JSON.stringify(obj);
-    return s.length > maxChars
-      ? s.slice(0, maxChars) + "…(truncated)"
-      : s;
+    if (s.length <= maxChars) return s;
+    const omitted = s.length - maxChars;
+    return (
+      s.slice(0, maxChars) +
+      `…[数据已截断：省略了末尾 ${omitted} 字符（共 ${s.length} 字符），以上为不完整数据，请基于可见部分作答，勿假设省略部分的内容]`
+    );
   } catch {
     return "(结果序列化失败)";
   }
@@ -124,7 +127,7 @@ function enrichYieldRow(row: Record<string, unknown>): Record<string, unknown> {
     PROBECARDTYPE: probeCardTypeLeadingSegment(
       base["PROBECARD"] ?? base["probecard"]
     ),
-    MASK: deviceMask(base["DEVICE"] ?? base["device"]),
+    MASK: deviceBaseMask(base["DEVICE"] ?? base["device"]),
   };
 }
 
@@ -133,7 +136,7 @@ function enrichJbRow(row: Record<string, unknown>): Record<string, unknown> {
   return {
     ...e,
     PROBECARDTYPE: probeCardTypeLeadingSegment(e["CARDID"] ?? e["cardid"]),
-    MASK: deviceMask(e["DEVICE"] ?? e["device"]),
+    MASK: deviceBaseMask(e["DEVICE"] ?? e["device"]),
   };
 }
 
@@ -715,7 +718,12 @@ export async function runTool(
     case "ask_clarification": {
       const question = String(args["question"] ?? "").trim();
       if (!question) return "ask_clarification 参数错误: question 不能为空";
-      return { __clarification: question };
+      const rawOpts = args["options"];
+      const options: string[] | undefined =
+        Array.isArray(rawOpts) && rawOpts.length > 0
+          ? rawOpts.map(String).filter(Boolean)
+          : undefined;
+      return { __clarification: question, ...(options ? { __clarification_options: options } : {}) };
     }
     case "get_filter_values":
       return runGetFilterValues(args);

@@ -1,4 +1,5 @@
 import type { BindParameters } from "oracledb";
+import { deviceMaskOracleWhere } from "./deviceMask.js";
 import { applyInfcontrolBinColumnFilters } from "./infcontrolBinColumnFilters.js";
 import { v3DefaultThroughNowMinusOneUtcYear } from "./v3DefaultOneYearWindow.js";
 
@@ -217,11 +218,11 @@ export function parseInfcontrolLayerBinsV3Query(
     strEqTrimCi("tstype", "t2.TSTYPE", "ic3_tstype");
     strEqTrimCi("cardId", "t2.CARDID", "ic3_cardid");
 
-    // mask is last-4-chars of DEVICE (computed suffix; not a DB column)
+    // mask is last-4-chars of DEVICE base segment (computed suffix; not a DB column)
     const maskVal = firstString(firstQueryValue(q, "mask"));
     if (maskVal !== undefined && maskVal !== "") {
       const t = maskVal.trim();
-      clauses.push(`UPPER(SUBSTR(TRIM(t1.DEVICE), -4)) = UPPER(:ic3_mask)`);
+      clauses.push(deviceMaskOracleWhere("t1.DEVICE", "ic3_mask"));
       (binds as Record<string, string | number | Date>).ic3_mask = t;
       applied.mask = t;
     }

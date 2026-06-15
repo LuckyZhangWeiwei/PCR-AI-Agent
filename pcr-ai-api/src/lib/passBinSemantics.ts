@@ -184,6 +184,34 @@ export function enrichInfcontrolLayerBinRowV2(
   ) {
     return rest;
   }
+  // v4 部分路径返回 bins 对象 { "1": { value, isGood } }，转为数组供良率计算。
+  if (
+    !hasBinColumns &&
+    rest.bins != null &&
+    typeof rest.bins === "object" &&
+    !Array.isArray(rest.bins)
+  ) {
+    const passBin = row.PASSBIN ?? row.passbin;
+    const good = parsePassBinHyphenGoodBins(passBin);
+    const bins: InfcontrolLayerBinV2BinEntry[] = [];
+    for (const [key, cell] of Object.entries(
+      rest.bins as Record<string, unknown>
+    )) {
+      if (cell == null || typeof cell !== "object") continue;
+      const n = Number(key);
+      if (!Number.isInteger(n) || n < 0 || n > 255) continue;
+      const c = cell as { value?: unknown; isGood?: boolean; isGoodBin?: boolean };
+      const value = coerceBinNumericValue(c.value);
+      if (isNullOrZeroBinValue(value)) continue;
+      bins.push({
+        n,
+        value,
+        isGoodBin: good.has(n) || c.isGood === true || c.isGoodBin === true,
+      });
+    }
+    bins.sort((a, b) => a.n - b.n);
+    return { ...rest, bins };
+  }
 
   const passBin = row.PASSBIN ?? row.passbin;
   const good = parsePassBinHyphenGoodBins(passBin);

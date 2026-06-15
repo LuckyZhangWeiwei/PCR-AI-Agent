@@ -1,6 +1,6 @@
 import type { BindParameters } from "oracledb";
 import { parseInfcontrolLayerBinQuery } from "./infcontrolLayerBinFilters.js";
-import { deviceMask } from "./deviceMask.js";
+import { deviceBaseMask } from "./deviceMask.js";
 
 /** 默认返回的分组条数上限 */
 export const INFCONTROL_LAYER_BIN_AGGREGATE_DEFAULT_TOP = 10;
@@ -36,7 +36,7 @@ export type InfcontrolLayerBinGroupBy =
   | "passId"
   | "sessionNumber"
   | "passNum"
-  /** DEVICE 末 4 位大写：`UPPER(SUBSTR(TRIM(DEVICE), -4))` */
+  /** DEVICE base segment（去除 `-`/`_` 及之后）末 4 位大写 */
   | "mask";
 
 /** 单次聚合最多组合的维度数 */
@@ -158,7 +158,7 @@ export function infcontrolLayerBinNonBinSelectSql(
     case "passBin":
       return "lb.PASSBIN AS PASSBIN";
     case "mask":
-      return "UPPER(SUBSTR(TRIM(ic.DEVICE), -4)) AS MASK";
+      return "UPPER(SUBSTR(REGEXP_REPLACE(TRIM(ic.DEVICE), '[-_].*', ''), -4)) AS MASK";
     default: {
       const _e: never = d;
       return _e;
@@ -495,7 +495,7 @@ export function buildInfcontrolLayerBinAggregateGroupParts(
     });
   }
   if (dimensions.includes("device")) {
-    parts["mask"] = deviceMask(parts["device"]);
+    parts["mask"] = deviceBaseMask(parts["device"]);
   }
   return parts;
 }

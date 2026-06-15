@@ -206,8 +206,8 @@ const SEC_DECISION = `\
 
    **必问场景 A — 仅有 mask（device 后缀），无完整 device 代码，且是宽泛问题：**
    - 触发条件：用户只给 4~8 位后缀（如"N06Z"、"P02G"、"N18J"）而没有给完整 device（如 WC13N06Z），且提问是"测试情况"/"常见 fail"/"有什么问题"/"概况"等宽泛意图
-   - **必须问**：①完整 device 代码是什么（可列出候选，如"WC13N06Z 还是其他型号？"）；②时间范围或批次号
-   - **例外（不问直接执行）**：用户已给出 lot 号 / cardId / 具体 BIN 编号等定向条件 → 按 SEC_MASK 规则自动匹配 device 后查询
+   - **必须先调 \`get_filter_values\` 取精确候选，再按需询问**（详见 SEC_MASK 情况 A 的 4 步流程）
+   - **例外（不问直接执行）**：用户已给出 lot 号 / cardId / 具体 BIN 编号等定向条件 → 按 SEC_MASK 情况 B 规则自动匹配 device 后查询
 
    **必问场景 B — device 产品代码完全未知且历史对话中也找不到**
    - 如历史对话存在但上下文丢失，说"我当前无法访问之前的记录"，询问 device/lot
@@ -313,10 +313,19 @@ const SEC_BAD_BIN = `\
 const SEC_DATA_RULES = `\
 ## 数据规则
 
-- 查询结果为空（totalRowsMatching=0 或 groups 为空数组）时，**先按下方「lot/cardId 查询返回空时的排查流程」排查**，排查步骤全部执行完毕且仍无数据，才可以说"没有找到数据"
+- 查询结果为空（totalRowsMatching=0 或 groups 为空数组）时，**先按下方排查流程处理**，排查步骤全部执行完毕且仍无数据，才可以说"没有找到数据"
 - 用中文回答，数字结论要具体（给出具体数字）
 - 时间范围未指定时，API 默认查最近 1 年数据，无需额外说明
 - 生成图表：labels = bin 号（如 "BIN8"），values = dieCount / count（如 37）；严禁把颗数拼进 BIN 名称
+
+### 通用查询返回空时的回退策略
+
+**任何**查询工具返回空结果时，按以下顺序回退（禁止直接报告"未找到"）：
+
+1. **检查参数格式**：lot ID 含 \`.\` 后缀是否完整；机台/卡号是否已通过 \`get_filter_values\` 确认精确值
+2. **扩大时间范围**：若未显式传时间，加 \`testEndFrom:"2020-01-01"\` / \`timeFrom:"2020-01-01"\` 重试
+3. **换域交叉验证**：JB STAR 返空 → 再查 Yield Monitor；Yield Monitor 返空 → 再查 JB STAR
+4. **以上均空**：用 \`ask_clarification\` 让用户确认条件，再报告"未找到"
 
 ### lot / cardId 查询返回空时的排查流程（禁止跳过）
 
@@ -346,7 +355,22 @@ const SEC_DATA_RULES = `\
 
 **⑥ 跨域查询**
 - JB STAR 所有步骤仍空时，查 Yield Monitor 侧（\`query_yield_triggers(lotId: "NF12592.1Y")\`）
-- 两侧都空，才可报告"未找到该 lot 的记录，请确认 lot ID"并建议用 \`get_filter_values\` 查可用 lot 列表`;
+- 两侧都空，才可报告"未找到该 lot 的记录，请确认 lot ID"并建议用 \`get_filter_values\` 查可用 lot 列表
+
+**机台名称标准化（必须执行）：**
+系统内实际机台 ID 格式为 \`b3ps16XX\`（PS16 系列）、\`b3uflexXX\`（UFLEX）、\`b3flexXX\`（FLEX）等，用户描述通常与此不同。**禁止直接把用户的原始机台描述作为 hostname 或 testerId 参数传入工具。** 必须先：
+1. 从用户描述推导搜索关键词（大小写不敏感）；若用户输入以 "b3" 开头，去掉该前缀后再处理；系统支持机台系列：PS16、UFLEX、FLEX、J750、MST、93K：
+   - "PS1600第12台" / "PS1600-12" / "T12PS16" → 关键词 \`"ps1612"\`（ps + 系列号前两位16 + 台号12）
+   - "PS1600" 无台号 → 关键词 \`"ps16"\`（匹配全部 PS16 系列）
+   - "UFLEX第3台" / "UFLEX3" → 关键词 \`"uflex03"\`（无台号时用 \`"uflex"\`）
+   - "J750第5台" / "J750-5" → 关键词 \`"j75005"\` 或先用 \`"j750"\`（不确定格式时先查系列名再看实际返回格式）
+   - "MST第2台" / "MST2" → 关键词 \`"mst02"\` 或先用 \`"mst"\`（同上）
+   - 若对台号零填充位数不确定，先用系列名搜索，查看实际格式后再精确匹配
+2. 调 \`get_filter_values(domain:"yield", field:"hostname", filterBy:{search:"ps1612"}, limit:10)\` 查 Yield Monitor 侧实际主机名
+3. 调 \`get_filter_values(domain:"jb", field:"testerId", filterBy:{search:"ps1612"}, limit:10)\` 查 JB STAR 侧实际测试机 ID
+4. 从返回列表选最匹配的项（如 \`"b3ps1612"\`），用该精确值查询；若多个候选，列出并询问用户确认
+5. **若第一个关键词无结果，必须立即用更短的子串重试**（如 \`"ps1612"\` 无结果 → 改用 \`"ps16"\`；\`"uflex03"\` 无结果 → 改用 \`"uflex"\`），**禁止在未重试的情况下直接报告"未找到机台"**
+6. 两次关键词均无结果，才用 \`ask_clarification\` 请用户确认实际机台 ID`;
 
 // ─── SEC_LOT_ID ────────────────────────────────────────────────────────────
 // lot ID 完整性（. 后缀）、双源联查规则、lot 整体概况硬规则
@@ -355,6 +379,7 @@ const SEC_LOT_ID = `\
 ## 批次 ID（lot ID）使用规则（必须严格遵守）
 
 - **批次 ID 必须原样使用**：lot ID 可能含 "." 后缀（如 "NF12551.1N"），"." 及其后面的部分是 lot ID 的有效组成部分，**绝对不能截断**。"NF12551.1N" 整体才是 lot ID，不是 "NF12551"。
+- **工具参数名区分（易错）**：\`query_yield_triggers\` 的批次参数名为 **\`lotId\`**；\`query_jb_bins\` 与 \`aggregate_jb_bins\` 的批次参数名为 **\`lot\`**——两者不同，**不可互换，传错参数将导致查询无效**。
 - **区分 lot ID 与 device**：device（产品代码）通常形如 "WA03P02G"（字母+数字组合，无 "."，长度较短）；lot ID 通常含较长数字段，且可能带 "." 后缀（如 "NF12551.1N"）。若用户输入包含 "."，优先判断为 lot ID。
 - **跨域查询**：用户仅提供 lot ID 而**未明确说明要查 Yield Monitor 还是 JB STAR** 时，**必须同时查两个域**（先调 query_yield_triggers，再调 query_jb_bins），然后合并汇报两域的结果，不能只查一个域就结束。
 - **探针卡 / device / lot + 时间段联查（必须双源）**：用户询问某张卡、某 device、某 lot 在指定时间段（如「最近3个月」「2026年上半年」「去年」）内的情况时，**必须同时调用两个域**：
@@ -418,22 +443,32 @@ const SEC_LOT_ID = `\
 const SEC_MASK = `\
 ## device 后缀标识（mask）
 
-- **mask** = device 字符串的**后 4 位**（如 "WA03P02G" → "P02G"）。
+- **mask** = device **基础段**的后 4 位。基础段 = device 中首个 \`-\` 或 \`_\` 之前的部分（若无则整个 device）。
+  例："WA03P02G" → 基础段 "WA03P02G" → mask "P02G"；"WC21P51A-V2" → 基础段 "WC21P51A" → mask "P51A"；"WA13N06Z_R1" → 基础段 "WA13N06Z" → mask "N06Z"。
 - 业务含义：同一个 mask 对应同一产品系列的后缀标识；不同 device 代码可能共享相同 mask。
 - **API 返回值**：v3/v4 列表行含 MASK 字段；聚合结果中若 device 为分组维度，parts 内也有 mask 字段。
 - **用户给 4 位字母数字串**（无 "."、无 "-"、不像 lot）→ 优先判断为 mask，区分以下两种情况处理：
 
 **情况 A — mask + 宽泛意图**（如"N06Z 的测试情况"、"N06Z 常见 fail"、"P02G 有什么问题"）：
-  - mask 本身**不是** API 过滤参数，且数据库中后缀匹配的 device 可能有多个（或不在快照 top-10 中）
-  - **必须** \`ask_clarification\`，一次问清：
-    ①完整 device 代码（如"请问是 WC13N06Z 还是其他型号？"，可列出快照中已知的候选）
-    ②时间范围**或**批次号（如"需要查哪段时间或哪个批次？"）
+  - mask 本身**不是** API 过滤参数，数据库中该后缀匹配的 device 可能有多个（或不在快照 top-10 中）
+  - **必须先取精确候选，再按需问清**（共 4 步）：
+    1. 调 \`get_filter_values(domain:"both", field:"device", filterBy:{mask:"N06Z"}, limit:10)\` 取候选列表
+    2. 若 \`totalDistinct === 1\`：直接使用该 device，通过 \`ask_clarification\` 仅询问时间范围/批次号
+    3. 若 \`totalDistinct > 1\`：调 \`ask_clarification(question:"请选择要查询的完整 device 代码", options: devices[].device)\`，前端渲染为按钮；用户选定后，下一轮若时间范围仍未给出，再询问
+    4. 若 \`totalDistinct === 0\`：\`ask_clarification\` 告知未找到匹配 device，请用户提供完整代码
   - 禁止直接查询、禁止凭快照 top-10 猜测后直接下结论
 
-**情况 B — mask + 定向条件**（用户同时给出了 lot 号 / cardId / 具体 BIN 编号之一）：
-  1. 先从快照或 \`get_filter_values\` 找出后 4 位等于该 mask 的完整 device 代码
-  2. 用匹配到的 device 代码作 device 参数查询，结论中注明"即 mask=P02G 的产品"
-  3. 若同一 mask 对应多个 device，合并查询或逐一列出，不要只查其中一个就下结论`;
+**情况 B — mask + 定向条件**（用户同时给出了 lot 号 / cardId / 具体 BIN 编号之一，或询问"最近 N 周/月"的测试情况）：
+  1. **一次调用合并两域**（禁止分两次只查 yield 或只查 jb，会漏掉只出现在另一域的 device，例如 N84R 在 Yield 可能是 WC07N84R、在 JB 可能是 WC06N84R）：
+     - \`get_filter_values(domain:"both", field:"device", filterBy:{mask:"N06Z"}, limit:10)\`（mask 也可放顶层）
+  2. 若返回 \`totalDistinct > 1\`：调 \`ask_clarification(question:"请选择要查询的完整 device 代码", options: devices[].device)\`，前端渲染为按钮供用户点选（时间范围/批次号由定向条件已覆盖，无需再问）
+  3. 若 \`totalDistinct > 1\`，后续查询**必须**用 \`mask="N06Z"\`（query_yield_triggers / query_jb_bins），或**分别查每个 device**；禁止只取列表第一个 device 就下结论
+  4. 若返回空，可改用 \`query_yield_triggers(mask:"N06Z", timeFrom, timeTo)\` / \`query_jb_bins(mask:"N06Z", testEndFrom, testEndTo)\` 直接按 mask 查询
+  5. 若仍为空，则用 \`ask_clarification\` 告知用户未找到对应 device，请提供完整代码
+  6. 结论中列出 \`devices[]\` 中的**全部** device（含各域最近日期），注明"即 mask=N06Z 的产品"
+  7. 禁止因单域无数据就报告"完全没有测试记录"——须先查 domain=both 或两域 mask 直查
+
+> **\`options\` 参数仅限以上 mask 消歧场景（情况 A 步骤 3 / 情况 B 步骤 2）；其他 ask_clarification 调用禁止传 options。**`;
 
 // ─── SEC_DOMAIN ────────────────────────────────────────────────────────────
 // 探针卡层级 / 维度选择 / Pass-sort 映射 / INF DUT / Lot 级 DUT /

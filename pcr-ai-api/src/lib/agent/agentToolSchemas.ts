@@ -12,6 +12,10 @@ export const TOOL_SCHEMAS = [
         type: "object",
         properties: {
           device: { type: "string", description: "产品代码，如 WA03P02G" },
+          mask: {
+            type: "string",
+            description: "device 末 4 位 mask（如 P02G），与 device 二选一；用于按产品系列后缀查询",
+          },
           lotId: { type: "string", description: "批次 ID，原样传入完整字符串，含 '.' 后缀（如 'NF12551.1N'），不可截断" },
           wafer: { type: "string", description: "晶圆编号" },
           hostname: { type: "string", description: "测试机名称" },
@@ -51,6 +55,10 @@ export const TOOL_SCHEMAS = [
             description: "返回 top N 组，默认 10，最大 25",
           },
           device: { type: "string" },
+          mask: {
+            type: "string",
+            description: "device 末 4 位 mask（如 P02G），与 device 二选一",
+          },
           lotId: { type: "string", description: "批次 ID，原样传入完整字符串，含 '.' 后缀（如 'NF12551.1N'），不可截断" },
           wafer: { type: "string" },
           hostname: { type: "string" },
@@ -74,6 +82,10 @@ export const TOOL_SCHEMAS = [
         type: "object",
         properties: {
           device: { type: "string", description: "产品代码" },
+          mask: {
+            type: "string",
+            description: "device 末 4 位 mask（如 P02G），与 device 二选一",
+          },
           lot: { type: "string", description: "批次 ID，原样传入完整字符串，含 '.' 后缀（如 'NF12551.1N'），不可截断" },
           slot: { type: "number", description: "晶圆槽位号" },
           cardId: { type: "string", description: "探针卡 ID（CARDID）" },
@@ -107,7 +119,7 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "aggregate_jb_bins",
       description:
-        "对 JB STAR 按维度聚合坏 bin die 数。**必填** lot/device/cardId/slot 之一作范围过滤，禁止无过滤调用（否则为全库数据）。用户已指定 lot 时必传 lot。单 lot 概况/坏 bin Top 排名：用 query_jb_bins(lot) 读 topBadBins，勿用本工具。禁止：最近 N lot（用 recentLotsByTestEnd）、任意两个 bin 的 by-lot 对比（用 binTotalsByLot）。",
+        "对 JB STAR 按维度聚合坏 bin die 数。**必填** lot/device/cardId/slot 之一作范围过滤，禁止无过滤调用（否则为全库数据）。若用户未给出任何范围条件，**必须先 ask_clarification 询问**再调用，禁止无过滤调用（服务端将直接报错）。用户已指定 lot 时必传 lot。单 lot 概况/坏 bin Top 排名：用 query_jb_bins(lot) 读 topBadBins，勿用本工具。禁止：最近 N lot（用 recentLotsByTestEnd）、任意两个 bin 的 by-lot 对比（用 binTotalsByLot）。",
       parameters: {
         type: "object",
         properties: {
@@ -121,6 +133,10 @@ export const TOOL_SCHEMAS = [
             description: "返回 top N 组，默认 10，最大 50",
           },
           device: { type: "string" },
+          mask: {
+            type: "string",
+            description: "device 末 4 位 mask（如 P02G），与 device 二选一；可作为范围过滤",
+          },
           lot: { type: "string", description: "批次 ID，原样传入完整字符串，含 '.' 后缀（如 'NF12551.1N'），不可截断" },
           slot: { type: "number" },
           cardId: { type: "string" },
@@ -144,7 +160,7 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "generate_chart",
       description:
-        "根据数据生成 ECharts 图表。占比 pie 可传顶层 labels+values；或 data:{labels,series}。刚执行 query_inf_site_bin_by_dut 后画 DUT 占比可只传 chartType=pie 与含 DUT 编号的 title。",
+        "根据数据生成 ECharts 图表。占比 pie 可传顶层 labels+values；或 data:{labels,series}。刚执行 query_inf_site_bin_by_dut 后画 DUT 占比可只传 chartType=pie 与含 DUT 编号的 title。**调用前必须已有真实数值**；禁止传空数组或占位符——若数据未获取，先调相关查询工具。",
       parameters: {
         type: "object",
         properties: {
@@ -205,6 +221,12 @@ export const TOOL_SCHEMAS = [
             type: "string",
             description: "向用户提出的澄清问题",
           },
+          options: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "候选 device 列表（mask 查到多个完整 device 时使用）；前端渲染为可点选按钮，每项为用户选择后发送的文本；其他场景不传",
+          },
         },
         required: ["question"],
       },
@@ -215,24 +237,31 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "get_filter_values",
       description:
-        "查询某个筛选维度的可用值列表（如探针卡、批次号、测试机等）。在需要精确筛选但不知道具体值时调用。不要用它查 device 或时间范围——那些已在系统提示词的数据快照中。",
+        "查询某个筛选维度的可用值列表。field=\"device\"+mask 时优先 domain=\"both\"（一次合并 Yield+JB，避免漏掉只出现在单域的 device，如 N84R→WC06N84R+WC07N84R）。mask 可写在 filterBy.mask 或顶层 mask。",
       parameters: {
         type: "object",
         properties: {
           domain: {
             type: "string",
-            enum: ["yield", "jb"],
-            description: "数据域：yield = Yield Monitor；jb = JB STAR",
+            enum: ["yield", "jb", "both"],
+            description:
+              "数据域：yield = Yield Monitor；jb = JB STAR；both = 合并两域（field=device+mask 时推荐，防止单域漏 device）",
           },
           field: {
             type: "string",
             description:
-              "yield 支持: probeCard, probeCardType, hostname, lotId；jb 支持: cardId, probeCardType, testerId, lot",
+              "yield 支持: probeCard, probeCardType, hostname, lotId, device；jb 支持: cardId, probeCardType, testerId, lot, device。field=\"device\" 须传 mask",
+          },
+          mask: {
+            type: "string",
+            description: "device 末 4 位（如 P02G）；field=\"device\" 时可放顶层，等价于 filterBy.mask",
           },
           filterBy: {
             type: "object",
-            description: "可选前置过滤，如 { device: 'WA03P02G' }",
+            description: "可选过滤：search（对返回值做模糊匹配，如 hostname/testerId 用于机台名搜索）、mask（配合 field=\"device\"）、device、probeCardType",
             properties: {
+              search: { type: "string", description: "对目标字段值做大小写不敏感的包含匹配，如 \"1600\" 可筛出所有含 1600 的 hostname/testerId" },
+              mask: { type: "string", description: "device 末 4 位（基础段），如 \"N06Z\"，配合 field=\"device\" 使用" },
               device: { type: "string" },
               probeCardType: { type: "string" },
             },

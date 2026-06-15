@@ -2,6 +2,80 @@
 
 ---
 
+## 2026-06-12 — Agent 质量改进：6 项修复（截断标记 / 空结果回退 / lot 参数名 / 机台重试 / generate_chart / aggregate_jb_bins）
+
+**完成内容：**
+- `agentToolHandlers.ts` `truncateResult`：截断后缀改为明确标注省略字符数和完整字符数，并提示"以上为不完整数据，勿假设省略部分内容"
+- `agentPrompt.ts` `SEC_DATA_RULES`：新增「通用查询返回空时的回退策略」子节（检查格式→扩大时间→换域→ask_clarification，四步禁直接报错）
+- `agentPrompt.ts` `SEC_LOT_ID`：新增 `query_yield_triggers` 用 `lotId`、`query_jb_bins`/`aggregate_jb_bins` 用 `lot` 的参数名区分提示
+- `agentPrompt.ts` 机台名称规则：步骤5 由"尝试更短子串"改为**必须立即重试**，新增步骤6（两次均空才 ask_clarification）
+- `agentToolSchemas.ts` `generate_chart`：新增"调用前必须已有真实数值，禁止传空数组或占位符"
+- `agentToolSchemas.ts` `aggregate_jb_bins`：新增"若用户未给出任何范围条件，必须先 ask_clarification 询问再调用"
+
+**测试：** typecheck 通过，无运行时变更
+
+---
+
+## 2026-06-12 — 机台名标准化规则扩充：补充 J750/MST/UFLEX 系列及台号推导示例
+
+**完成内容：**
+- `agentPrompt.ts` `SEC_DATA_RULES` 机台名标准化：列出所有系列（PS16、UFLEX、FLEX、J750、MST、93K）及对应搜索关键词推导规则；新增 J750/MST 台号格式示例（不确定零填充时先用系列名搜索，查看实际格式后再精确匹配）
+
+**测试：** typecheck 通过
+
+---
+
+## 2026-06-12 — get_filter_values 加 search 模糊查询 + 修 TESTERID 列错误 + 机台名标准化规则
+
+**完成内容：**
+- `agentFilterValuesTool.ts` `countDistinct`：新增 `search` 可选参数，做大小写不敏感的包含过滤（Dummy 路径）
+- `agentFilterValuesTool.ts` Oracle yield/jb：新增 `filterBy.search` → `UPPER(...) LIKE '%'||UPPER(:search)||'%'` 条件，支持 hostname/testerId/probeCard/lot/cardId 等字段的模糊匹配
+- `agentFilterValuesTool.ts` `oracleJb`：修复 `t1.TESTERID` → `t2.TESTERID`（TESTERID 在 INFLAYERBINLIST，不在 INFCONTROL），消除之前触发的 `ORA-00904` 错误
+- `agentToolSchemas.ts`：`filterBy` 新增 `search` 字段文档
+- `agentPrompt.ts` `SEC_DATA_RULES`：新增「机台名称标准化」硬规则——禁止直接用用户原始机台描述作参数，先调 `get_filter_values(field:"hostname"/"testerId", filterBy:{search:关键词})` 获取实际 ID，再查询
+
+**测试：** 267 个测试，264 通过，1 失败（OCI 库环境限制），2 跳过
+
+---
+
+## 2026-06-12 — mask 提取规则修正：首个 - 或 _ 之前的基础段后 4 位
+
+**完成内容：**
+- `agentFilterValuesTool.ts` `deviceMask()`：新增辅助函数，先截取 device 中首个 `-`/`_` 之前的基础段，再取末 4 位；Dummy 路径改用此函数替代 `.slice(-4)`
+- `agentFilterValuesTool.ts` Oracle SQL（yield/jb）：`SUBSTR(TRIM(DEVICE),-4)` 改为 `SUBSTR(REGEXP_SUBSTR(TRIM(DEVICE),'^[^-_]+'),-4)`，与 Dummy 逻辑一致
+- `agentPrompt.ts` SEC_MASK：更新 mask 定义，新增带 `-`/`_` 的示例（WC21P51A-V2 → P51A、WA13N06Z_R1 → N06Z）
+
+**测试：** 267 个测试，264 通过，1 失败（OCI 库环境限制，无关本次改动），2 跳过
+
+---
+
+## 2026-06-12 — get_filter_values 支持 field=device 按 mask 从 Oracle 查最新 device 代码
+
+**完成内容：**
+- `agentFilterValuesTool.ts`：新增 `field:"device"` + `filterBy:{mask:"N06Z"}` 支持，两域（yield/jb）均实现 Oracle 路径和 Dummy 路径
+  - Oracle yield 路径：`YMWEB_YIELDMONITORTRIGGER` 按 `SUBSTR(DEVICE,-4)=mask` 过滤，`GROUP BY DEVICE ORDER BY MAX(TESTEND) DESC`
+  - Oracle JB 路径：`INFCONTROL⋈INFLAYERBINLIST` 同逻辑，TESTEND 在 INFLAYERBINLIST 表
+  - Dummy 路径：yield 用 `TIME_STAMP`，JB 用 `TESTEND`，同样按最新日期排序
+  - 返回格式：`"WC21N06Z (最近: 2026-06-01)"` 方便 agent 直接取用 device 代码
+- `agentToolSchemas.ts`：更新 `get_filter_values` schema，补充 `field:"device"` 和 `filterBy.mask` 文档
+- `agentPrompt.ts` `SEC_MASK` 情况B：改为先调 `get_filter_values(field:"device", filterBy:{mask})` 查真实 device 代码，取代之前的前缀猜测策略
+
+**测试：** 267 个测试，264 通过，1 失败（OCI 库环境限制，无关本次改动），2 跳过
+
+---
+
+## 2026-06-12 — generate_chart 崩溃修复 + mask 查询策略改进
+
+**完成内容：**
+- `agentChartTool.ts` `normalizeGenerateChartArgs`：新增解包 `{"arguments":"...JSON..."}` 单键包装。DeepSeek-V4-Flash 有时以 GLM 风格把完整 args 作为字符串放在 `arguments` 键下，导致 `data`/`labels` 为 undefined，错误走入 history 推断路径
+- `agentChartTool.ts` `chartDataFromRecord`：改为返回全部 series（原仅取第一条），支持多组对比柱状图
+- `agentChartTool.ts` `buildDutShareChartData`：新增对 compact 格式 `_duts` 字段及无 duts good bin 的防护，消除 `binEntry.duts is not iterable` crash（来源：当 generate_chart args 未被正确解析时，history 推断路径取 compact INF 结果并访问 `.duts`）
+- `agentPrompt.ts` `SEC_MASK` 情况 B：明确 `get_filter_values` 不支持 device 字段；改为依次尝试 WC/WA/WB/WD 常见前缀查询，全部返回空才用 `ask_clarification` 反问
+
+**测试：** 267 个测试，264 通过，1 失败（OCI 库环境限制，与本次改动无关），2 跳过
+
+---
+
 ## 2026-06-11 — Agent 页面 query_jb_bins 按钮点击导致页面变空（闭包 Bug）修复
 
 **完成内容：**

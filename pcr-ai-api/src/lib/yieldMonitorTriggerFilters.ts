@@ -1,4 +1,5 @@
 import type { BindParameters } from "oracledb";
+import { deviceMaskOracleWhere } from "./deviceMask.js";
 import { applyPlatformQueryFilter } from "./testerPlatform.js";
 import { v3DefaultThroughNowMinusOneUtcYear } from "./v3DefaultOneYearWindow.js";
 
@@ -214,11 +215,11 @@ export function parseYieldMonitorTriggerV3Query(
     strEqTrimCi("wafer", "t.WAFER", "v3_wafer");
     strEqTrimCi("probeCard", "t.PROBECARD", "v3_probecard");
 
-    // mask is last-4-chars of DEVICE (computed suffix; not a DB column)
+    // mask is last-4-chars of DEVICE base segment (computed suffix; not a DB column)
     const maskVal = firstString(firstQueryValue(q, "mask"));
     if (maskVal !== undefined && maskVal !== "") {
       const t = maskVal.trim();
-      clauses.push(`UPPER(SUBSTR(TRIM(t.DEVICE), -4)) = UPPER(:v3_mask)`);
+      clauses.push(deviceMaskOracleWhere("t.DEVICE", "v3_mask"));
       (binds as Record<string, string | number | Date>).v3_mask = t;
       applied.mask = t;
     }

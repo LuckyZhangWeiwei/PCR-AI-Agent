@@ -1,6 +1,6 @@
 import type { BindParameters } from "oracledb";
 import { parseYieldMonitorTriggerV3Query } from "./yieldMonitorTriggerFilters.js";
-import { deviceMask } from "./deviceMask.js";
+import { deviceBaseMask } from "./deviceMask.js";
 
 /** 随 JSON 返回的固定说明（给人与 Agent；与 manifest `purpose` 一致） */
 export const YIELD_MONITOR_V3_AGGREGATE_DOCUMENTATION =
@@ -287,7 +287,7 @@ export function buildYieldMonitorV3AggregateGroupParts(
     });
   }
   if (dimensions.includes("device")) {
-    parts["mask"] = deviceMask(parts["device"]);
+    parts["mask"] = deviceBaseMask(parts["device"]);
   }
   return parts;
 }

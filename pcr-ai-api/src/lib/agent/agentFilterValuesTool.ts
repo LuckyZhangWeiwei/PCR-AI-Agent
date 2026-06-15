@@ -10,21 +10,179 @@ import {
   getInfcontrolLayerBinDummyRows,
 } from "../infcontrolLayerBinDummy.js";
 import { probeCardTypeLeadingSegment } from "../probeCardTypeLeadingSegment.js";
+import {
+  deviceMatchesMask,
+  deviceMaskOracleWhere,
+  looksLikeDeviceMaskToken,
+} from "../deviceMask.js";
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
+const DEVICE_MASK_DEFAULT_LIMIT = 20;
 
-const YIELD_FIELDS = ["probeCard", "probeCardType", "hostname", "lotId"] as const;
-const JB_FIELDS = ["cardId", "probeCardType", "testerId", "lot"] as const;
+const YIELD_FIELDS = ["probeCard", "probeCardType", "hostname", "lotId", "device"] as const;
+const JB_FIELDS = ["cardId", "probeCardType", "testerId", "lot", "device"] as const;
 
 type YieldField = (typeof YIELD_FIELDS)[number];
 type JbField = (typeof JB_FIELDS)[number];
 
 interface FilterValuesResult {
-  domain: "yield" | "jb";
+  domain: "yield" | "jb" | "both";
   field: string;
   values: string[];
   totalDistinct: number;
+  hint?: string;
+  /** field=device + mask 时：跨域合并的完整 device 列表（含各域最近日期） */
+  devices?: DeviceByMaskEntry[];
+  note?: string;
+}
+
+interface DeviceByMaskEntry {
+  device: string;
+  lastYield: string | null;
+  lastJb: string | null;
+  lastOverall: string | null;
+}
+
+function clampDeviceMaskLimit(raw: unknown): number {
+  const n = typeof raw === "number" ? raw : DEVICE_MASK_DEFAULT_LIMIT;
+  return Math.min(Math.max(1, Math.round(n)), MAX_LIMIT);
+}
+
+function dateKey(raw: string | null | undefined): string | null {
+  const s = String(raw ?? "").trim();
+  return s.length >= 10 ? s.slice(0, 10) : s || null;
+}
+
+function maxDateKey(a: string | null, b: string | null): string | null {
+  if (!a) return b;
+  if (!b) return a;
+  return a >= b ? a : b;
+}
+
+function formatDeviceByMaskValue(entry: DeviceByMaskEntry): string {
+  const parts: string[] = [];
+  if (entry.lastYield) parts.push(`Yield: ${entry.lastYield}`);
+  if (entry.lastJb) parts.push(`JB: ${entry.lastJb}`);
+  return parts.length > 0
+    ? `${entry.device} (${parts.join(", ")})`
+    : entry.device;
+}
+
+function buildMultiDeviceNote(mask: string, total: number): string | undefined {
+  if (total <= 1) return undefined;
+  return (
+    `mask ${mask} 对应 ${total} 个完整 device 代码；` +
+    `后续查询请用 mask=${mask}（query_yield_triggers / query_jb_bins），` +
+    `或分别查每个 device，禁止只查其中一个就下结论`
+  );
+}
+
+function mergeDeviceByMaskMaps(
+  mask: string,
+  yieldLatest: Map<string, string>,
+  jbLatest: Map<string, string>,
+  limit: number
+): FilterValuesResult {
+  const codes = new Set([...yieldLatest.keys(), ...jbLatest.keys()]);
+  const entries: DeviceByMaskEntry[] = [...codes].map((device) => {
+    const lastYield = dateKey(yieldLatest.get(device));
+    const lastJb = dateKey(jbLatest.get(device));
+    return {
+      device,
+      lastYield,
+      lastJb,
+      lastOverall: maxDateKey(lastYield, lastJb),
+    };
+  });
+  entries.sort((a, b) => {
+    const ao = a.lastOverall ?? "";
+    const bo = b.lastOverall ?? "";
+    if (bo > ao) return 1;
+    if (bo < ao) return -1;
+    return a.device.localeCompare(b.device);
+  });
+  const totalDistinct = entries.length;
+  const sliced = entries.slice(0, limit);
+  return {
+    domain: "both",
+    field: "device",
+    values: sliced.map(formatDeviceByMaskValue),
+    totalDistinct,
+    devices: sliced,
+    note: buildMultiDeviceNote(mask, totalDistinct),
+  };
+}
+
+function collectDeviceByMaskMaps(
+  yieldRows: { device: string; testEnd: string }[],
+  jbRows: { device: string; testEnd: string }[],
+  mask: string
+): { yieldLatest: Map<string, string>; jbLatest: Map<string, string> } {
+  const maskUpper = mask.toUpperCase();
+  const yieldLatest = new Map<string, string>();
+  const jbLatest = new Map<string, string>();
+  for (const { device, testEnd } of yieldRows) {
+    if (!device || !deviceMatchesMask(device, maskUpper)) continue;
+    const prev = yieldLatest.get(device);
+    if (!prev || testEnd > prev) yieldLatest.set(device, testEnd);
+  }
+  for (const { device, testEnd } of jbRows) {
+    if (!device || !deviceMatchesMask(device, maskUpper)) continue;
+    const prev = jbLatest.get(device);
+    if (!prev || testEnd > prev) jbLatest.set(device, testEnd);
+  }
+  return { yieldLatest, jbLatest };
+}
+
+function dummyDeviceByMaskBoth(
+  mask: string | undefined,
+  limit: number
+): FilterValuesResult {
+  if (!mask) {
+    return {
+      domain: "both",
+      field: "device",
+      values: [],
+      totalDistinct: 0,
+      hint: 'field="device" 需要 filterBy.mask（如 "N84R"）或顶层 mask 参数',
+    };
+  }
+  const { yieldLatest, jbLatest } = collectDeviceByMaskMaps(
+    getYieldMonitorTriggerDummyRows().map((r) => ({
+      device: String(r.DEVICE ?? "").trim(),
+      testEnd: String(r.TIME_STAMP ?? "").trim(),
+    })),
+    getInfcontrolLayerBinDummyRows().map((r) => ({
+      device: String(r.DEVICE ?? "").trim(),
+      testEnd: String(r.TESTEND ?? "").trim(),
+    })),
+    mask
+  );
+  return mergeDeviceByMaskMaps(mask, yieldLatest, jbLatest, limit);
+}
+
+async function oracleDeviceByMaskBoth(
+  mask: string,
+  limit: number
+): Promise<FilterValuesResult> {
+  const fetchLimit = MAX_LIMIT;
+  const [yieldData, jbData] = await Promise.all([
+    oracleYieldDeviceByMaskMap(mask, fetchLimit),
+    oracleJbDeviceByMaskMap(mask, fetchLimit),
+  ]);
+  const merged = mergeDeviceByMaskMaps(mask, yieldData.latest, jbData.latest, limit);
+  merged.totalDistinct = Math.max(
+    merged.totalDistinct,
+    yieldData.totalDistinct,
+    jbData.totalDistinct
+  );
+  if (merged.totalDistinct > merged.values.length) {
+    merged.note =
+      (merged.note ? `${merged.note}；` : "") +
+      `共 ${merged.totalDistinct} 个 device，已展示最近 ${merged.values.length} 个`;
+  }
+  return merged;
 }
 
 function clampLimit(raw: unknown): number {
@@ -32,17 +190,73 @@ function clampLimit(raw: unknown): number {
   return Math.min(Math.max(1, Math.round(n)), MAX_LIMIT);
 }
 
-function countDistinct(rawValues: string[], limit: number): {
+function countDistinct(rawValues: string[], limit: number, search?: string): {
   values: string[];
   totalDistinct: number;
 } {
+  const searchUpper = search?.toUpperCase();
   const counts = new Map<string, number>();
   for (const v of rawValues) {
-    if (v) counts.set(v, (counts.get(v) ?? 0) + 1);
+    if (!v) continue;
+    if (searchUpper && !v.toUpperCase().includes(searchUpper)) continue;
+    counts.set(v, (counts.get(v) ?? 0) + 1);
   }
   const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
   const values = sorted.slice(0, limit).map(([v, cnt]) => `${v} (${cnt}次)`);
   return { values, totalDistinct: counts.size };
+}
+
+// ─── device-by-mask shared helper ────────────────────────────────────────────
+
+function resolveDeviceMaskArg(
+  field: string,
+  args: Record<string, unknown>,
+  filterBy: Record<string, string | undefined>
+): string | undefined {
+  if (field !== "device") return filterBy["mask"];
+
+  if (filterBy["mask"]) return filterBy["mask"];
+
+  if (args["mask"] != null) {
+    return String(args["mask"]).trim().toUpperCase();
+  }
+
+  if (filterBy["search"]) return filterBy["search"].toUpperCase();
+  if (args["search"] != null) {
+    return String(args["search"]).trim().toUpperCase();
+  }
+
+  const devCandidate =
+    filterBy["device"] ??
+    (args["device"] != null ? String(args["device"]).trim() : undefined);
+  if (devCandidate && looksLikeDeviceMaskToken(devCandidate)) {
+    return devCandidate.toUpperCase();
+  }
+
+  return undefined;
+}
+
+function dummyDeviceByMask(
+  domain: "yield" | "jb",
+  rows: { device: string; testEnd: string }[],
+  mask: string | undefined,
+  limit: number
+): FilterValuesResult {
+  if (!mask) {
+    return { domain, field: "device", values: [], totalDistinct: 0 };
+  }
+  const maskUpper = mask.toUpperCase();
+  const latest = new Map<string, string>();
+  for (const { device, testEnd } of rows) {
+    if (!device) continue;
+    if (!deviceMatchesMask(device, maskUpper)) continue;
+    const prev = latest.get(device);
+    if (!prev || testEnd > prev) latest.set(device, testEnd);
+  }
+  // Sort by most-recent testEnd desc
+  const sorted = [...latest.entries()].sort((a, b) => (b[1] > a[1] ? 1 : b[1] < a[1] ? -1 : 0));
+  const values = sorted.slice(0, limit).map(([dev, te]) => te ? `${dev} (最近: ${te.slice(0, 10)})` : dev);
+  return { domain, field: "device", values, totalDistinct: latest.size };
 }
 
 // ─── Dummy paths ─────────────────────────────────────────────────────────────
@@ -52,6 +266,22 @@ function dummyYield(
   filterBy: Record<string, string | undefined>,
   limit: number
 ): FilterValuesResult {
+  if (field === "device") {
+    if (!filterBy["mask"]) {
+      return {
+        domain: "yield",
+        field: "device",
+        values: [],
+        totalDistinct: 0,
+        hint: 'field="device" 需要 filterBy.mask（如 "P02G"）或顶层 mask 参数',
+      };
+    }
+    return dummyDeviceByMask("yield", getYieldMonitorTriggerDummyRows().map((r) => ({
+      device: String(r.DEVICE ?? "").trim(),
+      testEnd: String(r.TIME_STAMP ?? "").trim(),
+    })), filterBy["mask"], limit);
+  }
+
   const rows = getYieldMonitorTriggerDummyRows().filter((r) => {
     if (filterBy["device"] && String(r.DEVICE).trim() !== filterBy["device"]) return false;
     if (filterBy["probeCardType"]) {
@@ -69,7 +299,7 @@ function dummyYield(
     }
   });
 
-  const { values, totalDistinct } = countDistinct(raw, limit);
+  const { values, totalDistinct } = countDistinct(raw, limit, filterBy["search"]);
   return { domain: "yield", field, values, totalDistinct };
 }
 
@@ -78,6 +308,23 @@ function dummyJb(
   filterBy: Record<string, string | undefined>,
   limit: number
 ): FilterValuesResult {
+  if (field === "device") {
+    if (!filterBy["mask"]) {
+      return {
+        domain: "jb",
+        field: "device",
+        values: [],
+        totalDistinct: 0,
+        hint: 'field="device" 需要 filterBy.mask（如 "P02G"）或顶层 mask 参数',
+      };
+    }
+    const jbRows = getInfcontrolLayerBinDummyRows();
+    return dummyDeviceByMask("jb", jbRows.map((r) => ({
+      device: String(r.DEVICE ?? "").trim(),
+      testEnd: String(r.TESTEND ?? "").trim(),
+    })), filterBy["mask"], limit);
+  }
+
   const rows = getInfcontrolLayerBinDummyRows().filter((r) => {
     const pt = String(r.PASSTYPE).trim().toUpperCase();
     if (pt !== "TEST" && pt !== "INTERRUPT") return false;
@@ -98,17 +345,110 @@ function dummyJb(
     }
   });
 
-  const { values, totalDistinct } = countDistinct(raw, limit);
+  const { values, totalDistinct } = countDistinct(raw, limit, filterBy["search"]);
   return { domain: "jb", field, values, totalDistinct };
 }
 
 // ─── Oracle paths ─────────────────────────────────────────────────────────────
+
+function formatOracleLastTest(te: unknown): string {
+  return te instanceof Date ? te.toISOString().slice(0, 10) : String(te ?? "").slice(0, 10);
+}
+
+async function oracleYieldDeviceByMaskMap(
+  mask: string,
+  limit: number
+): Promise<{ latest: Map<string, string>; totalDistinct: number }> {
+  const sql = `
+    SELECT grp_key, last_test, COUNT(*) OVER () AS total_distinct
+    FROM (
+      SELECT t.DEVICE AS grp_key, MAX(t.TIME_STAMP) AS last_test
+      FROM YMWEB_YIELDMONITORTRIGGER t
+      WHERE UPPER(TRIM(t."TYPE")) = 'DELTA_DIFF'
+        AND NOT REGEXP_LIKE(t.LOTID, '^(kk|gg|c)', 'i')
+        AND ${deviceMaskOracleWhere("t.DEVICE", "mask")}
+        AND t.DEVICE IS NOT NULL AND TRIM(t.DEVICE) != ''
+      GROUP BY t.DEVICE
+    )
+    ORDER BY last_test DESC NULLS LAST
+    FETCH FIRST :lim ROWS ONLY
+  `;
+  const rows = await withProbeWebConnection(async (conn) => {
+    const r = await conn.execute(sql, { mask: mask.toUpperCase(), lim: limit }, { outFormat: oracledb.OUT_FORMAT_OBJECT });
+    return (r.rows ?? []) as Record<string, unknown>[];
+  });
+  const totalDistinct = rows.length > 0 ? Number(rows[0]!["TOTAL_DISTINCT"] ?? rows.length) : 0;
+  const latest = new Map<string, string>();
+  for (const row of rows) {
+    const dev = String(row["GRP_KEY"] ?? "").trim();
+    if (!dev) continue;
+    latest.set(dev, formatOracleLastTest(row["LAST_TEST"]));
+  }
+  return { latest, totalDistinct };
+}
+
+async function oracleJbDeviceByMaskMap(
+  mask: string,
+  limit: number
+): Promise<{ latest: Map<string, string>; totalDistinct: number }> {
+  const sql = `
+    SELECT grp_key, last_test, COUNT(*) OVER () AS total_distinct
+    FROM (
+      SELECT t1.DEVICE AS grp_key, MAX(t2.TESTEND) AS last_test
+      FROM INFCONTROL t1
+      JOIN INFLAYERBINLIST t2 ON t1.KEYNUMBER = t2.KEYNUMBER
+      WHERE NOT REGEXP_LIKE(t1.LOT, '^(kk|gg|c)', 'i')
+        AND ${deviceMaskOracleWhere("t1.DEVICE", "mask")}
+        AND t1.DEVICE IS NOT NULL AND TRIM(t1.DEVICE) != ''
+      GROUP BY t1.DEVICE
+    )
+    ORDER BY last_test DESC NULLS LAST
+    FETCH FIRST :lim ROWS ONLY
+  `;
+  const rows = await withConnection(async (conn) => {
+    const r = await conn.execute(sql, { mask: mask.toUpperCase(), lim: limit }, { outFormat: oracledb.OUT_FORMAT_OBJECT });
+    return (r.rows ?? []) as Record<string, unknown>[];
+  });
+  const totalDistinct = rows.length > 0 ? Number(rows[0]!["TOTAL_DISTINCT"] ?? rows.length) : 0;
+  const latest = new Map<string, string>();
+  for (const row of rows) {
+    const dev = String(row["GRP_KEY"] ?? "").trim();
+    if (!dev) continue;
+    latest.set(dev, formatOracleLastTest(row["LAST_TEST"]));
+  }
+  return { latest, totalDistinct };
+}
+
+async function oracleYieldDeviceByMask(
+  mask: string,
+  limit: number
+): Promise<FilterValuesResult> {
+  const { latest, totalDistinct } = await oracleYieldDeviceByMaskMap(mask, limit);
+  const values = [...latest.entries()].map(([dev, te]) =>
+    te ? `${dev} (最近: ${te})` : dev
+  );
+  return { domain: "yield", field: "device", values, totalDistinct };
+}
 
 async function oracleYield(
   field: YieldField,
   filterBy: Record<string, string | undefined>,
   limit: number
 ): Promise<FilterValuesResult> {
+  if (field === "device") {
+    const mask = filterBy["mask"] ?? "";
+    if (!mask) {
+      return {
+        domain: "yield",
+        field: "device",
+        values: [],
+        totalDistinct: 0,
+        hint: 'field="device" 需要 filterBy.mask（如 "P02G"）或顶层 mask 参数',
+      };
+    }
+    return oracleYieldDeviceByMask(mask, limit);
+  }
+
   const conditions: string[] = [
     `UPPER(TRIM(t."TYPE")) = 'DELTA_DIFF'`,
     `NOT REGEXP_LIKE(t.LOTID, '^(kk|gg|c)', 'i')`,
@@ -130,6 +470,10 @@ async function oracleYield(
 
   let sql: string;
   if (field === "probeCardType") {
+    const searchCond = filterBy["search"]
+      ? `AND UPPER(sub.pct) LIKE '%' || UPPER(:search) || '%'`
+      : "";
+    if (filterBy["search"]) binds["search"] = filterBy["search"];
     sql = `
       SELECT grp_key, cnt, COUNT(*) OVER () AS total_distinct
       FROM (
@@ -140,6 +484,7 @@ async function oracleYield(
           WHERE ${where}
         ) sub
         WHERE sub.pct IS NOT NULL AND sub.pct != ''
+        ${searchCond}
         GROUP BY sub.pct
       )
       ORDER BY cnt DESC
@@ -149,6 +494,10 @@ async function oracleYield(
     const col = field === "probeCard" ? "t.PROBECARD"
       : field === "hostname" ? "t.HOSTNAME"
       : "t.LOTID";
+    const searchCond = filterBy["search"]
+      ? `AND UPPER(TRIM(${col})) LIKE '%' || UPPER(:search) || '%'`
+      : "";
+    if (filterBy["search"]) binds["search"] = filterBy["search"];
     sql = `
       SELECT grp_key, cnt, COUNT(*) OVER () AS total_distinct
       FROM (
@@ -156,6 +505,7 @@ async function oracleYield(
         FROM YMWEB_YIELDMONITORTRIGGER t
         WHERE ${where}
           AND ${col} IS NOT NULL AND TRIM(${col}) != ''
+          ${searchCond}
         GROUP BY ${col}
       )
       ORDER BY cnt DESC
@@ -175,11 +525,36 @@ async function oracleYield(
   return { domain: "yield", field, values, totalDistinct };
 }
 
+async function oracleJbDeviceByMask(
+  mask: string,
+  limit: number
+): Promise<FilterValuesResult> {
+  const { latest, totalDistinct } = await oracleJbDeviceByMaskMap(mask, limit);
+  const values = [...latest.entries()].map(([dev, te]) =>
+    te ? `${dev} (最近: ${te})` : dev
+  );
+  return { domain: "jb", field: "device", values, totalDistinct };
+}
+
 async function oracleJb(
   field: JbField,
   filterBy: Record<string, string | undefined>,
   limit: number
 ): Promise<FilterValuesResult> {
+  if (field === "device") {
+    const mask = filterBy["mask"] ?? "";
+    if (!mask) {
+      return {
+        domain: "jb",
+        field: "device",
+        values: [],
+        totalDistinct: 0,
+        hint: 'field="device" 需要 filterBy.mask（如 "P02G"）或顶层 mask 参数',
+      };
+    }
+    return oracleJbDeviceByMask(mask, limit);
+  }
+
   const conditions: string[] = [
     `UPPER(TRIM(t2.PASSTYPE)) IN ('TEST', 'INTERRUPT')`,
     `UPPER(TRIM(t2.LAYERNAME)) <> 'ABANDONED'`,
@@ -203,6 +578,10 @@ async function oracleJb(
 
   let sql: string;
   if (field === "probeCardType") {
+    const searchCond = filterBy["search"]
+      ? `AND UPPER(sub.pct) LIKE '%' || UPPER(:search) || '%'`
+      : "";
+    if (filterBy["search"]) binds["search"] = filterBy["search"];
     sql = `
       SELECT grp_key, cnt, COUNT(*) OVER () AS total_distinct
       FROM (
@@ -212,21 +591,28 @@ async function oracleJb(
           ${fromClause}
         ) sub
         WHERE sub.pct IS NOT NULL AND sub.pct != ''
+        ${searchCond}
         GROUP BY sub.pct
       )
       ORDER BY cnt DESC
       FETCH FIRST :lim ROWS ONLY
     `;
   } else {
+    // TESTERID is on INFLAYERBINLIST (t2), not INFCONTROL (t1)
     const col = field === "cardId" ? "t1.CARDID"
-      : field === "testerId" ? "t1.TESTERID"
+      : field === "testerId" ? "t2.TESTERID"
       : "t1.LOT";
+    const searchCond = filterBy["search"]
+      ? `AND UPPER(TRIM(${col})) LIKE '%' || UPPER(:search) || '%'`
+      : "";
+    if (filterBy["search"]) binds["search"] = filterBy["search"];
     sql = `
       SELECT grp_key, cnt, COUNT(*) OVER () AS total_distinct
       FROM (
         SELECT ${col} AS grp_key, COUNT(*) AS cnt
         ${fromClause}
           AND ${col} IS NOT NULL AND TRIM(${col}) != ''
+          ${searchCond}
         GROUP BY ${col}
       )
       ORDER BY cnt DESC
@@ -258,10 +644,50 @@ export async function runGetFilterValues(
   // Safely coerce filterBy values to strings — LLM may pass numbers or nulls.
   const rawFilterBy = args["filterBy"];
   const filterBy: Record<string, string | undefined> = {};
-  if (rawFilterBy !== null && typeof rawFilterBy === "object") {
+  if (typeof rawFilterBy === "string" && rawFilterBy.trim() !== "") {
+    filterBy["mask"] = rawFilterBy.trim().toUpperCase();
+  } else if (rawFilterBy !== null && typeof rawFilterBy === "object") {
     const fb = rawFilterBy as Record<string, unknown>;
     if (fb["device"] != null) filterBy["device"] = String(fb["device"]);
     if (fb["probeCardType"] != null) filterBy["probeCardType"] = String(fb["probeCardType"]);
+    if (fb["mask"] != null) filterBy["mask"] = String(fb["mask"]).trim().toUpperCase();
+    if (fb["search"] != null) filterBy["search"] = String(fb["search"]).trim();
+  }
+
+  if (field === "device") {
+    const resolvedMask = resolveDeviceMaskArg(field, args, filterBy);
+    if (resolvedMask) {
+      filterBy["mask"] = resolvedMask;
+      delete filterBy["search"];
+    }
+  }
+
+  const deviceMaskLimit = field === "device" && filterBy["mask"]
+    ? clampDeviceMaskLimit(args["limit"])
+    : limit;
+
+  if (domain === "both") {
+    if (field !== "device") {
+      return `get_filter_values 错误: domain="both" 仅支持 field="device" + mask`;
+    }
+    const mask = filterBy["mask"] ?? "";
+    if (!mask) {
+      return JSON.stringify({
+        domain: "both",
+        field: "device",
+        values: [],
+        totalDistinct: 0,
+        hint: 'field="device" 需要 filterBy.mask（如 "N84R"）或顶层 mask 参数',
+      } satisfies FilterValuesResult);
+    }
+    try {
+      const result = yieldMonitorTriggersUseDummy() || infcontrolLayerBinsUseDummy()
+        ? dummyDeviceByMaskBoth(mask, deviceMaskLimit)
+        : await oracleDeviceByMaskBoth(mask, deviceMaskLimit);
+      return JSON.stringify(result);
+    } catch (err) {
+      return `get_filter_values 错误: ${err instanceof Error ? err.message : String(err)}`;
+    }
   }
 
   if (domain === "yield") {
@@ -270,8 +696,8 @@ export async function runGetFilterValues(
     }
     try {
       const result = yieldMonitorTriggersUseDummy()
-        ? dummyYield(field as YieldField, filterBy, limit)
-        : await oracleYield(field as YieldField, filterBy, limit);
+        ? dummyYield(field as YieldField, filterBy, deviceMaskLimit)
+        : await oracleYield(field as YieldField, filterBy, deviceMaskLimit);
       return JSON.stringify(result);
     } catch (err) {
       return `get_filter_values 错误: ${err instanceof Error ? err.message : String(err)}`;
@@ -284,13 +710,13 @@ export async function runGetFilterValues(
     }
     try {
       const result = infcontrolLayerBinsUseDummy()
-        ? dummyJb(field as JbField, filterBy, limit)
-        : await oracleJb(field as JbField, filterBy, limit);
+        ? dummyJb(field as JbField, filterBy, deviceMaskLimit)
+        : await oracleJb(field as JbField, filterBy, deviceMaskLimit);
       return JSON.stringify(result);
     } catch (err) {
       return `get_filter_values 错误: ${err instanceof Error ? err.message : String(err)}`;
     }
   }
 
-  return `get_filter_values 错误: domain 必须是 "yield" 或 "jb"，收到 "${domain}"`;
+  return `get_filter_values 错误: domain 必须是 "yield"、"jb" 或 "both"（field=device+mask 推荐 both），收到 "${domain}"`;
 }

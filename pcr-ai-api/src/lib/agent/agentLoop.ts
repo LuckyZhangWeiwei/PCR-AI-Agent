@@ -17,7 +17,7 @@ import { fetchOrCacheManifest } from "./agentManifest.js";
 import { buildChartOption, generateChartArgsHaveData, tryParseJsonish } from "./agentChartTool.js";
 import { streamSiliconFlow, type CollectedToolCall } from "./agentStream.js";
 import { buildFeedbackInjection } from "./agentFeedback.js";
-import { buildJbSessionCacheJson } from "./agentJbBinFormat.js";
+import { storeJbQuerySessionCache, jbWrappedIsEmptyQuery } from "./agentJbBinFormat.js";
 import {
   compactJbBinsForHistory,
   compactJbCacheForHistory,
@@ -62,7 +62,6 @@ import {
 } from "./agentDutBinMapRoute.js";
 import {
   getJbToolRawJson,
-  storeJbToolRawJson,
 } from "./agentJbSessionCache.js";
 import {
   planWaferMapRoute,
@@ -76,7 +75,7 @@ export type AgentSseEvent =
   | { type: "tool_start"; name: string; args: Record<string, unknown> }
   | { type: "tool_result"; name: string; summary: string }
   | { type: "chart"; option: object }
-  | { type: "clarification"; question: string }
+  | { type: "clarification"; question: string; options?: string[] }
   | { type: "done" }
   | { type: "error"; message: string };
 // Max chars stored in session history per tool result — intentionally smaller than
@@ -1025,8 +1024,7 @@ async function tryRunWaferMapWithAutoDeviceLookup(
       toolResultMaxChars: agentConfig.toolResultMaxChars,
       history: getHistory(sessionId),
       onJbBinsWrapped: (wrapped) => {
-        jbCacheForHistory = buildJbSessionCacheJson(wrapped);
-        storeJbToolRawJson(sessionId, jbCacheForHistory);
+        jbCacheForHistory = storeJbQuerySessionCache(sessionId, wrapped);
       },
     });
     const rawContent =
@@ -1100,8 +1098,7 @@ async function tryRunLotOverviewDirectRoute(
         toolResultMaxChars: agentConfig.toolResultMaxChars,
         history: getHistory(sessionId),
         onJbBinsWrapped: (wrapped) => {
-          jbCacheForHistory = buildJbSessionCacheJson(wrapped);
-          storeJbToolRawJson(sessionId, jbCacheForHistory);
+          jbCacheForHistory = storeJbQuerySessionCache(sessionId, wrapped);
         },
       });
       const rawContent =
@@ -1316,6 +1313,7 @@ function jbBinsYieldFallbackMessage(
     sessionId,
     String(toolMsg.content ?? "")
   );
+  if (payload && jbWrappedIsEmptyQuery(payload)) return null;
   if (payload) {
     const tables = buildDeterministicJbTables(userQuestion, payload);
     if (tables?.trim()) {
@@ -1327,6 +1325,34 @@ function jbBinsYieldFallbackMessage(
     }
   }
   return formatSlotYieldMarkdownFromToolJson(String(toolMsg.content ?? ""));
+}
+
+/**
+ * 总结轮 LLM 空输出时：若最后一个工具为 get_filter_values 且返回空列表，
+ * 直接输出"未找到数据"提示，避免「模型未返回分析结论」报错。
+ */
+function emitFilterValuesEmptyFallback(
+  sessionId: string,
+  lastTool: ChatMessage | undefined,
+  emit: (event: AgentSseEvent) => void
+): boolean {
+  if (lastTool?.name !== "get_filter_values") return false;
+  const parsed = tryParseJsonish(String(lastTool.content ?? ""));
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+  const p = parsed as Record<string, unknown>;
+  if (!Array.isArray(p["values"]) || (p["values"] as unknown[]).length > 0) return false;
+  const domain = String(p["domain"] ?? "");
+  const field = String(p["field"] ?? "");
+  const domainLabel =
+    domain === "yield" ? "Yield Monitor"
+    : domain === "jb" ? "JB STAR"
+    : domain === "both" ? "Yield Monitor 与 JB STAR（合并）"
+    : domain;
+  const msg = `当前 ${domainLabel} 数据域未找到符合条件的 ${field} 记录（返回 0 条）。\n\n可能原因：\n- 该产品代码在近期无测试数据\n- 筛选条件（mask/时间范围）过窄\n\n建议确认完整 device 代码后重试，或扩大查询时间范围。`;
+  appendMessages(sessionId, { role: "assistant", content: msg });
+  emit({ type: "text", delta: msg });
+  emit({ type: "done" });
+  return true;
 }
 
 /** 总结轮 LLM 空输出时：直出服务端表（无解读），避免「模型未返回分析结论」。 */
@@ -1398,7 +1424,42 @@ function mergeStructuredWithEmbedded(
 
 /** True when the last history turn is tool output awaiting a text summary. */
 export function historyAwaitingToolSummary(history: ChatMessage[]): boolean {
-  return history.length > 0 && history[history.length - 1].role === "tool";
+  if (history.length === 0) return false;
+  const last = history[history.length - 1];
+  if (last.role !== "tool") return false;
+  // If the only data-fetch result so far is a single get_filter_values with
+  // empty values, don't force summary yet — let the model query another domain.
+  if (last.name === "get_filter_values") {
+    const parsed = tryParseJsonish(String(last.content ?? ""));
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      !Array.isArray(parsed) &&
+      Array.isArray((parsed as Record<string, unknown>)["values"]) &&
+      ((parsed as Record<string, unknown>)["values"] as unknown[]).length === 0
+    ) {
+      // Look back past the assistant(tool_calls) turn to find the previous tool message.
+      // If it was also an empty get_filter_values, both domains came back empty → force summary.
+      let prevToolIdx = -1;
+      for (let i = history.length - 2; i >= 0; i--) {
+        if (history[i].role === "tool") { prevToolIdx = i; break; }
+        if (history[i].role === "user") break;
+      }
+      if (prevToolIdx < 0) return false; // first empty result → give one more round
+      const prevMsg = history[prevToolIdx];
+      if (prevMsg.name !== "get_filter_values") return false; // different tool before → keep going
+      const prevParsed = tryParseJsonish(String(prevMsg.content ?? ""));
+      if (
+        !prevParsed ||
+        typeof prevParsed !== "object" ||
+        Array.isArray(prevParsed) ||
+        !Array.isArray((prevParsed as Record<string, unknown>)["values"]) ||
+        ((prevParsed as Record<string, unknown>)["values"] as unknown[]).length > 0
+      ) return false; // previous result had data → keep going
+      return true; // two consecutive empty get_filter_values → force summary
+    }
+  }
+  return true;
 }
 
 // ── Tool schema selector ───────────────────────────────────────────────────
@@ -1967,6 +2028,9 @@ export async function runAgentLoop(
             ) {
               return;
             }
+            if (emitFilterValuesEmptyFallback(sessionId, lastToolMessage(getHistory(sessionId)), emit)) {
+              return;
+            }
             emit({
               type: "error",
               message:
@@ -2000,6 +2064,9 @@ export async function runAgentLoop(
           return;
         }
         if (finishWithJbServerTablesFallback(sessionId, userQuestion, emit)) {
+          return;
+        }
+        if (emitFilterValuesEmptyFallback(sessionId, lastTool, emit)) {
           return;
         }
         emit({
@@ -2075,8 +2142,7 @@ export async function runAgentLoop(
               toolResultMaxChars: agentConfig.toolResultMaxChars,
               history: getHistory(sessionId),
               onJbBinsWrapped: (wrapped) => {
-                jbCacheForHistory = buildJbSessionCacheJson(wrapped);
-                storeJbToolRawJson(sessionId, jbCacheForHistory);
+                jbCacheForHistory = storeJbQuerySessionCache(sessionId, wrapped);
               },
             });
             if (
@@ -2092,7 +2158,8 @@ export async function runAgentLoop(
               "__clarification" in toolResult
             ) {
               const question = (toolResult as ClarificationSentinel).__clarification;
-              emit({ type: "clarification", question });
+              const clarOptions = (toolResult as ClarificationSentinel).__clarification_options;
+              emit({ type: "clarification", question, ...(clarOptions ? { options: clarOptions } : {}) });
               historyContent = `[已向用户提问：${question}]`;
             } else {
               const rawContent =

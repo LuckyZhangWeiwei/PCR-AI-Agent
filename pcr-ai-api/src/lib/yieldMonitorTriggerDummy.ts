@@ -10,7 +10,7 @@ import type { YieldMonitorV3AggDim } from "./yieldMonitorTriggerV3Aggregate.js";
 import { loadYieldMonitorTriggerRowsFromDeltaDiffXlsx } from "./dummyRowsFromExcel.js";
 import { listApisForceOracleNoDummy } from "./listDummyRuntime.js";
 import { probeCardTypeLeadingSegment } from "./probeCardTypeLeadingSegment.js";
-import { deviceMask } from "./deviceMask.js";
+import { deviceBaseMask, deviceMatchesMask } from "./deviceMask.js";
 import { filterRowsByAppliedPlatform } from "./testerPlatform.js";
 
 /** 与 Oracle 返回列一致（YMWEB_YIELDMONITORTRIGGER） */
@@ -332,9 +332,7 @@ export function filterYieldMonitorDummyRowsMatchingV3(
 
   if (applied.mask !== undefined) {
     const want = String(applied.mask).trim().toUpperCase();
-    rows = rows.filter(
-      (r) => String(r.DEVICE ?? "").trim().slice(-4).toUpperCase() === want
-    );
+    rows = rows.filter((r) => deviceMatchesMask(r.DEVICE, want));
   }
 
   if (applied.probeCardType !== undefined) {
@@ -374,7 +372,7 @@ export function filterYieldMonitorDummyRowsMatchingV3(
   return rows.map((r) => ({
     ...r,
     PROBECARDTYPE: probeCardTypeLeadingSegment(r.PROBECARD),
-    MASK: deviceMask(r.DEVICE),
+    MASK: deviceBaseMask(r.DEVICE),
   }));
 }
 

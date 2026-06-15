@@ -9,6 +9,7 @@ import {
   formatSlotYieldInterruptMarkdown,
 } from "./agentJbHistoryCompact.js";
 import type { CardByPassIdEntry, LotTesterEntry, SlotBadBinsCompactEntry } from "./agentJbBinFormat.js";
+import { jbWrappedIsEmptyQuery } from "./agentJbBinFormat.js";
 import type { ClusteredBadBinAlert } from "./agentJbBadBinCluster.js";
 import type { SlotYieldSummaryEntry } from "../jbYieldCalc.js";
 import { buildBinSlotTrendMarkdownOnDemand } from "./agentJbBinTrend.js";
@@ -726,6 +727,7 @@ export function buildDeterministicJbTables(
   userMessage: string,
   toolPayload: Record<string, unknown>
 ): string | null {
+  if (jbWrappedIsEmptyQuery(toolPayload)) return null;
   const digest = digestFromPayload(toolPayload);
   const mode = detectJbReplyMode(userMessage);
 
