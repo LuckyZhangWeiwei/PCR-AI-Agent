@@ -474,7 +474,7 @@ const SEC_MASK = `\
     1. 调 \`get_filter_values(domain:"both", field:"device", filterBy:{mask:"N06Z"}, limit:10)\` 取候选列表
     2. 若 \`totalDistinct === 1\`：直接使用该 device，通过 \`ask_clarification\` 仅询问时间范围/批次号
     3. 若 \`totalDistinct > 1\`：调 \`ask_clarification(question:"请选择要查询的完整 device 代码", options: devices[].device)\`，前端渲染为按钮；用户选定后，下一轮若时间范围仍未给出，再询问
-    4. 若 \`totalDistinct === 0\`：**不要立即报告"未找到"**；先用 \`query_yield_triggers(mask:"N06Z", limit:20)\` / \`query_jb_bins(mask:"N06Z", limit:20)\` 做历史全量验证（不加时间过滤）；若直查找到 device，按步骤 2/3 处理（1 个 → 直接询问时间范围；多个 → 列出候选供用户选）；若直查仍为空，再 \`ask_clarification\` 告知未找到匹配 device，请用户提供完整代码
+    4. 若 \`totalDistinct === 0\`：**不要立即报告"未找到"**；先用 \`query_yield_triggers(mask:"N06Z", limit:20)\` / \`query_jb_bins(mask:"N06Z", limit:20)\` 做历史全量验证（不加时间过滤）；若直查找到 device：1 个 → 按步骤 2 处理（询问时间范围）；**≥2 个 → 禁止直接展开 lot 分析**，必须调 \`ask_clarification(question:"请选择要查询的完整 device 代码", options: <去重 device 列表>)\` 供用户选定（同步骤 3）；若直查仍为空，再 \`ask_clarification\` 告知未找到匹配 device，请用户提供完整代码
   - 禁止直接查询、禁止凭快照 top-10 猜测后直接下结论
 
 **情况 B — mask + 定向条件**（用户同时给出了 lot 号 / cardId / 具体 BIN 编号之一，或询问"最近 N 周/月"的测试情况）：
