@@ -158,7 +158,7 @@ export function extractSlotFromUserText(text: string): number | undefined {
   const patterns = [
     /第\s*(\d+)\s*片/i,
     /wafer\s*id\s*[=:]?\s*(\d+)/i,
-    /(?:^|[\s/])wafer\s*(\d+)(?:\s|的|$)/i,
+    /\bwafer\s*(\d+)/i,
     /(?:slot|片)\s*[=:]?\s*(\d+)/i,
     /(?:第|slot)\s*(\d+)\s*(?:片|槽|slot)?/i,
   ];
