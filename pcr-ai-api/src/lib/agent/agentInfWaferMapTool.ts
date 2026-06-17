@@ -74,10 +74,16 @@ function normalizeHighlight(
   const hl = strField(args, "highlight");
   if (hl) {
     if (hl === "edge") return "edge";
-    if (/^bin:\d+$/i.test(hl)) return hl.toLowerCase();
+    // Accept "bin:7" or multi-bin "bin:7,8,9"
+    if (/^bin:[\d,\s]+$/i.test(hl)) return hl.toLowerCase().replace(/\s/g, "");
   }
   const binArg = args["bin"];
   if (binArg != null && binArg !== "") {
+    // Accept array [7, 8] → "bin:7,8"
+    if (Array.isArray(binArg)) {
+      const nums = (binArg as unknown[]).map(Number).filter(Number.isFinite);
+      if (nums.length > 0) return `bin:${nums.join(",")}`;
+    }
     const n = Number(binArg);
     if (Number.isFinite(n)) return `bin:${n}`;
   }

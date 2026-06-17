@@ -475,6 +475,7 @@ const SEC_MASK = `\
     2. 若 \`totalDistinct === 1\`：直接使用该 device，通过 \`ask_clarification\` 仅询问时间范围/批次号
     3. 若 \`totalDistinct > 1\`：调 \`ask_clarification(question:"请选择要查询的完整 device 代码", options: devices[].device)\`，前端渲染为按钮；用户选定后，下一轮若时间范围仍未给出，再询问
     4. 若 \`totalDistinct === 0\`：**不要立即报告"未找到"**；先用 \`query_yield_triggers(mask:"N06Z", limit:20)\` / \`query_jb_bins(mask:"N06Z", limit:20)\` 做历史全量验证（不加时间过滤）；若直查找到 device：1 个 → 按步骤 2 处理（询问时间范围）；**≥2 个 → 禁止直接展开 lot 分析**，必须调 \`ask_clarification(question:"请选择要查询的完整 device 代码", options: <去重 device 列表>)\` 供用户选定（同步骤 3）；若直查仍为空，再 \`ask_clarification\` 告知未找到匹配 device，请用户提供完整代码
+    ⚠️ **此步 limit:20 仅用于发现 device，禁止用返回的 rows 做批次完整性分析**：rows 可能只含最新 lot 的部分 slot；若工具返回 \`recentLotsByTestEnd\`，以其各条 \`slotCount\` 为准描述片数；**禁止**说"共 N 片 wafer"（N 来自可见 rows 行数而非 slotCount）。确认 device 后，宽泛问题须先询问时间范围或批次号再展开完整分析。
   - 禁止直接查询、禁止凭快照 top-10 猜测后直接下结论
 
 **情况 B — mask + 定向条件**（用户同时给出了 lot 号 / cardId / 具体 BIN 编号之一，或询问"最近 N 周/月"的测试情况）：
@@ -482,7 +483,9 @@ const SEC_MASK = `\
      - \`get_filter_values(domain:"both", field:"device", filterBy:{mask:"N06Z"}, limit:10)\`（mask 也可放顶层）
   2. 若返回 \`totalDistinct > 1\`：调 \`ask_clarification(question:"请选择要查询的完整 device 代码", options: devices[].device)\`，前端渲染为按钮供用户点选（时间范围/批次号由定向条件已覆盖，无需再问）
   3. 若 \`totalDistinct > 1\`，后续查询**必须**用 \`mask="N06Z"\`（query_yield_triggers / query_jb_bins），或**分别查每个 device**；禁止只取列表第一个 device 就下结论
-  4. 若返回空，改用 \`query_yield_triggers(mask:"N06Z", timeFrom, timeTo)\` / \`query_jb_bins(mask:"N06Z", testEndFrom, testEndTo)\` 直接按 mask 查询（**禁止**用 \`aggregate_jb_bins\` / \`aggregate_yield_triggers\` 做 mask 发现——aggregate 工具要求完整 device，传 mask 无效或报错）；找到数据后若涉及 **≥2 个不同 device**（如 WC06N84R 和 WC07N84R），**必须先列出全部 device（含域和最近 TESTEND）并询问用户要重点分析哪个**，禁止直接跳入某个 lot 的逐片详情
+  4. 若返回空，改用 \`query_yield_triggers(mask:"N06Z", timeFrom, timeTo)\` / \`query_jb_bins(mask:"N06Z", testEndFrom, testEndTo)\` 直接按 mask 查询（**禁止**用 \`aggregate_jb_bins\` / \`aggregate_yield_triggers\` 做 mask 发现——aggregate 工具要求完整 device，传 mask 无效或报错）；找到数据后：
+     - 若涉及 **≥2 个不同 device**（如 WC06N84R 和 WC07N84R），**必须先列出全部 device（含域和最近 TESTEND）并询问用户要重点分析哪个**，禁止直接跳入某个 lot 的逐片详情
+     - 即使只有 **1 个 device**，也**必须先以 \`recentLotsByTestEnd\` 为依据，按 TESTEND 降序列出该时间段内所有 lot 的汇总表**（lot、testEnd、片数、探针卡、各 pass 良率%），再视用户需求展开单 lot 细节；**禁止**仅因 rows 中只出现一个 lot 就认为"时间段内只测了该 lot"（rows 可能因 limit 截断而未包含全部 lot）
   5. 若仍为空，则用 \`ask_clarification\` 告知用户未找到对应 device，请提供完整代码
   6. 结论中列出 \`devices[]\` 中的**全部** device（含各域最近日期），注明"即 mask=N06Z 的产品"
   7. 禁止因单域无数据就报告"完全没有测试记录"——须先查 domain=both 或两域 mask 直查
