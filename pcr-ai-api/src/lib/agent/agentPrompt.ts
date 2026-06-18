@@ -1202,12 +1202,10 @@ export function classifyIntent(userQuestion: string, historyFirst?: string): Pro
 export function buildSystemPrompt(manifest?: DataManifest, intent: PromptIntent = "general"): string {
   const today = new Date().toISOString().slice(0, 10);
 
-  // is() returns true when intent matches any listed value.
-  // "general" is no longer a wildcard — it gets only the core sections, keeping
-  // the prompt lean for ambiguous queries and letting the model ask for clarification.
-  const is = (...intents: PromptIntent[]) => intents.includes(intent);
-  // Core sections always loaded regardless of intent.
-  const always = true;
+  // is() returns true when intent matches any listed value, or when intent is "general"
+  // (the safe fallback that includes every section — covers queries that don't cleanly
+  // match a specific intent, e.g. "WA03P02G 的情况" or "最近良率最差的批次").
+  const is = (...intents: PromptIntent[]) => intent === "general" || intents.includes(intent);
 
   return [
     // ── always-on ──────────────────────────────────────────────────────────
@@ -1216,27 +1214,26 @@ export function buildSystemPrompt(manifest?: DataManifest, intent: PromptIntent 
     SEC_ROUTING,
     // ── intent-gated ───────────────────────────────────────────────────────
     is("lot_bin", "dut_analysis", "card_probe", "mask_query") && SEC_YIELD_TRIGGERS,
-    always && SEC_DECISION,
-    always && SEC_TWO_TABLES,
+    SEC_DECISION,
+    SEC_TWO_TABLES,
     is("lot_bin", "dut_analysis", "mask_query", "wafer_map", "card_probe") && SEC_BAD_BIN,
-    always && SEC_DATA_RULES,
-    is("lot_bin", "dut_analysis", "mask_query", "wafer_map", "card_probe") && SEC_LOT_ID,
-    is("lot_bin", "dut_analysis", "mask_query") && SEC_MASK,
-    always && SEC_DOMAIN,
-    is("lot_bin", "wafer_map")                && SEC_WAFER_ENUM,
-    // Card comparison sections: card_probe only (lot_bin doesn't need cross-card ranking)
-    is("card_probe")                          && SEC_WORST_CARD,
-    is("card_probe")                          && SEC_CARD_LOTS,
-    // Cross-lot bin comparison: lot_bin + dut_analysis (where user compares multiple bins/lots)
-    is("lot_bin", "dut_analysis")             && SEC_BIN_COMPARE,
-    // Probe card degradation signals: card_probe only
-    is("card_probe")                          && SEC_CROSS_DOMAIN_INSIGHTS,
-    is("lot_bin", "dut_analysis", "wafer_map") && SEC_BIN_BY_SLOT,
+    SEC_DATA_RULES,
+    SEC_LOT_ID,
+    is("lot_bin", "dut_analysis", "mask_query")               && SEC_MASK,
+    SEC_DOMAIN,
+    is("lot_bin", "wafer_map")                                && SEC_WAFER_ENUM,
+    // Card comparison: card_probe + lot_bin (lot analysis often needs cross-card ranking)
+    is("lot_bin", "card_probe")                               && SEC_WORST_CARD,
+    is("lot_bin", "card_probe")                               && SEC_CARD_LOTS,
+    // Cross-lot bin comparison: lot_bin + dut_analysis (fixed: was "general"-only, now also lot_bin)
+    is("lot_bin", "dut_analysis")                             && SEC_BIN_COMPARE,
+    is("lot_bin", "card_probe")                               && SEC_CROSS_DOMAIN_INSIGHTS,
+    is("lot_bin", "dut_analysis", "wafer_map")                && SEC_BIN_BY_SLOT,
     is("lot_bin", "dut_analysis", "mask_query", "card_probe") && SEC_ENG_TIPS,
     // ── always-on ──────────────────────────────────────────────────────────
     SEC_OUTPUT_FORMAT,
     SEC_QUALITY,
-    is("mask_query", "card_probe")            && SEC_FILTER_VALUES,
+    is("mask_query", "card_probe")                            && SEC_FILTER_VALUES,
     SEC_CHART_RULES,
     SEC_COMMON_ERRORS,
     SEC_FORMAT_LIMITS,
