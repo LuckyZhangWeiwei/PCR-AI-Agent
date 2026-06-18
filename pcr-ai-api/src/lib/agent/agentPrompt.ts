@@ -1138,13 +1138,20 @@ const SEC_FORMAT_LIMITS = `\
  * injected this turn — sections irrelevant to the intent are omitted to keep
  * the prompt lean and improve model compliance on the sections that remain.
  *
- * - lot_bin    : analyzing a specific lot's bin / yield / slot data
- * - mask_query : device discovery by 4-char mask token (e.g. "N84R")
- * - card_probe : probe-card health / Yield Monitor trigger queries
- * - wafer_map  : wafer map / cluster / die-distribution view
- * - general    : fallback — all sections included (safe default)
+ * - lot_bin      : analyzing a specific lot's bin / yield / slot data
+ * - dut_analysis : which DUT has the most BIN X / DUT distribution focus
+ * - mask_query   : device discovery by 4-char mask token (e.g. "N84R")
+ * - card_probe   : probe-card health / Yield Monitor trigger queries
+ * - wafer_map    : wafer map / cluster / die-distribution view
+ * - general      : fallback — core sections only (lean prompt for ambiguous queries)
  */
-export type PromptIntent = "lot_bin" | "mask_query" | "card_probe" | "wafer_map" | "general";
+export type PromptIntent =
+  | "lot_bin"
+  | "dut_analysis"
+  | "mask_query"
+  | "card_probe"
+  | "wafer_map"
+  | "general";
 
 /**
  * Classify the user's intent from the current message (and optional first
@@ -1166,6 +1173,17 @@ export function classifyIntent(userQuestion: string, historyFirst?: string): Pro
   // Probe-card health / Yield Monitor trigger queries
   if (/探针卡|probe\s*card|哪张卡|卡号|最差.*(卡|card)|报警最多|yield\s*monitor|触发次数|ym触发|dut.*不均/.test(q)) return "card_probe";
 
+  // DUT-level analysis: "哪个DUT的BIN8最多", "BIN8集中在哪些DUT", "各DUT分布"
+  // Must have both a DUT/site keyword AND a BIN/fail keyword
+  if (
+    /(?:dut|触点|site)\d*\s*.*(?:bin\d+|fail|坏)|(?:bin\d+|fail|坏).*(?:dut|触点|site)|各\s*dut|dut\s*分布|哪个\s*dut|哪些\s*dut/i.test(q)
+  ) {
+    // Require either a lot ID or a bin number — otherwise too ambiguous
+    if (/\b[A-Z]{2}\d{5}\.\d[A-Z]\b/.test(raw) || /\bbin\s*\d+/i.test(q)) {
+      return "dut_analysis";
+    }
+  }
+
   // Lot ID present (XX12345.1X) → lot + bin analysis
   if (/\b[A-Z]{2}\d{5}\.\d[A-Z]\b/.test(raw)) return "lot_bin";
 
@@ -1184,9 +1202,12 @@ export function classifyIntent(userQuestion: string, historyFirst?: string): Pro
 export function buildSystemPrompt(manifest?: DataManifest, intent: PromptIntent = "general"): string {
   const today = new Date().toISOString().slice(0, 10);
 
-  // is() returns true when intent matches any listed value, or when intent is "general"
-  // (the safe fallback that includes every section).
-  const is = (...intents: PromptIntent[]) => intent === "general" || intents.includes(intent);
+  // is() returns true when intent matches any listed value.
+  // "general" is no longer a wildcard — it gets only the core sections, keeping
+  // the prompt lean for ambiguous queries and letting the model ask for clarification.
+  const is = (...intents: PromptIntent[]) => intents.includes(intent);
+  // Core sections always loaded regardless of intent.
+  const always = true;
 
   return [
     // ── always-on ──────────────────────────────────────────────────────────
@@ -1194,21 +1215,24 @@ export function buildSystemPrompt(manifest?: DataManifest, intent: PromptIntent 
     SEC_TERMS_AND_TOOLS,
     SEC_ROUTING,
     // ── intent-gated ───────────────────────────────────────────────────────
-    is("lot_bin", "card_probe", "mask_query")  && SEC_YIELD_TRIGGERS,
-    SEC_DECISION,
-    SEC_TWO_TABLES,
-    is("lot_bin", "mask_query", "wafer_map", "card_probe") && SEC_BAD_BIN,
-    SEC_DATA_RULES,
-    SEC_LOT_ID,
-    is("lot_bin", "mask_query")               && SEC_MASK,
-    SEC_DOMAIN,
+    is("lot_bin", "dut_analysis", "card_probe", "mask_query") && SEC_YIELD_TRIGGERS,
+    always && SEC_DECISION,
+    always && SEC_TWO_TABLES,
+    is("lot_bin", "dut_analysis", "mask_query", "wafer_map", "card_probe") && SEC_BAD_BIN,
+    always && SEC_DATA_RULES,
+    is("lot_bin", "dut_analysis", "mask_query", "wafer_map", "card_probe") && SEC_LOT_ID,
+    is("lot_bin", "dut_analysis", "mask_query") && SEC_MASK,
+    always && SEC_DOMAIN,
     is("lot_bin", "wafer_map")                && SEC_WAFER_ENUM,
-    is("lot_bin", "card_probe")               && SEC_WORST_CARD,
-    is("lot_bin", "card_probe")               && SEC_CARD_LOTS,
-    intent === "general"                      && SEC_BIN_COMPARE,
-    is("lot_bin", "card_probe")               && SEC_CROSS_DOMAIN_INSIGHTS,
-    is("lot_bin", "wafer_map")                && SEC_BIN_BY_SLOT,
-    is("lot_bin", "mask_query", "card_probe") && SEC_ENG_TIPS,
+    // Card comparison sections: card_probe only (lot_bin doesn't need cross-card ranking)
+    is("card_probe")                          && SEC_WORST_CARD,
+    is("card_probe")                          && SEC_CARD_LOTS,
+    // Cross-lot bin comparison: lot_bin + dut_analysis (where user compares multiple bins/lots)
+    is("lot_bin", "dut_analysis")             && SEC_BIN_COMPARE,
+    // Probe card degradation signals: card_probe only
+    is("card_probe")                          && SEC_CROSS_DOMAIN_INSIGHTS,
+    is("lot_bin", "dut_analysis", "wafer_map") && SEC_BIN_BY_SLOT,
+    is("lot_bin", "dut_analysis", "mask_query", "card_probe") && SEC_ENG_TIPS,
     // ── always-on ──────────────────────────────────────────────────────────
     SEC_OUTPUT_FORMAT,
     SEC_QUALITY,

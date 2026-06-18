@@ -17,6 +17,7 @@ import { fetchOrCacheManifest } from "./agentManifest.js";
 import { buildChartOption, generateChartArgsHaveData, tryParseJsonish } from "./agentChartTool.js";
 import { streamSiliconFlow, type CollectedToolCall } from "./agentStream.js";
 import { buildFeedbackInjection } from "./agentFeedback.js";
+import { detectPendingQuery } from "./agentPendingQuery.js";
 import { storeJbQuerySessionCache, jbWrappedIsEmptyQuery } from "./agentJbBinFormat.js";
 import {
   compactJbBinsForHistory,
@@ -2053,6 +2054,51 @@ export async function runAgentLoop(
     }
 
     if (awaitingSummary && !waferPlan.skipJbDeterministicSummary) {
+      // ── General pending query mechanism ──────────────────────────────────
+      // When a two-step query reaches the summary round without its second tool
+      // call having been executed (because the summary round blocks tool calls),
+      // the registry detects the gap and executes the follow-up tool here.
+      // We then `continue` so the next iteration has complete data for a proper
+      // LLM summary — rather than an incomplete "I'll query later" response.
+      const lastTool = lastToolMessage(getHistory(sessionId));
+      if (lastTool) {
+        const jbPayload = resolveJbToolPayload(sessionId, String(lastTool.content ?? ""));
+        const pending = detectPendingQuery(
+          userQuestion,
+          lastTool.name ?? "",
+          jbPayload ?? {}
+        );
+        if (pending) {
+          emit({ type: "status", message: pending.statusLabel });
+          emit({ type: "tool_start", name: pending.toolName, args: pending.args });
+          try {
+            const toolResult = await runTool(pending.toolName, pending.args, {
+              toolResultMaxChars: agentConfig.toolResultMaxChars,
+              history: getHistory(sessionId),
+            });
+            const rawContent =
+              typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult);
+            emit({
+              type: "tool_result",
+              name: pending.toolName,
+              summary: rawContent.slice(0, 200),
+            });
+            appendMessages(sessionId, {
+              role: "tool",
+              name: pending.toolName,
+              tool_call_id: `pending_${Date.now()}`,
+              content: rawContent.slice(0, agentConfig.toolResultMaxChars),
+            });
+            // History now has complete data; loop back so the next round
+            // (still a summary round) has everything needed for a full answer.
+            continue;
+          } catch {
+            // Pending query failed — fall through to deterministic routes / LLM summary
+          }
+        }
+      }
+
+      // ── Specialised deterministic routes (formatted output + LLM commentary) ──
       // DUT×BIN 自动聚合路由：用户问"哪个 DUT 的 BIN X 最多"，query_jb_bins 已得到
       // device/lot，自动调 query_lot_dut_bin_agg，避免 LLM 在总结轮承诺查询却无法执行。
       const dutBinHandled = await tryRunDutBinAggAutoRoute(
