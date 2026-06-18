@@ -17,6 +17,7 @@ export interface AgentConfig {
 
 const DEFAULT_API_BASE = "https://api.siliconflow.cn/v1";
 const DEFAULT_MODEL = "deepseek-ai/DeepSeek-V4-Pro";
+const DEFAULT_SUB_MODEL = "deepseek-ai/DeepSeek-V4-Flash";
 export const DEFAULT_MAX_ROUNDS = 8;
 const MIN_MAX_ROUNDS = 1;
 const MAX_MAX_ROUNDS = 20;
@@ -127,7 +128,7 @@ export function resolveAgentConfig(
   const subAgentModel =
     override?.subAgentModel?.trim() ||
     process.env.AGENT_SUB_MODEL?.trim() ||
-    model;
+    DEFAULT_SUB_MODEL;
   const maxRounds = clampMaxRounds(
     override?.maxRounds ?? process.env.AGENT_MAX_ROUNDS
   );
