@@ -184,8 +184,8 @@ export function parseYieldMonitorTriggerV3Query(
       };
     }
 
-    clauses.push(`UPPER(TRIM(t."TYPE")) = UPPER(:v3_type_scope)`);
-    (binds as Record<string, string>).v3_type_scope = YIELD_MONITOR_V3_TYPE_SCOPE;
+    clauses.push(`UPPER(t."TYPE") = :v3_type_scope`);
+    (binds as Record<string, string>).v3_type_scope = YIELD_MONITOR_V3_TYPE_SCOPE.toUpperCase();
     applied.typeScope = YIELD_MONITOR_V3_TYPE_SCOPE;
 
     // Exclude internal/test lots starting with kk, gg, or c (case-insensitive)
@@ -196,8 +196,8 @@ export function parseYieldMonitorTriggerV3Query(
       if (v === undefined) return;
       const t = v.trim();
       if (t === "") return;
-      clauses.push(`UPPER(TRIM(${columnSql})) = UPPER(:${bindName})`);
-      (binds as Record<string, string | number | Date>)[bindName] = t;
+      clauses.push(`UPPER(${columnSql}) = :${bindName}`);
+      (binds as Record<string, string | number | Date>)[bindName] = t.toUpperCase();
       applied[param] = t;
     };
 
@@ -229,9 +229,9 @@ export function parseYieldMonitorTriggerV3Query(
     if (pctVal !== undefined && pctVal !== "") {
       const t = pctVal.trim();
       clauses.push(
-        `(UPPER(TRIM(t.PROBECARD)) = UPPER(:v3_pct) OR UPPER(TRIM(t.PROBECARD)) LIKE UPPER(:v3_pct) || '-%')`
+        `(UPPER(t.PROBECARD) = :v3_pct OR UPPER(t.PROBECARD) LIKE :v3_pct || '-%')`
       );
-      (binds as Record<string, string | number | Date>).v3_pct = t;
+      (binds as Record<string, string | number | Date>).v3_pct = t.toUpperCase();
       applied.probeCardType = t;
     }
 
