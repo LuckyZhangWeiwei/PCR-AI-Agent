@@ -425,6 +425,36 @@ describe("agentJbBinFormat", () => {
     assert.equal(e!.primaryTesterId, "B");
   });
 
+  it("wrapJbQueryResultForAgent uses recentLotsOverride for DB-level lot count", () => {
+    // 200 rows all from one lot — rows-only distinctLotCount would be 1
+    const rows = Array.from({ length: 50 }, (_, i) => ({
+      LOT: "DR45679.1J",
+      DEVICE: "WA00P14R",
+      SLOT: (i % 25) + 1,
+      PASSID: i % 2 === 0 ? 1 : 3,
+      TESTEND: "2026-06-20T00:00:00.000Z",
+      bins: [],
+    })) as Record<string, unknown>[];
+    const override = Array.from({ length: 10 }, (_, i) => ({
+      lot: `DR4567${i}.1J`,
+      device: "WA00P14R",
+      cardIds: [],
+      hasCardChangeInLot: false,
+      cardId: "",
+      testEnd: "2026-06-01T00:00:00.000Z",
+      slots: [],
+      slotCount: 25,
+    }));
+    const out = wrapJbQueryResultForAgent(rows, {
+      recentLotsOverride: override,
+      totalDistinctLots: 10,
+    });
+    assert.equal(out.distinctLotCount, 10);
+    assert.equal(out.totalDistinctLots, 10);
+    assert.equal((out.recentLotsByTestEnd as unknown[]).length, 10);
+    assert.equal(out.multiLotYieldScope, true);
+  });
+
   it("wrapJbQueryResultForAgent includes recentLotsByTestEnd", () => {
     const out = wrapJbQueryResultForAgent([
       { LOT: "A", DEVICE: "D", CARDID: "7747-01", TESTEND: "2026-05-01T00:00:00.000Z", SLOT: 1, bins: [] },

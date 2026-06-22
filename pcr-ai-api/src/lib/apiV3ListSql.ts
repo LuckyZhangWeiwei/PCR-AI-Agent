@@ -72,6 +72,34 @@ ${ORDER_BY_LAYER_BINS_V3_OUTER}
  * 与 **`buildInfcontrolLayerBinsV3Sql`** 相同 **WHERE** 与 **ORDER BY**，**无** **`FETCH FIRST`**
  *（**`/api/v4/…/aggregate`** Oracle 全量匹配行、Node 聚合）。**ROWID** 两段式与列表一致，避免对宽选列整集排序。
  */
+/**
+ * Distinct lots for agent `query_jb_bins` (mask/device scope): GROUP BY lot, ORDER BY MAX(TESTEND) DESC.
+ * `COUNT(*) OVER ()` = total distinct lots in filter window; `FETCH FIRST :lot_lim` caps list size.
+ */
+export function buildInfcontrolLayerBinsV3DistinctLotsSql(whereAndSql: string): string {
+  const extra = whereAndSql.trim();
+  const whereBlock = extra
+    ? `WHERE UPPER(TRIM(t2.PASSTYPE)) IN ('TEST', 'INTERRUPT') AND UPPER(TRIM(t2.LAYERNAME)) <> 'ABANDONED' AND ${extra}`
+    : `WHERE UPPER(TRIM(t2.PASSTYPE)) IN ('TEST', 'INTERRUPT') AND UPPER(TRIM(t2.LAYERNAME)) <> 'ABANDONED'`;
+  return `
+SELECT lot, device, last_testend, slot_count, total_distinct
+FROM (
+  SELECT
+    t1.LOT AS lot,
+    t1.DEVICE AS device,
+    MAX(t2.TESTEND) AS last_testend,
+    COUNT(DISTINCT t1.SLOT) AS slot_count,
+    COUNT(*) OVER () AS total_distinct
+  FROM INFCONTROL t1
+  INNER JOIN INFLAYERBINLIST t2 ON t1.KEYNUMBER = t2.KEYNUMBER
+  ${whereBlock}
+  GROUP BY t1.LOT, t1.DEVICE
+  ORDER BY MAX(t2.TESTEND) DESC NULLS LAST
+)
+FETCH FIRST :lot_lim ROWS ONLY
+`.trim();
+}
+
 export function buildInfcontrolLayerBinsV3SqlFullMatching(whereAndSql: string): string {
   const extra = whereAndSql.trim();
   const whereBlock = extra

@@ -129,7 +129,7 @@ describe("agentJbDeterministicReply", () => {
     assert.ok(Array.isArray(fromHist!._trendRows));
     storeJbToolRawJson(sid, cacheJson);
     const fromCache = resolveJbToolPayload(sid, hist);
-    assert.equal(fromCache!._jbSessionCacheVersion, 5);
+    assert.equal(fromCache!._jbSessionCacheVersion, 6);
     clearJbToolRawJson(sid);
   });
 

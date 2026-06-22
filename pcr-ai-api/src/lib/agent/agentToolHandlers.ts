@@ -60,6 +60,10 @@ import {
   wrapJbQueryResultForAgent,
 } from "./agentJbBinFormat.js";
 import {
+  buildDistinctLotsFromMatchingRows,
+  fetchOracleDistinctLotsForJb,
+} from "./agentJbDistinctLots.js";
+import {
   buildCardDegradationSignal,
   type CardDegradationSignal,
 } from "./agentCrossdomainInsights.js";
@@ -315,13 +319,21 @@ async function toolQueryJbBins(
 
   if (infcontrolLayerBinsUseDummy()) {
     const matching = filterInfcontrolLayerBinV3DummyRowsMatching(parsed.applied);
-    const rows = (lotScoped ? matching : filterInfcontrolLayerBinV3DummyRows(parsed.applied, limit)).map(
-      (r) => enrichJbRow(r as Record<string, unknown>)
+    const matchingEnriched = matching.map((r) =>
+      enrichJbRow(r as Record<string, unknown>)
     );
+    const rows = (lotScoped ? matchingEnriched : filterInfcontrolLayerBinV3DummyRows(parsed.applied, limit).map(
+      (r) => enrichJbRow(r as Record<string, unknown>)
+    ));
+    const distinctLots = lotScoped
+      ? undefined
+      : buildDistinctLotsFromMatchingRows(matchingEnriched);
     const cardDegradationSignal = await computeCardSignal(rows);
     const wrapped = wrapJbQueryResultForAgent(rows, {
       lotScopedFullRows: lotScoped,
       cardDegradationSignal,
+      recentLotsOverride: distinctLots?.lots,
+      totalDistinctLots: distinctLots?.totalDistinct,
     });
     options?.onJbBinsWrapped?.(wrapped);
     return serializeJbQueryResultForAgent(wrapped, maxChars);
@@ -330,19 +342,29 @@ async function toolQueryJbBins(
   const sql = lotScoped
     ? buildInfcontrolLayerBinsV3SqlFullMatching(parsed.whereAndSql)
     : buildInfcontrolLayerBinsV3Sql(parsed.whereAndSql);
-  const rows = await withConnection(async (conn) => {
-    const result = await conn.execute(
-      sql,
-      lotScoped ? parsed.binds : { ...parsed.binds, lim: limit },
-      { outFormat: oracledb.OUT_FORMAT_OBJECT }
-    );
-    return (result.rows ?? []) as Record<string, unknown>[];
-  });
+  const [rows, distinctLots] = await Promise.all([
+    withConnection(async (conn) => {
+      const result = await conn.execute(
+        sql,
+        lotScoped ? parsed.binds : { ...parsed.binds, lim: limit },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
+      );
+      return (result.rows ?? []) as Record<string, unknown>[];
+    }),
+    lotScoped
+      ? Promise.resolve(null)
+      : fetchOracleDistinctLotsForJb(
+          parsed.whereAndSql,
+          parsed.binds as Record<string, string | number | Date>
+        ),
+  ]);
   const enriched = rows.map(enrichJbRow);
   const cardDegradationSignal = await computeCardSignal(enriched);
   const wrapped = wrapJbQueryResultForAgent(enriched, {
     lotScopedFullRows: lotScoped,
     cardDegradationSignal,
+    recentLotsOverride: distinctLots?.lots,
+    totalDistinctLots: distinctLots?.totalDistinct,
   });
   options?.onJbBinsWrapped?.(wrapped);
   return serializeJbQueryResultForAgent(wrapped, maxChars);
@@ -351,6 +373,7 @@ async function toolQueryJbBins(
 function aggregateJbBinsHasScopeFilter(args: Record<string, unknown>): boolean {
   const lot = String(args["lot"] ?? "").trim();
   const device = String(args["device"] ?? "").trim();
+  const mask = String(args["mask"] ?? "").trim();
   const cardId = String(args["cardId"] ?? "").trim();
   const probeCardType = String(args["probeCardType"] ?? "").trim();
   const testerId = String(args["testerId"] ?? "").trim();
@@ -358,7 +381,7 @@ function aggregateJbBinsHasScopeFilter(args: Record<string, unknown>): boolean {
   const slot = args["slot"];
   const hasSlot = slot !== undefined && slot !== null && String(slot).trim() !== "";
   return Boolean(
-    lot || device || cardId || probeCardType || testerId || meslot || hasSlot
+    lot || device || mask || cardId || probeCardType || testerId || meslot || hasSlot
   );
 }
 

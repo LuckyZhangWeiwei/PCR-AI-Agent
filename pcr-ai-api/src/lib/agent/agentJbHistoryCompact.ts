@@ -13,6 +13,7 @@ import {
   type YieldInterruptSegment,
 } from "../jbYieldCalc.js";
 import type { CardByPassIdEntry, LotTesterEntry } from "./agentJbBinFormat.js";
+import { multiLotListingFields } from "./agentJbMultiLotListing.js";
 import { jbYieldCoreFields } from "./agentJbYieldCore.js";
 
 function roundYieldPct(v: number | null): number | null {
@@ -526,6 +527,7 @@ export function compactJbCacheForHistory(
         "JB 总结轮缓存；BIN 趋势读 badBinSlotTrends 或 _trendRows 按需生成；概况读 lotYieldOverviewMarkdown",
       rowsOmitted: true,
       ...jbYieldCoreFields(o),
+      ...multiLotListingFields(o),
       _jbSessionCacheVersion: o["_jbSessionCacheVersion"],
       _trendRows: trendRows,
       slotYieldSummary: o["slotYieldSummary"],
@@ -539,6 +541,7 @@ export function compactJbCacheForHistory(
       passIdsPresent: o["passIdsPresent"],
       lotQueryFullRows: o["lotQueryFullRows"],
       topBadBins: o["topBadBins"],
+      ...multiLotListingFields(o),
       yieldByPassIdMarkdown: o["yieldByPassIdMarkdown"],
       lotYieldOverviewMarkdown: o["lotYieldOverviewMarkdown"],
       _jbSessionCacheVersion: o["_jbSessionCacheVersion"],
@@ -546,6 +549,7 @@ export function compactJbCacheForHistory(
     }),
     () => ({
       ...jbYieldCoreFields(o),
+      ...multiLotListingFields(o),
       rowsOmitted: true,
       _historyNote: "仅核心良率；BIN 趋势可能不可用",
     }),
@@ -602,6 +606,7 @@ export function compactJbBinsForHistory(
       rowsOmitted: true,
       rowCount: o["rowCount"] ?? o["count"],
       ...core,
+      ...multiLotListingFields(o),
       topBadBins: o["topBadBins"],
       cardByPassId: o["cardByPassId"],
       cardChangesBySlotPass: o["cardChangesBySlotPass"],
@@ -620,10 +625,12 @@ export function compactJbBinsForHistory(
       _historyNote: "精简历史；结论以 lotYieldOverviewMarkdown / yieldByPassIdMarkdown 为准",
       rowsOmitted: true,
       ...core,
+      ...multiLotListingFields(o),
       slotYieldSummary: slim,
     }),
     () => ({
       ...core,
+      ...multiLotListingFields(o),
       rowsOmitted: true,
       slotYieldSummary: slim,
     }),

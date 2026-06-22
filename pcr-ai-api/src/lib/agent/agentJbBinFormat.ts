@@ -28,6 +28,7 @@ import {
   formatYieldByPassSection,
 } from "./agentJbHistoryCompact.js";
 import { clearJbToolRawJson, storeJbToolRawJson } from "./agentJbSessionCache.js";
+import { multiLotListingFields } from "./agentJbMultiLotListing.js";
 import {
   jbYieldCoreFields,
   jbYieldCoreFieldsForSerialize,
@@ -130,7 +131,7 @@ const CARD_BY_PASS_ID_GUIDE =
   "cardByPassId：各 passId 在返回行内的 CARDID 集合。pass1 与 pass3 各用一卡为正常；结论用 pass1/3/5，禁止写常温/高温/低温。";
 
 const RECENT_LOTS_GUIDE =
-  "recentLotsByTestEnd：按 lot MAX(TESTEND) 降序 top20（返回行集内）；每 lot 含 slotCount、slots、cardIds、testerId（最近 TESTEND 行机台）、hasCardChangeInLot。机台汇总见 testerByLot / testerIdMarkdown（JB=TESTERID；Yield Monitor 同机台字段为 HOSTNAME/hostname）。";
+  "recentLotsByTestEnd：非 lot 限定查询时在数据库级按 lot MAX(TESTEND) 降序枚举（见 totalDistinctLots，最多 50 条）；lot 限定查询时为返回行集内 top20。每 lot 含 slotCount、testEnd、device；cardIds/slots 仅当该 lot 出现在返回 rows 中才有值。列举「所有 lot/批次」须读 recentLotsByTestEnd + totalDistinctLots，禁止用 rows 行数或 primary lot 推断 lot 总数。";
 
 const TESTER_BY_LOT_GUIDE =
   "testerByLot / testerIdMarkdown：JB STAR 机台=INFLAYERBINLIST.TESTERID（API testerId）。用户问「在哪台机台/测试机测」须读本表；与 Yield Monitor 的 HOSTNAME（API hostname）为同一机台不同列名。";
@@ -540,6 +541,9 @@ export function wrapJbQueryResultForAgent(
   meta?: {
     lotScopedFullRows?: boolean;
     cardDegradationSignal?: CardDegradationSignal | null;
+    /** DB-level or full-matching distinct lot list (multi-lot scope queries). */
+    recentLotsOverride?: RecentLotByTestEndEntry[];
+    totalDistinctLots?: number;
   }
 ): Record<string, unknown> {
   const slotSet = new Set<number>();
@@ -557,18 +561,22 @@ export function wrapJbQueryResultForAgent(
   // Correct wafer count: distinct (lot, slot) pairs — not just slot numbers.
   // distinctSlots.length undercounts when different lots share the same slot number.
   const distinctLotSlotCount = lotSlotPairs.size;
-  const distinctLotCount = new Set(
+  const distinctLotCountFromRows = new Set(
     rows
       .map((r) => String(r["LOT"] ?? r["lot"] ?? "").trim())
       .filter(Boolean)
   ).size;
+  const distinctLotCount =
+    meta?.totalDistinctLots != null && meta.totalDistinctLots > 0
+      ? meta.totalDistinctLots
+      : distinctLotCountFromRows;
   const primaryLot = String(rows[0]?.["LOT"] ?? rows[0]?.["lot"] ?? "").trim();
   const primaryDevice = String(
     rows[0]?.["DEVICE"] ?? rows[0]?.["device"] ?? ""
   ).trim();
   const yieldRows = rowsForYieldAggregates(rows, {
     primaryLot,
-    distinctLotCount,
+    distinctLotCount: distinctLotCountFromRows,
     lotScopedFullRows: meta?.lotScopedFullRows,
   });
   const slotYieldSummary = buildSlotYieldSummary(yieldRows);
@@ -579,7 +587,10 @@ export function wrapJbQueryResultForAgent(
   const topBadBins = buildTopBadBins(yieldRows, 15);
   const cardChangesBySlotPass = buildCardChangesBySlotPass(yieldRows);
   const cardByPassId = buildCardByPassId(yieldRows);
-  const recentLotsByTestEnd = buildRecentLotsByTestEnd(rows, 20);
+  const recentLotsByTestEnd =
+    meta?.recentLotsOverride && meta.recentLotsOverride.length > 0
+      ? meta.recentLotsOverride
+      : buildRecentLotsByTestEnd(rows, 20);
   const testerByLot = buildTesterByLot(rows);
   const binTotalsByLot = buildBinTotalsByLot(rows);
   const shouldDetectClusteredBins =
@@ -651,6 +662,9 @@ export function wrapJbQueryResultForAgent(
     count: rows.length,
     distinctSlots,
     distinctLotCount,
+    ...(meta?.totalDistinctLots != null
+      ? { totalDistinctLots: meta.totalDistinctLots }
+      : {}),
     distinctLotSlotCount,
     recentLotsByTestEnd,
     testerByLot,
@@ -837,7 +851,7 @@ export function serializeJbQueryResultForAgent(
   delete withoutRows["clusteredBadBinAlertsMarkdown"];
   delete withoutRows["agentTablesDigest"];
   delete withoutRows["slotBadBinsCompact"];
-  delete withoutRows["recentLotsByTestEnd"];
+  // recentLotsByTestEnd / totalDistinctLots kept for multi-lot listing queries
   delete withoutRows["lotYieldRankByTestEnd"];
   delete withoutRows["binTotalsByLot"];
   delete withoutRows["cardDegradationSignal"];
@@ -1052,7 +1066,8 @@ export function buildJbSessionCacheJson(wrapped: Record<string, unknown>): strin
 
   const cache: Record<string, unknown> = {
     ...jbYieldCoreFields(wrapped),
-    _jbSessionCacheVersion: 5,
+    ...multiLotListingFields(wrapped),
+    _jbSessionCacheVersion: 6,
   };
 
   if (summary?.length) {

@@ -484,14 +484,14 @@ const SEC_MASK = `\
      - \`get_filter_values(domain:"both", field:"device", filterBy:{mask:"N06Z"}, limit:10)\`（mask 也可放顶层）
   2. 若返回 \`totalDistinct > 1\`：调 \`ask_clarification(question:"请选择要查询的完整 device 代码", options: devices[].device)\`，前端渲染为按钮供用户点选（时间范围/批次号由定向条件已覆盖，无需再问）
   3. 若 \`totalDistinct > 1\`，后续查询**必须**用 \`mask="N06Z"\`（query_yield_triggers / query_jb_bins），或**分别查每个 device**；禁止只取列表第一个 device 就下结论
-  4. 若返回空，改用 mask **同时调两个工具**发现 lot 列表（**禁止**用 \`aggregate_jb_bins\` / \`aggregate_yield_triggers\` 做 mask 发现——aggregate 工具要求完整 device，传 mask 无效或报错）：
+  4. 若返回空，改用 mask **同时调两个工具**发现 lot 列表（**禁止**用 \`aggregate_yield_triggers\` 做 mask 发现；JB 可用 \`aggregate_jb_bins(mask, groupBy:"lot", groupTop:50)\` 作 lot 数交叉验证）：
      - **必须并行调用两个工具**（不得只调其中一个，会漏掉另一域的 lot）：
-       - \`query_jb_bins(mask:"P14R", limit:200)\` — JB 侧，**不加时间过滤**，靠 limit:200 + \`recentLotsByTestEnd\` 自然返回最近的 N 个 lot
-       - \`query_yield_triggers(mask:"P14R", timeFrom, timeTo, limit:200)\` — YM 侧，按告警时间 TIME_STAMP 过滤
-     - ⚠️ **JB 侧禁止加 testEndFrom/testEndTo（高频错误根因）**：用户说"最近两个月"描述的是告警时间范围，而非测试完成时间范围；若对 JB 加时间过滤，批次3月完成测试就会被 testEndFrom:4月 截掉，导致只能发现1个lot（实际可能有10个）；时间过滤只加在 YM 侧
-     - 用户说"最近N月/周"时，仅 \`query_yield_triggers\` 的 timeFrom/timeTo 需换算为 ISO 日期；\`query_jb_bins\` 不传时间参数
+       - \`query_jb_bins(mask:"P14R", testEndFrom, testEndTo, limit:200)\` — JB 侧，按 **TESTEND**（测试完成时间）过滤；用户说「最近 N 月/周**测试**的所有 lot」时必须传 testEndFrom/testEndTo
+       - \`query_yield_triggers(mask:"P14R", timeFrom, timeTo, limit:200)\` — YM 侧，按告警 **TIME_STAMP** 过滤（与 JB 的 TESTEND 窗可不同）
+     - **列举 lot 时读 JB 的 \`recentLotsByTestEnd\` + \`totalDistinctLots\`**（数据库级 GROUP BY lot，**不受 limit:200 行截断影响**）；\`rows\` 仅含最新 lot 的部分明细，**禁止**用 rows 或 primary lot 推断 lot 总数
+     - ⚠️ **高频错误**：单 lot（如 DR45679.1J 25 片×多 pass）可占满 200 行，导致 \`recentLotsByTestEnd\` 旧逻辑只显示 1 个 lot；修复后须读 \`totalDistinctLots\`（应为 10 而非 1）
      - **构建合并 lot 列表（去重）**：
-       - JB 侧：读 \`recentLotsByTestEnd\`（已按 MAX(TESTEND) 降序，每 lot 一行，含片数/良率/探针卡）；**禁止**用 rows 行数推断 lot 数量
+       - JB 侧：读 \`recentLotsByTestEnd\`（每 lot 一行：lot / device / testEnd / slotCount）；若 \`totalDistinctLots\` > \`recentLotsByTestEnd.length\` 须注明「仅列前 N 个，共 M 个 lot」
        - YM 侧：从 \`rows[]\` 提取所有不重复的 LOTID（YM 无 lot 级汇总字段，只能从明细行取 LOTID）
        - **合并**：以 JB \`recentLotsByTestEnd\` 为主（元数据完整）；YM 有但 JB 无的 lot，单独列为"仅YM告警"条目，时间取 YM rows 的最新 TIME_STAMP
      - **⚠️ 高频错误（必须遵守）：禁止在输出 lot 汇总表之前展开任何 lot 的分析**

@@ -77,7 +77,7 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "query_jb_bins",
       description:
-        "查询 JB STAR 实测数据（INFCONTROL ⋈ INFLAYERBINLIST）。单 lot 良率读 yieldByPassIdMarkdown（分 sort）与 slotYieldPivotMarkdown；passIdsPresent 列出实际 sort 层。指定 lot 时返回该 lot 全部匹配行（不限 limit）。另含 cardByPassId、slotYieldInterruptMarkdown 等。rows 可能省略。",
+        "查询 JB STAR 实测数据（INFCONTROL ⋈ INFLAYERBINLIST）。单 lot 良率读 yieldByPassIdMarkdown（分 sort）与 slotYieldPivotMarkdown；passIdsPresent 列出实际 sort 层。指定 lot 时返回该 lot 全部匹配行（不限 limit）。mask/device 未指定 lot 时另含 recentLotsByTestEnd + totalDistinctLots（库级 lot 枚举，不受 limit 行截断影响）。rows 可能省略。",
       parameters: {
         type: "object",
         properties: {

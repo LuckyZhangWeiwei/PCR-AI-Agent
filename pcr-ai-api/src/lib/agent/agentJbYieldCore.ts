@@ -5,6 +5,12 @@ export function jbYieldCoreFields(
   wrapped: Record<string, unknown>
 ): Record<string, unknown> {
   const core: Record<string, unknown> = {};
+  const multiLot =
+    Boolean(wrapped["multiLotYieldScope"]) ||
+    (typeof wrapped["totalDistinctLots"] === "number" &&
+      wrapped["totalDistinctLots"] > 1) ||
+    (typeof wrapped["distinctLotCount"] === "number" &&
+      wrapped["distinctLotCount"] > 1);
   for (const k of [
     "lot",
     "device",
@@ -23,6 +29,16 @@ export function jbYieldCoreFields(
     "slotYieldInterruptMarkdown",
     "_testInterruptCountGuide",
     "distinctLotSlotCount",
+    ...(multiLot
+      ? ([
+          "distinctLotCount",
+          "totalDistinctLots",
+          "recentLotsByTestEnd",
+          "multiLotYieldScope",
+          "multiLotDistinctCount",
+          "_recentLotsGuide",
+        ] as const)
+      : ([] as const)),
     "distinctSlots",
     "slotsByPassId",
     "badBinSlotTrends",

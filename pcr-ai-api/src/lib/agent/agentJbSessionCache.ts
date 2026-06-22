@@ -4,7 +4,7 @@
 import { registerSessionCleanupHook } from "./agentHistory.js";
 
 /** GET /health 的 agentJbCacheVersion，用于确认已部署新 API。 */
-export const AGENT_JB_CACHE_VERSION = 5;
+export const AGENT_JB_CACHE_VERSION = 6;
 
 const rawBySession = new Map<string, string>();
 
