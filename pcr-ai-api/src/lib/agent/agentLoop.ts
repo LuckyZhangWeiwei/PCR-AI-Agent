@@ -1451,6 +1451,47 @@ async function tryRunDutBinAggAutoRoute(
  * 总结轮：先 SSE 直出服务端表，再让 LLM 只写 3–8 句解读（不改表中数字）。
  * @returns true 表示已完整结束本轮（调用方应 return）。
  */
+/** 多批次聚合结果（aggregate_jb_bins groupBy:"lot"）→ 服务端直出跨批次 BIN 对比表。 */
+function buildMultiLotBinTable(content: string): string | null {
+  let agg: Record<string, unknown>;
+  try { agg = JSON.parse(content) as Record<string, unknown>; } catch { return null; }
+  const groups = agg["groups"] as Array<Record<string, unknown>> | undefined;
+  if (!groups?.length) return null;
+
+  // Detect cross-lot: groups contain 'lot' with multiple distinct values
+  const lotOrder: string[] = [];
+  const lotBins = new Map<string, Array<{ bin: string; count: number }>>();
+  for (const g of groups) {
+    const lot = String(g["lot"] ?? "").trim();
+    if (!lot) continue;
+    const binRaw = g["bin"] ?? g["BIN"];
+    const bin = `BIN${String(binRaw ?? "").trim()}`;
+    const count = Number(g["count"] ?? g["COUNT"] ?? 0);
+    if (!lotBins.has(lot)) { lotBins.set(lot, []); lotOrder.push(lot); }
+    if (binRaw && count > 0) lotBins.get(lot)!.push({ bin, count });
+  }
+  if (lotBins.size <= 1) return null; // single-lot: let normal path handle
+
+  // Sort lots by total bad die DESC
+  const lotTotals = new Map<string, number>();
+  for (const [lot, bins] of lotBins) lotTotals.set(lot, bins.reduce((s, b) => s + b.count, 0));
+  const sortedLots = [...lotOrder].sort((a, b) => (lotTotals.get(b) ?? 0) - (lotTotals.get(a) ?? 0));
+
+  const lines = [
+    `**各批次主要坏 BIN（共 ${lotBins.size} 个批次，按坏 die 总量排列）**`,
+    "",
+    "| Lot | TOP 1 BIN（颗数）| TOP 2 BIN（颗数）| TOP 3 BIN（颗数）| 坏 die 合计 |",
+    "|---|---|---|---|---:|",
+  ];
+  for (const lot of sortedLots) {
+    const bins = (lotBins.get(lot) ?? []).slice(0, 3);
+    while (bins.length < 3) bins.push({ bin: "—", count: 0 });
+    const cells = bins.map(b => b.count > 0 ? `${b.bin}（${b.count}）` : "—");
+    lines.push(`| ${lot} | ${cells.join(" | ")} | ${lotTotals.get(lot) ?? 0} |`);
+  }
+  return lines.join("\n");
+}
+
 async function tryRunDeterministicJbSummary(
   sessionId: string,
   userQuestion: string,
@@ -1459,9 +1500,21 @@ async function tryRunDeterministicJbSummary(
 ): Promise<boolean> {
   const history = getHistory(sessionId);
   const lastTool = lastToolMessage(history);
-  // aggregate_jb_bins: use session cache (from earlier query_jb_bins in session)
-  // rather than the aggregate result itself, which is in different format.
   if (lastTool?.name !== "query_jb_bins" && lastTool?.name !== "aggregate_jb_bins") return false;
+
+  // Cross-lot aggregate_jb_bins: emit server-generated per-lot BIN table directly.
+  // Do NOT use the single-lot session cache — it would show the wrong lot.
+  if (lastTool.name === "aggregate_jb_bins") {
+    const table = buildMultiLotBinTable(String(lastTool.content ?? ""));
+    if (table) {
+      const msg = table + "\n\n如需深入分析某批次，请告知批次号（如上表第1行）。";
+      emit({ type: "text", delta: msg });
+      appendMessages(sessionId, { role: "assistant", content: msg });
+      emit({ type: "done" });
+      return true;
+    }
+    // Single-lot aggregate_jb_bins (groupBy:"bin" etc.): fall through to session cache path
+  }
 
   const payload = resolveJbToolPayload(
     sessionId,
