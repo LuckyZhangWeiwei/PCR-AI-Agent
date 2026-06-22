@@ -97,7 +97,7 @@ export type WaferMapPass = {
  * @param dieAspect    dieWidth / dieHeight (controls rectangle shape)
  * @param _notchAngle  INF notch angle (reserved; notch marker not drawn in HTML)
  * @param goodBins     Set of good bin numbers (for legend / summary)
- * @param highlight    "" | "edge" | "bin:N"
+ * @param highlight    "" | "edge" | "bin:N" | "bin:N,M,..."
  */
 export function generateWaferMapHtml(
   title: string,
@@ -232,8 +232,10 @@ export function generateWaferMapHtml(
         if (Math.sqrt(dx * dx + dy * dy) > r * 0.85)
           extraStroke = ` stroke="#FFD700" stroke-width="1.5"`;
       } else if (highlight.startsWith("bin:")) {
-        const hBin = parseInt(highlight.slice(4), 10);
-        if (!isNaN(hBin) && d.bin === hBin)
+        const hBins = new Set(
+          highlight.slice(4).split(",").map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n))
+        );
+        if (hBins.has(d.bin))
           extraStroke = ` stroke="#FFEB3B" stroke-width="1.5"`;
       }
 

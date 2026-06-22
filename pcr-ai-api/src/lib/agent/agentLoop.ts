@@ -12,11 +12,12 @@ import {
 } from "./agentHistory.js";
 import { TOOL_SCHEMAS, INF_TOOL_SCHEMAS } from "./agentToolSchemas.js";
 import { runTool, type ChartSentinel, type ClarificationSentinel } from "./agentToolHandlers.js";
-import { buildSystemPrompt } from "./agentPrompt.js";
+import { buildSystemPrompt, classifyIntent } from "./agentPrompt.js";
 import { fetchOrCacheManifest } from "./agentManifest.js";
 import { buildChartOption, generateChartArgsHaveData, tryParseJsonish } from "./agentChartTool.js";
 import { streamSiliconFlow, type CollectedToolCall } from "./agentStream.js";
 import { buildFeedbackInjection } from "./agentFeedback.js";
+import { detectPendingQuery } from "./agentPendingQuery.js";
 import { storeJbQuerySessionCache, jbWrappedIsEmptyQuery } from "./agentJbBinFormat.js";
 import {
   compactJbBinsForHistory,
@@ -32,6 +33,7 @@ import {
   detectJbReplyMode,
   DETERMINISTIC_DATA_SECTION_TITLE,
   DETERMINISTIC_COMMENTARY_SECTION_TITLE,
+  extractBinFromUserText,
   extractSlotFromUserText,
   isLotOverviewQuestion,
   isPerSlotBadBinRankingQuestion,
@@ -900,6 +902,11 @@ async function emitDeterministicJbTablesReply(
   emit({ type: "status", message: "正在输出服务端预计算表…" });
   emitTextInChunks(tablesBlock, emit);
 
+  // 主分析 / lot 概况场景：topBadBins ≥3 项时自动生成坏 BIN bar chart
+  if (mode === "generic" || mode === "lot_overview") {
+    tryEmitTopBinBarChart(payload, emit);
+  }
+
   if (!withCommentary) {
     // Include ## 分析结论 separator so splitAgentReplyMarkdown always has a clear split point,
     // keeping ### 🔍 警示 / 规律识别 in dataMarkdown (otherwise detachProseAfterMarkdownTables
@@ -1212,6 +1219,9 @@ async function tryRunEquipmentDirectRoute(
     return false;
   }
   if (requiresNewDataQuery(userQuestion)) return false;
+  // "包含机台/增加机台" 是对综合列表的补充修饰词，不是独立的机台查询——
+  // 此时用户想要的是 bin fail 全量列表 + 机台号，不能只输出设备表，否则会反复输出同一段短表。
+  if (/(增加|加上|包含|含).*机台|机台.*列表|列表.*机台/.test(userQuestion)) return false;
   const payload = resolveJbToolPayload(sessionId);
   if (!payload) return false;
   return emitDeterministicJbTablesReply(sessionId, userQuestion, payload, agentConfig, emit);
@@ -1236,6 +1246,205 @@ async function tryRunPerSlotBinRankingDirectRoute(
   const compact = payload["slotBadBinsCompact"];
   if (!Array.isArray(compact) || compact.length === 0) return false;
   return emitDeterministicJbTablesReply(sessionId, userQuestion, payload, agentConfig, emit);
+}
+
+/** 从 query_lot_dut_bin_agg 结果中提取 DUT 分布，直接 emit bar chart。 */
+function tryEmitDutBinBarChart(
+  rawContent: string,
+  focusBin: number,
+  emit: (event: AgentSseEvent) => void
+): boolean {
+  const parsed = tryParseJsonish(rawContent) as Record<string, unknown> | null;
+  if (!parsed) return false;
+  type DutEntry = { dut: number; dieCount: number };
+  type DutGroup = { passId: number; duts: DutEntry[]; totalDieCount: number };
+  const dutGroups = parsed["focusBinDuts"] as DutGroup[] | undefined;
+  if (!dutGroups?.length) return false;
+  const group = dutGroups.find((g) => g.passId === 1) ?? dutGroups[0];
+  if (!group?.duts?.length || group.duts.length < 3) return false;
+  const labels = group.duts.map((d) => `DUT${d.dut}`);
+  const values = group.duts.map((d) => d.dieCount);
+  try {
+    const option = buildChartOption("bar", `BIN${focusBin} 各DUT颗数分布（pass${group.passId}）`, {
+      labels,
+      series: [{ name: `BIN${focusBin} 颗数`, values }],
+    });
+    emit({ type: "chart", option });
+  } catch { return false; }
+  return true;
+}
+
+/** 从 JB payload 的 topBadBins 提取前 10 BIN，直接 emit bar chart。 */
+function tryEmitTopBinBarChart(
+  payload: Record<string, unknown>,
+  emit: (event: AgentSseEvent) => void
+): boolean {
+  type TopBinEntry = { bin: number; dieCount: number };
+  const topBins = payload["topBadBins"] as TopBinEntry[] | undefined;
+  if (!topBins || topBins.length < 3) return false;
+  const slice = topBins.slice(0, 10);
+  const labels = slice.map((b) => `BIN${b.bin}`);
+  const values = slice.map((b) => b.dieCount);
+  const lot = String(payload["lot"] ?? "").trim();
+  const title = `坏 BIN 分布${lot ? `（${lot}）` : ""}`;
+  try {
+    const option = buildChartOption("bar", title, {
+      labels,
+      series: [{ name: "坏 die 颗数", values }],
+    });
+    emit({ type: "chart", option });
+  } catch { return false; }
+  return true;
+}
+
+/** 把 query_lot_dut_bin_agg 结果格式化为 Markdown 表格 + 一句结论。 */
+function buildDutBinAggMarkdown(
+  rawContent: string,
+  focusBin: number,
+  lot: string,
+  device: string
+): string {
+  const parsed = tryParseJsonish(rawContent) as Record<string, unknown> | null;
+  if (!parsed) return "";
+
+  const focusBinStr = `BIN${focusBin}`;
+  type DutEntry = { dut: number; dieCount: number };
+  type DutGroup = { passId: number; bin: string; dutCount: number; totalDieCount: number; avgPerDut: number; duts: DutEntry[] };
+  const dutGroups = parsed["focusBinDuts"] as DutGroup[] | undefined;
+  if (!dutGroups?.length) return "";
+
+  const lotTag = lot ? `（lot ${lot}${device ? ` ${device}` : ""}）` : "";
+  const parts: string[] = [];
+  for (const group of dutGroups) {
+    const passLabel = `pass${group.passId}`;
+    const rows: string[] = [
+      `**${focusBinStr} 各 DUT 分布${lotTag}（${passLabel}）**`,
+      "",
+      `| DUT | 颗数 | 占 ${focusBinStr} 总量% |`,
+      "|---:|---:|---:|",
+    ];
+    for (const d of group.duts) {
+      const pct = group.totalDieCount > 0
+        ? ((d.dieCount / group.totalDieCount) * 100).toFixed(1)
+        : "0.0";
+      rows.push(`| DUT${d.dut} | ${d.dieCount} | ${pct}% |`);
+    }
+    rows.push("");
+    rows.push(
+      `整批 ${focusBinStr} 合计 **${group.totalDieCount}** 颗，涉及 ${group.dutCount} 个 DUT，平均每 DUT ${group.avgPerDut} 颗。`
+    );
+    const top = group.duts[0];
+    if (top) {
+      const topPct = group.totalDieCount > 0
+        ? ((top.dieCount / group.totalDieCount) * 100).toFixed(1)
+        : "0";
+      rows.push(`${focusBinStr} **最多的 DUT 为 DUT${top.dut}**（${top.dieCount} 颗，${topPct}%）。`);
+    }
+    parts.push(rows.join("\n"));
+  }
+  return parts.join("\n\n");
+}
+
+/**
+ * Summary 轮专用：query_jb_bins 已完成、用户问"哪个 DUT 的 BIN X 最多"时，
+ * 自动调 query_lot_dut_bin_agg，直出 DUT 分布表 + LLM 解读，避免模型承诺查询却无法执行。
+ */
+async function tryRunDutBinAggAutoRoute(
+  sessionId: string,
+  userQuestion: string,
+  agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void
+): Promise<boolean> {
+  const focusBin = extractBinFromUserText(userQuestion);
+  if (focusBin == null) return false;
+  if (!/(dut|触点)/i.test(userQuestion)) return false;
+
+  const history = getHistory(sessionId);
+  const lastTool = lastToolMessage(history);
+  if (lastTool?.name !== "query_jb_bins") return false;
+
+  const payload = resolveJbToolPayload(sessionId, String(lastTool.content ?? ""));
+  if (!payload) return false;
+
+  const device = String(payload["device"] ?? "").trim();
+  const lot = String(payload["lot"] ?? "").trim();
+  if (!device || !lot) return false;
+
+  const queryArgs: Record<string, unknown> = { device, lot, passId: 1, focusBin };
+  emit({ type: "status", message: `正在查询 ${lot} DUT×BIN${focusBin} 聚合…` });
+  emit({ type: "tool_start", name: "query_lot_dut_bin_agg", args: queryArgs });
+
+  let rawContent: string;
+  try {
+    const toolResult = await runTool("query_lot_dut_bin_agg", queryArgs, {
+      toolResultMaxChars: agentConfig.toolResultMaxChars,
+      history: getHistory(sessionId),
+    });
+    rawContent = typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult);
+  } catch {
+    return false; // 失败回退到 LLM 路由
+  }
+
+  emit({ type: "tool_result", name: "query_lot_dut_bin_agg", summary: rawContent.slice(0, 200) });
+  appendMessages(sessionId, {
+    role: "tool",
+    name: "query_lot_dut_bin_agg",
+    tool_call_id: `dut_bin_auto_${Date.now()}`,
+    content: rawContent.slice(0, agentConfig.toolResultMaxChars),
+  });
+
+  const tableMd = buildDutBinAggMarkdown(rawContent, focusBin, lot, device);
+  if (!tableMd.trim()) return false;
+
+  const tablesBlock = `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${tableMd}`;
+  emitTextInChunks(tablesBlock, emit);
+  // DUT 分布数据点 ≥3 时自动生成 bar chart，直观展示哪个 DUT 集中出 BIN
+  tryEmitDutBinBarChart(rawContent, focusBin, emit);
+  emit({ type: "status", message: "正在生成数据解读…" });
+  emit({ type: "text", delta: `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n` });
+
+  const commFilter = createDeepSeekFilter(emit);
+  let streamError: string | undefined;
+  await streamSiliconFlow(
+    {
+      model: agentConfig.subAgentModel,
+      messages: [
+        { role: "system", content: BRIEF_COMMENTARY_SYSTEM },
+        {
+          role: "user",
+          content: buildBriefCommentaryUserMessage(userQuestion, tableMd, {
+            engineeringContext: buildEngineeringContextFromPayload(payload),
+          }),
+        },
+      ],
+      max_tokens: 1024,
+    },
+    agentConfig,
+    (chunk) => {
+      if (chunk.type === "delta") commFilter.push(chunk.text);
+      if (chunk.type === "error") streamError = chunk.message;
+    }
+  );
+  commFilter.finalize();
+  const commentary = commFilter.cleanText.trim();
+
+  let commentaryOrFallback: string;
+  if (commentary) {
+    commentaryOrFallback = commentary;
+  } else {
+    commentaryOrFallback = streamError
+      ? `*（解读生成失败：${cleanStreamErrorMessage(streamError)}；以上实测数据表为准。）*`
+      : `*（模型未返回解读；以上实测数据表为准。）*`;
+    emit({ type: "text", delta: commentaryOrFallback });
+  }
+
+  const full =
+    tablesBlock +
+    `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n` +
+    commentaryOrFallback;
+  appendMessages(sessionId, { role: "assistant", content: full });
+  emit({ type: "done" });
+  return true;
 }
 
 /**
@@ -1545,7 +1754,8 @@ const SUMMARIZE_NUDGE =
   "- 禁止合并 pass1/3/5 的 die 成「整体良率」——各 pass 独立报告\n" +
   "- **禁止编造机台名称**：专业建议中的 TESTERID（如 b3uflexXX、b3ps16XX）只能来自工具返回的 `testerIdMarkdown`/`testerByLot`/`testerId` 字段；若工具未返回具体机台，写「测试机见上方机台表」，绝不凭空捏造 ID\n" +
   "**聚集性坏 bin**：工具 JSON 含 clusteredBadBinAlerts 或有警示表时，数据解读**首句必须**点明 BIN、waferId 范围与类型，禁止只报 lot 合计。\n" +
-  "**良率**：只引用 slotYieldPivotMarkdown / slotYieldInterruptMarkdown / slotYieldSummary[].yieldPct；禁止用坏 die 颗数代替良率%；禁止写常温/高温/低温（用 pass1/3/5）。";
+  "**良率**：只引用 slotYieldPivotMarkdown / slotYieldInterruptMarkdown / slotYieldSummary[].yieldPct；禁止用坏 die 颗数代替良率%；禁止写常温/高温/低温（用 pass1/3/5）。\n" +
+  "**图表**：工具返回数据含 ≥4 个 BIN/DUT/lot 等对比项时，在结论文字**之后**调用 generate_chart 生成 bar 图；逐片趋势（slot 序列）用 line 图；仅此一次，已有图则不重复。";
 
 // ─── 双源 / 通用结构化总结追加提示词 ──────────────────────────────────────────
 
@@ -1844,6 +2054,61 @@ export async function runAgentLoop(
     }
 
     if (awaitingSummary && !waferPlan.skipJbDeterministicSummary) {
+      // ── General pending query mechanism ──────────────────────────────────
+      // When a two-step query reaches the summary round without its second tool
+      // call having been executed (because the summary round blocks tool calls),
+      // the registry detects the gap and executes the follow-up tool here.
+      // We then `continue` so the next iteration has complete data for a proper
+      // LLM summary — rather than an incomplete "I'll query later" response.
+      const lastTool = lastToolMessage(getHistory(sessionId));
+      if (lastTool) {
+        const jbPayload = resolveJbToolPayload(sessionId, String(lastTool.content ?? ""));
+        const pending = detectPendingQuery(
+          userQuestion,
+          lastTool.name ?? "",
+          jbPayload ?? {}
+        );
+        if (pending) {
+          emit({ type: "status", message: pending.statusLabel });
+          emit({ type: "tool_start", name: pending.toolName, args: pending.args });
+          try {
+            const toolResult = await runTool(pending.toolName, pending.args, {
+              toolResultMaxChars: agentConfig.toolResultMaxChars,
+              history: getHistory(sessionId),
+            });
+            const rawContent =
+              typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult);
+            emit({
+              type: "tool_result",
+              name: pending.toolName,
+              summary: rawContent.slice(0, 200),
+            });
+            appendMessages(sessionId, {
+              role: "tool",
+              name: pending.toolName,
+              tool_call_id: `pending_${Date.now()}`,
+              content: rawContent.slice(0, agentConfig.toolResultMaxChars),
+            });
+            // History now has complete data; loop back so the next round
+            // (still a summary round) has everything needed for a full answer.
+            continue;
+          } catch {
+            // Pending query failed — fall through to deterministic routes / LLM summary
+          }
+        }
+      }
+
+      // ── Specialised deterministic routes (formatted output + LLM commentary) ──
+      // DUT×BIN 自动聚合路由：用户问"哪个 DUT 的 BIN X 最多"，query_jb_bins 已得到
+      // device/lot，自动调 query_lot_dut_bin_agg，避免 LLM 在总结轮承诺查询却无法执行。
+      const dutBinHandled = await tryRunDutBinAggAutoRoute(
+        sessionId,
+        userQuestion,
+        agentConfig,
+        emit
+      );
+      if (dutBinHandled) return;
+
       const handled = await tryRunDeterministicJbSummary(
         sessionId,
         userQuestion,
@@ -1856,7 +2121,9 @@ export async function runAgentLoop(
     // Inject nudge into the system prompt for the summary round — avoid a
     // trailing system message after tool turns, which is non-standard and can
     // cause empty responses on some providers (SiliconFlow/DeepSeek).
-    const basePrompt = buildSystemPrompt(manifest) + feedbackInjection;
+    const firstUserMsg = history.find((m) => m.role === "user")?.content ?? undefined;
+    const intent = classifyIntent(userQuestion, firstUserMsg);
+    const basePrompt = buildSystemPrompt(manifest, intent) + feedbackInjection;
     const waferJbNudge =
       !awaitingSummary && waferPlan.action.kind === "need_jb_lookup"
         ? `\n\n${WAFER_MAP_JB_LOOKUP_NUDGE}`

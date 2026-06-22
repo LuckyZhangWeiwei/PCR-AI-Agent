@@ -3,7 +3,9 @@
 // System prompt for the NXP ATTJ WaferTest AI agent.
 //
 // EDIT GUIDE — find the const whose name matches the section you want to change,
-//              then edit it in isolation. Do NOT touch buildSystemPrompt() ordering.
+//              then edit it in isolation. Section ordering inside buildSystemPrompt()
+//              is preserved; classifyIntent() controls which sections are injected
+//              per-turn based on the user's inferred intent.
 //
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  Section map (each → one named const below)                             ║
@@ -218,7 +220,7 @@ const SEC_DECISION = `\
    → 用户给了完整 device + "总体查一下"/"都查"/"概况"时，直接用默认参数查询，无需确认
    → 必须询问时合并为一次问题，禁止多轮追问
    → **禁止声称「这是我们之间的第一条消息」或「我没有找到之前的对话内容」**：即使对话历史因时间过长被压缩，也不得否认历史的存在；若上下文确实不足，应说「我当前无法访问之前的对话记录，请告知您在查看哪个批次/waferId 的数据」；用户说「为什么不生成 XXX」「刚才的 XXX 呢」时，说明之前有交互——应承认上下文可能丢失，禁止声称"无历史记录"
-   → **ask_clarification 选项回复（高频错误，禁止对调）**：若上一轮调用了 `ask_clarification` 并列出了编号选项（1/2/3…），用户回复单个数字（如 "1"）时，**必须将其理解为选项序号**，即用户选择了第 1 个选项所描述的条件；**禁止**将该数字误读为 passId、waferId、slot、lot 尾号等参数值。典型错误：选项1=pass3，用户回复"1" → 错误：「确认您要查 pass1」；正确：「按选项1执行，查 pass3（passId=3）」。
+   → **ask_clarification 选项回复（高频错误，禁止对调）**：若上一轮调用了 \`ask_clarification\` 并列出了编号选项（1/2/3…），用户回复单个数字（如 "1"）时，**必须将其理解为选项序号**，即用户选择了第 1 个选项所描述的条件；**禁止**将该数字误读为 passId、waferId、slot、lot 尾号等参数值。典型错误：选项1=pass3，用户回复"1" → 错误：「确认您要查 pass1」；正确：「按选项1执行，查 pass3（passId=3）」。
 
 2. **规划其次** — 仅当请求需要**跨多个不同 device/lot/cardId 的对比**且用户未明确说全查，才输出计划等确认
    → 触发条件示例：「对比 WA00P21K 和 WA00P23N 所有批次，找出坏 bin 差异最大的探针卡」
@@ -472,7 +474,8 @@ const SEC_MASK = `\
     1. 调 \`get_filter_values(domain:"both", field:"device", filterBy:{mask:"N06Z"}, limit:10)\` 取候选列表
     2. 若 \`totalDistinct === 1\`：直接使用该 device，通过 \`ask_clarification\` 仅询问时间范围/批次号
     3. 若 \`totalDistinct > 1\`：调 \`ask_clarification(question:"请选择要查询的完整 device 代码", options: devices[].device)\`，前端渲染为按钮；用户选定后，下一轮若时间范围仍未给出，再询问
-    4. 若 \`totalDistinct === 0\`：**不要立即报告"未找到"**；先用 \`query_yield_triggers(mask:"N06Z", limit:20)\` / \`query_jb_bins(mask:"N06Z", limit:20)\` 做历史全量验证（不加时间过滤）；若直查找到 device，按步骤 2/3 处理（1 个 → 直接询问时间范围；多个 → 列出候选供用户选）；若直查仍为空，再 \`ask_clarification\` 告知未找到匹配 device，请用户提供完整代码
+    4. 若 \`totalDistinct === 0\`：**不要立即报告"未找到"**；先用 \`query_yield_triggers(mask:"N06Z", limit:20)\` / \`query_jb_bins(mask:"N06Z", limit:20)\` 做历史全量验证（不加时间过滤）；若直查找到 device：1 个 → 按步骤 2 处理（询问时间范围）；**≥2 个 → 禁止直接展开 lot 分析**，必须调 \`ask_clarification(question:"请选择要查询的完整 device 代码", options: <去重 device 列表>)\` 供用户选定（同步骤 3）；若直查仍为空，再 \`ask_clarification\` 告知未找到匹配 device，请用户提供完整代码
+    ⚠️ **此步 limit:20 仅用于发现 device，禁止用返回的 rows 做批次完整性分析**：rows 可能只含最新 lot 的部分 slot；若工具返回 \`recentLotsByTestEnd\`，以其各条 \`slotCount\` 为准描述片数；**禁止**说"共 N 片 wafer"（N 来自可见 rows 行数而非 slotCount）。确认 device 后，宽泛问题须先询问时间范围或批次号再展开完整分析。
   - 禁止直接查询、禁止凭快照 top-10 猜测后直接下结论
 
 **情况 B — mask + 定向条件**（用户同时给出了 lot 号 / cardId / 具体 BIN 编号之一，或询问"最近 N 周/月"的测试情况）：
@@ -480,7 +483,9 @@ const SEC_MASK = `\
      - \`get_filter_values(domain:"both", field:"device", filterBy:{mask:"N06Z"}, limit:10)\`（mask 也可放顶层）
   2. 若返回 \`totalDistinct > 1\`：调 \`ask_clarification(question:"请选择要查询的完整 device 代码", options: devices[].device)\`，前端渲染为按钮供用户点选（时间范围/批次号由定向条件已覆盖，无需再问）
   3. 若 \`totalDistinct > 1\`，后续查询**必须**用 \`mask="N06Z"\`（query_yield_triggers / query_jb_bins），或**分别查每个 device**；禁止只取列表第一个 device 就下结论
-  4. 若返回空，改用 \`query_yield_triggers(mask:"N06Z", timeFrom, timeTo)\` / \`query_jb_bins(mask:"N06Z", testEndFrom, testEndTo)\` 直接按 mask 查询（**禁止**用 \`aggregate_jb_bins\` / \`aggregate_yield_triggers\` 做 mask 发现——aggregate 工具要求完整 device，传 mask 无效或报错）；找到数据后若涉及 **≥2 个不同 device**（如 WC06N84R 和 WC07N84R），**必须先列出全部 device（含域和最近 TESTEND）并询问用户要重点分析哪个**，禁止直接跳入某个 lot 的逐片详情
+  4. 若返回空，改用 \`query_yield_triggers(mask:"N06Z", timeFrom, timeTo)\` / \`query_jb_bins(mask:"N06Z", testEndFrom, testEndTo)\` 直接按 mask 查询（**禁止**用 \`aggregate_jb_bins\` / \`aggregate_yield_triggers\` 做 mask 发现——aggregate 工具要求完整 device，传 mask 无效或报错）；找到数据后：
+     - 若涉及 **≥2 个不同 device**（如 WC06N84R 和 WC07N84R），**必须先列出全部 device（含域和最近 TESTEND）并询问用户要重点分析哪个**，禁止直接跳入某个 lot 的逐片详情
+     - 即使只有 **1 个 device**，也**必须先以 \`recentLotsByTestEnd\` 为依据，按 TESTEND 降序列出该时间段内所有 lot 的汇总表**（lot、testEnd、片数、探针卡、各 pass 良率%），再视用户需求展开单 lot 细节；**禁止**仅因 rows 中只出现一个 lot 就认为"时间段内只测了该 lot"（rows 可能因 limit 截断而未包含全部 lot）
   5. 若仍为空，则用 \`ask_clarification\` 告知用户未找到对应 device，请提供完整代码
   6. 结论中列出 \`devices[]\` 中的**全部** device（含各域最近日期），注明"即 mask=N06Z 的产品"
   7. 禁止因单域无数据就报告"完全没有测试记录"——须先查 domain=both 或两域 mask 直查
@@ -1049,27 +1054,34 @@ const SEC_FILTER_VALUES = `\
 // 何时提示图表，何时禁止，用户确认后才调 generate_chart
 
 const SEC_CHART_RULES = `\
-## 图表提示规则（严格执行）
+## 图表生成规则（严格执行）
 
-**只在以下情况末尾提示是否需要图表：**
-- 聚合结果有 **≥ 4 个组**，且数值差异明显（适合对比）
-- 时序数据（timeDay 维度），适合看趋势
-- 用户明确提到"趋势"、"变化"、"分布"
+**以下情况直接调用 generate_chart，无需用户确认：**
+- **对比场景**：数据中出现以下任一横向对比，图表比表格更直观——直接生成 bar 图：
+  - ≥2 个 lot / device / cardId / DUT 的同一指标（BIN 颗数、良率%、触发次数等）
+  - 同一 lot 内 **pass 之间**（pass1 vs pass3）的良率或 BIN 颗数对比
+  - 同一 lot 内 **不同 wafer（slot）之间**的 BIN 颗数或良率对比（≥4 片）
+  - 示例：「各 lot 的 BIN10 颗数」「pass1 和 pass3 良率对比」「1–10 片 BIN73 各片颗数」「两张卡的良率对比」
+- **逐片趋势**：展示某 BIN 在 ≥6 个 slot 上的颗数变化，且趋势明显（持续上升/下降/突增）——在文字表格后附 line 图
+- **DUT 分布**：\`query_inf_site_bin_by_dut\` / \`query_lot_dut_bin_agg\` 结果含 ≥4 个 DUT 且差异明显——生成 bar 图展示各 DUT 颗数
 
-**以下情况绝对不提示图表：**
-- 结果只有 1~3 个数据点（文字更清晰）
+**只在回复末尾提示是否需要图表（不主动生成）：**
+- 聚合结果有 ≥4 个组，但不属于上述对比/趋势/DUT 分布场景
+- 用户提到「趋势」「变化」「分布」但数据点不足以判断
+
+**以下情况绝对不生成也不提示图表：**
+- 结果只有 1~3 个数据点
 - 用户在追问某个细节（"那张卡呢"/"DUT 3 是什么情况"）
 - 查询结果为空
-- 刚刚在上一轮已经提示过
+- 上一轮已经生成或提示过
+- 用户要求 BIN×DUT 交叉表（必须输出 markdown 表格，禁止用图表代替）
 
 ❌ 禁止：每次回复末尾都加"如需图表请告诉我"
-✅ 正确：只在数据真正适合可视化时才提示一次
-
-**用户确认后才调用 generate_chart**：确认词包括"要图"/"生成"/"可视化"/"好的"/"yes"
+✅ 正确：符合"直接生成"条件时立即调 generate_chart，其余最多提示一次
 
 **用户直接要求图表时必须重新生成**：用户明确说「画图」「给我图表」「yield 对比图」「by slot 图」等时，即使该图表在当前对话中已经生成过，**也必须重新调用 \`generate_chart\`**；禁止回复「图表已在上方生成，请查看」。用户重复请求意味着图表可能未渲染或不可见，重新生成是唯一正确响应。
 
-图表类型参考：bar 适合计数对比，line 适合时序趋势，pie 适合占比`;
+图表类型参考：bar 适合计数对比，line 适合时序趋势，pie 适合占比（DUT/BIN 分布）`;
 
 // ─── SEC_COMMON_ERRORS ─────────────────────────────────────────────────────
 // 四类高频错误（DeepSeek-V4-Pro 最常犯）
@@ -1096,14 +1108,14 @@ const SEC_COMMON_ERRORS = `\
 ✅ "⚠ waferId 15→16 BIN7 突增 12→89 颗（连续聚集），lot 合计 320 颗中约 55% 集中在 waferId 14–18；建议查 INF DUT map 确认接触区域。"
 
 **【错误 E】工具输出被截断时作出不可验证的结论（禁止）—— 双向错误**
-❌ **方向1（无中生有→无数据）**：工具 JSON 末尾含 `...` 或字段被截断 → 直接写"BIN126 无测试数据，无法分析"
+❌ **方向1（无中生有→无数据）**：工具 JSON 末尾含 \`...\` 或字段被截断 → 直接写"BIN126 无测试数据，无法分析"
 ❌ **方向2（无中生有→编造数值）**：工具 JSON 被截断，DUT 明细根本未出现在可见输出中 → 结论写"BIN8 集中在 DUT13 共 68 die，BIN126 集中在 DUT20 共 64 die"（这些数字来自截断的不可见部分，属于幻觉）
-✅ 截断时正确处理：套用标准模板句「工具结果已截断（可见内容止于 `xxx` 字段），DUT 级明细不完整；如需精确分布，请追问「单独分析 BIN8 的 DUT 分布」」；只基于可见内容描述，禁止用截断部分不可见的 DUT 编号、die 数、BIN 计数做具体结论
+✅ 截断时正确处理：套用标准模板句「工具结果已截断（可见内容止于 \`xxx\` 字段），DUT 级明细不完整；如需精确分布，请追问「单独分析 BIN8 的 DUT 分布」」；只基于可见内容描述，禁止用截断部分不可见的 DUT 编号、die 数、BIN 计数做具体结论
 规则：只要工具 JSON 输出不完整（末尾省略、字段被截），**既不能说"无数据"，也不能引用截断部分未显示的具体数值**；只能基于可见内容进行描述
 
 **【错误 F】专业建议中编造机台名称 / 卡号（禁止幻觉）**
 ❌ 专业建议写"b3uflex23 该段测试程序稳定性…" — "b3uflex23" 未出现在工具结果中，属于凭空编造
-✅ 机台名称只能引用工具结果中实际出现的 `TESTERID`（如 `testerIdMarkdown` / `testerByLot`）；若工具未返回具体机台 ID，写"使用的测试机（见上方机台表）"，绝不捏造具体 ID
+✅ 机台名称只能引用工具结果中实际出现的 \`TESTERID\`（如 \`testerIdMarkdown\` / \`testerByLot\`）；若工具未返回具体机台 ID，写"使用的测试机（见上方机台表）"，绝不捏造具体 ID
 
 **【错误 G】结论声称时间范围但工具未传时间参数（禁止时间幻觉）**
 ❌ 调用 \`query_yield_triggers(mask:"N84R")\` 未传 timeFrom/timeTo → 结论写"近一个月的测试记录显示…"
@@ -1119,34 +1131,111 @@ const SEC_FORMAT_LIMITS = `\
 - **严禁**在回复中使用 Markdown 图片语法 \`![...](url)\`，图片无法在界面显示
 - 图表只能通过 generate_chart 工具生成，不要用文字图片替代`;
 
+// ─── intent classification ──────────────────────────────────────────────────
+
+/**
+ * Intent inferred from the user message. Controls which prompt sections are
+ * injected this turn — sections irrelevant to the intent are omitted to keep
+ * the prompt lean and improve model compliance on the sections that remain.
+ *
+ * - lot_bin      : analyzing a specific lot's bin / yield / slot data
+ * - dut_analysis : which DUT has the most BIN X / DUT distribution focus
+ * - mask_query   : device discovery by 4-char mask token (e.g. "N84R")
+ * - card_probe   : probe-card health / Yield Monitor trigger queries
+ * - wafer_map    : wafer map / cluster / die-distribution view
+ * - general      : fallback — core sections only (lean prompt for ambiguous queries)
+ */
+export type PromptIntent =
+  | "lot_bin"
+  | "dut_analysis"
+  | "mask_query"
+  | "card_probe"
+  | "wafer_map"
+  | "general";
+
+/**
+ * Classify the user's intent from the current message (and optional first
+ * session message for follow-up context). Returns "general" when uncertain.
+ */
+export function classifyIntent(userQuestion: string, historyFirst?: string): PromptIntent {
+  const raw = userQuestion.trim();
+  const q = raw.toLowerCase();
+
+  // Short follow-ups ("1", "好的", "继续", "是" — ≤6 chars) inherit the intent
+  // from the original question that started this session.
+  if (raw.length <= 6 && historyFirst && historyFirst !== raw) {
+    return classifyIntent(historyFirst);
+  }
+
+  // Wafer map / cluster / die distribution (highest priority)
+  if (/晶圆图|wafer\s*map|cluster|聚集|die\s*(坐标|分布)|inf_draw/.test(q)) return "wafer_map";
+
+  // Probe-card health / Yield Monitor trigger queries
+  if (/探针卡|probe\s*card|哪张卡|卡号|最差.*(卡|card)|报警最多|yield\s*monitor|触发次数|ym触发|dut.*不均/.test(q)) return "card_probe";
+
+  // DUT-level analysis: "哪个DUT的BIN8最多", "BIN8集中在哪些DUT", "各DUT分布"
+  // Must have both a DUT/site keyword AND a BIN/fail keyword
+  if (
+    /(?:dut|触点|site)\d*\s*.*(?:bin\d+|fail|坏)|(?:bin\d+|fail|坏).*(?:dut|触点|site)|各\s*dut|dut\s*分布|哪个\s*dut|哪些\s*dut/i.test(q)
+  ) {
+    // Require either a lot ID or a bin number — otherwise too ambiguous
+    if (/\b[A-Z]{2}\d{5}\.\d[A-Z]\b/.test(raw) || /\bbin\s*\d+/i.test(q)) {
+      return "dut_analysis";
+    }
+  }
+
+  // Lot ID present (XX12345.1X) → lot + bin analysis
+  if (/\b[A-Z]{2}\d{5}\.\d[A-Z]\b/.test(raw)) return "lot_bin";
+
+  // Standalone 4-char mask token (N84R, P02G…) without a lot ID
+  // Exclude BINxx names and tokens embedded in longer identifiers
+  if (/(?<!\w)(?!BIN\d)[A-Z][A-Z0-9]{3}(?!\w)/.test(raw)) return "mask_query";
+
+  // Generic lot/bin keywords without a specific lot ID
+  if (/\blot\b|批次|bin\d+|坏.?bin|良率分析|yield.*分析/.test(q)) return "lot_bin";
+
+  return "general";
+}
+
 // ─── assembler ─────────────────────────────────────────────────────────────
 
-export function buildSystemPrompt(manifest?: DataManifest): string {
+export function buildSystemPrompt(manifest?: DataManifest, intent: PromptIntent = "general"): string {
   const today = new Date().toISOString().slice(0, 10);
+
+  // is() returns true when intent matches any listed value, or when intent is "general"
+  // (the safe fallback that includes every section — covers queries that don't cleanly
+  // match a specific intent, e.g. "WA03P02G 的情况" or "最近良率最差的批次").
+  const is = (...intents: PromptIntent[]) => intent === "general" || intents.includes(intent);
+
   return [
+    // ── always-on ──────────────────────────────────────────────────────────
     buildHeader(manifest, today),
     SEC_TERMS_AND_TOOLS,
     SEC_ROUTING,
-    SEC_YIELD_TRIGGERS,
+    // ── intent-gated ───────────────────────────────────────────────────────
+    is("lot_bin", "dut_analysis", "card_probe", "mask_query") && SEC_YIELD_TRIGGERS,
     SEC_DECISION,
     SEC_TWO_TABLES,
-    SEC_BAD_BIN,
+    is("lot_bin", "dut_analysis", "mask_query", "wafer_map", "card_probe") && SEC_BAD_BIN,
     SEC_DATA_RULES,
     SEC_LOT_ID,
-    SEC_MASK,
+    is("lot_bin", "dut_analysis", "mask_query")               && SEC_MASK,
     SEC_DOMAIN,
-    SEC_WAFER_ENUM,
-    SEC_WORST_CARD,
-    SEC_CARD_LOTS,
-    SEC_BIN_COMPARE,
-    SEC_CROSS_DOMAIN_INSIGHTS,
-    SEC_BIN_BY_SLOT,
-    SEC_ENG_TIPS,
+    is("lot_bin", "wafer_map")                                && SEC_WAFER_ENUM,
+    // Card comparison: card_probe + lot_bin (lot analysis often needs cross-card ranking)
+    is("lot_bin", "card_probe")                               && SEC_WORST_CARD,
+    is("lot_bin", "card_probe")                               && SEC_CARD_LOTS,
+    // Cross-lot bin comparison: lot_bin + dut_analysis (fixed: was "general"-only, now also lot_bin)
+    is("lot_bin", "dut_analysis")                             && SEC_BIN_COMPARE,
+    is("lot_bin", "card_probe")                               && SEC_CROSS_DOMAIN_INSIGHTS,
+    is("lot_bin", "dut_analysis", "wafer_map")                && SEC_BIN_BY_SLOT,
+    is("lot_bin", "dut_analysis", "mask_query", "card_probe") && SEC_ENG_TIPS,
+    // ── always-on ──────────────────────────────────────────────────────────
     SEC_OUTPUT_FORMAT,
     SEC_QUALITY,
-    SEC_FILTER_VALUES,
+    is("mask_query", "card_probe")                            && SEC_FILTER_VALUES,
     SEC_CHART_RULES,
     SEC_COMMON_ERRORS,
     SEC_FORMAT_LIMITS,
-  ].join("\n\n");
+  ].filter(Boolean).join("\n\n");
 }

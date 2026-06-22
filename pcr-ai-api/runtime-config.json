@@ -8,5 +8,6 @@
   "toolResultMaxChars": 20000,
   "toolResultMaxHistoryChars": 8000,
   "listDefaultLimit": 2000,
-  "listMaxLimit": 2000
+  "listMaxLimit": 2000,
+  "agentSubModel": "deepseek-ai/DeepSeek-V4-Flash"
 }

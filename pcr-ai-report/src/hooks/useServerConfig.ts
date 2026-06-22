@@ -4,7 +4,7 @@ export interface ServerConfig {
   agentEnabled: boolean;
   agentApiBase: string;
   agentModel: string;
-  /** 子任务模型（历史压缩 + 表解读）。空字符串 = 与 agentModel 相同。 */
+  /** 子任务模型（历史压缩 + 表解读）。默认 DeepSeek-V4-Flash。 */
   agentSubModel: string;
   maxRounds: number;
   streamTimeoutSec: number;
@@ -19,7 +19,7 @@ export const SERVER_CONFIG_DEFAULTS: ServerConfig = {
   agentEnabled: true,
   agentApiBase: "https://api.siliconflow.cn/v1",
   agentModel: "deepseek-ai/DeepSeek-V4-Pro",
-  agentSubModel: "",
+  agentSubModel: "deepseek-ai/DeepSeek-V4-Flash",
   maxRounds: 8,
   streamTimeoutSec: 150,
   clientTimeoutSec: 240,

@@ -271,7 +271,7 @@ export const INF_TOOL_SCHEMAS = [
           },
           highlight: {
             type: "string",
-            description: "高亮模式：'edge'（边缘 die 金色描边）| 'bin:N'（指定 bin 黄色描边，标出 BIN98 时用 bin:98）| 不填=无",
+            description: "高亮模式：'edge'（边缘 die 金色描边）| 'bin:N'（指定单 bin 黄色描边）| 'bin:N,M'（多 bin 同时高亮，如同时标出 BIN7 与 BIN8 用 'bin:7,8'）| 不填=无",
           },
           bin: {
             type: "number",
