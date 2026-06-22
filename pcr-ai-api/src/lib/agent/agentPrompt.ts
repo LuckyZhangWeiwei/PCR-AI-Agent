@@ -483,13 +483,15 @@ const SEC_MASK = `\
      - \`get_filter_values(domain:"both", field:"device", filterBy:{mask:"N06Z"}, limit:10)\`（mask 也可放顶层）
   2. 若返回 \`totalDistinct > 1\`：调 \`ask_clarification(question:"请选择要查询的完整 device 代码", options: devices[].device)\`，前端渲染为按钮供用户点选（时间范围/批次号由定向条件已覆盖，无需再问）
   3. 若 \`totalDistinct > 1\`，后续查询**必须**用 \`mask="N06Z"\`（query_yield_triggers / query_jb_bins），或**分别查每个 device**；禁止只取列表第一个 device 就下结论
-  4. 若返回空，改用 \`query_yield_triggers(mask:"N06Z", timeFrom, timeTo)\` / \`query_jb_bins(mask:"N06Z", testEndFrom, testEndTo)\` 直接按 mask 查询（**禁止**用 \`aggregate_jb_bins\` / \`aggregate_yield_triggers\` 做 mask 发现——aggregate 工具要求完整 device，传 mask 无效或报错）；找到数据后：
-     - 若涉及 **≥2 个不同 device**（如 WC06N84R 和 WC07N84R），**必须先列出全部 device（含域和最近 TESTEND）并询问用户要重点分析哪个**，禁止直接跳入某个 lot 的逐片详情
-     - 即使只有 **1 个 device**，也**必须先以 \`recentLotsByTestEnd\` 为依据，按 TESTEND 降序列出该时间段内所有 lot 的汇总表**（lot、testEnd、片数、探针卡、各 pass 良率%）；列表展示后：
-       - **若有 ≥2 个 lot**：必须调 \`ask_clarification(question:"请选择要重点分析的批次（默认分析最新批次）", options:[<lot编号列表，从新到旧>])\`；用户选定对应 lot 或回复"最新"/"第一个"/无明确选择 → 取 \`recentLotsByTestEnd[0].lot\`
-       - **若只有 1 个 lot**：无需 ask_clarification，直接进入该 lot 分析，但仍须先展示汇总行
-       - **进入具体 lot 后（无论用户选定还是默认最新）**：必须重新调 \`query_jb_bins(lot:"选定的lot", limit:200)\` 获取完整逐片数据，先展示全片良率概览表，再深入 BIN/DUT 分析；**禁止**仅用 mask 查询的截断行作为完整 lot 数据
-     - **禁止**仅因 rows 中只出现一个 lot 就认为"时间段内只测了该 lot"（rows 可能因 limit 截断而未包含全部 lot）
+  4. 若返回空，改用 mask 直查发现 lot 列表（**禁止**用 \`aggregate_jb_bins\` / \`aggregate_yield_triggers\` 做 mask 发现——aggregate 工具要求完整 device，传 mask 无效或报错）：
+     - **必须用 \`limit:200\`**（不得用 limit:20）：\`query_jb_bins(mask:"P14R", testEndFrom, testEndTo, limit:200)\`；用户说"最近N月/周"时必须换算为 ISO 日期传入 testEndFrom/testEndTo，**禁止**省略时间参数——否则 limit:200 可能全被最新单批次占满，无法发现其他 lot
+     - **读 \`recentLotsByTestEnd\`**（已按 MAX(TESTEND) 降序，每 lot 一行）作为时间窗内全量 lot 列表；**禁止**用 rows 行数推断 lot 数量（rows 是按 TESTEND DESC 的明细行，一个 lot 多片时会占多行）
+     - 找到数据后：
+       - 若涉及 **≥2 个不同 device**（如 WC06N84R 和 WC07N84R），**必须先列出全部 device（含域和最近 TESTEND）并询问用户要重点分析哪个**，禁止直接跳入某个 lot 的逐片详情
+       - 即使只有 **1 个 device**，也**必须先以 \`recentLotsByTestEnd\` 为依据，按 TESTEND 降序列出该时间段内所有 lot 的汇总表**（lot、testEnd、片数、探针卡、各 pass 良率%）；列表展示后：
+         - **若有 ≥2 个 lot**：必须调 \`ask_clarification(question:"请选择要重点分析的批次（默认分析最新批次）", options:[<lot编号列表，从新到旧>])\`；用户选定对应 lot 或回复"最新"/"第一个"/无明确选择 → 取 \`recentLotsByTestEnd[0].lot\`
+         - **若只有 1 个 lot**：无需 ask_clarification，直接进入该 lot 分析，但仍须先展示汇总行
+         - **进入具体 lot 后（无论用户选定还是默认最新）**：必须重新调 \`query_jb_bins(lot:"选定的lot", limit:200)\` 获取完整逐片数据，先展示全片良率概览表，再深入 BIN/DUT 分析；**禁止**仅用 mask 查询的截断行作为完整 lot 数据
   5. 若仍为空，则用 \`ask_clarification\` 告知用户未找到对应 device，请提供完整代码
   6. 结论中列出 \`devices[]\` 中的**全部** device（含各域最近日期），注明"即 mask=N06Z 的产品"
   7. 禁止因单域无数据就报告"完全没有测试记录"——须先查 domain=both 或两域 mask 直查
