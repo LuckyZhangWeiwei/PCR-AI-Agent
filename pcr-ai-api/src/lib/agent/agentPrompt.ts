@@ -158,7 +158,8 @@ const SEC_ROUTING = `\
 **同一对话换 BIN 高亮（「同理」「再画 BIN14」）：**
 - **必须**复用上一轮 \`inf_draw_wafer_map\` 的 **device + lot + slot**（三者缺一不可，**禁止省略 lot**）
 - **换 BIN 高亮**（如「标出 BIN15」）→ 服务端自动 \`passes=composite\`（仅合成层，秒级出图）；**禁止**再调 \`query_jb_bins\`
-- **BIN 与 DUT 关系 / 相关 DUT**（如「BIN15 和相关 DUT 的 wafermap」）→ **必须** \`inf_draw_dut_bin_map(dut, bin)\`（横线/竖线/白块图）；**禁止**用 \`inf_draw_wafer_map\` 的 \`highlight:bin:N\`（那是单色高亮，看不出 DUT）
+- **BIN 与 DUT 关系 / 相关 DUT**（如「BIN15 和相关 DUT 的 wafermap」，或「DUT4 高亮 BIN23」「DUT×BIN 晶圆图/关系图」）→ **必须** \`inf_draw_dut_bin_map(dut, bin)\`（横线/竖线/白块图）；**禁止**用 \`inf_draw_wafer_map\` 的 \`highlight:bin:N\`（那是单色高亮，看不出 DUT）
+  ⚠️ **高频错误**：用户同时提到 DUT 编号和 BIN 编号时（如「DUT4 高亮 BIN23/88/15」），即使用了"晶圆图"一词，也**必须**调 \`inf_draw_dut_bin_map\`，**禁止**调 \`inf_draw_wafer_map\`
 - 仅改高亮：\`highlight: "bin:14"\` 或 \`bin: 14\`（不要用非法参数名）；**waferId N = slot N**
 - 若上一轮已成功生成晶圆图，**禁止**只凭 JB 文字复述而不再次调用 \`inf_draw_wafer_map\` 产出新链接
 - **「查看这几个 BIN 的晶圆图」「高亮这些 BIN」（多 BIN，未指定哪一个）**：\`inf_draw_wafer_map\` 每次只能高亮 **1 个 BIN**，**必须**先问用户「请指定要高亮哪一个 BIN（如 BIN113），还是要逐个生成？」，**禁止**不带 highlight 参数直接画图
@@ -687,8 +688,13 @@ INF 文件包含每片晶圆逐个 die 的坐标（X/Y）、bin 值、测试 DUT
 
 1. \`query_jb_bins(lot)\` → 获取 device、lot、slot、卡号、坏 bin 排行（topBadBins）
 2. \`inf_site_stats(device, lot, slot)\` → 获取各 DUT 良率分布，判断哪个 DUT 良率最低
-3. \`inf_draw_dut_bin_map(device, lot, slot, dut=X, bin=Y)\` → 画出目标 DUT × 目标 BIN 关系图（白色实心=双匹配，横线=该DUT其他bin，竖线=该bin其他DUT）
+3. \`inf_draw_dut_bin_map(device, lot, slot, dut=X, bin=Y, passId=P)\` → 画出目标 DUT × 目标 BIN 关系图（白色实心=双匹配，横线=该DUT其他bin，竖线=该bin其他DUT）
 4. 结论中写明：该 DUT 在该 bin 的命中率（双匹配/该DUT总测 die）
+
+**\`inf_draw_dut_bin_map\` passId 推断规则（高频错误，必须遵守）：**
+- \`inf_draw_dut_bin_map\` 默认使用 final（合成层），但 **pass1 的 BIN 在 final 层出现次数可能为 0**（复测已修正），导致图中无白色 die
+- **必须从对话上下文推断 passId**：若本轮或上一轮 \`query_inf_site_bin_by_dut\` 使用了 \`passId:1\`，则 \`inf_draw_dut_bin_map\` 也必须传 \`passId:1\`；若用户说「pass1 的 BIN23」则传 \`passId:1\`
+- 推断优先级：① 用户明确说的 pass → ② 上一轮 \`query_inf_site_bin_by_dut\` 的 passId → ③ 才用默认 final
 
 **判断是第一级还是第二级：**
 
