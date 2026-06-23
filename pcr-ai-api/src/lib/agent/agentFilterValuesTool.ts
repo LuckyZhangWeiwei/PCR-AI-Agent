@@ -32,6 +32,7 @@ interface FilterValuesResult {
   values: string[];
   totalDistinct: number;
   hint?: string;
+  suggestedSearchTerms?: string[];
   /** field=device + mask 时：跨域合并的完整 device 列表（含各域最近日期） */
   devices?: DeviceByMaskEntry[];
   note?: string;
@@ -238,6 +239,25 @@ function countDistinctWithSearchFallback(
     if (retry.totalDistinct > 0) return retry;
   }
   return first;
+}
+
+function enrichEmptyTesterSearchResult(
+  result: FilterValuesResult,
+  field: string,
+  search?: string
+): FilterValuesResult {
+  if (result.totalDistinct > 0 || !search?.trim()) return result;
+  if (field !== "hostname" && field !== "testerId") return result;
+  const suggestions = expandTesterSearchTerms(search).filter(
+    (t) => t.toUpperCase() !== search.trim().toUpperCase()
+  );
+  return {
+    ...result,
+    hint:
+      "filter 索引未命中不代表无机台/无 lot 数据；若用户句中已有 device+机台（如 b3uflex24），" +
+      "请直接 query_jb_bins(testerId) / query_yield_triggers(hostname)，禁止据此报告「未找到机台」。",
+    suggestedSearchTerms: suggestions.slice(0, 6),
+  };
 }
 
 async function oracleYieldWithSearchFallback(
@@ -772,7 +792,9 @@ export async function runGetFilterValues(
       const result = yieldMonitorTriggersUseDummy()
         ? dummyYield(field as YieldField, filterBy, deviceMaskLimit)
         : await oracleYieldWithSearchFallback(field as YieldField, filterBy, deviceMaskLimit);
-      return JSON.stringify(result);
+      return JSON.stringify(
+        enrichEmptyTesterSearchResult(result, field, filterBy["search"])
+      );
     } catch (err) {
       return `get_filter_values 错误: ${err instanceof Error ? err.message : String(err)}`;
     }
@@ -786,7 +808,9 @@ export async function runGetFilterValues(
       const result = infcontrolLayerBinsUseDummy()
         ? dummyJb(field as JbField, filterBy, deviceMaskLimit)
         : await oracleJbWithSearchFallback(field as JbField, filterBy, deviceMaskLimit);
-      return JSON.stringify(result);
+      return JSON.stringify(
+        enrichEmptyTesterSearchResult(result, field, filterBy["search"])
+      );
     } catch (err) {
       return `get_filter_values 错误: ${err instanceof Error ? err.message : String(err)}`;
     }

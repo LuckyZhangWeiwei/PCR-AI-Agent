@@ -28,8 +28,13 @@
 
 ## 2. 架构（总结轮）
 
+**首轮直连（2026-06-23 补充）：** 用户句中已有 `device` + `b3uflex24` 等机台时，`tryRunLotListingDirectRoute` 在 **首轮 LLM 之前** 执行 `query_jb_bins` + lot 表，**不依赖** LLM 是否先调 `get_filter_values`。若 LLM 仍先调了空的 `get_filter_values`，总结轮 `lotListingNeedsJbRecovery` 同样走直连。
+
 ```mermaid
 flowchart TD
+  U[user_turn lot 列表 + device/机台] --> D[tryRunLotListingDirectRoute]
+  D --> Q[query_jb_bins]
+  Q --> T[buildRecentLotsListingMarkdown]
   A[history 末条 role=tool] --> B{detectPendingQuery}
   B -->|YM 且需 lot 列表/测试情况| C[自动 query_jb_bins]
   C --> A
@@ -49,8 +54,9 @@ flowchart TD
 | **YM  enrichment** | `extractYmAlarmCountByLot` / `extractYmSuspectDutsByLot` | 从 `aggregate_yield_triggers` groups + `query_yield_triggers` rows（`TRIGGER_LABEL` 中 `dut#`） |
 | **JB fail bin** | `extractTopFailBinByLot` | `binTotalsByLot`（session cache）+ history 中 `aggregate_jb_bins` groups |
 | **Pending 补查** | `agentPendingQuery.ts` | YM 后 → `query_jb_bins`；JB 后 + 明细 → `aggregate_jb_bins(groupBy: lot,bin)` |
-| **Scope 推断** | `agentQueryScope.ts` | `inferTesterIdFromText`（UFLEX 24→b3uflex24）、`buildJbScopeArgs`（读上轮 tool args） |
-| **机台 search** | `agentFilterValuesTool.ts` | `expandTesterSearchTerms` + Oracle/Dummy retry |
+| **Scope 推断** | `agentQueryScope.ts` | `inferTesterIdFromText`、`buildLotListingQueryArgs` |
+| **首轮直连** | `agentJbLotListingRoute.ts` + `tryRunLotListingDirectRoute` | 跳过 LLM；`get_filter_values` 空结果不阻断 |
+| **机台 search** | `agentFilterValuesTool.ts` | `expandTesterSearchTerms` + 空结果 hint |
 | **多批次 aggregate** | `agentLoop.ts` `buildMultiLotBinTable` | `aggregate_jb_bins(groupBy:lot)` ≥2 lot 时直出跨批次 BIN 对比表（commit `6d4bdd6`） |
 
 **入口：** `agentLoop.ts` → 总结轮 `detectPendingQuery` → `tryRunDeterministicJbSummary` → `emitDeterministicJbTablesReply`。
@@ -131,7 +137,8 @@ npx tsx --test test/agentJbDeterministicReply.test.ts test/agentQueryScope.test.
 | 文件 | 变更 |
 | --- | --- |
 | `src/lib/agent/agentJbDeterministicReply.ts` | `lot_listing` 模式、列表/enrichment 函数 |
-| `src/lib/agent/agentLoop.ts` | pending history 传参、`buildLotListingContext` |
+| `src/lib/agent/agentJbLotListingRoute.ts` | **新增** canRun / recovery 判定 |
+| `src/lib/agent/agentLoop.ts` | `tryRunLotListingDirectRoute` |
 | `src/lib/agent/agentPendingQuery.ts` | YM→JB、JB→aggregate pending |
 | `src/lib/agent/agentQueryScope.ts` | **新增** scope 推断 |
 | `src/lib/agent/agentFilterValuesTool.ts` | 机台 search fallback |

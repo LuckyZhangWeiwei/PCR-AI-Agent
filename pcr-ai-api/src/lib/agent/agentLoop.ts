@@ -38,6 +38,7 @@ import {
   extractYmLotsFromHistory,
   isLotListingQuestion,
   isLotOverviewQuestion,
+  isLotDetailListingQuestion,
   buildLotListingContext,
   isPerSlotBadBinRankingQuestion,
   isProbeCardQuestion,
@@ -53,6 +54,12 @@ import {
   LOT_OVERVIEW_JB_NUDGE,
   lotOverviewNeedsJbRecovery,
 } from "./agentJbOverviewRoute.js";
+import {
+  canRunLotListingDirectRoute,
+  lotListingAggregateArgsFromUser,
+  lotListingNeedsJbRecovery,
+  lotListingQueryArgsFromUser,
+} from "./agentJbLotListingRoute.js";
 import {
   buildInfDrawArgsAfterJbLookup,
   extractLotFromUserText,
@@ -1162,6 +1169,116 @@ async function tryRunLotOverviewDirectRoute(
   );
 }
 
+/**
+ * 「WA01P14E 在 b3uflex24 近 3 个月所有 lot 列出来」：直连 query_jb_bins + lot 表，
+ * 不经过首轮 LLM（避免 get_filter_values 空结果后误判无机台）。
+ */
+async function tryRunLotListingDirectRoute(
+  sessionId: string,
+  userQuestion: string,
+  agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void
+): Promise<boolean> {
+  if (!canRunLotListingDirectRoute(userQuestion)) return false;
+
+  const queryArgs = lotListingQueryArgsFromUser(userQuestion, getHistory(sessionId));
+  if (!queryArgs) return false;
+
+  emit({ type: "status", message: "正在查询 JB STAR lot 列表…" });
+  emit({ type: "tool_start", name: "query_jb_bins", args: queryArgs });
+
+  let jbCacheForHistory: string | undefined;
+  let payload: Record<string, unknown> | null = null;
+  try {
+    const toolResult = await runTool("query_jb_bins", queryArgs, {
+      toolResultMaxChars: agentConfig.toolResultMaxChars,
+      history: getHistory(sessionId),
+      onJbBinsWrapped: (wrapped) => {
+        jbCacheForHistory = storeJbQuerySessionCache(sessionId, wrapped);
+      },
+    });
+    const rawContent =
+      typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult);
+    const historyContent = toolResultForHistory(
+      "query_jb_bins",
+      rawContent,
+      agentConfig.toolResultMaxHistoryChars,
+      agentConfig.toolResultMaxChars,
+      jbCacheForHistory
+    );
+    emit({
+      type: "tool_result",
+      name: "query_jb_bins",
+      summary: historyContent.slice(0, 200),
+    });
+    appendMessages(sessionId, {
+      role: "tool",
+      name: "query_jb_bins",
+      tool_call_id: `jb_lot_list_${Date.now()}`,
+      content: historyContent,
+    });
+    payload =
+      (jbCacheForHistory ? parseJbToolPayload(jbCacheForHistory) : null) ??
+      resolveJbToolPayload(sessionId, historyContent);
+  } catch (e) {
+    const msg = `JB lot 列表查询失败: ${e instanceof Error ? e.message : String(e)}`;
+    emit({ type: "text", delta: msg });
+    appendMessages(sessionId, { role: "assistant", content: msg });
+    emit({ type: "done" });
+    return true;
+  }
+
+  if (!payload || jbWrappedIsEmptyQuery(payload)) {
+    const err = "JB STAR 未查到匹配 lot；请确认 device / 机台 / 时间范围。";
+    emit({ type: "text", delta: err });
+    appendMessages(sessionId, { role: "assistant", content: err });
+    emit({ type: "done" });
+    return true;
+  }
+
+  if (isLotDetailListingQuestion(userQuestion)) {
+    const aggArgs = lotListingAggregateArgsFromUser(
+      userQuestion,
+      getHistory(sessionId),
+      payload
+    );
+    if (aggArgs) {
+      emit({ type: "status", message: "正在按 lot 聚合 JB 坏 BIN…" });
+      emit({ type: "tool_start", name: "aggregate_jb_bins", args: aggArgs });
+      try {
+        const aggResult = await runTool("aggregate_jb_bins", aggArgs, {
+          toolResultMaxChars: agentConfig.toolResultMaxChars,
+          history: getHistory(sessionId),
+        });
+        const aggRaw =
+          typeof aggResult === "string" ? aggResult : JSON.stringify(aggResult);
+        emit({
+          type: "tool_result",
+          name: "aggregate_jb_bins",
+          summary: aggRaw.slice(0, 200),
+        });
+        appendMessages(sessionId, {
+          role: "tool",
+          name: "aggregate_jb_bins",
+          tool_call_id: `jb_lot_agg_${Date.now()}`,
+          content: aggRaw.slice(0, agentConfig.toolResultMaxChars),
+        });
+      } catch {
+        // 列表仍可输出，仅缺 per-lot fail bin 列
+      }
+    }
+  }
+
+  return emitDeterministicJbTablesReply(
+    sessionId,
+    userQuestion,
+    payload,
+    agentConfig,
+    emit,
+    { withCommentaryLlm: false }
+  );
+}
+
 /** 用户是否在请求 DUT 良率柱状图/分布图（需 inf_site_stats + generate_chart bar）。 */
 function userWantsDutYieldChart(text: string): boolean {
   if (!/(dut|site)/i.test(text)) return false;
@@ -1945,6 +2062,16 @@ export async function runAgentLoop(
       lastTool ? String(lastTool.content ?? "") : undefined
     );
 
+    if (awaitingSummary && lotListingNeedsJbRecovery(userQuestion, lastTool?.name)) {
+      const listingRecovered = await tryRunLotListingDirectRoute(
+        sessionId,
+        userQuestion,
+        agentConfig,
+        emit
+      );
+      if (listingRecovered) return;
+    }
+
     if (awaitingSummary && lotOverviewNeedsJbRecovery(userQuestion, lastTool?.name)) {
       const recovered = await tryRunLotOverviewDirectRoute(
         sessionId,
@@ -1966,6 +2093,14 @@ export async function runAgentLoop(
     }
 
     if (!awaitingSummary) {
+      const listingDone = await tryRunLotListingDirectRoute(
+        sessionId,
+        userQuestion,
+        agentConfig,
+        emit
+      );
+      if (listingDone) return;
+
       const overviewDone = await tryRunLotOverviewDirectRoute(
         sessionId,
         userQuestion,

@@ -30,8 +30,8 @@ export function inferDeviceFromText(text: string): string | undefined {
 }
 
 export function inferTesterIdFromText(text: string): string | undefined {
-  const direct = text.match(/\b(b3(?:uflex|flex|ps16|j750|mst)[\w-]*)\b/i);
-  if (direct) return direct[1]!.toLowerCase();
+  const b3 = text.match(/(b3(?:uflex|flex|ps16|j750|mst)\d+)/i);
+  if (b3) return b3[1]!.toLowerCase();
   const uflex = text.match(/uflex[\s-]*(\d+)/i);
   if (uflex) {
     const n = uflex[1]!.padStart(2, "0");
@@ -119,5 +119,26 @@ export function buildAggregateJbBinsScopeArgs(
   const testEndTo = String(jbArgs?.["testEndTo"] ?? window.testEndTo ?? "").trim();
   if (testEndFrom) args["testEndFrom"] = testEndFrom.slice(0, 10);
   if (testEndTo) args["testEndTo"] = testEndTo.slice(0, 10);
+  return args;
+}
+
+/** 从用户句 + 可选 history 构造 lot 列表 query_jb_bins 参数。 */
+export function buildLotListingQueryArgs(
+  userQuestion: string,
+  history: ChatMessage[] = []
+): Record<string, unknown> | null {
+  const fromYm = buildJbScopeArgs(userQuestion, history, "query_yield_triggers");
+  if (fromYm?.["device"] || fromYm?.["testerId"]) return fromYm;
+
+  const device = inferDeviceFromText(userQuestion);
+  const testerId = inferTesterIdFromText(userQuestion);
+  if (!device && !testerId) return null;
+
+  const window = inferRecentMonthsWindow(userQuestion);
+  const args: Record<string, unknown> = { limit: 200 };
+  if (device) args["device"] = device;
+  if (testerId) args["testerId"] = testerId;
+  if (window.testEndFrom) args["testEndFrom"] = window.testEndFrom;
+  if (window.testEndTo) args["testEndTo"] = window.testEndTo;
   return args;
 }

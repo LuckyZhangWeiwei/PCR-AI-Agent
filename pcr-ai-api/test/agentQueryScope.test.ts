@@ -2,14 +2,30 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildJbScopeArgs,
+  buildLotListingQueryArgs,
   inferTesterIdFromText,
 } from "../src/lib/agent/agentQueryScope.js";
 import { detectPendingQuery } from "../src/lib/agent/agentPendingQuery.js";
+import { canRunLotListingDirectRoute } from "../src/lib/agent/agentJbLotListingRoute.js";
 
 describe("agentQueryScope", () => {
   it("inferTesterIdFromText maps UFLEX 24 to b3uflex24", () => {
     assert.equal(inferTesterIdFromText("WA01P14E 在UFLEX 24 台的测试情况"), "b3uflex24");
     assert.equal(inferTesterIdFromText("就是 b3uflex24"), "b3uflex24");
+    assert.equal(
+      inferTesterIdFromText("WA01P14E 在 b3uflex24 台近 3 个月 测试的所有lot 都列出来"),
+      "b3uflex24"
+    );
+  });
+
+  it("buildLotListingQueryArgs from user sentence without prior tools", () => {
+    const args = buildLotListingQueryArgs(
+      "WA01P14E 在 b3uflex24 台近 3 个月 测试的所有lot 都列出来"
+    );
+    assert.equal(args?.["device"], "WA01P14E");
+    assert.equal(args?.["testerId"], "b3uflex24");
+    assert.ok(args?.["testEndFrom"]);
+    assert.ok(args?.["testEndTo"]);
   });
 
   it("buildJbScopeArgs reads YM tool call device and hostname", () => {
@@ -69,5 +85,22 @@ describe("agentQueryScope", () => {
     assert.equal(pending?.toolName, "query_jb_bins");
     assert.equal(pending?.args["device"], "WA01P14E");
     assert.equal(pending?.args["testerId"], "b3uflex24");
+  });
+
+  it("canRunLotListingDirectRoute for device+tester lot list question", () => {
+    const q =
+      "WA01P14E 在 b3uflex24 台近 3 个月 测试的所有lot 都列出来";
+    assert.ok(canRunLotListingDirectRoute(q));
+  });
+
+  it("detectPendingQuery after empty get_filter_values", () => {
+    const pending = detectPendingQuery(
+      "WA01P14E 在 b3uflex24 台近 3 个月 测试的所有lot 都列出来",
+      "get_filter_values",
+      {},
+      []
+    );
+    assert.equal(pending?.toolName, "query_jb_bins");
+    assert.equal(pending?.args["device"], "WA01P14E");
   });
 });

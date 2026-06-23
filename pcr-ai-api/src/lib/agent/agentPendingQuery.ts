@@ -18,7 +18,11 @@ import {
 import {
   buildAggregateJbBinsScopeArgs,
   buildJbScopeArgs,
+  buildLotListingQueryArgs,
 } from "./agentQueryScope.js";
+import {
+  canRunLotListingDirectRoute,
+} from "./agentJbLotListingRoute.js";
 
 export type PendingQuery = {
   toolName: string;
@@ -51,10 +55,27 @@ function needsJbAfterYm(userQuestion: string, lastToolName: string): boolean {
 
 const CHECKERS: PendingQueryChecker[] = [
   {
+    name: "query_jb_bins:after_filter_values",
+    check(userQuestion, lastToolName, _payload, history) {
+      if (lastToolName !== "get_filter_values") return null;
+      if (!canRunLotListingDirectRoute(userQuestion)) return null;
+      const args = buildLotListingQueryArgs(userQuestion, history);
+      if (!args) return null;
+      return {
+        toolName: "query_jb_bins",
+        args,
+        statusLabel: "filter 未命中索引，正在直接查询 JB STAR lot 列表…",
+      };
+    },
+  },
+
+  {
     name: "query_jb_bins:after_ym_scope",
     check(userQuestion, lastToolName, _payload, history) {
       if (!needsJbAfterYm(userQuestion, lastToolName)) return null;
-      const args = buildJbScopeArgs(userQuestion, history, lastToolName);
+      const args =
+        buildLotListingQueryArgs(userQuestion, history) ??
+        buildJbScopeArgs(userQuestion, history, lastToolName);
       if (!args) return null;
       return {
         toolName: "query_jb_bins",
