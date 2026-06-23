@@ -1816,6 +1816,14 @@ function jbBinsYieldFallbackMessage(
   ) {
     return null;
   }
+  if (toolMsg.name === "aggregate_jb_bins") {
+    const content = String(toolMsg.content ?? "");
+    const table = buildMultiLotBinTable(content);
+    if (table) return table;
+    const binRank = buildAggregateBinRankingMarkdown(content);
+    if (binRank?.trim()) return `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${binRank}`;
+    return null;
+  }
   if (toolMsg.name !== "query_jb_bins") return null;
   const payload = resolveJbToolPayload(
     sessionId,
@@ -2047,7 +2055,7 @@ const SUMMARIZE_NUDGE =
   "【指令】工具查询已完成，立即用中文总结，禁止再调工具。\n" +
   "**字数约束**：数据解读 ≤ 150 字（3 句以内）；专业建议 3 条，每条 1 句（≤ 50 字）。\n" +
   "**格式**：数字只引用服务端预计算表中的值；解读/建议用 **### 数据解读**、**### 专业建议** 两节**纯文字段落**。\n" +
-  "**【链接必须保留】** 工具结果中含 [点击...查看](URL) 格式的晶圆图/热力图/趋势图链接时，必须原样复制到回复**第一行**，禁止改写为纯文字描述或省略。\n" +
+  "**【链接规则】** 工具结果中含 [点击...查看](/wafermaps/...) 格式的晶圆图链接时，必须**原样**复制到回复**第一行**，禁止改写或省略；若工具结果中**无**此格式链接，**严禁**自行编写或捏造任何 URL（含 https://example.com 等占位符）。\n" +
   "**禁止（DeepSeek-V4-Pro 常见问题）**：\n" +
   "- 禁止画 `| col |` markdown 表格（含「结论」列）\n" +
   "- 禁止逐行复述数据表里的每个数字（只点明异常值/对比）\n" +
@@ -2175,7 +2183,7 @@ export async function runAgentLoop(
       if (listingRecovered) return;
     }
 
-    if (awaitingSummary && scopedBadBinNeedsAggregateRecovery(userQuestion, lastTool?.name)) {
+    if (awaitingSummary && scopedBadBinNeedsAggregateRecovery(userQuestion, lastTool?.name, history)) {
       const binRecovered = await tryRunScopedBadBinDirectRoute(
         sessionId,
         userQuestion,

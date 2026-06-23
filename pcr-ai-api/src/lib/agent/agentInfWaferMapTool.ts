@@ -196,9 +196,10 @@ function latestUserSlotHint(history: ChatMessage[]): number | undefined {
   return undefined;
 }
 
-/** Lot id embedded in user message (e.g. DR44117.1Y). */
+/** Lot id embedded in user message (e.g. DR44117.1Y or _NF13128.1A_ markdown emphasis). */
 export function extractLotFromUserText(text: string): string | undefined {
-  const m = /\b([A-Z]{1,3}\d{4,6}\.\d+[A-Z0-9]+)\b/i.exec(text);
+  // Use lookbehind/lookahead instead of \b: underscore is \w so \b fails on _LOT_
+  const m = /(?<![A-Za-z0-9])([A-Z]{1,3}\d{4,6}\.\d+[A-Z0-9]+)(?![A-Za-z0-9])/i.exec(text);
   return m ? m[1]! : undefined;
 }
 

@@ -95,7 +95,12 @@ export function inferRecentMonthsWindow(text: string): {
   const to = now.toISOString().slice(0, 10);
   if (/[这近]?\s*[三3]\s*个?月|最近\s*[三3]\s*个?月/.test(text)) {
     const from = new Date(now);
-    from.setMonth(from.getMonth() - 3);
+    const targetMonth = now.getMonth() - 3;
+    from.setMonth(targetMonth);
+    // setMonth can overflow (e.g. May 31 → Feb 31 → Mar 3); clamp to last day of intended month
+    if (from.getMonth() !== ((targetMonth % 12) + 12) % 12) {
+      from.setDate(0);
+    }
     const fromStr = from.toISOString().slice(0, 10);
     return {
       testEndFrom: fromStr,

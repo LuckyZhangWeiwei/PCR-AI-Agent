@@ -152,6 +152,12 @@ test("buildInfDrawArgsAfterJbLookup from jb payload + user slot", () => {
 
 test("extractLotFromUserText", () => {
   assert.equal(extractLotFromUserText("lot DR44117.1Y 第3片"), "DR44117.1Y");
+  // markdown emphasis underscores must not block extraction
+  assert.equal(extractLotFromUserText("帮我绘一下_NF13128.1A_ 第一片wafermap"), "NF13128.1A");
+  assert.equal(extractLotFromUserText("_DR44498.1T_ 第一片"), "DR44498.1T");
+  assert.equal(extractLotFromUserText("近方lot NF13128.1A_第二十四片"), "NF13128.1A");
+  assert.equal(extractLotFromUserText("WA03P02G NF13128.1A__第二十四片的wafermap"), "NF13128.1A");
+  assert.equal(extractLotFromUserText("分析一下P02G 8041-08"), undefined);
 });
 
 test("findLastInfDrawWaferMapContext skips failed draw", () => {

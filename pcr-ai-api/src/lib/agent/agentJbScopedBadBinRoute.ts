@@ -25,18 +25,17 @@ export function canRunScopedBadBinDirectRoute(
   const device = inferDeviceFromText(userText) || inferDeviceFromHistory(history);
   const tester = inferTesterIdFromText(userText) || inferTesterFromHistory(history);
   const window = inferRecentMonthsWindow(userText);
-  const hasTime =
-    Boolean(window.testEndFrom) ||
-    /这\s*[三3]\s*个?月|近\s*[三3]\s*个?月|最近\s*[三3]\s*个?月/i.test(userText);
+  const hasTime = Boolean(window.testEndFrom);
 
   return Boolean(device && (tester || hasTime));
 }
 
 export function scopedBadBinNeedsAggregateRecovery(
   userText: string,
-  lastToolName: string | undefined
+  lastToolName: string | undefined,
+  history: ChatMessage[] = []
 ): boolean {
-  if (!canRunScopedBadBinDirectRoute(userText)) return false;
+  if (!canRunScopedBadBinDirectRoute(userText, history)) return false;
   if (lastToolName === "aggregate_jb_bins") return false;
   return true;
 }
