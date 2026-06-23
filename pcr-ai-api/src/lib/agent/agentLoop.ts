@@ -30,6 +30,7 @@ import {
   buildBriefCommentaryUserMessage,
   buildDeterministicJbTables,
   buildEngineeringContextFromPayload,
+  buildAggregateBinRankingMarkdown,
   detectJbReplyMode,
   DETERMINISTIC_DATA_SECTION_TITLE,
   DETERMINISTIC_COMMENTARY_SECTION_TITLE,
@@ -60,6 +61,12 @@ import {
   lotListingNeedsJbRecovery,
   lotListingQueryArgsFromUser,
 } from "./agentJbLotListingRoute.js";
+import {
+  canRunScopedBadBinDirectRoute,
+  scopedBadBinAggregateArgsFromUser,
+  scopedBadBinNeedsAggregateRecovery,
+} from "./agentJbScopedBadBinRoute.js";
+import { buildScopeLabelFromAggregateArgs, findLastToolCallArgs } from "./agentQueryScope.js";
 import {
   buildInfDrawArgsAfterJbLookup,
   extractLotFromUserText,
@@ -1279,6 +1286,72 @@ async function tryRunLotListingDirectRoute(
   );
 }
 
+/**
+ * 「WA01P14E @ b3uflex24 近3个月主要 failed bin」：直连 aggregate_jb_bins(groupBy:bin)，
+ * 禁止回退 session 单 lot 概况。
+ */
+async function tryRunScopedBadBinDirectRoute(
+  sessionId: string,
+  userQuestion: string,
+  agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void
+): Promise<boolean> {
+  const history = getHistory(sessionId);
+  if (!canRunScopedBadBinDirectRoute(userQuestion, history)) return false;
+
+  const aggArgs = scopedBadBinAggregateArgsFromUser(userQuestion, history);
+  if (!aggArgs) return false;
+
+  emit({ type: "status", message: "正在聚合 JB 坏 BIN 排行…" });
+  emit({ type: "tool_start", name: "aggregate_jb_bins", args: aggArgs });
+
+  let aggRaw = "";
+  try {
+    const aggResult = await runTool("aggregate_jb_bins", aggArgs, {
+      toolResultMaxChars: agentConfig.toolResultMaxChars,
+      history,
+    });
+    aggRaw = typeof aggResult === "string" ? aggResult : JSON.stringify(aggResult);
+    emit({
+      type: "tool_result",
+      name: "aggregate_jb_bins",
+      summary: aggRaw.slice(0, 200),
+    });
+    appendMessages(sessionId, {
+      role: "tool",
+      name: "aggregate_jb_bins",
+      tool_call_id: `jb_scoped_bin_${Date.now()}`,
+      content: aggRaw.slice(0, agentConfig.toolResultMaxChars),
+    });
+  } catch (e) {
+    const msg = `JB 坏 BIN 聚合失败: ${e instanceof Error ? e.message : String(e)}`;
+    emit({ type: "text", delta: msg });
+    appendMessages(sessionId, { role: "assistant", content: msg });
+    emit({ type: "done" });
+    return true;
+  }
+
+  const scopeLabel = buildScopeLabelFromAggregateArgs(aggArgs);
+  const table = buildAggregateBinRankingMarkdown(aggRaw, scopeLabel);
+  if (!table?.trim()) {
+    const err = `JB STAR 在 ${scopeLabel} 未聚合到坏 BIN 数据；请确认 device / 机台 / 时间范围。`;
+    emit({ type: "text", delta: err });
+    appendMessages(sessionId, { role: "assistant", content: err });
+    emit({ type: "done" });
+    return true;
+  }
+
+  const msg =
+    `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${table}\n\n` +
+    `${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n` +
+    `*以上为 ${scopeLabel} 范围内坏 BIN 按 dieCount 降序汇总。如需某 lot 逐片趋势，请指定批次号。*`;
+  emit({ type: "status", message: "正在输出坏 BIN 排行表…" });
+  emitTextInChunks(msg, emit);
+  appendMessages(sessionId, { role: "assistant", content: msg });
+  emit({ type: "done" });
+  return true;
+}
+
 /** 用户是否在请求 DUT 良率柱状图/分布图（需 inf_site_stats + generate_chart bar）。 */
 function userWantsDutYieldChart(text: string): boolean {
   if (!/(dut|site)/i.test(text)) return false;
@@ -1573,6 +1646,12 @@ async function tryRunDutBinAggAutoRoute(
  * @returns true 表示已完整结束本轮（调用方应 return）。
  */
 /** 多批次聚合结果（aggregate_jb_bins groupBy:"lot"）→ 服务端直出跨批次 BIN 对比表。 */
+function findLastAggregateJbBinsArgs(
+  history: ChatMessage[]
+): Record<string, unknown> | null {
+  return findLastToolCallArgs(history, "aggregate_jb_bins");
+}
+
 function buildMultiLotBinTable(content: string): string | null {
   let agg: Record<string, unknown>;
   try { agg = JSON.parse(content) as Record<string, unknown>; } catch { return null; }
@@ -1656,7 +1735,31 @@ async function tryRunDeterministicJbSummary(
       emit({ type: "done" });
       return true;
     }
-    // Single-lot aggregate_jb_bins (groupBy:"bin" etc.): fall through to session cache path
+    const aggArgs =
+      findLastAggregateJbBinsArgs(history) ??
+      scopedBadBinAggregateArgsFromUser(userQuestion, history);
+    const scopeLabel = aggArgs
+      ? buildScopeLabelFromAggregateArgs(aggArgs)
+      : undefined;
+    const binRank = buildAggregateBinRankingMarkdown(
+      String(lastTool.content ?? ""),
+      scopeLabel
+    );
+    if (binRank?.trim()) {
+      const msg =
+        `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${binRank}\n\n` +
+        `${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n` +
+        `*以上为范围内坏 BIN 按 dieCount 降序汇总。*`;
+      emit({ type: "status", message: "正在输出坏 BIN 排行表…" });
+      emitTextInChunks(msg, emit);
+      appendMessages(sessionId, { role: "assistant", content: msg });
+      emit({ type: "done" });
+      return true;
+    }
+    // Single-lot aggregate or mis-scoped: do not fall through to session cache for scoped fail-bin questions
+    if (canRunScopedBadBinDirectRoute(userQuestion, history)) {
+      return false;
+    }
   }
 
   const payload = resolveJbToolPayload(
@@ -2072,6 +2175,16 @@ export async function runAgentLoop(
       if (listingRecovered) return;
     }
 
+    if (awaitingSummary && scopedBadBinNeedsAggregateRecovery(userQuestion, lastTool?.name)) {
+      const binRecovered = await tryRunScopedBadBinDirectRoute(
+        sessionId,
+        userQuestion,
+        agentConfig,
+        emit
+      );
+      if (binRecovered) return;
+    }
+
     if (awaitingSummary && lotOverviewNeedsJbRecovery(userQuestion, lastTool?.name)) {
       const recovered = await tryRunLotOverviewDirectRoute(
         sessionId,
@@ -2100,6 +2213,14 @@ export async function runAgentLoop(
         emit
       );
       if (listingDone) return;
+
+      const scopedBinDone = await tryRunScopedBadBinDirectRoute(
+        sessionId,
+        userQuestion,
+        agentConfig,
+        emit
+      );
+      if (scopedBinDone) return;
 
       const overviewDone = await tryRunLotOverviewDirectRoute(
         sessionId,

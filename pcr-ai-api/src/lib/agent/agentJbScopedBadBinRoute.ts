@@ -1,0 +1,54 @@
+/**
+ * 跨 lot / device+机台+时间窗 的 fail bin 排行：直连 aggregate_jb_bins(groupBy:bin)，
+ * 避免 session 单 lot 缓存误出 NF13256.1R 概况表。
+ */
+
+import type { ChatMessage } from "./agentHistory.js";
+import { extractLotFromUserText } from "./agentInfWaferMapTool.js";
+import { isBadBinRankingQuestion } from "./agentJbDeterministicReply.js";
+import {
+  buildScopedBadBinAggregateArgs,
+  inferDeviceFromHistory,
+  inferDeviceFromText,
+  inferRecentMonthsWindow,
+  inferTesterFromHistory,
+  inferTesterIdFromText,
+} from "./agentQueryScope.js";
+
+export function canRunScopedBadBinDirectRoute(
+  userText: string,
+  history: ChatMessage[] = []
+): boolean {
+  if (!isBadBinRankingQuestion(userText)) return false;
+  if (extractLotFromUserText(userText)) return false;
+
+  const device = inferDeviceFromText(userText) || inferDeviceFromHistory(history);
+  const tester = inferTesterIdFromText(userText) || inferTesterFromHistory(history);
+  const window = inferRecentMonthsWindow(userText);
+  const hasTime =
+    Boolean(window.testEndFrom) ||
+    /这\s*[三3]\s*个?月|近\s*[三3]\s*个?月|最近\s*[三3]\s*个?月/i.test(userText);
+
+  return Boolean(device && (tester || hasTime));
+}
+
+export function scopedBadBinNeedsAggregateRecovery(
+  userText: string,
+  lastToolName: string | undefined
+): boolean {
+  if (!canRunScopedBadBinDirectRoute(userText)) return false;
+  if (lastToolName === "aggregate_jb_bins") return false;
+  return true;
+}
+
+export function scopedBadBinAggregateArgsFromUser(
+  userText: string,
+  history: ChatMessage[] = []
+): Record<string, unknown> | null {
+  return buildScopedBadBinAggregateArgs(userText, history);
+}
+
+export const SCOPED_BAD_BIN_DIRECT_ROUTE_HINT =
+  "【跨 lot fail bin 路由】用户问 device+机台+时间范围内的主要 fail bin 时：" +
+  "**直接** aggregate_jb_bins(device, testerId, testEndFrom/To, groupBy:\"bin\")；" +
+  "禁止用 session 内单 lot 的 topBadBins / lot 概况代替。";

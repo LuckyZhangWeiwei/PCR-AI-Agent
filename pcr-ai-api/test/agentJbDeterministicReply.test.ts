@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildBriefCommentaryUserMessage,
+  buildAggregateBinRankingMarkdown,
   buildDeterministicJbTables,
   buildEngineeringContextFromPayload,
   buildRecentLotsListingMarkdown,
@@ -82,6 +83,10 @@ describe("agentJbDeterministicReply", () => {
       detectJbReplyMode("常见fail bin排行"),
       "bad_bin_ranking"
     );
+    assert.equal(
+      detectJbReplyMode("这3个月中这个device在 b3uflex24 主要的测试出的failed bin"),
+      "bad_bin_ranking"
+    );
     // Specific BIN number → should NOT be bad_bin_ranking (goes to bin_trend)
     assert.notEqual(
       detectJbReplyMode("BIN55 的 fail bin 情况"),
@@ -95,6 +100,23 @@ describe("agentJbDeterministicReply", () => {
     assert.ok(isLotListingQuestion(q));
     assert.equal(detectJbReplyMode(q), "lot_listing");
     assert.notEqual(detectJbReplyMode(q), "lot_overview");
+  });
+
+  it("buildAggregateBinRankingMarkdown from scoped aggregate", () => {
+    const md = buildAggregateBinRankingMarkdown(
+      JSON.stringify({
+        totalRowsMatching: 500,
+        groups: [
+          { bin: 61, count: 900 },
+          { bin: 60, count: 650 },
+          { bin: 131, count: 120 },
+        ],
+      }),
+      "WA01P14E @b3uflex24"
+    );
+    assert.ok(md?.includes("BIN61"));
+    assert.ok(md?.includes("900"));
+    assert.ok(md?.includes("占比"));
   });
 
   it("buildRecentLotsListingMarkdown merges JB and YM lots", () => {

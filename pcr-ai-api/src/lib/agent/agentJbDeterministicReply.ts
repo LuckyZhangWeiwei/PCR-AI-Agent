@@ -19,6 +19,12 @@ import type { ClusteredBadBinAlert } from "./agentJbBadBinCluster.js";
 import type { SlotYieldSummaryEntry } from "../jbYieldCalc.js";
 import { buildBinSlotTrendMarkdownOnDemand } from "./agentJbBinTrend.js";
 import { getJbToolRawJson } from "./agentJbSessionCache.js";
+import { extractLotFromUserText } from "./agentInfWaferMapTool.js";
+import {
+  inferDeviceFromText,
+  inferRecentMonthsWindow,
+  inferTesterIdFromText,
+} from "./agentQueryScope.js";
 
 export type BinTrendDigest = {
   bin: number;
@@ -513,8 +519,35 @@ export function isBadBinRankingQuestion(text: string): boolean {
   if (extractBinFromUserText(t) != null) return false; // 有具体 bin 号走 bin_trend
   return (
     /主要.*坏\s*bin|坏\s*bin.*主要|坏\s*bin.*排行|排行.*坏\s*bin|坏\s*bin.*排名|排名.*坏\s*bin|top.*bad.*bin|主要.*bad\s*bin|哪些.*坏\s*bin|坏\s*bin.*哪些|坏die.*排行|排行.*坏die/i.test(t) ||
-    // 英文 "fail bin" 变体：「常见的 fail bin」「主要 fail bin」「实测 fail bin」
-    /常见.*fail\s*bin|fail\s*bin.*常见|主要.*fail\s*bin|fail\s*bin.*主要|实测.*fail\s*bin|fail\s*bin.*失效|fail\s*bin.*排|哪些.*fail\s*bin|fail\s*bin.*哪些/i.test(t)
+    // fail / failed bin 变体
+    /常见.*fail(?:ed)?\s*bin|fail(?:ed)?\s*bin.*常见|主要.*fail(?:ed)?\s*bin|fail(?:ed)?\s*bin.*主要|实测.*fail(?:ed)?\s*bin|fail(?:ed)?\s*bin.*失效|fail(?:ed)?\s*bin.*排|哪些.*fail(?:ed)?\s*bin|fail(?:ed)?\s*bin.*哪些/i.test(t)
+  );
+}
+
+/** 用户未指定 lot，但 session 缓存是单 lot — 禁止用该 lot 概况答 scoped 问题。 */
+export function isCrossLotQuestionMisalignedWithPayload(
+  userMessage: string,
+  toolPayload: Record<string, unknown>
+): boolean {
+  if (extractLotFromUserText(userMessage)) return false;
+  const payloadLot = String(
+    toolPayload["lot"] ?? toolPayload["primaryLot"] ?? ""
+  ).trim();
+  if (!payloadLot) return false;
+
+  const hasScope =
+    Boolean(inferDeviceFromText(userMessage)) ||
+    Boolean(inferTesterIdFromText(userMessage)) ||
+    Boolean(inferRecentMonthsWindow(userMessage).testEndFrom) ||
+    /这个\s*device|该\s*device|这\s*[三3]\s*个?月|近\s*[三3]\s*个?月|最近\s*[三3]\s*个?月/i.test(
+      userMessage
+    );
+
+  if (!hasScope) return false;
+  return (
+    isBadBinRankingQuestion(userMessage) ||
+    isLotListingQuestion(userMessage) ||
+    /主要|排行|fail|failed|坏\s*bin/i.test(userMessage)
   );
 }
 
@@ -1206,6 +1239,9 @@ export function buildDeterministicJbTables(
   }
 
   if (mode === "bad_bin_ranking") {
+    if (isCrossLotQuestionMisalignedWithPayload(userMessage, toolPayload)) {
+      return null;
+    }
     const topMd = formatTopBadBinsMarkdown(toolPayload);
     const overview = digest.lotOverview?.trim() || formatLotYieldOverviewMarkdown(toolPayload)?.trim();
     const combined =
@@ -1331,6 +1367,9 @@ export function buildDeterministicJbTables(
   }
 
   if (mode === "slot_pass_yield" || mode === "generic") {
+    if (isCrossLotQuestionMisalignedWithPayload(userMessage, toolPayload)) {
+      return null;
+    }
     const overview =
       digest.lotOverview?.trim() ||
       formatLotYieldOverviewMarkdown(toolPayload)?.trim();
@@ -1425,6 +1464,52 @@ function formatTopBadBinsMarkdown(toolPayload: Record<string, unknown>): string 
     ...entries.map((e) => `| BIN${e.bin} | ${e.dieCount} |`),
   ];
   return `**${header}**\n\n${rows.join("\n")}`;
+}
+
+/** aggregate_jb_bins(groupBy:"bin") → 跨 lot 坏 BIN 排行表。含 lot 维度时返回 null（交 buildMultiLotBinTable）。 */
+export function buildAggregateBinRankingMarkdown(
+  rawContent: string,
+  scopeLabel?: string
+): string | null {
+  let agg: Record<string, unknown>;
+  try {
+    agg = JSON.parse(rawContent) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const groups = agg["groups"] as Array<Record<string, unknown>> | undefined;
+  if (!groups?.length) return null;
+
+  if (groups.some((g) => String(g["lot"] ?? "").trim())) return null;
+
+  const bins = groups
+    .map((g) => {
+      const binRaw = g["bin"] ?? g["BIN"];
+      const binNum = Number(String(binRaw ?? "").replace(/^BIN/i, ""));
+      const count = Number(g["count"] ?? g["CNT"] ?? 0);
+      return {
+        bin: Number.isFinite(binNum) && binNum > 0 ? binNum : null,
+        count,
+      };
+    })
+    .filter((b) => b.bin != null && b.count > 0)
+    .sort((a, b) => b.count - a.count);
+
+  if (!bins.length) return null;
+
+  const total = bins.reduce((s, b) => s + b.count, 0);
+  const totalRows = Number(agg["totalRowsMatching"] ?? 0);
+  const scope = scopeLabel?.trim() || "查询范围";
+  const header = `**主要坏 BIN 排行（${scope}，Top ${bins.length}，坏 die 合计 ${total}${totalRows > 0 ? `，匹配 ${totalRows} 行` : ""}）**`;
+  const rows = [
+    "| # | BIN | 坏 die 颗数 | 占比 |",
+    "|---:|---|---:|---:|",
+    ...bins.map((b, i) => {
+      const pct = total > 0 ? ((b.count / total) * 100).toFixed(1) : "0.0";
+      return `| ${i + 1} | BIN${b.bin} | ${b.count} | ${pct}% |`;
+    }),
+  ];
+  return `${header}\n\n${rows.join("\n")}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

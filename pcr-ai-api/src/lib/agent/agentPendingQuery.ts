@@ -19,10 +19,14 @@ import {
   buildAggregateJbBinsScopeArgs,
   buildJbScopeArgs,
   buildLotListingQueryArgs,
+  buildScopedBadBinAggregateArgs,
 } from "./agentQueryScope.js";
 import {
   canRunLotListingDirectRoute,
 } from "./agentJbLotListingRoute.js";
+import {
+  canRunScopedBadBinDirectRoute,
+} from "./agentJbScopedBadBinRoute.js";
 
 export type PendingQuery = {
   toolName: string;
@@ -81,6 +85,21 @@ const CHECKERS: PendingQueryChecker[] = [
         toolName: "query_jb_bins",
         args,
         statusLabel: "正在查询 JB STAR 各 lot 实测数据…",
+      };
+    },
+  },
+
+  {
+    name: "aggregate_jb_bins:scoped_fail_bin",
+    check(userQuestion, lastToolName, payload, history) {
+      if (lastToolName !== "query_jb_bins") return null;
+      if (!canRunScopedBadBinDirectRoute(userQuestion, history)) return null;
+      const args = buildScopedBadBinAggregateArgs(userQuestion, history, payload);
+      if (!args) return null;
+      return {
+        toolName: "aggregate_jb_bins",
+        args,
+        statusLabel: "正在聚合范围内主要坏 BIN…",
       };
     },
   },
