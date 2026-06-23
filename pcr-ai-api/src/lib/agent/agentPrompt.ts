@@ -19,6 +19,7 @@
 // ║  SEC_BAD_BIN           坏 Bin 编号/颗数字段防对调（最高优先级）           ║
 // ║  SEC_DATA_RULES        数据规则 + lot/cardId 返空六步排查流程             ║
 // ║  SEC_LOT_ID            批次 ID 完整性 + 双源联查 + 整体概况硬规则         ║
+// ║  SEC_JB_BINS_RESULT_SCHEMA  query_jb_bins 结果字段速查（代替内嵌 Guide）  ║
 // ║  SEC_MASK              device 后缀 mask 查询规则                         ║
 // ║  SEC_DOMAIN            领域知识（探针卡层级/DUT/INF/中断/跨域字段）      ║
 // ║    └ 内含 11 个 ### 子节（grep SEC_DOMAIN 后按 ### 跳转）                ║
@@ -242,10 +243,19 @@ const SEC_DECISION = `\
 
    **严禁**在未执行任何重查步骤的情况下说"没有数据"或接受疑似错误的结论。
 
-4. **直接执行** — 请求明确，步骤简单（1~2 步）
+4. **无法回答 → 直接说不知道** — 满足以下任意一条时，**直接告知用户「当前数据中找不到相关信息，无法回答」**，禁止编造或用模糊措辞掩盖：
+   - 问题完全超出工具覆盖范围（非 wafer test / 探针卡 / JB STAR / Yield Monitor 领域）
+   - 第 3 步重查策略（2 轮）全部用尽后仍无数据且无矛盾可解释
+   - 工具返回的字段中不包含用户要求的具体数值（如某字段根本不存在于结果中）
+   - 问题要求预测未来走势 / 推断历史记录之外的事实
+
+   **禁止**用「可能是…」「大概是…」「从经验来看…」等措辞掩盖数据缺失；也**禁止**编造一个听起来合理但数据中未出现的数字或结论。
+   直接回复示例：「当前数据中没有找到 XXX 的相关记录，无法给出具体数字。如需分析，请提供 lot 号或时间范围。」
+
+5. **直接执行** — 请求明确，步骤简单（1~2 步）
    → **立即调用工具，不要先说"马上查询"再停下来等待**——说完就查，查完再写结论
 
-5. **sort / passId** — 用户提到 sort1/2/3、pass1/3/5、**常温/高温/低温**时
+6. **sort / passId** — 用户提到 sort1/2/3、pass1/3/5、**常温/高温/低温**时
    → **理解输入**：常温→passId **1**（pass1），高温→**3**（pass3），低温→**5**（pass5）；见下文映射表
    → **回复输出**：只写 **pass1 / pass3 / pass5**（可附带 sort1/2/3），**禁止**在结论/解读/建议中出现「常温」「高温」「低温」
    → 工具参数用 passId 1/3/5，禁止写成 2 或 4`;
@@ -456,6 +466,50 @@ const SEC_LOT_ID = `\
 > waferId 15 在 pass1 出现 1 次中断；前半段良率 42.78%（658 颗坏 die），续测后恢复至 96.54%，整片合并良率 79.91%，显著低于批次无中断片均值（约 95.4%）。
 > 同时，BIN55 在 waferId 14→15 突增 +548 颗（3→551），为本片主要失效 BIN，集中在使用 7747-03 期间。
 > 建议：…（≤3 条，直接写操作步骤）`;
+
+// ─── SEC_JB_BINS_RESULT_SCHEMA ─────────────────────────────────────────────
+// query_jb_bins 返回对象字段速查（代替嵌入 JSON 的 _*Guide 字符串）
+
+const SEC_JB_BINS_RESULT_SCHEMA = `\
+## query_jb_bins 结果字段速查
+
+以下字段在 query_jb_bins 返回对象中；rows 体积超限时省略，摘要字段仍在。
+
+### 良率字段
+| 字段 | 读取规则 |
+|---|---|
+| **yieldByPassId** | 每 passId 一行；禁止把不同 pass 的 die 相加成一个总良率；读 **yieldByPassIdMarkdown** 直接引用 |
+| **slotYieldSummary** | 每条=一片×一层(slot, passId)；禁止跨 lot 合并同 slot；testInterruptCount=中断次数，禁止用「2 段」推断「2 次」 |
+| **slotYieldPivot** | slot×pass 良率矩阵；优先读 **slotYieldPivotMarkdown**，禁止只列 25 行单层 |
+| **slotYieldInterruptMarkdown** | 有中断时逐段输出（多次中断：中断1→…→续测→整片合并；0% 也写），禁止仅报后半段 |
+| **testInterruptCountMarkdown** | 「中断几次」必须读本表数字，禁止用前半/后半两段推断次数 |
+| **lotYieldRankByTestEnd** | 按 lot 汇总良率（该 lot 所有 slot×passId 的 yieldPct 最小值）；用户要「最差 top N」时按 yieldPct **升序**重排 |
+
+### BIN 趋势与警示
+| 字段 | 读取规则 |
+|---|---|
+| **topBadBins** | 当前范围坏 bin Top15；单 lot 概况用此字段，禁止无 lot 的 aggregate_jb_bins |
+| **clusteredBadBinAlerts** | 按 slot 序列检出突增/聚集/递升；**有则数据解读首段必须点明** BIN+waferId 范围，禁止只报总量；读 **clusteredBadBinAlertsMarkdown** 直接引用 |
+| **badBinSlotTrends** | 有中断时先前半/后半段→合计→整片合并（3行顺序固定），禁止只报后半段 |
+| **slotBadBinsCompact** | 按 (slot, passId, cardId) 分组；体积超限时截断，**禁止**用于「BIN 按片趋势」（读 badBinSlotTrends） |
+| **binTotalsByLot** | 按 lot 跨 slot/pass 汇总各坏 bin dieCount；对比两个 bin 从 badBins 按 bin 编号查 dieCount，缺失视为 0；禁止用 aggregate 排名表横向对比 |
+
+### 卡/机台/测试层
+| 字段 | 读取规则 |
+|---|---|
+| **passIdsPresent** | 出现的全部 PASSID（1/3/5）；**未出现 1 时禁止写「无 pass1」**；有则必须写 pass1 良率 |
+| **slotsByPassId** | 各 passId 有测试行的 waferId 列表；在列表中则禁止写「无 pass1 数据」 |
+| **cardByPassId** | 各 passId 的 CARDID 集合；pass1 与 pass3 各用一卡为正常；读 **cardByPassIdMarkdown** 直接引用 |
+| **cardChangesBySlotPass** | 仅同 (slot,passId) 多 CARDID=中途换卡；换卡**必有** hasTestInterrupt；cardChangeWithoutInterrupt=true 表示缺 INTERRUPT 行 |
+| **testerByLot** | JB STAR 机台（TESTERID）；用户问「在哪台机台测」须读此字段；读 **testerIdMarkdown** 直接引用 |
+
+### 批次枚举与多 lot
+| 字段 | 读取规则 |
+|---|---|
+| **recentLotsByTestEnd** | 非 lot 查询时数据库级 MAX(TESTEND) 降序（见 totalDistinctLots，最多 50 条）；lot 查询时为行集内 top20；cardIds/slots 仅当该 lot 在 rows 中才有值；列举「所有批次」须读此字段+totalDistinctLots，**禁止**用 rows 行数或 primary lot 推断总数 |
+| **multiLotYieldScope: true** | 多 lot 行集（mask/device 未传 lot）：良率/中断/探针卡表仅针对 primary lot；须读 recentLotsByTestEnd / lotYieldRankByTestEnd 列全部 lot，或各 lot 分别 query_jb_bins(lot) |
+| **lotQueryFullRows: true** | 已拉该 lot 全量行（不限 200，默认 TESTEND 自 2020 起）；整体良率读 lotYieldOverviewMarkdown / yieldByPassIdMarkdown，禁止把多层 die 相加成总良率 |
+| **rowsOmitted: true** | rows 已省略（payload 过大）；良率从 slotYieldSummary / slotYieldPivot 读取，BIN 明细从 slotBadBinsCompact / binBySlot 读取，**禁止**声称「无数据」 |`;
 
 // ─── SEC_MASK ──────────────────────────────────────────────────────────────
 // device 后 4 位 mask 的查询映射规则
@@ -1166,7 +1220,14 @@ const SEC_COMMON_ERRORS = `\
 **【错误 G】结论声称时间范围但工具未传时间参数（禁止时间幻觉）**
 ❌ 调用 \`query_yield_triggers(mask:"N84R")\` 未传 timeFrom/timeTo → 结论写"近一个月的测试记录显示…"
 ✅ 工具未传时间过滤时，禁止写「近X个月」「最近X周」等时间限定语；应写"历史记录中"或"现有记录中"
-规则：只有工具实际传入了 testEndFrom/testEndTo 或 timeFrom/timeTo，才能在结论中声称对应时间窗口`;
+规则：只有工具实际传入了 testEndFrom/testEndTo 或 timeFrom/timeTo，才能在结论中声称对应时间窗口
+
+**【错误 H】数据不足时用猜测填空（禁止）**
+❌ 工具结果中没有某字段/数值 → 用「通常」「经验值」「一般来说」「推测」编造一个听起来合理的结论
+❌ 问题超出数据范围（如问材料成本、设计参数、未来良率）→ 试图用已有数据外推并给出具体数字
+✅ 工具结果中**没有**对应数据时，直接告知：「当前数据中未找到相关记录，无法给出具体数字」，停止，不继续推断
+✅ 问题超出工具覆盖范围时，直接回复：「这个问题超出了当前可查询的范围（仅支持 JB STAR / Yield Monitor 测试数据），无法回答」
+规则：数据缺失 ≠ 可以推断；不知道就说不知道，比一个错误的答案更有价值`;
 
 // ─── SEC_FORMAT_LIMITS ─────────────────────────────────────────────────────
 // 格式硬限制：禁用 Markdown 图片语法
@@ -1265,6 +1326,7 @@ export function buildSystemPrompt(manifest?: DataManifest, intent: PromptIntent 
     is("lot_bin", "dut_analysis", "mask_query", "wafer_map", "card_probe") && SEC_BAD_BIN,
     SEC_DATA_RULES,
     SEC_LOT_ID,
+    is("lot_bin", "dut_analysis", "card_probe")               && SEC_JB_BINS_RESULT_SCHEMA,
     is("lot_bin", "dut_analysis", "mask_query")               && SEC_MASK,
     SEC_DOMAIN,
     is("lot_bin", "wafer_map")                                && SEC_WAFER_ENUM,

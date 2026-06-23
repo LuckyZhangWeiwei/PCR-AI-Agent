@@ -7,14 +7,8 @@ import {
   buildSlotYieldPivot,
   buildYieldByPassId,
   isInterruptPasstype,
-  lotYieldRankFieldGuide,
   passIdFromJbRow,
   passNumFromJbRow,
-  slotYieldInterruptFieldGuide,
-  slotYieldPivotFieldGuide,
-  slotYieldSummaryFieldGuide,
-  testInterruptCountFieldGuide,
-  yieldByPassFieldGuide,
   type LotYieldRankEntry,
   type SlotYieldSummaryEntry,
 } from "../jbYieldCalc.js";
@@ -34,21 +28,17 @@ import {
   jbYieldCoreFieldsForSerialize,
 } from "./agentJbYieldCore.js";
 import {
-  BAD_BIN_SLOT_TRENDS_GUIDE,
   buildBadBinSlotTrends,
   buildSlotsByPassId,
   slimRowsForBinTrend,
-  SLOTS_BY_PASS_GUIDE,
   type BadBinSlotTrendEntry,
 } from "./agentJbBinTrend.js";
 import {
   buildClusteredBadBinAlerts,
-  CLUSTERED_BAD_BIN_ALERTS_GUIDE,
   formatClusteredBadBinAlertsMarkdown,
   type ClusteredBadBinAlert,
 } from "./agentJbBadBinCluster.js";
 import {
-  CARD_DEGRADATION_SIGNAL_GUIDE,
   type CardDegradationSignal,
 } from "./agentCrossdomainInsights.js";
 
@@ -118,31 +108,6 @@ export type RecentLotByTestEndEntry = {
 };
 
 
-const BIN_SCHEMA_HINT =
-  "每条: bin=BINDie编号(通常较小), dieCount=该BIN的die颗数(可很大); 禁止写成 BIN{dieCount} {bin}颗";
-
-const SLOT_BAD_BINS_COMPACT_GUIDE =
-  "slotBadBinsCompact：按 (slot, passId, cardId) 分组；JSON 过大时会被截断，**禁止**用于「BIN 按片趋势」（须读 badBinSlotTrends）。仅同一 pass 同片多 CARDID=中途换卡。";
-
-const CARD_CHANGES_BY_SLOT_PASS_GUIDE =
-  "cardChangesBySlotPass：仅同一 (slot,passId) 多 CARDID=中途换卡；业务上换卡必有测试中断(hasTestInterrupt)。hasCardChange 时须同时写中断/续测与前后卡号，读 slotYieldSummary。cardChangeWithoutInterrupt=true 表示缺 INTERRUPT 行。";
-
-const CARD_BY_PASS_ID_GUIDE =
-  "cardByPassId：各 passId 在返回行内的 CARDID 集合。pass1 与 pass3 各用一卡为正常；结论用 pass1/3/5，禁止写常温/高温/低温。";
-
-const RECENT_LOTS_GUIDE =
-  "recentLotsByTestEnd：非 lot 限定查询时在数据库级按 lot MAX(TESTEND) 降序枚举（见 totalDistinctLots，最多 50 条）；lot 限定查询时为返回行集内 top20。每 lot 含 slotCount、testEnd、device；cardIds/slots 仅当该 lot 出现在返回 rows 中才有值。列举「所有 lot/批次」须读 recentLotsByTestEnd + totalDistinctLots，禁止用 rows 行数或 primary lot 推断 lot 总数。";
-
-const TESTER_BY_LOT_GUIDE =
-  "testerByLot / testerIdMarkdown：JB STAR 机台=INFLAYERBINLIST.TESTERID（API testerId）。用户问「在哪台机台/测试机测」须读本表；与 Yield Monitor 的 HOSTNAME（API hostname）为同一机台不同列名。";
-
-const BIN_TOTALS_BY_LOT_GUIDE =
-  "binTotalsByLot：按 lot 汇总全部匹配行（跨 slot/pass 相加）的各坏 bin dieCount，每 lot 一行，badBins=[{bin,dieCount}]。对比任意两个 bin（如 BIN10 vs BIN66）：从 badBins 按 bin 编号查 dieCount，相减得 diff，缺失视为 0；禁止用 aggregate 排名表做横向对比。";
-
-const LOT_YIELD_RANK_GUIDE = lotYieldRankFieldGuide();
-
-const TOP_BAD_BINS_GUIDE =
-  "topBadBins：当前查询范围内（如已传 lot 则仅该 lot）坏 bin 按 dieCount 降序 Top15；单 lot 概况/坏 bin 排名读此字段，禁止无 lot 的 aggregate_jb_bins。";
 
 export type TopBadBinEntry = { bin: number; dieCount: number };
 
@@ -510,14 +475,6 @@ export function formatJbRowsForAgent(
   });
 }
 
-const PASS_IDS_PRESENT_GUIDE =
-  "passIdsPresent：本批返回行内出现的全部 PASSID（1=pass1，3=pass3，5=pass5）。禁止在未出现 1 时写「无 pass1」；有则必须写 pass1 良率（读 yieldByPassId）。用户说常温/高温/低温时映射到 1/3/5，回复勿写温区字眼。";
-
-const LOT_QUERY_FULL_ROWS_GUIDE =
-  "指定 lot 查询已拉取该 lot 全部匹配行（不限 200、默认 TESTEND 自 2020 起）；整体良率须读 lotYieldOverviewMarkdown / yieldByPassIdMarkdown（每层 sort 一行），禁止把多层 die 相加成一个「整体良率」。";
-
-const MULTI_LOT_YIELD_SCOPE_GUIDE =
-  "多 lot 行集（mask/device 未指定 lot）：良率/中断/探针卡表仅针对 primary lot（TESTEND 最新批）；须读 recentLotsByTestEnd / lotYieldRankByTestEnd 列全部 lot，或对各 lot 分别 query_jb_bins(lot)。";
 
 /** mask/device 多 lot 时：良率表仅算 primary lot，避免跨 lot 合并同 slot。 */
 export function rowsForYieldAggregates(
@@ -623,38 +580,16 @@ export function wrapJbQueryResultForAgent(
     device: primaryDevice || undefined,
     ...(multiLotYieldScope
       ? {
-          _multiLotYieldScopeGuide: MULTI_LOT_YIELD_SCOPE_GUIDE,
           multiLotYieldScope: true,
           multiLotYieldScopeLot: primaryLot || undefined,
           multiLotDistinctCount: distinctLotCount,
         }
       : {}),
-    _binFieldGuide: BIN_SCHEMA_HINT,
-    _slotYieldGuide: slotYieldSummaryFieldGuide(),
-    _slotBadBinsCompactGuide: SLOT_BAD_BINS_COMPACT_GUIDE,
-    _cardChangesBySlotPassGuide: CARD_CHANGES_BY_SLOT_PASS_GUIDE,
-    _cardByPassIdGuide: CARD_BY_PASS_ID_GUIDE,
-    _recentLotsGuide: RECENT_LOTS_GUIDE,
-    _binTotalsByLotGuide: BIN_TOTALS_BY_LOT_GUIDE,
-    _lotYieldRankGuide: LOT_YIELD_RANK_GUIDE,
-    _topBadBinsGuide: TOP_BAD_BINS_GUIDE,
-    _yieldByPassGuide: yieldByPassFieldGuide(),
-    _slotYieldPivotGuide: slotYieldPivotFieldGuide(),
-    _slotYieldInterruptGuide: slotYieldInterruptFieldGuide(),
-    _testInterruptCountGuide: testInterruptCountFieldGuide(),
-    _testerByLotGuide: TESTER_BY_LOT_GUIDE,
-    _passIdsPresentGuide: PASS_IDS_PRESENT_GUIDE,
-    _slotsByPassGuide: SLOTS_BY_PASS_GUIDE,
-    _badBinSlotTrendsGuide: BAD_BIN_SLOT_TRENDS_GUIDE,
-    _clusteredBadBinAlertsGuide: CLUSTERED_BAD_BIN_ALERTS_GUIDE,
     ...(meta?.cardDegradationSignal
-      ? {
-          _cardDegradationSignalGuide: CARD_DEGRADATION_SIGNAL_GUIDE,
-          cardDegradationSignal: meta.cardDegradationSignal,
-        }
+      ? { cardDegradationSignal: meta.cardDegradationSignal }
       : {}),
     ...(meta?.lotScopedFullRows
-      ? { _lotQueryGuide: LOT_QUERY_FULL_ROWS_GUIDE, lotQueryFullRows: true }
+      ? { lotQueryFullRows: true }
       : {}),
     passIdsPresent: passIdsPresent,
     slotsByPassId,
@@ -856,9 +791,6 @@ export function serializeJbQueryResultForAgent(
   delete withoutRows["binTotalsByLot"];
   delete withoutRows["cardDegradationSignal"];
   delete withoutRows["cardChangesBySlotPass"];
-  for (const k of Object.keys(withoutRows)) {
-    if (k.startsWith("_") && k.endsWith("Guide")) delete withoutRows[k];
-  }
   withoutRows["rowsOmitted"] = true;
   withoutRows["rowCount"] = rowCount;
   withoutRows["_rowsNote"] =
@@ -934,7 +866,6 @@ export function serializeJbQueryResultForAgent(
 
   const ultra: Record<string, unknown> = {
     ...core,
-    _slotYieldGuide: wrapped["_slotYieldGuide"],
     _rowsNote: withoutRows["_rowsNote"],
     rowsOmitted: true,
     rowCount,

@@ -59,9 +59,8 @@ describe("agentJbBinFormat", () => {
     assert.deepEqual(row.goodBins, [{ bin: 250, dieCount: 7890, isGoodBin: true }]);
   });
 
-  it("wrapJbQueryResultForAgent includes field guide and empty distinctSlots", () => {
+  it("wrapJbQueryResultForAgent returns empty distinctSlots for empty input", () => {
     const out = wrapJbQueryResultForAgent([]);
-    assert.ok(String(out._binFieldGuide).includes("dieCount"));
     assert.equal(out.count, 0);
     assert.deepEqual(out.distinctSlots, []);
   });
@@ -98,7 +97,6 @@ describe("agentJbBinFormat", () => {
     const s21 = summary.find((x) => x.slot === 21)!;
     assert.equal(s21.interruptHalf!.goodDie, 0);
     assert.equal(s21.interruptHalf!.yieldPct, 0);
-    assert.ok(String(out._slotYieldInterruptGuide ?? out._slotYieldGuide).includes("0%"));
     const md = String(out.slotYieldInterruptMarkdown);
     assert.ok(md.includes("整片正片（合并）"));
     assert.ok(md.includes("前半段"));
@@ -264,11 +262,10 @@ describe("agentJbBinFormat", () => {
     assert.equal(lot!.hasCardChangeInLot, false);
   });
 
-  it("wrapJbQueryResultForAgent includes slotBadBinsCompact guide", () => {
+  it("wrapJbQueryResultForAgent includes slotBadBinsCompact", () => {
     const out = wrapJbQueryResultForAgent([
       { SLOT: 1, bins: [{ n: 7, value: 10, isGoodBin: false }] },
     ] as Record<string, unknown>[]);
-    assert.ok(String(out._slotBadBinsCompactGuide).includes("slotBadBinsCompact"));
     const compact = out.slotBadBinsCompact as Array<{ slot: number; badBins: unknown[] }>;
     assert.equal(compact[0]!.slot, 1);
     assert.deepEqual(compact[0]!.badBins, [
@@ -460,7 +457,6 @@ describe("agentJbBinFormat", () => {
       { LOT: "A", DEVICE: "D", CARDID: "7747-01", TESTEND: "2026-05-01T00:00:00.000Z", SLOT: 1, bins: [] },
       { LOT: "B", DEVICE: "D", CARDID: "7747-01", TESTEND: "2026-05-02T00:00:00.000Z", SLOT: 1, bins: [] },
     ] as Record<string, unknown>[]);
-    assert.ok(String(out._recentLotsGuide).includes("recentLotsByTestEnd"));
     assert.equal(out.distinctLotCount, 2);
     const recent = out.recentLotsByTestEnd as Array<{ lot: string }>;
     assert.deepEqual(recent.map((x) => x.lot), ["B", "A"]);
@@ -532,7 +528,6 @@ describe("agentJbBinFormat", () => {
       { bin: 3, dieCount: 10 },
     ]);
     const out = wrapJbQueryResultForAgent(rows);
-    assert.ok(String(out._topBadBinsGuide).includes("topBadBins"));
     assert.deepEqual(out.topBadBins, buildTopBadBins(rows, 15));
   });
 
@@ -564,7 +559,6 @@ describe("agentJbBinFormat", () => {
         ],
       },
     ] as Record<string, unknown>[]);
-    assert.ok(String(out._lotYieldRankGuide).includes("lotYieldRankByTestEnd"));
     const rank = out.lotYieldRankByTestEnd as Array<{ lot: string; yieldPct: number }>;
     assert.deepEqual(rank.map((x) => x.lot), ["L2", "L1"]);
     assert.ok(Math.abs(rank[1]!.yieldPct - 80) < 0.1);
@@ -582,7 +576,6 @@ describe("agentJbBinFormat", () => {
         ],
       },
     ] as Record<string, unknown>[]);
-    assert.ok(String(out._binTotalsByLotGuide).includes("binTotalsByLot"));
     const totals = out.binTotalsByLot as Array<{ lot: string; badBins: Array<{ bin: number; dieCount: number }> }>;
     const l1 = totals[0]!;
     assert.equal(l1.lot, "L1");
