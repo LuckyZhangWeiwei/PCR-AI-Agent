@@ -206,6 +206,74 @@ function countDistinct(rawValues: string[], limit: number, search?: string): {
   return { values, totalDistinct: counts.size };
 }
 
+/** 机台 search 无命中时尝试 uflex24 → flex24 / b3uflex24 等变体。 */
+function expandTesterSearchTerms(search: string): string[] {
+  const normalized = search.trim().toLowerCase().replace(/\s+/g, "");
+  const terms = new Set<string>([search.trim(), normalized]);
+  const uflex = normalized.match(/uflex(\d+)/);
+  if (uflex) {
+    terms.add(`flex${uflex[1]}`);
+    terms.add(`b3uflex${uflex[1]}`);
+    terms.add(`b3uflex${uflex[1]!.padStart(2, "0")}`);
+  }
+  const flexOnly = normalized.match(/^flex(\d+)$/);
+  if (flexOnly) {
+    terms.add(`b3uflex${flexOnly[1]}`);
+    terms.add(`uflex${flexOnly[1]}`);
+  }
+  if (normalized.startsWith("b3")) terms.add(normalized.slice(2));
+  return [...terms];
+}
+
+function countDistinctWithSearchFallback(
+  rawValues: string[],
+  limit: number,
+  search?: string
+): { values: string[]; totalDistinct: number } {
+  const first = countDistinct(rawValues, limit, search);
+  if (first.totalDistinct > 0 || !search?.trim()) return first;
+  for (const alt of expandTesterSearchTerms(search)) {
+    if (alt.toUpperCase() === search.trim().toUpperCase()) continue;
+    const retry = countDistinct(rawValues, limit, alt);
+    if (retry.totalDistinct > 0) return retry;
+  }
+  return first;
+}
+
+async function oracleYieldWithSearchFallback(
+  field: YieldField,
+  filterBy: Record<string, string | undefined>,
+  limit: number
+): Promise<FilterValuesResult> {
+  let result = await oracleYield(field, filterBy, limit);
+  if (result.totalDistinct > 0 || !filterBy["search"] || field !== "hostname") {
+    return result;
+  }
+  for (const alt of expandTesterSearchTerms(filterBy["search"])) {
+    if (alt.toUpperCase() === filterBy["search"]!.toUpperCase()) continue;
+    result = await oracleYield(field, { ...filterBy, search: alt }, limit);
+    if (result.totalDistinct > 0) return result;
+  }
+  return result;
+}
+
+async function oracleJbWithSearchFallback(
+  field: JbField,
+  filterBy: Record<string, string | undefined>,
+  limit: number
+): Promise<FilterValuesResult> {
+  let result = await oracleJb(field, filterBy, limit);
+  if (result.totalDistinct > 0 || !filterBy["search"] || field !== "testerId") {
+    return result;
+  }
+  for (const alt of expandTesterSearchTerms(filterBy["search"])) {
+    if (alt.toUpperCase() === filterBy["search"]!.toUpperCase()) continue;
+    result = await oracleJb(field, { ...filterBy, search: alt }, limit);
+    if (result.totalDistinct > 0) return result;
+  }
+  return result;
+}
+
 // ─── device-by-mask shared helper ────────────────────────────────────────────
 
 function resolveDeviceMaskArg(
@@ -299,7 +367,10 @@ function dummyYield(
     }
   });
 
-  const { values, totalDistinct } = countDistinct(raw, limit, filterBy["search"]);
+  const useSearchFallback = field === "hostname";
+  const { values, totalDistinct } = useSearchFallback
+    ? countDistinctWithSearchFallback(raw, limit, filterBy["search"])
+    : countDistinct(raw, limit, filterBy["search"]);
   return { domain: "yield", field, values, totalDistinct };
 }
 
@@ -345,7 +416,10 @@ function dummyJb(
     }
   });
 
-  const { values, totalDistinct } = countDistinct(raw, limit, filterBy["search"]);
+  const useSearchFallback = field === "testerId";
+  const { values, totalDistinct } = useSearchFallback
+    ? countDistinctWithSearchFallback(raw, limit, filterBy["search"])
+    : countDistinct(raw, limit, filterBy["search"]);
   return { domain: "jb", field, values, totalDistinct };
 }
 
@@ -697,7 +771,7 @@ export async function runGetFilterValues(
     try {
       const result = yieldMonitorTriggersUseDummy()
         ? dummyYield(field as YieldField, filterBy, deviceMaskLimit)
-        : await oracleYield(field as YieldField, filterBy, deviceMaskLimit);
+        : await oracleYieldWithSearchFallback(field as YieldField, filterBy, deviceMaskLimit);
       return JSON.stringify(result);
     } catch (err) {
       return `get_filter_values 错误: ${err instanceof Error ? err.message : String(err)}`;
@@ -711,7 +785,7 @@ export async function runGetFilterValues(
     try {
       const result = infcontrolLayerBinsUseDummy()
         ? dummyJb(field as JbField, filterBy, deviceMaskLimit)
-        : await oracleJb(field as JbField, filterBy, deviceMaskLimit);
+        : await oracleJbWithSearchFallback(field as JbField, filterBy, deviceMaskLimit);
       return JSON.stringify(result);
     } catch (err) {
       return `get_filter_values 错误: ${err instanceof Error ? err.message : String(err)}`;

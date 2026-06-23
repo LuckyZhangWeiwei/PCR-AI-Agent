@@ -23,6 +23,7 @@
 | 1d | [`../docs/HANDOFF_JB_INTERRUPT_YIELD.md`](../docs/HANDOFF_JB_INTERRUPT_YIELD.md) | **JB 中断 wafer 良率**：半片字段、输出顺序（前半→后半→整片合并→lot 整体，0% 必写） |
 | 1e | [`../docs/HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md`](../docs/HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md) | **Agent JB 逐片 BIN + 工具结果体积**：`slotBadBinsCompact` / `binBySlot`、`toolResultMaxChars`（Settings 默认 12000） |
 | 1e1 | [`../docs/HANDOFF_AGENT_JB_DETERMINISTIC_SUMMARY.md`](../docs/HANDOFF_AGENT_JB_DETERMINISTIC_SUMMARY.md) | **Agent JB 确定性总结**：lot 全量查询、预计算 markdown、`tryRunDeterministicJbSummary`、数据解读 + Wafer Test/Probe Card/DUT 专业建议 |
+| 1e1b | [`../docs/HANDOFF_AGENT_JB_LOT_LISTING.md`](../docs/HANDOFF_AGENT_JB_LOT_LISTING.md) | **Agent lot 列表直出**：device+机台枚举、`pending query_jb_bins`、TOP fail BIN / YM 报警 / 嫌疑 DUT 宽表 |
 | 1e2 | [`../docs/HANDOFF_AGENT_JB_PROBE_CARD_CHANGE.md`](../docs/HANDOFF_AGENT_JB_PROBE_CARD_CHANGE.md) | **Agent JB 中途换卡**：仅同 **(slot, passId)** 多 CARDID；`cardByPassId`（pass1≠pass3 用不同卡为正常） |
 | 1f | [`../docs/HANDOFF_AGENT_GENERATE_CHART.md`](../docs/HANDOFF_AGENT_GENERATE_CHART.md) | **Agent generate_chart**：GLM `<tool_call>` 解析、空参合并、`inferGenerateChartArgsFromHistory`（DUT 占比 pie） |
 | 1g | [`../docs/HANDOFF_INF_WAFER_MAP_AND_AGENT_TABLE_UX.md`](../docs/HANDOFF_INF_WAFER_MAP_AND_AGENT_TABLE_UX.md) | **INF + Agent 三路由**：wafermap / lot 概况 / DUT×BIN 图；`inf_draw` vs `inf_draw_dut_bin_map`；超时与 HTML 性能 |
@@ -284,6 +285,10 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
    - **改后**：`query_jb_bins(lot)` 全量 SQL + 预计算 `yieldByPassId` / `badBinSlotTrends` / `agentTablesDigest`；总结轮 **`tryRunDeterministicJbSummary`** 先 SSE 直出表，再 LLM 仅写 **`### 数据解读`** + **`### 专业建议`**（Wafer Test / Probe Card / DUT）。
    - **文件**：`agentJbDeterministicReply.ts`、`agentJbSessionCache.ts`、`agentJbYieldCore.ts`、`agentJbBinTrend.ts`、`agentJbHistoryCompact.ts`；lot 查询 **`agentToolHandlers.ts`**。
    - **交接全文**：[`../docs/HANDOFF_AGENT_JB_DETERMINISTIC_SUMMARY.md`](../docs/HANDOFF_AGENT_JB_DETERMINISTIC_SUMMARY.md)。回归 **`test/agentJbDeterministicReply.test.ts`**、**`test/agentJbBinTrend.test.ts`**、**`test/jbAgentLotQuery.test.ts`**。
+21. **Agent lot 列表直出 + YM 自动补 JB（2026-06-23）**：
+   - **现象**：用户要「所有 lot / fail bin / 嫌疑 DUT 列表」时 Agent 只查 YM 或只输出单 lot 概况表；`UFLEX 24` 机台 search 空。
+   - **改后**：**`lot_listing`** 模式 + **`buildRecentLotsListingMarkdown`**；**`detectPendingQuery`** YM→**`query_jb_bins`**、明细→**`aggregate_jb_bins(lot,bin)`**；**`agentQueryScope.ts`** 推断 device/tester/时间窗；**`get_filter_values`** search fallback。
+   - **交接全文**：[`../docs/HANDOFF_AGENT_JB_LOT_LISTING.md`](../docs/HANDOFF_AGENT_JB_LOT_LISTING.md)。回归 **`test/agentJbDeterministicReply.test.ts`**、**`test/agentQueryScope.test.ts`**。
 
 ---
 

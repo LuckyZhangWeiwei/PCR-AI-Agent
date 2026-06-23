@@ -35,7 +35,10 @@ import {
   DETERMINISTIC_COMMENTARY_SECTION_TITLE,
   extractBinFromUserText,
   extractSlotFromUserText,
+  extractYmLotsFromHistory,
+  isLotListingQuestion,
   isLotOverviewQuestion,
+  buildLotListingContext,
   isPerSlotBadBinRankingQuestion,
   isProbeCardQuestion,
   isTesterMachineQuestion,
@@ -890,7 +893,9 @@ async function emitDeterministicJbTablesReply(
   emit: (event: AgentSseEvent) => void,
   options?: { withCommentaryLlm?: boolean }
 ): Promise<boolean> {
-  const tables = buildDeterministicJbTables(userQuestion, payload);
+  const history = getHistory(sessionId);
+  const listingCtx = buildLotListingContext(payload, history);
+  const tables = buildDeterministicJbTables(userQuestion, payload, listingCtx);
   if (!tables?.trim()) return false;
 
   const mode = detectJbReplyMode(userQuestion);
@@ -921,7 +926,6 @@ async function emitDeterministicJbTablesReply(
     return true;
   }
 
-  const history = getHistory(sessionId);
   emit({ type: "status", message: "正在生成数据解读与专业建议…" });
   // 先推送分段标题，避免解读文字与上方表格落在同一 Markdown 块里被 GFM 当成表尾行
   emit({
@@ -1500,7 +1504,29 @@ async function tryRunDeterministicJbSummary(
 ): Promise<boolean> {
   const history = getHistory(sessionId);
   const lastTool = lastToolMessage(history);
-  if (lastTool?.name !== "query_jb_bins" && lastTool?.name !== "aggregate_jb_bins") return false;
+  const lotListing = isLotListingQuestion(userQuestion);
+  if (
+    lastTool?.name !== "query_jb_bins" &&
+    lastTool?.name !== "aggregate_jb_bins" &&
+    !(lotListing && lastTool?.name === "query_yield_triggers") &&
+    !(lotListing && lastTool?.name === "aggregate_yield_triggers")
+  ) {
+    return false;
+  }
+
+  if (
+    lotListing &&
+    (lastTool?.name === "query_yield_triggers" ||
+      lastTool?.name === "aggregate_yield_triggers")
+  ) {
+    return emitDeterministicJbTablesReply(
+      sessionId,
+      userQuestion,
+      {},
+      agentConfig,
+      emit
+    );
+  }
 
   // Cross-lot aggregate_jb_bins: emit server-generated per-lot BIN table directly.
   // Do NOT use the single-lot session cache — it would show the wrong lot.
@@ -1577,7 +1603,8 @@ function jbBinsYieldFallbackMessage(
   );
   if (payload && jbWrappedIsEmptyQuery(payload)) return null;
   if (payload) {
-    const tables = buildDeterministicJbTables(userQuestion, payload);
+    const listingCtx = buildLotListingContext(payload, getHistory(sessionId));
+    const tables = buildDeterministicJbTables(userQuestion, payload, listingCtx);
     if (tables?.trim()) {
       return `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${tables}`;
     }
@@ -2119,7 +2146,8 @@ export async function runAgentLoop(
         const pending = detectPendingQuery(
           userQuestion,
           lastTool.name ?? "",
-          jbPayload ?? {}
+          jbPayload ?? {},
+          getHistory(sessionId)
         );
         if (pending) {
           emit({ type: "status", message: pending.statusLabel });

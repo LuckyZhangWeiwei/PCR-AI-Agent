@@ -8,7 +8,12 @@ import {
   formatTestInterruptCountMarkdown,
   formatSlotYieldInterruptMarkdown,
 } from "./agentJbHistoryCompact.js";
-import type { CardByPassIdEntry, LotTesterEntry, SlotBadBinsCompactEntry } from "./agentJbBinFormat.js";
+import type {
+  CardByPassIdEntry,
+  LotTesterEntry,
+  RecentLotByTestEndEntry,
+  SlotBadBinsCompactEntry,
+} from "./agentJbBinFormat.js";
 import { jbWrappedIsEmptyQuery } from "./agentJbBinFormat.js";
 import type { ClusteredBadBinAlert } from "./agentJbBadBinCluster.js";
 import type { SlotYieldSummaryEntry } from "../jbYieldCalc.js";
@@ -39,10 +44,18 @@ export type JbReplyMode =
   | "bin_card_attribution"
   | "card_yield_compare"
   | "lot_yield_ranking"
+  | "lot_listing"
   | "per_slot_bin_ranking"
   | "card_test_overview"
   | "card_dut_question"
   | "generic";
+
+/** Yield Monitor 侧 lot 条目（合并进 lot 列表表）。 */
+export type YmLotListingEntry = {
+  lot: string;
+  device?: string;
+  testEnd?: string | null;
+};
 
 /** 用户问在哪台机台/测试机测（JB testerId / YM hostname）。 */
 export function isTesterMachineQuestion(text: string): boolean {
@@ -90,6 +103,241 @@ export function isCardYieldCompareQuestion(text: string): boolean {
     return true;
   }
   return false;
+}
+
+/**
+ * 用户要求枚举多个 lot/批次（非 lot 内 wafer/slot 列表）。
+ * 例：「近3个月测试的所有 lot 都列出来」「有哪些 lot」。
+ */
+export function isLotListingQuestion(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  // lot 内 wafer/slot 枚举（SEC_WAFER_ENUM），不是跨 lot 列表
+  if (
+    /列出所有\s*wafer|有哪些\s*wafer|每片\s*wafer|逐片|各\s*片/i.test(t) &&
+    !/所有\s*lot|全部\s*lot|所有批次|全部批次/i.test(t)
+  ) {
+    return false;
+  }
+  if (/所有\s*lot|全部\s*lot|所有批次|全部批次/i.test(t)) return true;
+  if (/^全部列(出|表|清单)?$/i.test(t)) return true;
+  if (/全部列(出|表)/i.test(t) && !/wafer|片|slot/i.test(t)) return true;
+  if (/都列出来|都列出|列出来/i.test(t) && /lot|批次/i.test(t)) return true;
+  if (/(列出|有哪些|显示|枚举).*(lot|批次)/i.test(t)) return true;
+  if (/(lot|批次).*(列出|有哪些|清单|列表)/i.test(t)) return true;
+  return false;
+}
+
+/** lot 列表 + fail bin / 嫌疑 DUT 等明细列（比纯 lot 枚举更宽）。 */
+export function isLotDetailListingQuestion(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (isLotListingQuestion(t)) {
+    if (/(fail\s*bin|failed\s*bin|坏\s*bin|失效\s*bin|嫌疑.*dut|嫌疑\s*dut)/i.test(t)) {
+      return true;
+    }
+    if (/\d+\s*个\s*lot/i.test(t)) return true;
+  }
+  if (/^全部列(出|表|清单)?$/i.test(t)) return true;
+  if (/全部列(出|表)/i.test(t) && !/wafer|片|slot/i.test(t)) return true;
+  if (
+    /(fail\s*bin|failed\s*bin|坏\s*bin|失效\s*bin)/i.test(t) &&
+    /(lot|批次)/i.test(t) &&
+    /(列|清单|列出来)/i.test(t)
+  ) {
+    return true;
+  }
+  if (/嫌疑.*dut/i.test(t) && /(列|清单)/i.test(t)) return true;
+  return false;
+}
+
+function parseDutNumbersFromTriggerLabel(label: string): number[] {
+  const out: number[] = [];
+  for (const m of label.matchAll(/dut#\s*(\d+)/gi)) {
+    const n = Number(m[1]);
+    if (Number.isFinite(n) && n > 0) out.push(n);
+  }
+  return out;
+}
+
+/** YM 各 lot 报警次数（aggregate + 明细行合并）。 */
+export function extractYmAlarmCountByLot(
+  history: Array<{ role?: string; name?: string; content?: string | null }>
+): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const m of history) {
+    if (m.role !== "tool") continue;
+    let o: Record<string, unknown>;
+    try {
+      o = JSON.parse(String(m.content ?? "")) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (m.name === "aggregate_yield_triggers") {
+      const groups = o["groups"] as Array<Record<string, unknown>> | undefined;
+      for (const g of groups ?? []) {
+        const lot = String(g["lotId"] ?? g["LOTID"] ?? "").trim();
+        const count = Number(g["count"] ?? g["CNT"] ?? 0);
+        if (lot && count > 0) counts.set(lot, (counts.get(lot) ?? 0) + count);
+      }
+    }
+    if (m.name === "query_yield_triggers") {
+      const rows = o["rows"] as Array<Record<string, unknown>> | undefined;
+      for (const r of rows ?? []) {
+        const lot = String(r["LOTID"] ?? r["lotId"] ?? "").trim();
+        if (lot) counts.set(lot, (counts.get(lot) ?? 0) + 1);
+      }
+    }
+  }
+  return counts;
+}
+
+/** YM 各 lot 嫌疑 DUT（从 TRIGGER_LABEL 解析 dut#）。 */
+export function extractYmSuspectDutsByLot(
+  history: Array<{ role?: string; name?: string; content?: string | null }>
+): Map<string, string[]> {
+  const byLot = new Map<string, Set<number>>();
+  for (const m of history) {
+    if (m.role !== "tool" || m.name !== "query_yield_triggers") continue;
+    let o: Record<string, unknown>;
+    try {
+      o = JSON.parse(String(m.content ?? "")) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    const rows = o["rows"] as Array<Record<string, unknown>> | undefined;
+    for (const r of rows ?? []) {
+      const lot = String(r["LOTID"] ?? r["lotId"] ?? "").trim();
+      const label = String(r["TRIGGER_LABEL"] ?? r["triggerLabel"] ?? "");
+      if (!lot || !label) continue;
+      const duts = parseDutNumbersFromTriggerLabel(label);
+      if (!duts.length) continue;
+      if (!byLot.has(lot)) byLot.set(lot, new Set());
+      for (const d of duts) byLot.get(lot)!.add(d);
+    }
+  }
+  const out = new Map<string, string[]>();
+  for (const [lot, duts] of byLot) {
+    out.set(
+      lot,
+      [...duts].sort((a, b) => a - b).map((d) => `DUT${d}`)
+    );
+  }
+  return out;
+}
+
+type BinTotalsEntry = { lot: string; badBins?: Array<{ bin: number; dieCount: number }> };
+
+/** JB 各 lot TOP fail bin（payload binTotalsByLot + history aggregate_jb_bins）。 */
+export function extractTopFailBinByLot(
+  toolPayload: Record<string, unknown>,
+  history: Array<{ role?: string; name?: string; content?: string | null }>
+): Map<string, string> {
+  const byLot = new Map<string, Map<number, number>>();
+
+  const binTotals = toolPayload["binTotalsByLot"] as BinTotalsEntry[] | undefined;
+  for (const e of binTotals ?? []) {
+    const lot = String(e.lot ?? "").trim();
+    if (!lot) continue;
+    for (const b of e.badBins ?? []) {
+      if (!byLot.has(lot)) byLot.set(lot, new Map());
+      const m = byLot.get(lot)!;
+      m.set(b.bin, (m.get(b.bin) ?? 0) + b.dieCount);
+    }
+  }
+
+  for (const m of history) {
+    if (m.role !== "tool" || m.name !== "aggregate_jb_bins") continue;
+    let o: Record<string, unknown>;
+    try {
+      o = JSON.parse(String(m.content ?? "")) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    const groups = o["groups"] as Array<Record<string, unknown>> | undefined;
+    for (const g of groups ?? []) {
+      const lot = String(g["lot"] ?? g["LOT"] ?? "").trim();
+      const binRaw = g["bin"] ?? g["BIN"];
+      const bin = Number(binRaw);
+      const count = Number(g["count"] ?? g["CNT"] ?? 0);
+      if (!lot || !Number.isFinite(bin) || count <= 0) continue;
+      if (!byLot.has(lot)) byLot.set(lot, new Map());
+      const mp = byLot.get(lot)!;
+      mp.set(bin, (mp.get(bin) ?? 0) + count);
+    }
+  }
+
+  const out = new Map<string, string>();
+  for (const [lot, bins] of byLot) {
+    const top = [...bins.entries()].sort((a, b) => b[1] - a[1])[0];
+    out.set(lot, top ? `BIN${top[0]}（${top[1]}）` : "—");
+  }
+  return out;
+}
+
+export type LotListingContext = {
+  ymLots?: YmLotListingEntry[];
+  ymAlarmCountByLot?: Map<string, number>;
+  ymSuspectDutsByLot?: Map<string, string[]>;
+  topFailBinByLot?: Map<string, string>;
+  detailed?: boolean;
+};
+
+export function buildLotListingContext(
+  toolPayload: Record<string, unknown>,
+  history: Array<{ role?: string; name?: string; content?: string | null }>
+): LotListingContext {
+  const ymLots = extractYmLotsFromHistory(history);
+  return {
+    ymLots,
+    ymAlarmCountByLot: extractYmAlarmCountByLot(history),
+    ymSuspectDutsByLot: extractYmSuspectDutsByLot(history),
+    topFailBinByLot: extractTopFailBinByLot(toolPayload, history),
+    detailed: false,
+  };
+}
+
+/** 从 session history 提取 YM 侧不重复 lot（供 lot 列表与 JB 合并）。 */
+export function extractYmLotsFromHistory(
+  history: Array<{ role?: string; name?: string; content?: string | null }>
+): YmLotListingEntry[] {
+  const byLot = new Map<string, YmLotListingEntry>();
+  for (const m of history) {
+    if (m.role !== "tool" || m.name !== "query_yield_triggers") continue;
+    let o: Record<string, unknown>;
+    try {
+      o = JSON.parse(String(m.content ?? "")) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    const rows = o["rows"] as Array<Record<string, unknown>> | undefined;
+    for (const r of rows ?? []) {
+      const lot = String(r["LOTID"] ?? r["lotId"] ?? "").trim();
+      if (!lot) continue;
+      const device = String(r["DEVICE"] ?? r["device"] ?? "").trim();
+      const tsRaw = r["TIME_STAMP"] ?? r["timeStamp"];
+      const testEnd =
+        tsRaw instanceof Date
+          ? tsRaw.toISOString()
+          : tsRaw != null && String(tsRaw).trim() !== ""
+            ? String(tsRaw)
+            : null;
+      const prev = byLot.get(lot);
+      if (
+        !prev ||
+        (testEnd && (!prev.testEnd || testEnd.localeCompare(prev.testEnd) > 0))
+      ) {
+        byLot.set(lot, {
+          lot,
+          device: device || prev?.device,
+          testEnd: testEnd ?? prev?.testEnd ?? null,
+        });
+      }
+    }
+  }
+  return [...byLot.values()].sort((a, b) =>
+    (b.testEnd ?? "").localeCompare(a.testEnd ?? "")
+  );
 }
 
 /** 用户按良率排名多个 lot（最差/最低的 N 个 lot）。 */
@@ -310,6 +558,7 @@ export function jbReplySkipsCommentaryLlm(mode: JbReplyMode): boolean {
     mode === "equipment" ||
     mode === "bin_card_attribution" ||
     mode === "lot_yield_ranking" ||
+    mode === "lot_listing" ||
     mode === "card_dut_question"
     // "per_slot_bin_ranking" 已移出：50 行跨片数据 LLM 最有价值（BIN 规律/异常片/pass 对比）
     // "card_yield_compare" 不跳过：LLM 需要推断「哪张卡更差」
@@ -340,6 +589,7 @@ export function detectJbReplyMode(userMessage: string): JbReplyMode {
   if (isBinTrendQuestion(userMessage)) return "bin_trend";
   if (isBadBinRankingQuestion(userMessage)) return "bad_bin_ranking";
   if (isLotYieldRankingQuestion(userMessage)) return "lot_yield_ranking";
+  if (isLotListingQuestion(userMessage)) return "lot_listing";
   if (isPerSlotBadBinRankingQuestion(userMessage)) return "per_slot_bin_ranking";
   if (isSlotPassYieldQuestion(userMessage)) return "slot_pass_yield";
   if (isCardDutQuestion(userMessage)) return "card_dut_question";
@@ -550,6 +800,127 @@ function buildLotYieldRankingMarkdown(
   return `${header}\n\n${rows.join("\n")}`;
 }
 
+/** 跨 lot 列表（JB recentLotsByTestEnd + YM 合并；可选 fail bin / 嫌疑 DUT 列）。 */
+export function buildRecentLotsListingMarkdown(
+  toolPayload: Record<string, unknown>,
+  ctx?: Partial<LotListingContext>
+): string | null {
+  const recent = toolPayload["recentLotsByTestEnd"] as
+    | RecentLotByTestEndEntry[]
+    | undefined;
+  const totalDistinct = Number(
+    toolPayload["totalDistinctLots"] ??
+      toolPayload["distinctLotCount"] ??
+      toolPayload["multiLotDistinctCount"] ??
+      0
+  );
+  const ymLots = ctx?.ymLots;
+  const ymAlarm = ctx?.ymAlarmCountByLot ?? new Map<string, number>();
+  const ymSuspect = ctx?.ymSuspectDutsByLot ?? new Map<string, string[]>();
+  const topFail = ctx?.topFailBinByLot ?? new Map<string, string>();
+  const detailed = Boolean(ctx?.detailed);
+
+  type Row = {
+    lot: string;
+    device: string;
+    testEnd: string;
+    slotCount: string;
+    source: string;
+  };
+  const rows: Row[] = [];
+  const seen = new Set<string>();
+
+  for (const e of recent ?? []) {
+    const lot = String(e.lot ?? "").trim();
+    if (!lot || seen.has(lot)) continue;
+    seen.add(lot);
+    const ymCount = ymAlarm.get(lot) ?? 0;
+    rows.push({
+      lot,
+      device: String(e.device ?? "").trim() || "—",
+      testEnd: e.testEnd ? String(e.testEnd).slice(0, 10) : "—",
+      slotCount:
+        typeof e.slotCount === "number" && e.slotCount > 0
+          ? String(e.slotCount)
+          : "—",
+      source: ymCount > 0 ? "JB+YM" : "JB STAR",
+    });
+  }
+
+  for (const ym of ymLots ?? []) {
+    const lot = String(ym.lot ?? "").trim();
+    if (!lot || seen.has(lot)) continue;
+    seen.add(lot);
+    rows.push({
+      lot,
+      device: String(ym.device ?? "").trim() || "—",
+      testEnd: ym.testEnd ? String(ym.testEnd).slice(0, 10) : "—",
+      slotCount: "—",
+      source: "仅 YM 告警",
+    });
+  }
+
+  // YM aggregate 里有、JB 枚举未覆盖的 lot
+  for (const [lot, count] of ymAlarm) {
+    if (seen.has(lot) || count <= 0) continue;
+    seen.add(lot);
+    rows.push({
+      lot,
+      device: "—",
+      testEnd: "—",
+      slotCount: "—",
+      source: "仅 YM 告警",
+    });
+  }
+
+  if (rows.length === 0) return null;
+
+  rows.sort((a, b) => {
+    if (a.testEnd === "—" && b.testEnd !== "—") return 1;
+    if (b.testEnd === "—" && a.testEnd !== "—") return -1;
+    return b.testEnd.localeCompare(a.testEnd);
+  });
+
+  const totalKnown = Math.max(totalDistinct, rows.length);
+  const scopeDevice = String(toolPayload["device"] ?? "").trim();
+  const scopeTester = String(toolPayload["testerId"] ?? "").trim();
+  const scopeParts = [
+    scopeDevice ? `device=${scopeDevice}` : "",
+    scopeTester ? `机台=${scopeTester}` : "",
+  ].filter(Boolean);
+  const scopeTag = scopeParts.length ? `（${scopeParts.join("，")}）` : "";
+
+  let header = `**测试 lot 列表${scopeTag}（共 ${totalKnown} 个 lot，按测试结束时间降序）**`;
+  if (totalDistinct > 0 && rows.length < totalDistinct) {
+    header = `**测试 lot 列表${scopeTag}（共 ${totalDistinct} 个 lot，下表列前 ${rows.length} 个）**`;
+  }
+
+  const tableRows = detailed
+    ? [
+        "| # | Lot | Device | 测试结束 | 片数 | TOP fail BIN | YM 报警 | 嫌疑 DUT | 数据来源 |",
+        "|---:|---|---|---|---:|---|---:|---|---|",
+        ...rows.map((r, i) => {
+          const alarm = ymAlarm.get(r.lot);
+          const duts = ymSuspect.get(r.lot)?.join("、") ?? "—";
+          const failBin = topFail.get(r.lot) ?? "—";
+          return `| ${i + 1} | ${r.lot} | ${r.device} | ${r.testEnd} | ${r.slotCount} | ${failBin} | ${alarm != null && alarm > 0 ? alarm : "—"} | ${duts} | ${r.source} |`;
+        }),
+      ]
+    : [
+        "| # | Lot | Device | 测试结束 | 片数 | 数据来源 |",
+        "|---:|---|---|---|---:|---|",
+        ...rows.map((r, i) =>
+          `| ${i + 1} | ${r.lot} | ${r.device} | ${r.testEnd} | ${r.slotCount} | ${r.source} |`
+        ),
+      ];
+
+  const footer =
+    rows.length >= 1
+      ? "\n\n如需深入分析某批次，请告知上表中的 lot 号。"
+      : "";
+  return `${header}\n\n${tableRows.join("\n")}${footer}`;
+}
+
 /** 按卡汇总某 BIN 的坏 die 颗数（所有卡均列出，0 颗也显示）。 */
 function buildBinCardAttributionMarkdown(
   compact: SlotBadBinsCompactEntry[],
@@ -725,11 +1096,21 @@ function buildCardTestOverviewMarkdown(
 /** 根据用户问题从工具 JSON 选出应直出的 markdown 表（不改写）。 */
 export function buildDeterministicJbTables(
   userMessage: string,
-  toolPayload: Record<string, unknown>
+  toolPayload: Record<string, unknown>,
+  listingCtx?: Partial<LotListingContext>
 ): string | null {
+  const mode = detectJbReplyMode(userMessage);
+
+  if (mode === "lot_listing") {
+    const detailed = isLotDetailListingQuestion(userMessage);
+    return buildRecentLotsListingMarkdown(toolPayload, {
+      ...listingCtx,
+      detailed,
+    });
+  }
+
   if (jbWrappedIsEmptyQuery(toolPayload)) return null;
   const digest = digestFromPayload(toolPayload);
-  const mode = detectJbReplyMode(userMessage);
 
   if (mode === "lot_yield_ranking") {
     const md = buildLotYieldRankingMarkdown(toolPayload, userMessage);

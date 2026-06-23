@@ -4,10 +4,13 @@ import {
   buildBriefCommentaryUserMessage,
   buildDeterministicJbTables,
   buildEngineeringContextFromPayload,
+  buildRecentLotsListingMarkdown,
   detectJbReplyMode,
   extractBinFromUserText,
+  extractYmLotsFromHistory,
   isBinTrendQuestion,
   isInterruptCountQuestion,
+  isLotListingQuestion,
   isProbeCardQuestion,
   isTesterMachineQuestion,
   isSlotPassYieldQuestion,
@@ -84,6 +87,146 @@ describe("agentJbDeterministicReply", () => {
       detectJbReplyMode("BIN55 的 fail bin 情况"),
       "bad_bin_ranking"
     );
+  });
+
+  it("detects lot listing vs single-lot overview", () => {
+    const q =
+      "WA01P14E 在 b3uflex24 台近 3 个月 测试的所有lot 都列出来";
+    assert.ok(isLotListingQuestion(q));
+    assert.equal(detectJbReplyMode(q), "lot_listing");
+    assert.notEqual(detectJbReplyMode(q), "lot_overview");
+  });
+
+  it("buildRecentLotsListingMarkdown merges JB and YM lots", () => {
+    const md = buildRecentLotsListingMarkdown(
+      {
+        device: "WA01P14E",
+        testerId: "b3uflex24",
+        totalDistinctLots: 3,
+        recentLotsByTestEnd: [
+          {
+            lot: "NF13256.1R",
+            device: "WA01P14E",
+            testEnd: "2026-06-01T00:00:00.000Z",
+            slotCount: 21,
+            cardIds: [],
+            hasCardChangeInLot: false,
+            cardId: "",
+            slots: [],
+          },
+          {
+            lot: "NF12576.1X",
+            device: "WA01P14E",
+            testEnd: "2026-05-15T00:00:00.000Z",
+            slotCount: 25,
+            cardIds: [],
+            hasCardChangeInLot: false,
+            cardId: "",
+            slots: [],
+          },
+        ],
+      },
+      {
+        ymLots: [
+          { lot: "NF12000.1Y", device: "WA01P14E", testEnd: "2026-04-01T00:00:00.000Z" },
+        ],
+        ymAlarmCountByLot: new Map([["NE91236.1W", 10]]),
+      }
+    );
+    assert.ok(md?.includes("NF13256.1R"));
+    assert.ok(md?.includes("NF12576.1X"));
+    assert.ok(md?.includes("NF12000.1Y"));
+    assert.ok(md?.includes("NE91236.1W"));
+    assert.ok(md?.includes("共 4 个 lot"));
+  });
+
+  it("buildRecentLotsListingMarkdown detailed mode shows fail bin and suspect DUT", () => {
+    const md = buildRecentLotsListingMarkdown(
+      {
+        device: "WA01P14E",
+        testerId: "b3uflex24",
+        totalDistinctLots: 1,
+        recentLotsByTestEnd: [
+          {
+            lot: "NF12576.1X",
+            device: "WA01P14E",
+            testEnd: "2026-06-01",
+            slotCount: 25,
+            cardIds: [],
+            hasCardChangeInLot: false,
+            cardId: "",
+            slots: [],
+          },
+        ],
+      },
+      {
+        detailed: true,
+        topFailBinByLot: new Map([["NF12576.1X", "BIN61（530）"]]),
+        ymAlarmCountByLot: new Map([["NF12576.1X", 2]]),
+        ymSuspectDutsByLot: new Map([["NF12576.1X", ["DUT2", "DUT54"]]]),
+      }
+    );
+    assert.ok(md?.includes("TOP fail BIN"));
+    assert.ok(md?.includes("BIN61（530）"));
+    assert.ok(md?.includes("DUT2"));
+    assert.ok(md?.includes("YM 报警"));
+  });
+
+  it("buildDeterministicJbTables lot_listing skips single-lot overview", () => {
+    const payload = {
+      lot: "NF13256.1R",
+      device: "WA01P14E",
+      multiLotYieldScope: true,
+      totalDistinctLots: 2,
+      recentLotsByTestEnd: [
+        {
+          lot: "NF13256.1R",
+          device: "WA01P14E",
+          testEnd: "2026-06-01",
+          slotCount: 21,
+          cardIds: [],
+          hasCardChangeInLot: false,
+          cardId: "",
+          slots: [],
+        },
+        {
+          lot: "NF12576.1X",
+          device: "WA01P14E",
+          testEnd: "2026-05-15",
+          slotCount: 25,
+          cardIds: [],
+          hasCardChangeInLot: false,
+          cardId: "",
+          slots: [],
+        },
+      ],
+      lotYieldOverviewMarkdown: "**NF13256.1R 不应出现**",
+    };
+    const md = buildDeterministicJbTables(
+      "WA01P14E b3uflex24 近3个月所有 lot 列出来",
+      payload
+    );
+    assert.ok(md?.includes("测试 lot 列表"));
+    assert.ok(md?.includes("NF12576.1X"));
+    assert.equal(md?.includes("不应出现"), false);
+  });
+
+  it("extractYmLotsFromHistory dedupes LOTID from query_yield_triggers", () => {
+    const lots = extractYmLotsFromHistory([
+      {
+        role: "tool",
+        name: "query_yield_triggers",
+        content: JSON.stringify({
+          rows: [
+            { LOTID: "NF12576.1X", DEVICE: "WA01P14E", TIME_STAMP: "2026-06-01" },
+            { LOTID: "NF12576.1X", DEVICE: "WA01P14E", TIME_STAMP: "2026-05-01" },
+            { LOTID: "NF12000.1Y", DEVICE: "WA01P14E", TIME_STAMP: "2026-04-01" },
+          ],
+        }),
+      },
+    ]);
+    assert.equal(lots.length, 2);
+    assert.equal(lots[0]?.lot, "NF12576.1X");
   });
 
   it("buildDeterministicJbTables equipment includes card and tester", () => {
