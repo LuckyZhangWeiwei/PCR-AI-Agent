@@ -19,6 +19,11 @@ import { buildChartOption, generateChartArgsHaveData, tryParseJsonish } from "./
 import { streamSiliconFlow, type CollectedToolCall } from "./agentStream.js";
 import { buildFeedbackInjection } from "./agentFeedback.js";
 import { detectPendingQuery } from "./agentPendingQuery.js";
+import {
+  buildFactSheetFromHistory,
+  factCheckSummaryText,
+  formatFactCheckNote,
+} from "./agentFactChecker.js";
 import { storeJbQuerySessionCache, jbWrappedIsEmptyQuery } from "./agentJbBinFormat.js";
 import {
   compactJbBinsForHistory,
@@ -2929,6 +2934,20 @@ export async function runAgentLoop(
             "模型未返回分析结论（工具数据已在上方）。请点「重试」，或缩小查询范围后重新提问。",
         });
         return;
+      }
+      // Fact check: verify the LLM's conclusion against tool-result data (summary round only).
+      // The text is already streamed to the client; on mismatch we append a visible note rather
+      // than retrying (retrying would produce duplicate text the client can't undo).
+      if (awaitingSummary && textBuffer.trim()) {
+        const facts = buildFactSheetFromHistory(getHistory(sessionId));
+        const checkResult = factCheckSummaryText(textBuffer, facts);
+        if (!checkResult.ok) {
+          const note = formatFactCheckNote(checkResult.issue);
+          emit({ type: "text", delta: note });
+          appendMessages(sessionId, { role: "assistant", content: textBuffer + note });
+          emit({ type: "done" });
+          return;
+        }
       }
       appendMessages(sessionId, { role: "assistant", content: textBuffer });
       emit({ type: "done" });
