@@ -211,6 +211,16 @@ test("check 4 fails when LLM mentions a card ID not in tool data", () => {
   assert.ok(issue.includes("6045-10"), "应提示正确卡号");
 });
 
+test("check 4 does NOT flag date strings as card IDs (false-positive guard)", () => {
+  // "2026-06" looks like dddd-dd but is a date — must not trigger card ID check
+  const facts = buildFactSheetFromHistory([makeJbMsg("DR45721.1K")]); // cardId = 6045-10
+  const result = factCheckSummaryText(
+    "截至 2026-06 月的测试数据显示，探针卡 6045-10 性能稳定。",
+    facts
+  );
+  assert.equal(result.ok, true, "日期字符串 2026-06 不应被识别为探针卡 ID");
+});
+
 test("check 4 skips when no cardByPassId in tool data", () => {
   const msg: ChatMessage = {
     role: "tool",

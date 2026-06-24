@@ -71,8 +71,13 @@ export type FactCheckResult =
 /** Standard lot ID: two uppercase letters + 5 digits + dot + digit + letter  (e.g. DR45721.1K) */
 const LOT_PATTERN = /\b([A-Z]{2}\d{5}\.\d[A-Z])\b/g;
 
-/** Probe card ID: dddd-dd (e.g. 6045-10) */
-const CARD_ID_PATTERN = /\b(\d{4}-\d{2})\b/g;
+/**
+ * Probe card ID: dddd-dd (e.g. 6045-10).
+ * Negative lookahead excludes year-like prefixes (20xx) to avoid false positives
+ * on date strings such as "2026-06" or "2025-12".
+ * Real probe card IDs start with 4000–9999 in practice.
+ */
+const CARD_ID_PATTERN = /\b(?!20\d{2}-)(\d{4}-\d{2})\b/g;
 
 /** Device code: WA + ≥6 alphanumeric chars (e.g. WA88888822N95G) */
 const DEVICE_PATTERN = /\b(WA[A-Z0-9]{6,})\b/g;
