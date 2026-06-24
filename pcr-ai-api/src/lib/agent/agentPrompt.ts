@@ -1317,6 +1317,10 @@ export function classifyIntent(userQuestion: string, historyFirst?: string): Pro
   // Generic lot/bin keywords without a specific lot ID
   if (/\blot\b|批次|bin\d+|坏.?bin|良率分析|yield.*分析/.test(q)) return "lot_bin";
 
+  // Device code (WA-prefix, 8+ chars: WA88888822N95G) — same sections as mask_query.
+  // Without this, device-only questions fall to "general" and get the full prompt for no reason.
+  if (/\bWA[A-Z0-9]{6,}\b/.test(raw)) return "mask_query";
+
   return "general";
 }
 

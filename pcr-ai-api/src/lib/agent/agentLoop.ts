@@ -12,6 +12,7 @@ import {
 } from "./agentHistory.js";
 import { TOOL_SCHEMAS, INF_TOOL_SCHEMAS } from "./agentToolSchemas.js";
 import { runTool, type ChartSentinel, type ClarificationSentinel } from "./agentToolHandlers.js";
+import { validateAndFixToolArgs } from "./agentToolValidator.js";
 import { buildSystemPrompt, classifyIntent } from "./agentPrompt.js";
 import { fetchOrCacheManifest } from "./agentManifest.js";
 import { buildChartOption, generateChartArgsHaveData, tryParseJsonish } from "./agentChartTool.js";
@@ -2985,13 +2986,24 @@ export async function runAgentLoop(
     await Promise.all(
       Array.from(resourceGroups.values()).map(async (slots) => {
         for (const { tc, tcIdx, parsedArgs, callId } of slots) {
-          emit({ type: "tool_start", name: tc.name, args: parsedArgs });
+          // Auto-correct known arg mistakes before execution (prefer rules here
+          // over prompt rules — see agentToolValidator.ts for the rationale).
+          const { args: fixedArgs, notes: validatorNotes } = validateAndFixToolArgs(
+            tc.name, parsedArgs, userQuestion
+          );
+          if (validatorNotes.length > 0) {
+            // Transparently log what was fixed; parsedArgs in tool_start shows the FIXED args
+            // so the LLM history reflects what was actually executed.
+            console.log(`[validator] ${tc.name}: ${validatorNotes.join("; ")}`);
+          }
+
+          emit({ type: "tool_start", name: tc.name, args: fixedArgs });
           emit({ type: "status", message: `正在执行工具 ${tc.name}…` });
 
           let historyContent: string;
           let jbCacheForHistory: string | undefined;
           try {
-            const toolResult = await runTool(tc.name, parsedArgs, {
+            const toolResult = await runTool(tc.name, fixedArgs, {
               toolResultMaxChars: agentConfig.toolResultMaxChars,
               history: getHistory(sessionId),
               onJbBinsWrapped: (wrapped) => {
