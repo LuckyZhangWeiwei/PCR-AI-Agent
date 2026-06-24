@@ -924,6 +924,8 @@ async function emitDeterministicJbTablesReply(
   // 主分析 / lot 概况场景：topBadBins ≥3 项时自动生成坏 BIN bar chart
   if (mode === "generic" || mode === "lot_overview") {
     tryEmitTopBinBarChart(payload, emit);
+    // 探针卡问题：自动追加 DUT 坏 die 总量对比图（失败静默跳过，不阻断主流程）
+    await tryEmitCardDutBadDieChart(userQuestion, payload, agentConfig, emit);
   }
 
   if (!withCommentary) {
@@ -1489,6 +1491,244 @@ function tryEmitTopBinBarChart(
     emit({ type: "chart", option });
   } catch { return false; }
   return true;
+}
+
+/** 检测用户是否在询问特定探针卡（格式如 6045-10）的测试情况。 */
+function isCardProbeTestQuestion(userText: string): boolean {
+  return /\b\d{4}-\d{2}\b/.test(userText);
+}
+
+/**
+ * 从 query_lot_dut_bin_agg passes 结果中计算各 DUT 的坏 die 总量（跨所有坏 BIN 求和）。
+ * 返回按 DUT 编号升序排列（空间直观），仅含 totalBadDie > 0 的 DUT。
+ */
+function computeDutTotalBadDieFromPasses(
+  rawContent: string,
+  targetPassId = 1
+): Array<{ dut: number; totalBadDie: number }> | null {
+  const parsed = tryParseJsonish(rawContent) as Record<string, unknown> | null;
+  if (!parsed) return null;
+
+  type DutEntry = { dut: number; dieCount: number };
+  type BinEntry = { isGoodBin?: boolean; duts?: DutEntry[]; dutBreakdownOmitted?: boolean };
+  type PassEntry = { passId: number; bins: BinEntry[] };
+
+  const passes = parsed["passes"] as PassEntry[] | undefined;
+  if (!passes?.length) return null;
+
+  const targetPass = passes.find((p) => p.passId === targetPassId) ?? passes[0];
+  if (!targetPass?.bins?.length) return null;
+
+  const dutTotals = new Map<number, number>();
+  for (const bin of targetPass.bins) {
+    if (bin.isGoodBin || bin.dutBreakdownOmitted || !bin.duts?.length) continue;
+    for (const { dut, dieCount } of bin.duts) {
+      dutTotals.set(dut, (dutTotals.get(dut) ?? 0) + dieCount);
+    }
+  }
+
+  const result = [...dutTotals.entries()]
+    .filter(([, total]) => total > 0)
+    .sort((a, b) => a[0] - b[0])
+    .map(([dut, totalBadDie]) => ({ dut, totalBadDie }));
+
+  return result.length >= 2 ? result : null;
+}
+
+/** 片间（wafer-to-wafer）坏 die 总量对比图，来自 slotBadBinsCompact，无需额外查询。 */
+function tryEmitWaferTotalBadDieChart(
+  payload: Record<string, unknown>,
+  passId: number,
+  emit: (event: AgentSseEvent) => void
+): void {
+  type CompactEntry = {
+    slot: number; passId: number; cardId: string;
+    badBins: Array<{ bin: number; dieCount: number }>;
+  };
+  const compact = payload["slotBadBinsCompact"] as CompactEntry[] | undefined;
+  if (!compact?.length) return;
+
+  const filtered = compact.filter((e) => e.passId === passId);
+  if (filtered.length < 2) return;
+
+  const bySlot = new Map<number, number>();
+  for (const { slot, badBins } of filtered) {
+    bySlot.set(slot, (bySlot.get(slot) ?? 0) + badBins.reduce((s, b) => s + b.dieCount, 0));
+  }
+  const sorted = [...bySlot.entries()].sort((a, b) => a[0] - b[0]);
+  if (sorted.length < 2) return;
+
+  const lot = String(payload["lot"] ?? "").trim();
+  try {
+    const option = buildChartOption(
+      "bar",
+      `片间坏 die 总量（${lot ? lot + " " : ""}pass${passId}）`,
+      {
+        labels: sorted.map(([slot]) => `W${slot}`),
+        series: [{ name: "坏 die 颗数", values: sorted.map(([, v]) => v) }],
+      }
+    );
+    emit({ type: "chart", option });
+  } catch { /* skip */ }
+}
+
+/** Lot 良率趋势折线图，来自 lotYieldRankByTestEnd，无需额外查询。 */
+function tryEmitLotYieldTrendChart(
+  payload: Record<string, unknown>,
+  emit: (event: AgentSseEvent) => void
+): void {
+  type RankEntry = { lot: string; yieldPct: number; testEnd: string | null };
+  const rank = payload["lotYieldRankByTestEnd"] as RankEntry[] | undefined;
+  if (!rank || rank.length < 2) return;
+
+  const sorted = [...rank]
+    .filter((e) => e.testEnd)
+    .sort((a, b) => (a.testEnd ?? "").localeCompare(b.testEnd ?? ""));
+  if (sorted.length < 2) return;
+
+  try {
+    const option = buildChartOption(
+      "line",
+      "各 lot 良率趋势（按测试时间）",
+      {
+        labels: sorted.map((e) => e.lot),
+        series: [{ name: "良率%", values: sorted.map((e) => parseFloat(e.yieldPct.toFixed(1))) }],
+      }
+    );
+    emit({ type: "chart", option });
+  } catch { /* skip */ }
+}
+
+/**
+ * DUT 坏 die 跨 lot 对比表（最近两 lot），以 Markdown 文本 emit。
+ * 用于判断哪个 DUT 位置持续偏高（探针磨损定位）。
+ */
+async function tryEmitDutCrossLotComparisonTable(
+  payload: Record<string, unknown>,
+  lot1RawContent: string,
+  probeCardType: string,
+  agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void
+): Promise<void> {
+  const lot1 = String(payload["lot"] ?? "").trim();
+  type RecentLot = { lot: string; device: string };
+  const recentLots = payload["recentLotsByTestEnd"] as RecentLot[] | undefined;
+  if (!recentLots || recentLots.length < 2) return;
+
+  const lot2Entry = recentLots.find((e) => String(e.lot).trim() !== lot1);
+  if (!lot2Entry) return;
+
+  const lot2 = String(lot2Entry.lot).trim();
+  const device2 = String(lot2Entry.device ?? payload["device"] ?? "").trim();
+  if (!lot2 || !device2) return;
+
+  emit({ type: "status", message: `正在获取 ${lot2} DUT 数据用于跨 lot 对比…` });
+
+  let raw2: string;
+  try {
+    const result = await runTool("query_lot_dut_bin_agg", {
+      device: device2, lot: lot2, passId: 1,
+      ...(probeCardType ? { probeCardType } : {}),
+    }, { toolResultMaxChars: agentConfig.toolResultMaxChars, history: [] });
+    raw2 = typeof result === "string" ? result : JSON.stringify(result);
+  } catch {
+    return;
+  }
+
+  const duts1 = computeDutTotalBadDieFromPasses(lot1RawContent, 1);
+  const duts2 = computeDutTotalBadDieFromPasses(raw2, 1);
+  if (!duts1?.length || !duts2?.length) return;
+
+  const map1 = new Map(duts1.map((d) => [d.dut, d.totalBadDie]));
+  const map2 = new Map(duts2.map((d) => [d.dut, d.totalBadDie]));
+  const allDuts = new Set([...map1.keys(), ...map2.keys()]);
+
+  const tableRows = [...allDuts]
+    .sort((a, b) => a - b)
+    .filter((dut) => (map1.get(dut) ?? 0) > 0 || (map2.get(dut) ?? 0) > 0)
+    .map((dut) => {
+      const v2 = map2.get(dut) ?? 0;
+      const v1 = map1.get(dut) ?? 0;
+      const delta = v1 - v2;
+      const trend = delta > 5 ? `▲${delta}` : delta < -5 ? `▼${Math.abs(delta)}` : "≈";
+      return `| DUT${dut} | ${v2} | ${v1} | ${trend} |`;
+    });
+  if (tableRows.length === 0) return;
+
+  const cardLabel = probeCardType || "同型号卡";
+  const md = [
+    `\n\n**DUT 坏 die 跨 lot 对比（pass1 / ${cardLabel}）**`,
+    "",
+    `| DUT | ${lot2}（次近） | ${lot1}（最近） | 趋势 |`,
+    "|---|---|---|---|",
+    ...tableRows,
+    "",
+    `> 趋势列：▲ = 坏 die 增加，▼ = 改善，≈ = 持平（阈值 ±5 颗）。DUT 持续偏高提示该触点位置磨损，建议针对性检查针尖状态。`,
+  ].join("\n");
+
+  emit({ type: "text", delta: md });
+}
+
+/**
+ * 探针卡概况问题的全套对比分析（调用位置：emitDeterministicJbTablesReply 末尾）：
+ * ① 片间坏 die 柱状图  ② lot 良率趋势折线图
+ * ③ 当前 lot DUT 坏 die 柱状图  ④ DUT 跨 lot 对比表
+ * 任何步骤失败均静默跳过，不阻断主流程。
+ */
+async function tryEmitCardDutBadDieChart(
+  userQuestion: string,
+  payload: Record<string, unknown>,
+  agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void
+): Promise<void> {
+  if (!isCardProbeTestQuestion(userQuestion)) return;
+
+  const device = String(payload["device"] ?? "").trim();
+  const lot = String(payload["lot"] ?? "").trim();
+  if (!device || !lot) return;
+
+  type CardByPassEntry = { passId: number; cardId: string };
+  const cardByPassId = payload["cardByPassId"] as CardByPassEntry[] | undefined;
+  const firstCardId = cardByPassId?.[0]?.cardId ?? "";
+  const probeCardType = firstCardId.match(/^(\d+)-/)?.[1] ?? "";
+
+  // ① 片间坏 die 对比（无需额外查询）
+  tryEmitWaferTotalBadDieChart(payload, 1, emit);
+
+  // ② lot 良率趋势（无需额外查询）
+  tryEmitLotYieldTrendChart(payload, emit);
+
+  // ③ 当前 lot DUT 坏 die 总量（需 query_lot_dut_bin_agg）
+  emit({ type: "status", message: `正在分析 ${lot} DUT 坏 die 分布…` });
+
+  let lotAggRaw: string;
+  try {
+    const result = await runTool("query_lot_dut_bin_agg", {
+      device, lot, passId: 1,
+      ...(probeCardType ? { probeCardType } : {}),
+    }, { toolResultMaxChars: agentConfig.toolResultMaxChars, history: [] });
+    lotAggRaw = typeof result === "string" ? result : JSON.stringify(result);
+  } catch {
+    return;
+  }
+
+  const dutTotals = computeDutTotalBadDieFromPasses(lotAggRaw, 1);
+  if (dutTotals?.length) {
+    try {
+      const option = buildChartOption(
+        "bar",
+        `DUT 坏 die 总量（${lot} pass1）`,
+        {
+          labels: dutTotals.map((d) => `DUT${d.dut}`),
+          series: [{ name: "坏 die 颗数", values: dutTotals.map((d) => d.totalBadDie) }],
+        }
+      );
+      emit({ type: "chart", option });
+    } catch { /* skip */ }
+
+    // ④ DUT 跨 lot 对比表（需再查一次次近 lot）
+    await tryEmitDutCrossLotComparisonTable(payload, lotAggRaw, probeCardType, agentConfig, emit);
+  }
 }
 
 /** 把 query_lot_dut_bin_agg 结果格式化为 Markdown 表格 + 一句结论。 */

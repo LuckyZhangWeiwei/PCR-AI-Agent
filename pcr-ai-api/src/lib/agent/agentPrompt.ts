@@ -548,6 +548,11 @@ const SEC_MASK = `\
        - JB 侧：读 \`recentLotsByTestEnd\`（每 lot 一行：lot / device / testEnd / slotCount）；若 \`totalDistinctLots\` > \`recentLotsByTestEnd.length\` 须注明「仅列前 N 个，共 M 个 lot」
        - YM 侧：从 \`rows[]\` 提取所有不重复的 LOTID（YM 无 lot 级汇总字段，只能从明细行取 LOTID）
        - **合并**：以 JB \`recentLotsByTestEnd\` 为主（元数据完整）；YM 有但 JB 无的 lot，单独列为"仅YM告警"条目，时间取 YM rows 的最新 TIME_STAMP
+     - **⚠️ 已有 YM 结果但尚未调 JB 时用户追问「全部列出/列出lot/有哪些lot」（高频幻觉根因，禁止违反）：**
+       - 此时 history 末条是 YM 工具结果（\`role:"tool", name:"query_yield_triggers"\`）
+       - **必须立即** 调 \`query_jb_bins(mask/device, testEndFrom, testEndTo, limit:200)\` 获取 \`recentLotsByTestEnd\`，再输出 lot 表
+       - **禁止**仅凭 YM 行的 LOTID 直接输出 lot 列表：YM 只有触发报警的 lot，大量测试 lot 没有 YM 记录，用 YM 数据代替 lot 列表会严重遗漏
+       - **禁止**从记忆或上下文拼凑 lot 号、片数、lot 总数：这些数字必须来自本轮工具返回的 \`recentLotsByTestEnd\` + \`totalDistinctLots\`；无工具数据支撑时一律不写
      - **⚠️ 高频错误（必须遵守）：禁止在输出 lot 汇总表之前展开任何 lot 的分析**
      - 数据就绪后，**本轮第一个输出**必须是 lot 汇总表（列：lot号 / 最近时间 / 片数（JB有则填）/ 数据来源(JB/YM/两者)），然后：
        - 若涉及 **≥2 个不同 device**：列出全部 device（含域和最近日期）并询问用户要重点分析哪个，禁止直接跳入某个 lot 的逐片详情
@@ -946,6 +951,11 @@ const SEC_CARD_LOTS = `\
 
 **查询顺序：JB STAR 优先，Yield Monitor 作补充/回退**
 
+⚠️ **探针卡查询必须用 \`cardId\`，禁止替换为 \`device\`（高频错误，查询前必对照）：**
+- 用户问「6045-10 的测试情况/lot/历史」→ 调 \`query_jb_bins(cardId:"6045-10", limit:200)\`，**绝对禁止**只传 \`device\`
+- 传 \`device\` 而不传 \`cardId\`：返回的是该 device 上所有探针卡的数据，\`lot\` 字段会是该 device 最近的 lot，与 6045-10 无关
+- 两个工具结果的 lot 必须独立：**YM 结果里的 LOTID 不得用于标注 JB 的 BIN 表**；JB 工具返回 \`lot:"DR45721.1K"\` 则该表只能标注 DR45721.1K，不得借用 YM 中出现的其他 lot 名
+
 **第一步：JB STAR（含完整 bin 记录，优先）**
 - 调用 \`query_jb_bins(cardId: "7747-01", limit: 200)\`（limit 最大 **200**，禁止 1000）
 - **直接读**工具回传 **\`recentLotsByTestEnd\`**（已按 lot 的 **MAX(TESTEND) 降序**预计算，最多 20 条：lot / device / testEnd / **cardIds** / **slotCount**（该 lot 片数）/ **slots**（slot 列表）/ hasCardChangeInLot；\`cardId\` 仅为最近一行，整 lot 以 **cardIds** 为准）
@@ -1227,7 +1237,13 @@ const SEC_COMMON_ERRORS = `\
 ❌ 问题超出数据范围（如问材料成本、设计参数、未来良率）→ 试图用已有数据外推并给出具体数字
 ✅ 工具结果中**没有**对应数据时，直接告知：「当前数据中未找到相关记录，无法给出具体数字」，停止，不继续推断
 ✅ 问题超出工具覆盖范围时，直接回复：「这个问题超出了当前可查询的范围（仅支持 JB STAR / Yield Monitor 测试数据），无法回答」
-规则：数据缺失 ≠ 可以推断；不知道就说不知道，比一个错误的答案更有价值`;
+规则：数据缺失 ≠ 可以推断；不知道就说不知道，比一个错误的答案更有价值
+
+**【错误 I】跨工具结果混用：用 YM lot 名给 JB BIN 数据贴标签（禁止）**
+❌ \`query_yield_triggers\` 结果含 LOTID=DR45723.1W；\`query_jb_bins(device=WA88888822N95G)\` 返回 \`lot:"DR45721.1K"\` → 却把 JB BIN 排名标注为「lot DR45723.1W」
+❌ JB 工具返回 \`"cardByPassId":[{passId:1,cardId:"6045-01"}]\` → 却在表头写「卡号：6045-10」（来自 YM 查询条件，非 JB 实际数据）
+✅ BIN 表、卡号表、良率表的 lot / cardId 标注，**只能来自产出该数据的同一工具结果的对应字段**
+规则：每个工具返回值自成独立来源；跨工具借用 lot/cardId 名称填入表头或结论，属于数据幻觉，一律禁止`;
 
 // ─── SEC_FORMAT_LIMITS ─────────────────────────────────────────────────────
 // 格式硬限制：禁用 Markdown 图片语法
