@@ -39,7 +39,12 @@ export class SessionLogger {
 
   private sections: Section[] = [];
   private textBuffer = "";
-  private pendingTool: { name: string; args: Record<string, unknown> } | null = null;
+  /** Queue of started-but-not-yet-completed tool calls. Parallel tool
+   * execution (different resource groups) can emit tool_start events for
+   * multiple tools before any tool_result fires, so a single-slot `pendingTool`
+   * would drop or mis-pair results. The queue matches each tool_result to the
+   * first queued entry with the same tool name. */
+  private pendingToolQueue: { name: string; args: Record<string, unknown> }[] = [];
   private finalStatus = "done";
 
   constructor(opts: {
@@ -67,18 +72,22 @@ export class SessionLogger {
           this.sections.push({ kind: "ai_text", text: this.textBuffer });
           this.textBuffer = "";
         }
-        this.pendingTool = { name: event.name, args: event.args };
+        this.pendingToolQueue.push({ name: event.name, args: event.args });
         break;
 
-      case "tool_result":
-        if (this.pendingTool) {
+      case "tool_result": {
+        // Match by tool name so parallel tool calls (different resource groups)
+        // pair correctly even when start/result events interleave.
+        const idx = this.pendingToolQueue.findIndex((p) => p.name === event.name);
+        if (idx !== -1) {
+          const pending = this.pendingToolQueue.splice(idx, 1)[0]!;
           this.sections.push({
             kind: "tool",
-            entry: { name: this.pendingTool.name, args: this.pendingTool.args, result: event.summary },
+            entry: { name: pending.name, args: pending.args, result: event.summary },
           });
-          this.pendingTool = null;
         }
         break;
+      }
 
       case "done":
         this.finalStatus = "done";

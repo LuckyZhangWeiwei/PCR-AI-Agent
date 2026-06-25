@@ -23,11 +23,13 @@ export function canRunScopedBadBinDirectRoute(
   if (extractLotFromUserText(userText)) return false;
 
   const device = inferDeviceFromText(userText) || inferDeviceFromHistory(history);
+  // Device alone is sufficient: "WK12N22J 总的坏die" / "N55Z 总的坏die" → aggregate.
+  // Old condition required tester OR time window too, but that blocked pure device queries.
+  if (device) return true;
+
   const tester = inferTesterIdFromText(userText) || inferTesterFromHistory(history);
   const window = inferRecentMonthsWindow(userText);
-  const hasTime = Boolean(window.testEndFrom);
-
-  return Boolean(device && (tester || hasTime));
+  return Boolean(tester || window.testEndFrom);
 }
 
 export function scopedBadBinNeedsAggregateRecovery(

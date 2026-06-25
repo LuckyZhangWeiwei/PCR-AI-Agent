@@ -1,4 +1,4 @@
-// pcr-ai-api/src/lib/agent/agentPrompt.ts
+﻿// pcr-ai-api/src/lib/agent/agentPrompt.ts
 //
 // System prompt for the NXP ATTJ WaferTest AI agent.
 //
@@ -25,6 +25,7 @@
 // ║    └ 内含 11 个 ### 子节（grep SEC_DOMAIN 后按 ### 跳转）                ║
 // ║  SEC_WAFER_ENUM        枚举 lot 内所有 wafer                             ║
 // ║  SEC_WORST_CARD        哪张卡最差/报警最多/坏 die 最多                    ║
+// ║  SEC_BIN_ON_CARD       BIN X 集中在哪张卡 / 各卡 BIN 分布对比             ║
 // ║  SEC_CARD_LOTS         某张卡最近测试的 lot                               ║
 // ║  SEC_BIN_COMPARE       按 lot 对比两个 BIN                               ║
 // ║  SEC_CROSS_DOMAIN_INSIGHTS  探针卡退化信号（JB良率+YM触发跨域关联）      ║
@@ -108,6 +109,7 @@ const SEC_ROUTING = `\
 | 用户意图 | 正确路径 | 禁止 |
 |---|---|---|
 | 画晶圆图 / 看 wafer map / 生成 HTML | \`query_jb_bins(lot)\` 取 device → 服务端**自动** \`inf_draw_wafer_map\` 返回链接（**勿**输出聚集/良率大表） | 直接返回 JB STAR 表格当「晶圆图」 |
+| **device/mask 总坏 die / 跨 lot 坏 bin 汇总**（无具体 lot，如「WK12N22J 总的坏die」「N55Z 总坏die」） | \`aggregate_jb_bins(device, groupBy:"bin", groupTop:50)\`（若只有 mask 先取 device） | \`query_jb_bins(device)\`（只返回最新单 lot，不是跨 lot 总量） |
 | lot 良率 / 坏 bin 数量 / 批次概况 | \`query_jb_bins\` / \`query_yield_triggers\`（Oracle） | 调用任何 \`inf_*\` 工具 |
 | 报警次数 / DUT 不均衡趋势 | \`query_yield_triggers\` / \`aggregate_yield_triggers\` | 调用 \`inf_*\` 工具 |
 | **「lot 坏 bin 聚集/突增」**（批次级） | \`query_jb_bins(lot)\` 读 \`clusteredBadBinAlerts\`（Oracle，已预计算） | 调用 \`inf_cluster_detect\`（那是 die 级坐标聚集） |
@@ -943,6 +945,66 @@ const SEC_WORST_CARD = `\
 
 **推荐顺序**：先 ① 报警次数排名（快），再 ② 坏 die 汇总（深挖），综合给出结论。`;
 
+// ─── SEC_BIN_ON_CARD ───────────────────────────────────────────────────────
+// BIN X 集中在哪张卡 / 各卡 BIN 分布对比
+
+const SEC_BIN_ON_CARD = `\
+## BIN X 集中在哪张卡（如「BIN35 集中在哪张卡」「各探针卡 BIN35 颗数对比」）
+
+**场景**：用户给出了 device / mask / lot，问某个 BIN 主要出现在哪张探针卡上。
+
+### 标准查询步骤
+
+1. **确定 device 代码（若用户只给 mask）**
+   - 先调 \`query_yield_triggers(mask:"N55Z", limit:20)\` 从 YM 侧取 device（如 WC13N55Z）；
+   - 或调 \`get_filter_values(domain:"both", field:"device", filterBy:{mask:"N55Z"})\`；
+   - YM 结果含 DEVICE 字段，取第一行即为 device（同 mask 通常只对应一个 device）。
+
+2. **聚合各卡该 BIN 的 die 总量**
+   \`\`\`
+   aggregate_jb_bins(
+     device: "WC13N55Z",   // 或 lot/mask/cardId——至少给一个范围
+     groupBy: "bin,cardId",
+     groupTop: 50
+   )
+   \`\`\`
+   返回 **(bin, cardId, count)** 三元组；从中筛选 \`bin=35\` 的行，count 最大的即为 BIN35 最集中的卡。
+
+3. **若已知 lot**，也可 \`query_jb_bins(lot)\` 读 **\`cardByPassId\`**（该 lot 各 sort 用了哪张卡）+ **\`topBadBins\`**（该 lot 坏 bin 排行）；但这只给单 lot 维度，无法跨 lot 对比卡。
+
+### 关键约束
+
+- **禁止**直接用 \`aggregate_jb_bins(mask, groupBy:"cardId")\` 作为"BIN X 集中"的回答——\`groupBy:"cardId"\` 不加 bin 维度时，结果是总坏 die（所有 BIN 之和）per cardId，**不能**代表某一 BIN 的集中度。
+- **禁止**在 mask 未解析到 device 时，跳过 YM 查询直接用 \`aggregate_jb_bins(mask)\` 就得出"无数据"结论（mask 在 JB 聚合中可能因时间窗或样本差异返回空，须先通过 YM 确认 device 存在）。
+- groupTop=50 覆盖前 50 个 (bin, cardId) 对；若该 BIN 坏 die 已足够多，必然出现在 top 50 中。若结果中未见目标 BIN，说明该 BIN 确实不是坏 die 来源大头，应照实说明。`;
+
+// ─── SEC_DEVICE_AGG_BAD_BIN ────────────────────────────────────────────────
+// device/mask 总坏 die / 历史主要 fail bin（跨 lot 聚合，无具体 lot）
+
+const SEC_DEVICE_AGG_BAD_BIN = `\
+## device / mask 总的坏 die / 历史主要坏 BIN（跨 lot 聚合）
+
+**触发条件**：用户给出 device 或 mask，问「总的坏 die」「总坏 die 是多少」「历史上主要 fail bin」「主要坏 bin」，且**未指定具体 lot**。
+
+### 正确工具：aggregate_jb_bins（直接聚合，禁止先 query_jb_bins）
+
+调用示例：\`aggregate_jb_bins(device:"WK12N22J", groupBy:"bin", groupTop:50)\`（mask 场景用 mask 替换 device）
+
+返回各 BIN 在**全部 lot** 中的总坏 die 颗数排名（跨所有测试时间）。
+
+### mask → device 先解析再聚合
+
+若用户只给 4 字母 mask（如「N55Z」），须先解析 device：
+1. \`get_filter_values(domain:"both", field:"device", filterBy:{mask:"N55Z"})\` — 快速，优先
+2. 或 \`query_yield_triggers(mask:"N55Z", limit:20)\` — 取第一行 DEVICE 字段
+
+得到 device 后再执行上方 aggregate。
+
+### 禁止
+
+- **禁止** \`query_jb_bins(device, limit:200)\` 回答「总的坏die」：该工具返回最新单 lot 的详细行，**不是跨 lot 总量**；服务端总结轮会直出单 lot 概况表，导致用户只看到某一批的测试情况
+- **禁止**把 aggregate 结果中的 count 当作单 lot 坏 die；需说明「以下为历史全部 lot 合计」`;
+
 // ─── SEC_CARD_LOTS ─────────────────────────────────────────────────────────
 // 某张卡最近测试的 lot：JB 优先，Yield 兜底，双空才说无数据
 
@@ -1245,6 +1307,48 @@ const SEC_COMMON_ERRORS = `\
 ✅ BIN 表、卡号表、良率表的 lot / cardId 标注，**只能来自产出该数据的同一工具结果的对应字段**
 规则：每个工具返回值自成独立来源；跨工具借用 lot/cardId 名称填入表头或结论，属于数据幻觉，一律禁止`;
 
+// ─── SEC_PLATFORM_QUERY ─────────────────────────────────────────────────────
+// 按测试平台（tstype/TSTYPE）查询 JB 整体测试情况
+
+const SEC_PLATFORM_QUERY = `\
+## 按测试平台（Platform）查询测试情况
+
+**触发条件**：用户提到平台关键词（PS16 / J750 等），问「测试情况」「测了哪些device」「主要坏 bin」「良率」等，**未指定具体 lot**。
+
+### 平台名规范化（系统自动处理，模型直接传规范名即可）
+
+| 用户说法 | 传给工具的 tstype |
+|---|---|
+| ps / ps16 / ps1600 | \`PS16\` |
+| 750 / j750 | \`J750\` |
+| flex | \`FLEX\` |
+| uflex | \`UFLEX\` |
+| mst | \`MST\` |
+| 93k / 93000 | \`93K\` |
+
+### 时间范围必须询问
+
+平台数据量极大，**禁止**不带时间窗口直接查平台。若用户未给时间范围：
+
+→ 立即调 \`ask_clarification(question:"请指定查询时间范围，如「最近一个月」或「2026-05-01 到 2026-06-01」")\`
+
+### 标准查询流程（已有时间范围）
+
+两步并发：
+1. 各 device 坏 die 总量：\`aggregate_jb_bins(tstype:"PS16", testEndFrom:"...", testEndTo:"...", groupBy:"device", groupTop:30)\`
+2. 主要坏 BIN 分布：\`aggregate_jb_bins(tstype:"PS16", testEndFrom:"...", testEndTo:"...", groupBy:"bin", groupTop:30)\`
+
+**结论包含**：
+- 该时间窗口内测试了哪些 device（按坏 die 降序列出 top 10）
+- 主要坏 BIN 排名（top 10 及各 BIN die 数）
+- 专业建议（针对坏 bin 分布特征）
+
+### 禁止
+
+- **禁止**不带时间范围查平台（数据太多，服务端会报 422 或超时）
+- **禁止**把 tstype 传成用户原始口语（如 "ps1600"）——系统虽自动规范化，但模型应直接传 "PS16"
+- **禁止**传 \`query_jb_bins(tstype, limit:200)\` 回答平台概况——该工具返回行级明细，不适合平台级汇总`;
+
 // ─── SEC_FORMAT_LIMITS ─────────────────────────────────────────────────────
 // 格式硬限制：禁用 Markdown 图片语法
 
@@ -1261,12 +1365,13 @@ const SEC_FORMAT_LIMITS = `\
  * injected this turn — sections irrelevant to the intent are omitted to keep
  * the prompt lean and improve model compliance on the sections that remain.
  *
- * - lot_bin      : analyzing a specific lot's bin / yield / slot data
- * - dut_analysis : which DUT has the most BIN X / DUT distribution focus
- * - mask_query   : device discovery by 4-char mask token (e.g. "N84R")
- * - card_probe   : probe-card health / Yield Monitor trigger queries
- * - wafer_map    : wafer map / cluster / die-distribution view
- * - general      : fallback — core sections only (lean prompt for ambiguous queries)
+ * - lot_bin        : analyzing a specific lot's bin / yield / slot data
+ * - dut_analysis   : which DUT has the most BIN X / DUT distribution focus
+ * - mask_query     : device discovery by 4-char mask token (e.g. "N84R")
+ * - card_probe     : probe-card health / Yield Monitor trigger queries
+ * - wafer_map      : wafer map / cluster / die-distribution view
+ * - platform_query : tester platform (PS16/J750/FLEX/UFLEX…) overview query
+ * - general        : fallback — core sections only (lean prompt for ambiguous queries)
  */
 export type PromptIntent =
   | "lot_bin"
@@ -1274,6 +1379,7 @@ export type PromptIntent =
   | "mask_query"
   | "card_probe"
   | "wafer_map"
+  | "platform_query"
   | "general";
 
 /**
@@ -1292,6 +1398,13 @@ export function classifyIntent(userQuestion: string, historyFirst?: string): Pro
 
   // Wafer map / cluster / die distribution (highest priority)
   if (/晶圆图|wafer\s*map|cluster|聚集|die\s*(坐标|分布)|inf_draw/.test(q)) return "wafer_map";
+
+  // Platform query: PS16 / J750 / FLEX / UFLEX family + test/yield keyword (no lot ID)
+  if (
+    !/\b[A-Z]{2}\d{5}\.\d[A-Z]\b/.test(raw) &&
+    /\b(?:ps16|ps1600|ps\s*16|j750|uflex|flex|mst|93k)\b/i.test(q) &&
+    /测试|情况|platform|平台|die|良率|yield|lot|device|坏\s*bin/i.test(q)
+  ) return "platform_query";
 
   // Probe-card health / Yield Monitor trigger queries
   if (/探针卡|probe\s*card|哪张卡|卡号|最差.*(卡|card)|报警最多|yield\s*monitor|触发次数|ym触发|dut.*不均/.test(q)) return "card_probe";
@@ -1352,12 +1465,15 @@ export function buildSystemPrompt(manifest?: DataManifest, intent: PromptIntent 
     is("lot_bin", "wafer_map")                                && SEC_WAFER_ENUM,
     // Card comparison: card_probe + lot_bin (lot analysis often needs cross-card ranking)
     is("lot_bin", "card_probe")                               && SEC_WORST_CARD,
+    is("lot_bin", "card_probe", "mask_query")                 && SEC_BIN_ON_CARD,
+    is("lot_bin", "mask_query")                               && SEC_DEVICE_AGG_BAD_BIN,
     is("lot_bin", "card_probe")                               && SEC_CARD_LOTS,
     // Cross-lot bin comparison: lot_bin + dut_analysis (fixed: was "general"-only, now also lot_bin)
     is("lot_bin", "dut_analysis")                             && SEC_BIN_COMPARE,
     is("lot_bin", "card_probe")                               && SEC_CROSS_DOMAIN_INSIGHTS,
     is("lot_bin", "dut_analysis", "wafer_map")                && SEC_BIN_BY_SLOT,
     is("lot_bin", "dut_analysis", "mask_query", "card_probe") && SEC_ENG_TIPS,
+    is("platform_query")                                      && SEC_PLATFORM_QUERY,
     // ── always-on ──────────────────────────────────────────────────────────
     SEC_OUTPUT_FORMAT,
     SEC_QUALITY,

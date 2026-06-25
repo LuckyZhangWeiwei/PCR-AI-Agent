@@ -2091,31 +2091,19 @@ function jbBinsYieldFallbackMessage(
 }
 
 /**
- * 总结轮 LLM 空输出时：若最后一个工具为 get_filter_values 且返回空列表，
- * 直接输出"未找到数据"提示，避免「模型未返回分析结论」报错。
+ * Returns true if the last tool call returned empty / zero-result data.
+ * Used to inject a natural-language fallback instruction into the summary nudge
+ * so the LLM knows to say "no data found" instead of outputting nothing.
  */
-function emitFilterValuesEmptyFallback(
-  sessionId: string,
-  lastTool: ChatMessage | undefined,
-  emit: (event: AgentSseEvent) => void
-): boolean {
-  if (lastTool?.name !== "get_filter_values") return false;
-  const parsed = tryParseJsonish(String(lastTool.content ?? ""));
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
-  const p = parsed as Record<string, unknown>;
-  if (!Array.isArray(p["values"]) || (p["values"] as unknown[]).length > 0) return false;
-  const domain = String(p["domain"] ?? "");
-  const field = String(p["field"] ?? "");
-  const domainLabel =
-    domain === "yield" ? "Yield Monitor"
-    : domain === "jb" ? "JB STAR"
-    : domain === "both" ? "Yield Monitor 与 JB STAR（合并）"
-    : domain;
-  const msg = `当前 ${domainLabel} 数据域未找到符合条件的 ${field} 记录（返回 0 条）。\n\n可能原因：\n- 该产品代码在近期无测试数据\n- 筛选条件（mask/时间范围）过窄\n\n建议确认完整 device 代码后重试，或扩大查询时间范围。`;
-  appendMessages(sessionId, { role: "assistant", content: msg });
-  emit({ type: "text", delta: msg });
-  emit({ type: "done" });
-  return true;
+function isLastToolEmptyResult(lastTool: ChatMessage | undefined): boolean {
+  if (!lastTool) return false;
+  const c = tryParseJsonish(String(lastTool.content ?? ""));
+  if (!c || typeof c !== "object" || Array.isArray(c)) return false;
+  const p = c as Record<string, unknown>;
+  if (Array.isArray(p["values"]) && (p["values"] as unknown[]).length === 0) return true;
+  if (p["count"] === 0) return true;
+  if (typeof p["totalRowsMatching"] === "number" && p["totalRowsMatching"] === 0) return true;
+  return false;
 }
 
 /** 总结轮 LLM 空输出时：直出服务端表（无解读），避免「模型未返回分析结论」。 */
@@ -2379,7 +2367,9 @@ export async function runAgentLoop(
   }
 
   // If the history is getting long, compress older turns into a rolling summary.
-  if (needsSummarization(sessionId)) {
+  // Large-context models (≥200K) can hold ~80 messages before needing compression.
+  const summarizeThreshold = agentConfig.largeContext ? 80 : undefined;
+  if (needsSummarization(sessionId, summarizeThreshold)) {
     const old = popOldMessagesForSummarization(sessionId);
     if (old.length > 0) {
       emit({ type: "status", message: "正在压缩历史对话…" });
@@ -2767,6 +2757,16 @@ export async function runAgentLoop(
     // Explicit format instruction as the final user-turn — DeepSeek-V4-Pro
     // responds more reliably to a user-role reminder than to system nudge alone.
     // Content varies by summaryCtx so the model knows the exact expected structure.
+
+    // When tools returned empty/zero results, inject a natural-language fallback hint so
+    // the LLM produces its own "no data found" explanation instead of returning nothing
+    // and triggering a hardcoded server-side message.
+    const emptyResultHint = isLastToolEmptyResult(lastTool)
+      ? "\n\n【工具返回空结果】上述工具未查到任何记录。请直接用自然语言告知用户未找到数据，" +
+        "分析可能原因（如筛选条件过窄、时间范围不含数据），并给出 1–2 条排查建议。" +
+        "不要强制使用固定分节结构，不要编造数据。"
+      : "";
+
     const summaryUserNudge: ChatMessage = {
       role: "user",
       content:
@@ -2776,14 +2776,16 @@ export async function runAgentLoop(
             "1. 不要调用工具；不要画 markdown 表格\n" +
             "2. 分「### YM 侧（Yield Monitor 报警）」「### JB 侧（JB STAR 测试）」「### 综合结论」三节，每节 ≤ 3 句\n" +
             "3. 各节只引用本节工具数据；禁止跨节混用\n" +
-            "4. 【链接必须保留】若工具返回了晶圆图/热力图链接（[点击...查看](...) 格式），必须原样复制到回复第一行，不得省略"
+            "4. 【链接必须保留】若工具返回了晶圆图/热力图链接（[点击...查看](...) 格式），必须原样复制到回复第一行，不得省略" +
+            emptyResultHint
           : summaryCtx === "generic"
           ? "请立即用中文给出分析结论，分「### 数据摘要」「### 主要发现」「### 建议」三节输出。\n" +
             "要求：\n" +
             "1. 不要调用工具；不要 markdown 表格\n" +
             "2. 每节 ≤ 3 条，只引用工具返回的数据，禁止编造\n" +
             "3. 禁止引用本次问题以外的 lot/卡号/device 数据\n" +
-            "4. 【链接必须保留】若工具返回了晶圆图/热力图链接（[点击...查看](...) 格式），必须原样复制到回复第一行，不得省略"
+            "4. 【链接必须保留】若工具返回了晶圆图/热力图链接（[点击...查看](...) 格式），必须原样复制到回复第一行，不得省略" +
+            emptyResultHint
           : "请立即用中文给出分析结论。\n" +
             "要求：\n" +
             "1. 不要调用工具\n" +
@@ -2791,17 +2793,18 @@ export async function runAgentLoop(
             "3. 不要逐行复述数据表——只点明异常/对比，引导用户看表\n" +
             "4. 数据解读 3 句以内；专业建议恰好 3 条，每条 1 句\n" +
             "5. 各 pass 良率独立报告，禁止合并为「整体良率」\n" +
-            "6. 【链接必须保留】若工具返回了晶圆图/热力图链接（[点击...查看](...) 格式），必须原样复制到回复第一行，不得省略",
+            "6. 【链接必须保留】若工具返回了晶圆图/热力图链接（[点击...查看](...) 格式），必须原样复制到回复第一行，不得省略" +
+            emptyResultHint,
     };
     await streamSiliconFlow(
       awaitingSummary
         ? {
             model: agentConfig.model,
             messages: [...messages, summaryUserNudge],
-            // Summary round is text-only; 4096 tokens ≈ 3000 Chinese words, enough
-            // for any analysis. Not setting this lets SiliconFlow use its own default
-            // which may be as low as 512 tokens and silently truncate long responses.
-            max_tokens: 4096,
+            // Summary round is text-only. Large-context models (128K max output) can
+            // produce much longer analyses; 16384 gives room for multi-lot tables.
+            // Smaller-context models get 4096 (≈3000 Chinese words), which is ample.
+            max_tokens: agentConfig.largeContext ? 16384 : 4096,
           }
         : {
             model: agentConfig.model,
@@ -2887,9 +2890,6 @@ export async function runAgentLoop(
             ) {
               return;
             }
-            if (emitFilterValuesEmptyFallback(sessionId, lastToolMessage(getHistory(sessionId)), emit)) {
-              return;
-            }
             emit({
               type: "error",
               message:
@@ -2925,9 +2925,6 @@ export async function runAgentLoop(
         if (finishWithJbServerTablesFallback(sessionId, userQuestion, emit)) {
           return;
         }
-        if (emitFilterValuesEmptyFallback(sessionId, lastTool, emit)) {
-          return;
-        }
         emit({
           type: "error",
           message:
@@ -2936,17 +2933,13 @@ export async function runAgentLoop(
         return;
       }
       // Fact check: verify the LLM's conclusion against tool-result data (summary round only).
-      // The text is already streamed to the client; on mismatch we append a visible note rather
-      // than retrying (retrying would produce duplicate text the client can't undo).
+      // Log mismatches server-side only — the text is already streamed to the client, and
+      // appending a visible correction note confuses users (they see contradictory text).
       if (awaitingSummary && textBuffer.trim()) {
         const facts = buildFactSheetFromHistory(getHistory(sessionId));
         const checkResult = factCheckSummaryText(textBuffer, facts);
         if (!checkResult.ok) {
-          const note = formatFactCheckNote(checkResult.issue);
-          emit({ type: "text", delta: note });
-          appendMessages(sessionId, { role: "assistant", content: textBuffer + note });
-          emit({ type: "done" });
-          return;
+          console.warn(`[factchecker/${sessionId}] ${checkResult.issue}`);
         }
       }
       appendMessages(sessionId, { role: "assistant", content: textBuffer });

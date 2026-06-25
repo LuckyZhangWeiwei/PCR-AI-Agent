@@ -91,6 +91,11 @@ export const TOOL_SCHEMAS = [
           cardId: { type: "string", description: "探针卡 ID（CARDID）" },
           probeCardType: { type: "string", description: "探针卡类型" },
           testerId: { type: "string", description: "测试机 ID" },
+          tstype: {
+            type: "string",
+            description:
+              "测试平台类型（TSTYPE）：PS16 / J750 / UFLEX / FLEX / MST / 93K。别名自动规范化：ps/ps16/ps1600→PS16，750/j750→J750，flex→FLEX，uflex→UFLEX",
+          },
           passId: {
             type: "number",
             description:
@@ -146,6 +151,11 @@ export const TOOL_SCHEMAS = [
             type: "number",
             description:
               "测试层 PASSID：pass1/常温/sort1→1，pass3/高温/sort2→3，pass5/低温/sort3→5（勿用2/4）",
+          },
+          tstype: {
+            type: "string",
+            description:
+              "测试平台类型（TSTYPE）：PS16 / J750 / UFLEX / FLEX / MST / 93K。别名自动规范化：ps/ps16/ps1600→PS16，750/j750→J750，flex→FLEX，uflex→UFLEX",
           },
           meslot: { type: "string" },
           testEndFrom: { type: "string" },

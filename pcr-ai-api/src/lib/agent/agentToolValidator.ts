@@ -27,6 +27,28 @@ export type ValidatorResult = {
   notes: string[];
 };
 
+// String filter fields that are meaningless when empty.
+// Models sometimes fill every schema field with "", which clutters logs and can confuse handlers.
+const STRING_FILTER_KEYS = new Set([
+  "cardId", "device", "lot", "mask", "probeCardType", "testerId", "meslot",
+  "testEndFrom", "testEndTo", "timeFrom", "timeTo", "lotId", "hostname", "wafer", "probeCard",
+  "tstype",
+]);
+
+// Platform (tstype) alias → canonical TSTYPE value.
+// Users say "ps/ps16/ps1600", "flex/uflex/750/j750" etc.; normalize before sending to API.
+const TSTYPE_ALIASES: Record<string, string> = {
+  ps: "PS16", ps16: "PS16", ps1600: "PS16",
+  "750": "J750", j750: "J750",
+  flex: "FLEX",
+  uflex: "UFLEX",
+  mst: "MST",
+  "93k": "93K", "93000": "93K",
+};
+
+// Numeric filter fields where 0 means "no filter" — omit to avoid unintended scope.
+const NUMERIC_ZERO_FILTER_KEYS = new Set(["passId", "slot", "pass"]);
+
 /**
  * Validates and auto-corrects tool arguments before execution.
  * Returns corrected args (identical to input when no issues found).
@@ -37,7 +59,34 @@ export function validateAndFixToolArgs(
   userQuestion: string
 ): ValidatorResult {
   const notes: string[] = [];
-  const a = { ...args };
+
+  // Strip empty-string and zero-valued filter params that models fill from schema defaults.
+  const stripped: string[] = [];
+  const cleaned: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(args)) {
+    if (typeof v === "string" && v === "" && STRING_FILTER_KEYS.has(k)) {
+      stripped.push(k);
+    } else if (typeof v === "number" && v === 0 && NUMERIC_ZERO_FILTER_KEYS.has(k)) {
+      stripped.push(k);
+    } else {
+      cleaned[k] = v;
+    }
+  }
+  if (stripped.length > 0) {
+    notes.push(`已移除空参数: ${stripped.join(", ")}`);
+  }
+
+  const a = { ...cleaned };
+
+  // ── tstype alias normalization (both query_jb_bins and aggregate_jb_bins) ─
+  if (typeof a["tstype"] === "string") {
+    const raw = (a["tstype"] as string).trim().toLowerCase();
+    const canonical = TSTYPE_ALIASES[raw] ?? raw.toUpperCase();
+    if (canonical !== a["tstype"]) {
+      notes.push(`tstype "${a["tstype"]}" → "${canonical}"`);
+      a["tstype"] = canonical;
+    }
+  }
 
   // ── query_jb_bins ─────────────────────────────────────────────────────────
 

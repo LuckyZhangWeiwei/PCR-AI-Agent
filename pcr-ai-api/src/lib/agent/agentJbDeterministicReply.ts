@@ -520,7 +520,9 @@ export function isBadBinRankingQuestion(text: string): boolean {
   return (
     /主要.*坏\s*bin|坏\s*bin.*主要|坏\s*bin.*排行|排行.*坏\s*bin|坏\s*bin.*排名|排名.*坏\s*bin|top.*bad.*bin|主要.*bad\s*bin|哪些.*坏\s*bin|坏\s*bin.*哪些|坏die.*排行|排行.*坏die/i.test(t) ||
     // fail / failed bin 变体
-    /常见.*fail(?:ed)?\s*bin|fail(?:ed)?\s*bin.*常见|主要.*fail(?:ed)?\s*bin|fail(?:ed)?\s*bin.*主要|实测.*fail(?:ed)?\s*bin|fail(?:ed)?\s*bin.*失效|fail(?:ed)?\s*bin.*排|哪些.*fail(?:ed)?\s*bin|fail(?:ed)?\s*bin.*哪些/i.test(t)
+    /常见.*fail(?:ed)?\s*bin|fail(?:ed)?\s*bin.*常见|主要.*fail(?:ed)?\s*bin|fail(?:ed)?\s*bin.*主要|实测.*fail(?:ed)?\s*bin|fail(?:ed)?\s*bin.*失效|fail(?:ed)?\s*bin.*排|哪些.*fail(?:ed)?\s*bin|fail(?:ed)?\s*bin.*哪些/i.test(t) ||
+    // 跨 lot 总坏 die / 总坏 bin 聚合（用户问 device/mask 整体坏 die 分布，不限单 lot）
+    /总的?\s*坏\s*die|坏\s*die\s*总|总\s*坏\s*die|累计.*坏\s*die|坏\s*die.*累计|总.*fail.*die|fail.*die.*总/i.test(t)
   );
 }
 

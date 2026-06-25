@@ -662,7 +662,7 @@ async function oracleJb(
   }
   if (filterBy["probeCardType"]) {
     conditions.push(
-      `NVL(REGEXP_SUBSTR(TRIM(t1.CARDID), '^[^-]+', 1, 1), '') = :pct`
+      `NVL(REGEXP_SUBSTR(TRIM(t2.CARDID), '^[^-]+', 1, 1), '') = :pct`
     );
     binds["pct"] = filterBy["probeCardType"];
   }
@@ -681,7 +681,7 @@ async function oracleJb(
       FROM (
         SELECT sub.pct AS grp_key, COUNT(*) AS cnt
         FROM (
-          SELECT NVL(REGEXP_SUBSTR(TRIM(t1.CARDID), '^[^-]+', 1, 1), '') AS pct
+          SELECT NVL(REGEXP_SUBSTR(TRIM(t2.CARDID), '^[^-]+', 1, 1), '') AS pct
           ${fromClause}
         ) sub
         WHERE sub.pct IS NOT NULL AND sub.pct != ''
@@ -692,8 +692,8 @@ async function oracleJb(
       FETCH FIRST :lim ROWS ONLY
     `;
   } else {
-    // TESTERID is on INFLAYERBINLIST (t2), not INFCONTROL (t1)
-    const col = field === "cardId" ? "t1.CARDID"
+    // CARDID and TESTERID are both on INFLAYERBINLIST (t2), not INFCONTROL (t1)
+    const col = field === "cardId" ? "t2.CARDID"
       : field === "testerId" ? "t2.TESTERID"
       : "t1.LOT";
     const searchCond = filterBy["search"]

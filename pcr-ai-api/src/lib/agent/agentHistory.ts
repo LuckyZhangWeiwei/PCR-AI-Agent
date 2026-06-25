@@ -65,10 +65,14 @@ export function appendMessages(
   s.messages = trimMessages(s.messages);
 }
 
-/** Returns true when the history is long enough to warrant summarization. */
-export function needsSummarization(sessionId: string): boolean {
+/**
+ * Returns true when the history is long enough to warrant summarization.
+ * Pass a custom `threshold` for large-context models (e.g. 80 for 200K models)
+ * to defer compression until the context window is more fully utilised.
+ */
+export function needsSummarization(sessionId: string, threshold = SUMMARIZE_THRESHOLD): boolean {
   const s = sessions.get(sessionId);
-  return s ? s.messages.length > SUMMARIZE_THRESHOLD : false;
+  return s ? s.messages.length > threshold : false;
 }
 
 /**
