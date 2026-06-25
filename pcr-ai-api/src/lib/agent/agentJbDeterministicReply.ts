@@ -22,6 +22,8 @@ import { getJbToolRawJson } from "./agentJbSessionCache.js";
 import { extractLotFromUserText } from "./agentInfWaferMapTool.js";
 import {
   inferDeviceFromText,
+  inferMaskFromText,
+  inferPlatformFromText,
   inferRecentMonthsWindow,
   inferTesterIdFromText,
 } from "./agentQueryScope.js";
@@ -522,7 +524,9 @@ export function isBadBinRankingQuestion(text: string): boolean {
     // fail / failed bin 变体
     /常见.*fail(?:ed)?\s*bin|fail(?:ed)?\s*bin.*常见|主要.*fail(?:ed)?\s*bin|fail(?:ed)?\s*bin.*主要|实测.*fail(?:ed)?\s*bin|fail(?:ed)?\s*bin.*失效|fail(?:ed)?\s*bin.*排|哪些.*fail(?:ed)?\s*bin|fail(?:ed)?\s*bin.*哪些/i.test(t) ||
     // 跨 lot 总坏 die / 总坏 bin 聚合（用户问 device/mask 整体坏 die 分布，不限单 lot）
-    /总的?\s*坏\s*die|坏\s*die\s*总|总\s*坏\s*die|累计.*坏\s*die|坏\s*die.*累计|总.*fail.*die|fail.*die.*总/i.test(t)
+    /总的?\s*坏\s*die|坏\s*die\s*总|总\s*坏\s*die|累计.*坏\s*die|坏\s*die.*累计|总.*fail.*die|fail.*die.*总/i.test(t) ||
+    // 「哪个坏 die / bin 最多」「最多的坏 die / bin」——坏 die 排名的口语问法
+    /哪\s*个?.{0,4}坏\s*die.{0,4}最多|坏\s*die.{0,4}最多|最多.{0,4}坏\s*die|哪\s*个?.{0,4}坏\s*bin.{0,4}最多|坏\s*bin.{0,4}最多|最多.{0,4}坏\s*bin|哪\s*个?\s*bin.{0,4}(?:die|颗).{0,4}最多/i.test(t)
   );
 }
 
@@ -539,6 +543,8 @@ export function isCrossLotQuestionMisalignedWithPayload(
 
   const hasScope =
     Boolean(inferDeviceFromText(userMessage)) ||
+    Boolean(inferMaskFromText(userMessage)) ||
+    Boolean(inferPlatformFromText(userMessage)) ||
     Boolean(inferTesterIdFromText(userMessage)) ||
     Boolean(inferRecentMonthsWindow(userMessage).testEndFrom) ||
     /这个\s*device|该\s*device|这\s*[三3]\s*个?月|近\s*[三3]\s*个?月|最近\s*[三3]\s*个?月/i.test(

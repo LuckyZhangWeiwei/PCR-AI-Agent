@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/zhang/Desktop/\\(无主题\\)/**)",
+      "Bash(git -C d:/AI/PCR-AI-Agent diff HEAD)",
+      "Bash(git -C d:/AI/PCR-AI-Agent log --oneline -5)",
+      "Bash(git -C d:/AI/PCR-AI-Agent status)",
+      "Bash(git -C d:/AI/PCR-AI-Agent add docs/DEV_LOG.md pcr-ai-report/src/reports/AiAgentReport.tsx)",
+      "Bash(git -C d:/AI/PCR-AI-Agent commit -m ' *)",
+      "Bash(git -C d:/AI/PCR-AI-Agent push)"
+    ]
+  }
+}

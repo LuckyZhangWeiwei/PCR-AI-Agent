@@ -1338,6 +1338,8 @@ const SEC_PLATFORM_QUERY = `\
 1. 各 device 坏 die 总量：\`aggregate_jb_bins(tstype:"PS16", testEndFrom:"...", testEndTo:"...", groupBy:"device", groupTop:30)\`
 2. 主要坏 BIN 分布：\`aggregate_jb_bins(tstype:"PS16", testEndFrom:"...", testEndTo:"...", groupBy:"bin", groupTop:30)\`
 
+**问「哪个 lot 测试最差 / 哪个 lot 坏 die 最多」时**：用 \`aggregate_jb_bins(tstype:"PS16", testEndFrom, testEndTo, groupBy:"lot", groupTop:50)\`——服务端按各 lot 坏 die 总量降序直出表，**禁止**退回单 lot 概况。
+
 **结论包含**：
 - 该时间窗口内测试了哪些 device（按坏 die 降序列出 top 10）
 - 主要坏 BIN 排名（top 10 及各 BIN die 数）

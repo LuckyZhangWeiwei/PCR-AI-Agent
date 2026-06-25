@@ -12,14 +12,22 @@ import type { ChatMessage } from "./agentHistory.js";
 import {
   extractBinFromUserText,
   extractSlotFromUserText,
+  isBadBinRankingQuestion,
+  isBinCardAttributionQuestion,
+  isCardTestOverviewQuestion,
   isLotDetailListingQuestion,
   isLotListingQuestion,
+  isLotOverviewQuestion,
+  isProbeCardQuestion,
 } from "./agentJbDeterministicReply.js";
 import {
   buildAggregateJbBinsScopeArgs,
   buildJbScopeArgs,
   buildLotListingQueryArgs,
   buildScopedBadBinAggregateArgs,
+  inferMaskFromHistory,
+  inferMaskFromText,
+  inferRecentMonthsWindow,
 } from "./agentQueryScope.js";
 import {
   canRunLotListingDirectRoute,
@@ -85,6 +93,39 @@ const CHECKERS: PendingQueryChecker[] = [
         toolName: "query_jb_bins",
         args,
         statusLabel: "正在查询 JB STAR 各 lot 实测数据…",
+      };
+    },
+  },
+
+  {
+    // get_filter_values returned no device for a mask, but the user asked a JB-scoped
+    // question (which card / bin attribution / test overview). Don't give up — query JB
+    // directly by mask so the deterministic reply can answer.
+    name: "query_jb_bins:after_filter_values_mask",
+    check(userQuestion, lastToolName, _payload, history) {
+      if (lastToolName !== "get_filter_values") return null;
+      if (isLotListingQuestion(userQuestion) || isLotDetailListingQuestion(userQuestion)) {
+        return null; // handled by the lot-listing checker above
+      }
+      const mask = inferMaskFromText(userQuestion) || inferMaskFromHistory(history);
+      if (!mask) return null;
+      const isJbScoped =
+        isBinCardAttributionQuestion(userQuestion) ||
+        isProbeCardQuestion(userQuestion) ||
+        isLotOverviewQuestion(userQuestion) ||
+        isCardTestOverviewQuestion(userQuestion) ||
+        isBadBinRankingQuestion(userQuestion) ||
+        extractBinFromUserText(userQuestion) != null ||
+        /测试情况|哪.*die|坏\s*die|哪.*bin/i.test(userQuestion);
+      if (!isJbScoped) return null;
+      const args: Record<string, unknown> = { mask, limit: 200 };
+      const window = inferRecentMonthsWindow(userQuestion);
+      if (window.testEndFrom) args["testEndFrom"] = window.testEndFrom;
+      if (window.testEndTo) args["testEndTo"] = window.testEndTo;
+      return {
+        toolName: "query_jb_bins",
+        args,
+        statusLabel: `filter 未命中 device，正在直接查询 mask ${mask} 的 JB 数据…`,
       };
     },
   },

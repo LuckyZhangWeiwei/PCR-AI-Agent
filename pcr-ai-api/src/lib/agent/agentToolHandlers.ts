@@ -378,10 +378,14 @@ function aggregateJbBinsHasScopeFilter(args: Record<string, unknown>): boolean {
   const probeCardType = String(args["probeCardType"] ?? "").trim();
   const testerId = String(args["testerId"] ?? "").trim();
   const meslot = String(args["meslot"] ?? "").trim();
+  // Platform (TSTYPE) is a valid scope — "PS16 最近一周 哪个 lot 最差" filters by tstype.
+  // A 1-year default window is auto-injected when no time params are present, so this
+  // does not scan the whole table unbounded.
+  const tstype = String(args["tstype"] ?? "").trim();
   const slot = args["slot"];
   const hasSlot = slot !== undefined && slot !== null && String(slot).trim() !== "";
   return Boolean(
-    lot || device || mask || cardId || probeCardType || testerId || meslot || hasSlot
+    lot || device || mask || cardId || probeCardType || testerId || meslot || tstype || hasSlot
   );
 }
 

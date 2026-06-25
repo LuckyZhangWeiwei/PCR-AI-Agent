@@ -4,6 +4,8 @@ import {
   buildJbScopeArgs,
   buildLotListingQueryArgs,
   buildScopedBadBinAggregateArgs,
+  inferMaskFromText,
+  inferPlatformFromText,
   inferRecentMonthsWindow,
   inferTesterIdFromText,
 } from "../src/lib/agent/agentQueryScope.js";
@@ -142,5 +144,64 @@ describe("agentQueryScope", () => {
     const pending = detectPendingQuery(q, "query_jb_bins", { device: "WA01P14E" }, history);
     assert.equal(pending?.toolName, "aggregate_jb_bins");
     assert.equal(pending?.args["groupBy"], "bin");
+  });
+
+  // ── mask / platform scope (2026-06-25) ──────────────────────────────────────
+
+  it("inferMaskFromText: standalone token and full device", () => {
+    assert.equal(inferMaskFromText("N55Z 最近一个月哪个坏die最多"), "N55Z");
+    assert.equal(inferMaskFromText("WC13N55Z 测试情况"), "N55Z");
+    // platform tokens must NOT be treated as masks
+    assert.equal(inferMaskFromText("ps16 最近一周哪个lot最差"), undefined);
+    assert.equal(inferMaskFromText("j750 平台坏die"), undefined);
+  });
+
+  it("inferPlatformFromText maps aliases (flex/uflex separate from j750)", () => {
+    assert.equal(inferPlatformFromText("ps16 最近一周"), "PS16");
+    assert.equal(inferPlatformFromText("ps1600 测试情况"), "PS16");
+    assert.equal(inferPlatformFromText("j750 平台"), "J750");
+    assert.equal(inferPlatformFromText("uflex 平台坏die"), "UFLEX");
+    assert.equal(inferPlatformFromText("flex 平台坏die"), "FLEX");
+    assert.equal(inferPlatformFromText("N55Z 哪个坏die最多"), undefined);
+  });
+
+  it("inferRecentMonthsWindow handles week / month / year", () => {
+    assert.ok(inferRecentMonthsWindow("最近一周哪个lot最差").testEndFrom);
+    assert.ok(inferRecentMonthsWindow("N55Z 最近一个月哪个坏die最多").testEndFrom);
+    assert.ok(inferRecentMonthsWindow("近一年的情况").testEndFrom);
+    assert.equal(inferRecentMonthsWindow("没有时间词").testEndFrom, undefined);
+  });
+
+  it("isBadBinRankingQuestion matches 哪个坏die最多", () => {
+    assert.ok(isBadBinRankingQuestion("N55Z 最近一个月测试中 哪个坏die 最多"));
+    assert.ok(isBadBinRankingQuestion("坏die最多的是哪个"));
+  });
+
+  it("Problem 2: mask + 哪个坏die最多 routes to aggregate_jb_bins(mask, bin)", () => {
+    const q = "N55Z 最近一个月测试中 哪个坏die 最多";
+    assert.ok(canRunScopedBadBinDirectRoute(q, []));
+    const args = buildScopedBadBinAggregateArgs(q, []);
+    assert.equal(args?.["mask"], "N55Z");
+    assert.equal(args?.["groupBy"], "bin");
+    assert.ok(args?.["testEndFrom"]);
+  });
+
+  it("Problem 1: empty get_filter_values + mask card question → query_jb_bins(mask)", () => {
+    const pending = detectPendingQuery(
+      "N55Z bin35 集中在哪张卡上",
+      "get_filter_values",
+      { values: [], totalDistinct: 0 },
+      []
+    );
+    assert.equal(pending?.toolName, "query_jb_bins");
+    assert.equal(pending?.args["mask"], "N55Z");
+  });
+
+  it("platform + time bad-die ranking is routable (Problem 3 family)", () => {
+    const q = "ps16 最近一周 主要坏bin有哪些";
+    assert.ok(canRunScopedBadBinDirectRoute(q, []));
+    const args = buildScopedBadBinAggregateArgs(q, []);
+    assert.equal(args?.["tstype"], "PS16");
+    assert.ok(args?.["testEndFrom"]);
   });
 });

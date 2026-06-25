@@ -10,6 +10,9 @@ import {
   buildScopedBadBinAggregateArgs,
   inferDeviceFromHistory,
   inferDeviceFromText,
+  inferMaskFromHistory,
+  inferMaskFromText,
+  inferPlatformFromText,
   inferRecentMonthsWindow,
   inferTesterFromHistory,
   inferTesterIdFromText,
@@ -24,12 +27,21 @@ export function canRunScopedBadBinDirectRoute(
 
   const device = inferDeviceFromText(userText) || inferDeviceFromHistory(history);
   // Device alone is sufficient: "WK12N22J 总的坏die" / "N55Z 总的坏die" → aggregate.
-  // Old condition required tester OR time window too, but that blocked pure device queries.
   if (device) return true;
 
+  // mask alone is sufficient too ("N55Z 哪个坏die最多" → aggregate across the family).
+  const mask = inferMaskFromText(userText) || inferMaskFromHistory(history);
+  if (mask) return true;
+
   const tester = inferTesterIdFromText(userText) || inferTesterFromHistory(history);
+  if (tester) return true;
+
   const window = inferRecentMonthsWindow(userText);
-  return Boolean(tester || window.testEndFrom);
+  if (window.testEndFrom) return true;
+
+  // Platform (PS16/J750/…) is broad — only route directly when a time window scopes it.
+  const platform = inferPlatformFromText(userText);
+  return Boolean(platform && window.testEndFrom);
 }
 
 export function scopedBadBinNeedsAggregateRecovery(
