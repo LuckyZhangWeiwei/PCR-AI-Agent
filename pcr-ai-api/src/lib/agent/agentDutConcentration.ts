@@ -89,3 +89,31 @@ export function buildDutConcentrationInsights(
   insights.sort((a, b) => b.totalDie - a.totalDie);
   return insights;
 }
+
+const VERDICT_LABEL: Record<DutConcentrationVerdict, string> = {
+  probe_card: "疑探针卡",
+  process: "疑工艺/批次",
+  inconclusive: "样本不足",
+};
+
+export function formatDutConcentrationMarkdown(insights: DutConcentrationInsight[]): string {
+  if (!insights.length) return "";
+  const lines = [
+    "**坏 die 的 DUT 集中度（卡 vs 工艺判别）**",
+    "",
+    "| BIN | 测试层 | 卡号 | 总坏die | 主要 DUT(占比) | 判别 |",
+    "|---:|---|---|---:|---|---|",
+  ];
+  for (const i of insights) {
+    const dutCol = i.topDuts.map((d) => `DUT${d.dut}(${Math.round(d.share * 100)}%)`).join("、");
+    lines.push(
+      `| BIN${i.bin} | ${i.sortLabel} | ${i.cardId ?? "—"} | ${i.totalDie} | ${dutCol} | ${VERDICT_LABEL[i.verdict]} |`
+    );
+  }
+  return lines.join("\n");
+}
+
+export const DUT_CONCENTRATION_GUIDE =
+  "DUT 集中度判别：某坏 BIN 的坏 die 若集中在少数 DUT（top 占比 ≥70%）→ 优先怀疑探针卡针点/接触" +
+  "（查该卡对应 DUT 的 INF map、安排针尖检查/清针）；若分散在多数 DUT → 优先怀疑工艺/批次" +
+  "（对比同期其它 lot、查工艺参数）。叙述时引用上方判别表，禁止自行估算占比。";

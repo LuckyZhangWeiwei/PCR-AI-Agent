@@ -42,3 +42,22 @@ test("focusBins limits which bins are analyzed", () => {
   assert.equal(out.length, 1);
   assert.equal(out[0].bin, 11);
 });
+
+test("markdown renders verdict labels and hides internal identifiers", async (t) => {
+  const { formatDutConcentrationMarkdown } = await import("../src/lib/agent/agentDutConcentration.js");
+  const md = formatDutConcentrationMarkdown([
+    { bin: 11, passId: 1, sortLabel: "pass1", cardId: "7804-02", totalDie: 100,
+      topDuts: [{ dut: 3, dieCount: 45, share: 0.45 }], topShare: 0.9, verdict: "probe_card", detail: "x" },
+  ]);
+  assert.ok(md.includes("BIN11"));
+  assert.ok(md.includes("疑探针卡"));
+  for (const id of ["cardByPassId", "query_lot_dut_bin_agg", "Markdown", "topShare"]) {
+    assert.ok(!md.includes(id), `markdown 不应含内部标识符 ${id}`);
+  }
+});
+
+test("empty insights => empty string", async (t) => {
+  const { formatDutConcentrationMarkdown, DUT_CONCENTRATION_GUIDE } = await import("../src/lib/agent/agentDutConcentration.js");
+  assert.equal(formatDutConcentrationMarkdown([]), "");
+  assert.ok(DUT_CONCENTRATION_GUIDE.length > 0);
+});
