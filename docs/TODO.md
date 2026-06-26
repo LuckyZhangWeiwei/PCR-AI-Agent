@@ -12,7 +12,7 @@
 ## 待办
 
 - [ ] 服务器部署：API `npm run build + pm2:reload`；前端 `npm run pack:dist` → scp dist.tar → nginx web root（含 INF 工具瘦身 + listDefaultLimit 2000 + New Chat 滚动修复 + 探针卡追问答案重复修复 + generic/双源总结结构化）
-- [ ] AI Agent 生产部署验证：确认 `AGENT_API_KEY` / `SILICONFLOW_API_KEY`、PM2 重启后聊天页可用；验证 `query_lot_dut_bin_agg` 工具调用正常（含 DUT 集中度判别表前置）
+- [ ] AI Agent 生产部署验证：确认 `AGENT_API_KEY` / `SILICONFLOW_API_KEY`、PM2 重启后聊天页可用；验证 `query_lot_dut_bin_agg` 工具调用正常（含 DUT 集中度判别表前置）；验证 JB lot 查询有 clusteredBadBinAlerts 时 dutConcentrationMarkdown 自动出现在警示节
 - ✅ INF DUT 面板 Agent 工具：`query_inf_site_bin_by_dut` 接入 agentPrompt + agentToolHandlers — 已完成（早于本次记录）
 - ✅ Agent 新工具 query_lot_dut_bin_agg：lot 级 DUT×Bin 聚合，复用已有 lot 级 INF API，dummy 双路径 — 2026-06-02 完成
 - ✅ 前端使用 `mask` 字段：JB Star 聚合 charts 新增 Mask 不良分析图 + 所有下钻选项加 Mask — 2026-05-27 完成

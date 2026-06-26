@@ -2,6 +2,18 @@
 
 ---
 
+## 2026-06-26 — Task 5: 可疑坏 bin 自动附 DUT 集中度判别 + prompt 专节
+
+**完成内容：**
+- `agentToolHandlers.ts`：新增并导出 `attachDutConcentrationToJbPayload(payload, userText)`——调 `shouldRunDutAnalysis` 判断是否触发，取 `clusteredBadBinAlerts[].bin` 为 focusBins，复用 Task 4 byDirectory 取数路径拉 `SiteBinPass[]`，focusBins 无命中时自动回退全量，`formatDutConcentrationMarkdown` 结果写入 `payload["dutConcentrationMarkdown"]`，INF 失败静默跳过；在 `toolQueryJbBins` dummy/Oracle 两条路 `onJbBinsWrapped` 后各加 `await attachDutConcentrationToJbPayload(wrapped, options?.userText ?? "")`；`RunToolOptions` 新增 `userText?: string` 字段；import `shouldRunDutAnalysis`
+- `agentJbDeterministicReply.ts`：`formatAlertsAndPatternsSection` 在 `clusteredBadBinAlertsMarkdown` 之后、`detectAndFormatDataPatterns` 之前，追加 `dutConcentrationMarkdown` 块（若非空字符串）——自动出现在「警示 / 规律识别」节内
+- `agentPrompt.ts`：在「### 联合诊断 3 步流程」之后新增「### DUT 集中度：卡 vs 工艺判别」专节——规定工具结果含集中度表时须据此点明各可疑 BIN 判别方向，禁止自估数字
+- `test/agentDutBinAggInsight.test.ts`：追加 3 条 Task 5 测试——`clustered alerts cause DUT concentration to be attached`、无警示时不注入、缺 device 时不注入
+
+**测试：** 366 个测试，0 失败
+
+---
+
 ## 2026-06-26 — Task 4: query_lot_dut_bin_agg 结果附 DUT 集中度判别表
 
 **完成内容：**

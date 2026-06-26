@@ -43,3 +43,36 @@ test("query_lot_dut_bin_agg result includes DUT concentration verdict table for 
   assert.ok(jsonPos !== -1, "JSON data should be present");
   assert.ok(titlePos < jsonPos, "Concentration table should precede JSON data");
 });
+
+// ── Task 5: attachDutConcentrationToJbPayload ────────────────────────────────
+
+import { attachDutConcentrationToJbPayload } from "../src/lib/agent/agentToolHandlers.js";
+
+test("clustered alerts cause DUT concentration to be attached", async () => {
+  const payload: Record<string, unknown> = {
+    device: "WA10P29E",
+    lot: "DR43782.1A",
+    clusteredBadBinAlerts: [{ bin: 11, passId: 1 }],
+  };
+  await attachDutConcentrationToJbPayload(payload, "DR43782.1A 测试情况");
+  assert.equal(typeof payload["dutConcentrationMarkdown"], "string");
+});
+
+test("no clustered alerts → dutConcentrationMarkdown not attached", async () => {
+  const payload: Record<string, unknown> = {
+    device: "WA10P29E",
+    lot: "DR43782.1A",
+    clusteredBadBinAlerts: [],
+  };
+  await attachDutConcentrationToJbPayload(payload, "DR43782.1A 测试情况");
+  assert.equal(payload["dutConcentrationMarkdown"], undefined);
+});
+
+test("missing device → dutConcentrationMarkdown not attached", async () => {
+  const payload: Record<string, unknown> = {
+    lot: "DR43782.1A",
+    clusteredBadBinAlerts: [{ bin: 11, passId: 1 }],
+  };
+  await attachDutConcentrationToJbPayload(payload, "DR43782.1A 测试情况");
+  assert.equal(payload["dutConcentrationMarkdown"], undefined);
+});

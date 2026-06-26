@@ -89,6 +89,7 @@ import {
   buildDutConcentrationInsights,
   formatDutConcentrationMarkdown,
 } from "./agentDutConcentration.js";
+import { shouldRunDutAnalysis } from "./agentDutInsightTrigger.js";
 
 export type { ChartSentinel, ClarificationSentinel };
 
@@ -98,6 +99,8 @@ export type RunToolOptions = {
   history?: ChatMessage[];
   /** query_jb_bins：serialize 前写入完整 markdown 缓存（总结轮直出表）。 */
   onJbBinsWrapped?: (wrapped: Record<string, unknown>) => void;
+  /** 用户原始问题文本，供 DUT 集中度触发判断使用。 */
+  userText?: string;
 };
 
 const TOOL_LIST_LIMIT = 50;
@@ -340,6 +343,7 @@ async function toolQueryJbBins(
       totalDistinctLots: distinctLots?.totalDistinct,
     });
     options?.onJbBinsWrapped?.(wrapped);
+    await attachDutConcentrationToJbPayload(wrapped, options?.userText ?? "");
     return serializeJbQueryResultForAgent(wrapped, maxChars);
   }
 
@@ -371,6 +375,7 @@ async function toolQueryJbBins(
     totalDistinctLots: distinctLots?.totalDistinct,
   });
   options?.onJbBinsWrapped?.(wrapped);
+  await attachDutConcentrationToJbPayload(wrapped, options?.userText ?? "");
   return serializeJbQueryResultForAgent(wrapped, maxChars);
 }
 
@@ -786,5 +791,71 @@ export async function runTool(
       }
       return `未知工具: ${name}`;
     }
+  }
+}
+
+/**
+ * 当 JB lot payload 检出可疑坏 bin（clusteredBadBinAlerts 非空）或用户问题涉及 DUT/卡 vs 工艺时，
+ * 自动拉 INF site-bin-bylot 数据，计算 DUT 集中度判别，并将结果 markdown 写入
+ * payload["dutConcentrationMarkdown"]。INF 失败时静默跳过，不抛、不阻断主流程。
+ */
+/**
+ * 当 JB lot payload 检出可疑坏 bin（clusteredBadBinAlerts 非空）或用户问题涉及 DUT/卡 vs 工艺时，
+ * 自动拉 INF site-bin-bylot 数据，计算 DUT 集中度判别，并将结果 markdown 写入
+ * payload["dutConcentrationMarkdown"]。INF 失败时静默跳过，不抛、不阻断主流程。
+ */
+export async function attachDutConcentrationToJbPayload(
+  payload: Record<string, unknown>,
+  userText: string
+): Promise<void> {
+  if (!shouldRunDutAnalysis(userText, payload)) return;
+
+  const device = typeof payload["device"] === "string" ? payload["device"].trim() : "";
+  const lot = typeof payload["lot"] === "string" ? payload["lot"].trim() : "";
+  if (!device || !lot) return;
+
+  // focusBins 取自 clusteredBadBinAlerts[].bin（数字数组；空则不限）
+  const alertsRaw = payload["clusteredBadBinAlerts"];
+  const focusBins: number[] = [];
+  if (Array.isArray(alertsRaw)) {
+    for (const alert of alertsRaw) {
+      if (
+        alert &&
+        typeof alert === "object" &&
+        typeof (alert as Record<string, unknown>)["bin"] === "number"
+      ) {
+        focusBins.push((alert as Record<string, unknown>)["bin"] as number);
+      }
+    }
+  }
+
+  try {
+    const passIds = [1, 3, 5];
+
+    // 复用 Task 4 的取数方式（byDirectory，不限 probeCardType）
+    const dummy = tryResolveSiteBinByLotDummyForLotByDirectory(device, lot, passIds);
+    let rawPasses: SiteBinPass[];
+    if (dummy !== null) {
+      rawPasses = dummy.passes;
+    } else {
+      const res = await runOutputSiteBinByLotForLotByDirectory(device, lot, passIds);
+      rawPasses = res.data.passes;
+    }
+
+    if (!rawPasses || rawPasses.length === 0) return;
+
+    // 先尝试 focusBins 限定的集中度；若无数据则回退到全量
+    let insights = buildDutConcentrationInsights(rawPasses, [], {
+      focusBins: focusBins.length ? focusBins : undefined,
+    });
+    if (insights.length === 0 && focusBins.length > 0) {
+      insights = buildDutConcentrationInsights(rawPasses, [], {});
+    }
+    const md = formatDutConcentrationMarkdown(insights);
+    if (md && md.trim()) {
+      payload["dutConcentrationMarkdown"] = md;
+    }
+  } catch {
+    // INF 失败静默跳过，不阻断主流程
   }
 }

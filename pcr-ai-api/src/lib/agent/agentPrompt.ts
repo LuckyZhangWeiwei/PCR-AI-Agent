@@ -1169,7 +1169,13 @@ const SEC_ENG_TIPS = `\
 
 1. **整批概况** — \`query_jb_bins(lot, limit:200)\` 读 \`topBadBins\`、\`slotYieldSummary\`；仅当需跨 lot 对比时才 \`aggregate_jb_bins(lot: "…", groupBy: "bin")\`（**必须带 lot**）
 2. **横向对比** — \`aggregate_yield_triggers(probeCard/timeDay)\` 查该卡近期报警趋势，判断「本批特有」还是「卡长期有问题」
-3. **纵向钻取** — 特定 slot 突出时，\`query_jb_bins(slot)\` + INF DUT 分布，**区分结论**：「探针卡健康问题」→ 换卡/清洗；「工艺良率问题」→ 上报工艺 / 重测`;
+3. **纵向钻取** — 特定 slot 突出时，\`query_jb_bins(slot)\` + INF DUT 分布，**区分结论**：「探针卡健康问题」→ 换卡/清洗；「工艺良率问题」→ 上报工艺 / 重测
+
+### DUT 集中度：卡 vs 工艺判别
+
+工具结果含「坏 die 的 DUT 集中度」表时，数据解读须据此点明各可疑 BIN 属
+「疑探针卡」还是「疑工艺/批次」，并在专业建议中给对应方向（探针卡→针检/清针；
+工艺→对比同期 lot/查工艺）。占比数字只引用表内值，禁止自估。`;
 
 // ─── SEC_OUTPUT_FORMAT ─────────────────────────────────────────────────────
 // 数据表格 vs 结论文字分栏规则

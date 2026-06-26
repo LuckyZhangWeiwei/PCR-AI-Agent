@@ -1758,6 +1758,11 @@ function formatAlertsAndPatternsSection(
   if (typeof clusterMd === "string" && clusterMd.trim()) {
     parts.push(clusterMd.trim());
   }
+  // DUT 集中度判别表（仅在 clusteredBadBinAlerts 触发自动注入时存在）
+  const dutMd = toolPayload["dutConcentrationMarkdown"];
+  if (typeof dutMd === "string" && dutMd.trim()) {
+    parts.push(dutMd.trim());
+  }
   const patterns = detectAndFormatDataPatterns(toolPayload);
   if (patterns) parts.push(patterns);
   if (parts.length === 0) return null;
