@@ -252,8 +252,15 @@ export function buildJbScopeArgs(
   if (device) args["device"] = device;
   if (testerId) args["testerId"] = testerId;
 
-  const testEndFrom = String(ymArgs?.["testEndFrom"] ?? window.testEndFrom ?? "").trim();
-  const testEndTo = String(ymArgs?.["testEndTo"] ?? window.testEndTo ?? "").trim();
+  // YM tool calls carry timeFrom/timeTo (TIME_STAMP), JB tools use testEndFrom/testEndTo.
+  // When inheriting a window the user already established, prefer it over a window
+  // re-derived from the question text (which drifts as "now" advances).
+  const testEndFrom = String(
+    ymArgs?.["testEndFrom"] ?? ymArgs?.["timeFrom"] ?? window.testEndFrom ?? ""
+  ).trim();
+  const testEndTo = String(
+    ymArgs?.["testEndTo"] ?? ymArgs?.["timeTo"] ?? window.testEndTo ?? ""
+  ).trim();
   if (testEndFrom) args["testEndFrom"] = testEndFrom.slice(0, 10);
   if (testEndTo) args["testEndTo"] = testEndTo.slice(0, 10);
 

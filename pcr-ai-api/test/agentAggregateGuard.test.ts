@@ -1,5 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+
+// Self-contained dummy mode so this file passes standalone (no Oracle client / no
+// reliance on another test file's global env side effects).
+process.env["INFCONTROL_LAYER_BINS_DUMMY"] = "true";
+process.env["YIELD_MONITOR_TRIGGERS_DUMMY"] = "true";
+
 import { runTool } from "../src/lib/agent/agentToolHandlers.js";
 
 describe("aggregate_jb_bins scope guard", () => {
