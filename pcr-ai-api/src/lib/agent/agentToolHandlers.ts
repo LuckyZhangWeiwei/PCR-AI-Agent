@@ -799,11 +799,6 @@ export async function runTool(
  * 自动拉 INF site-bin-bylot 数据，计算 DUT 集中度判别，并将结果 markdown 写入
  * payload["dutConcentrationMarkdown"]。INF 失败时静默跳过，不抛、不阻断主流程。
  */
-/**
- * 当 JB lot payload 检出可疑坏 bin（clusteredBadBinAlerts 非空）或用户问题涉及 DUT/卡 vs 工艺时，
- * 自动拉 INF site-bin-bylot 数据，计算 DUT 集中度判别，并将结果 markdown 写入
- * payload["dutConcentrationMarkdown"]。INF 失败时静默跳过，不抛、不阻断主流程。
- */
 export async function attachDutConcentrationToJbPayload(
   payload: Record<string, unknown>,
   userText: string
@@ -844,13 +839,12 @@ export async function attachDutConcentrationToJbPayload(
 
     if (!rawPasses || rawPasses.length === 0) return;
 
-    // 先尝试 focusBins 限定的集中度；若无数据则回退到全量
-    let insights = buildDutConcentrationInsights(rawPasses, [], {
+    // focusBins 非空 = 仅分析可疑 bin；若这些 bin 在本次 INF 无数据，则不出表
+    // （展示其它无关 bin 会误导卡 vs 工艺判断）。focusBins 为空时不限 bin、分析全部。
+    const insights = buildDutConcentrationInsights(rawPasses, [], {
       focusBins: focusBins.length ? focusBins : undefined,
     });
-    if (insights.length === 0 && focusBins.length > 0) {
-      insights = buildDutConcentrationInsights(rawPasses, [], {});
-    }
+    if (insights.length === 0) return;
     const md = formatDutConcentrationMarkdown(insights);
     if (md && md.trim()) {
       payload["dutConcentrationMarkdown"] = md;

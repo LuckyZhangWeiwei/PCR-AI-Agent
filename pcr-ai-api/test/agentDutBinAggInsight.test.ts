@@ -49,13 +49,18 @@ test("query_lot_dut_bin_agg result includes DUT concentration verdict table for 
 import { attachDutConcentrationToJbPayload } from "../src/lib/agent/agentToolHandlers.js";
 
 test("clustered alerts cause DUT concentration to be attached", async () => {
+  // BIN98 真实存在于 dummy lot DR43782.1A 的 INF 数据（集中型/疑探针卡）→ 走聚焦路径
   const payload: Record<string, unknown> = {
     device: "WA10P29E",
     lot: "DR43782.1A",
-    clusteredBadBinAlerts: [{ bin: 11, passId: 1 }],
+    clusteredBadBinAlerts: [{ bin: 98, passId: 1 }],
   };
   await attachDutConcentrationToJbPayload(payload, "DR43782.1A 测试情况");
   assert.equal(typeof payload["dutConcentrationMarkdown"], "string");
+  assert.ok(
+    (payload["dutConcentrationMarkdown"] as string).trim().length > 0,
+    "dutConcentrationMarkdown should be non-empty"
+  );
 });
 
 test("no clustered alerts → dutConcentrationMarkdown not attached", async () => {
