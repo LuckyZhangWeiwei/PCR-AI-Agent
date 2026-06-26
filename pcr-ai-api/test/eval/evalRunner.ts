@@ -33,7 +33,7 @@ export type EvalReport = {
   skippedTotal: number;
 };
 
-const CATEGORY_ORDER: EvalCategory[] = ["routing", "factcheck", "summary", "empty"];
+const CATEGORY_ORDER: EvalCategory[] = ["routing", "factcheck", "summary", "empty", "insight"];
 
 export async function runScenarios(
   scenarios: EvalScenario[],

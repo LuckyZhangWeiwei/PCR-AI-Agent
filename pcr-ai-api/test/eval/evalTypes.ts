@@ -19,13 +19,15 @@ export type EvalCategory =
   | "routing" // intent / pending-query / scope-arg inference
   | "factcheck" // hallucination guard (lot / card / yield / device)
   | "summary" // deterministic reply-mode classification + field completeness
-  | "empty"; // empty / zero-result natural-language fallback
+  | "empty" // empty / zero-result natural-language fallback
+  | "insight"; // DUT 关系/隐性规律
 
 export const EVAL_CATEGORY_LABELS: Record<EvalCategory, string> = {
   routing: "路由/scope 推断",
   factcheck: "事实准确(防幻觉)",
   summary: "字段完整/总结分流",
   empty: "空结果 fallback",
+  insight: "DUT 关系/隐性规律",
 };
 
 export type EvalResult = { pass: boolean; detail?: string };
