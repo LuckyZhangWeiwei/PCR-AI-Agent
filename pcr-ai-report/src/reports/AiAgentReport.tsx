@@ -809,7 +809,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
                             🔧 {t.name} {t.open ? "▲" : "▼"}
                           </button>
                         ))}
-                        {msg.streaming && <span className="ai-cursor ai-cursor--inline" />}
+                        {msg.streaming && !msg.text && <span className="ai-cursor ai-cursor--inline" />}
                       </div>
                     )}
 
