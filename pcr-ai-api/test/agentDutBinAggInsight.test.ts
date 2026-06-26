@@ -81,3 +81,41 @@ test("missing device → dutConcentrationMarkdown not attached", async () => {
   await attachDutConcentrationToJbPayload(payload, "DR43782.1A 测试情况");
   assert.equal(payload["dutConcentrationMarkdown"], undefined);
 });
+
+// ── Final-review C1: dutConcentrationMarkdown must survive the session cache ──
+// snapshot (the deterministic summary reads from the cache, not the live obj).
+import { buildJbSessionCacheJson } from "../src/lib/agent/agentJbBinFormat.js";
+
+test("C1: attached dutConcentrationMarkdown round-trips through session cache", async () => {
+  const wrapped: Record<string, unknown> = {
+    device: "WA10P29E",
+    lot: "DR43782.1A",
+    lotQueryFullRows: true,
+    clusteredBadBinAlerts: [{ bin: 98, passId: 1 }],
+  };
+  await attachDutConcentrationToJbPayload(wrapped, "DR43782.1A 测试情况");
+  assert.equal(typeof wrapped["dutConcentrationMarkdown"], "string");
+  const cache = JSON.parse(buildJbSessionCacheJson(wrapped)) as Record<string, unknown>;
+  assert.equal(
+    typeof cache["dutConcentrationMarkdown"],
+    "string",
+    "cache snapshot must carry dutConcentrationMarkdown (else summary never sees it)"
+  );
+});
+
+// ── Final-review I1: CARDID from payload.cardByPassId reaches the markdown ──
+test("I1: cardByPassId from payload populates the card column", async () => {
+  const payload: Record<string, unknown> = {
+    device: "WA10P29E",
+    lot: "DR43782.1A",
+    clusteredBadBinAlerts: [{ bin: 98, passId: 1 }],
+    cardByPassId: [
+      { passId: 1, cardIds: ["7804-02"], hasCardChange: false },
+      { passId: 3, cardIds: ["7804-02"], hasCardChange: false },
+      { passId: 5, cardIds: ["7804-02"], hasCardChange: false },
+    ],
+  };
+  await attachDutConcentrationToJbPayload(payload, "DR43782.1A 测试情况");
+  const md = payload["dutConcentrationMarkdown"] as string;
+  assert.ok(md && md.includes("7804-02"), "card number should appear in the verdict table");
+});

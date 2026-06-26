@@ -23,6 +23,7 @@ export function jbYieldCoreFields(
     "clusteredBadBinAlerts",
     "clusteredBadBinAlertsMarkdown",
     "_clusteredBadBinAlertsGuide",
+    "dutConcentrationMarkdown",
     "testerId",
     "testerByLot",
     "testInterruptCountMarkdown",

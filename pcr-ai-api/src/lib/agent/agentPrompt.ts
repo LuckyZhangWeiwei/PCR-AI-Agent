@@ -40,6 +40,7 @@
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
 import type { DataManifest } from "./agentManifest.js";
+import { DUT_CONCENTRATION_GUIDE } from "./agentDutConcentration.js";
 
 // ─── runtime header (date + manifest) ─────────────────────────────────────
 
@@ -1174,8 +1175,8 @@ const SEC_ENG_TIPS = `\
 ### DUT 集中度：卡 vs 工艺判别
 
 工具结果含「坏 die 的 DUT 集中度」表时，数据解读须据此点明各可疑 BIN 属
-「疑探针卡」还是「疑工艺/批次」，并在专业建议中给对应方向（探针卡→针检/清针；
-工艺→对比同期 lot/查工艺）。占比数字只引用表内值，禁止自估。`;
+「疑探针卡」还是「疑工艺/批次」，并在专业建议中给对应方向。
+${DUT_CONCENTRATION_GUIDE}`;
 
 // ─── SEC_OUTPUT_FORMAT ─────────────────────────────────────────────────────
 // 数据表格 vs 结论文字分栏规则

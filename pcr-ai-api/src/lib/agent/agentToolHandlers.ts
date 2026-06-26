@@ -58,6 +58,7 @@ import { runGetFilterValues } from "./agentFilterValuesTool.js";
 import {
   serializeJbQueryResultForAgent,
   wrapJbQueryResultForAgent,
+  type CardByPassIdEntry,
 } from "./agentJbBinFormat.js";
 import {
   buildDistinctLotsFromMatchingRows,
@@ -342,8 +343,10 @@ async function toolQueryJbBins(
       recentLotsOverride: distinctLots?.lots,
       totalDistinctLots: distinctLots?.totalDistinct,
     });
-    options?.onJbBinsWrapped?.(wrapped);
+    // attach BEFORE onJbBinsWrapped: the callback snapshots the session cache,
+    // which the deterministic summary reads from — the field must exist first.
     await attachDutConcentrationToJbPayload(wrapped, options?.userText ?? "");
+    options?.onJbBinsWrapped?.(wrapped);
     return serializeJbQueryResultForAgent(wrapped, maxChars);
   }
 
@@ -841,7 +844,10 @@ export async function attachDutConcentrationToJbPayload(
 
     // focusBins 非空 = 仅分析可疑 bin；若这些 bin 在本次 INF 无数据，则不出表
     // （展示其它无关 bin 会误导卡 vs 工艺判断）。focusBins 为空时不限 bin、分析全部。
-    const insights = buildDutConcentrationInsights(rawPasses, [], {
+    // cardByPassId 来自 JB payload，使结论落到「卡 X 的 DUT a/b/c」。
+    const cardByPassId =
+      (payload["cardByPassId"] as CardByPassIdEntry[] | undefined) ?? [];
+    const insights = buildDutConcentrationInsights(rawPasses, cardByPassId, {
       focusBins: focusBins.length ? focusBins : undefined,
     });
     if (insights.length === 0) return;
