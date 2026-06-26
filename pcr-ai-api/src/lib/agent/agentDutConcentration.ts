@@ -1,0 +1,91 @@
+/** DUT 集中度检测：坏 die 集中在少数 DUT（探针卡）vs 分散（工艺）。 */
+import type { SiteBinPass } from "../outputSiteBinByLot.js";
+import type { CardByPassIdEntry } from "./agentJbBinFormat.js";
+import { passIdSortLabel } from "../jbYieldCalc.js";
+
+export type DutConcentrationVerdict = "probe_card" | "process" | "inconclusive";
+
+export type DutConcentrationInsight = {
+  bin: number;
+  passId: number;
+  sortLabel: string;
+  cardId: string | null;
+  totalDie: number;
+  topDuts: Array<{ dut: number; dieCount: number; share: number }>;
+  topShare: number;
+  verdict: DutConcentrationVerdict;
+  detail: string;
+};
+
+export type DutConcentrationOptions = {
+  topShareThreshold?: number;
+  minTotalDie?: number;
+  focusBins?: number[];
+};
+
+function parseBinNumber(bin: string): number | null {
+  const m = /(\d+)/.exec(bin);
+  return m ? Number(m[1]) : null;
+}
+
+function cardIdForPass(cardByPassId: CardByPassIdEntry[], passId: number): string | null {
+  const e = cardByPassId.find((c) => c.passId === passId);
+  if (!e || e.cardIds.length === 0) return null;
+  return e.cardIds.join(", ");
+}
+
+export function buildDutConcentrationInsights(
+  passes: SiteBinPass[],
+  cardByPassId: CardByPassIdEntry[] = [],
+  opts: DutConcentrationOptions = {}
+): DutConcentrationInsight[] {
+  const threshold = opts.topShareThreshold ?? 0.7;
+  const minTotalDie = opts.minTotalDie ?? 8;
+  const focus = opts.focusBins && opts.focusBins.length ? new Set(opts.focusBins) : null;
+
+  const insights: DutConcentrationInsight[] = [];
+  for (const pass of passes) {
+    const cardId = cardIdForPass(cardByPassId, pass.passId);
+    for (const entry of pass.bins) {
+      const bin = parseBinNumber(entry.bin);
+      if (bin === null) continue;
+      if (focus && !focus.has(bin)) continue;
+
+      const numeric = entry.duts.filter(
+        (d): d is { dut: number; dieCount: number } => typeof d.dut === "number"
+      );
+      const total = numeric.reduce((s, d) => s + d.dieCount, 0);
+      if (numeric.length === 0 || total < minTotalDie) continue;
+
+      const sorted = [...numeric].sort((a, b) => b.dieCount - a.dieCount);
+      const k = Math.min(3, sorted.length);
+      const topSum = sorted.slice(0, k).reduce((s, d) => s + d.dieCount, 0);
+      const topShare = topSum / total;
+      const topDuts = sorted.slice(0, k).map((d) => ({
+        dut: d.dut,
+        dieCount: d.dieCount,
+        share: d.dieCount / total,
+      }));
+      const sortLabel = passIdSortLabel(pass.passId);
+
+      let verdict: DutConcentrationVerdict;
+      if (sorted.length < 3) verdict = "inconclusive";
+      else if (topShare >= threshold) verdict = "probe_card";
+      else verdict = "process";
+
+      const pct = (n: number) => `${Math.round(n * 100)}%`;
+      const dutList = topDuts.map((d) => `DUT${d.dut}`).join("/");
+      const cardLabel = cardId ? `卡 ${cardId}` : "该 pass 探针卡";
+      const detail =
+        verdict === "probe_card"
+          ? `BIN${bin} ${sortLabel} 坏 die ${total} 颗，${pct(topShare)} 集中在 ${dutList}（${cardLabel}）→ 疑探针卡针点/接触问题`
+          : verdict === "process"
+          ? `BIN${bin} ${sortLabel} 坏 die ${total} 颗，分散在 ${sorted.length} 个 DUT（最高 ${pct(topShare)}）→ 疑工艺/批次问题`
+          : `BIN${bin} ${sortLabel} 坏 die ${total} 颗，仅 ${sorted.length} 个 DUT，样本不足以判别卡/工艺`;
+
+      insights.push({ bin, passId: pass.passId, sortLabel, cardId, totalDie: total, topDuts, topShare, verdict, detail });
+    }
+  }
+  insights.sort((a, b) => b.totalDie - a.totalDie);
+  return insights;
+}
