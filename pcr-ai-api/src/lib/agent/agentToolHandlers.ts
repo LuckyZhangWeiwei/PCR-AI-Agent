@@ -85,6 +85,10 @@ import {
   tryResolveSiteBinByLotDummyForLotByDirectory,
 } from "../outputSiteBinByLotDummy.js";
 import { parseSiteBinByLotTestEndWindow } from "../siteBinByLotTestEndWindow.js";
+import {
+  buildDutConcentrationInsights,
+  formatDutConcentrationMarkdown,
+} from "./agentDutConcentration.js";
 
 export type { ChartSentinel, ClarificationSentinel };
 
@@ -580,9 +584,11 @@ async function toolQueryLotDutBinAgg(
         device, lot, probeCardType, passIds, testEndWindow
       );
       if (dummy !== null) {
-        const passes = compactSiteBinPasses(dummy.passes);
+        const rawPasses = dummy.passes;
+        const dutMd = formatDutConcentrationMarkdown(buildDutConcentrationInsights(rawPasses, []));
+        const passes = compactSiteBinPasses(rawPasses);
         const focusBinDuts = focusBinKey ? extractFocusBinDuts(passes, focusBinKey) : undefined;
-        return truncateResult(
+        const body = truncateResult(
           {
             ...(focusBinDuts?.length ? { focusBin: focusBinKey, focusBinDuts } : {}),
             device, lot, probeCardType: dummy.probeCardType ?? probeCardType,
@@ -591,13 +597,16 @@ async function toolQueryLotDutBinAgg(
           },
           maxChars
         );
+        return (dutMd ? dutMd + "\n\n" : "") + body;
       }
       const res = await runOutputSiteBinByLotForLot(
         device, lot, probeCardType, passIds, testEndWindow
       );
-      const passes = compactSiteBinPasses(res.data.passes);
+      const rawPasses = res.data.passes;
+      const dutMd = formatDutConcentrationMarkdown(buildDutConcentrationInsights(rawPasses, []));
+      const passes = compactSiteBinPasses(rawPasses);
       const focusBinDuts = focusBinKey ? extractFocusBinDuts(passes, focusBinKey) : undefined;
-      return truncateResult(
+      const body = truncateResult(
         {
           ...(focusBinDuts?.length ? { focusBin: focusBinKey, focusBinDuts } : {}),
           device, lot, probeCardType: res.probeCardType ?? probeCardType,
@@ -607,12 +616,15 @@ async function toolQueryLotDutBinAgg(
         },
         maxChars
       );
+      return (dutMd ? dutMd + "\n\n" : "") + body;
     } else {
       const dummy = tryResolveSiteBinByLotDummyForLotByDirectory(device, lot, passIds);
       if (dummy !== null) {
-        const passes = compactSiteBinPasses(dummy.passes);
+        const rawPasses = dummy.passes;
+        const dutMd = formatDutConcentrationMarkdown(buildDutConcentrationInsights(rawPasses, []));
+        const passes = compactSiteBinPasses(rawPasses);
         const focusBinDuts = focusBinKey ? extractFocusBinDuts(passes, focusBinKey) : undefined;
-        return truncateResult(
+        const body = truncateResult(
           {
             ...(focusBinDuts?.length ? { focusBin: focusBinKey, focusBinDuts } : {}),
             device, lot,
@@ -621,11 +633,14 @@ async function toolQueryLotDutBinAgg(
           },
           maxChars
         );
+        return (dutMd ? dutMd + "\n\n" : "") + body;
       }
       const res = await runOutputSiteBinByLotForLotByDirectory(device, lot, passIds);
-      const passes = compactSiteBinPasses(res.data.passes);
+      const rawPasses = res.data.passes;
+      const dutMd = formatDutConcentrationMarkdown(buildDutConcentrationInsights(rawPasses, []));
+      const passes = compactSiteBinPasses(rawPasses);
       const focusBinDuts = focusBinKey ? extractFocusBinDuts(passes, focusBinKey) : undefined;
-      return truncateResult(
+      const body = truncateResult(
         {
           ...(focusBinDuts?.length ? { focusBin: focusBinKey, focusBinDuts } : {}),
           device, lot,
@@ -634,6 +649,7 @@ async function toolQueryLotDutBinAgg(
         },
         maxChars
       );
+      return (dutMd ? dutMd + "\n\n" : "") + body;
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

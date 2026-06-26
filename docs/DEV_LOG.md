@@ -2,6 +2,17 @@
 
 ---
 
+## 2026-06-26 — Task 4: query_lot_dut_bin_agg 结果附 DUT 集中度判别表
+
+**完成内容：**
+- `agentToolHandlers.ts`：import `buildDutConcentrationInsights` / `formatDutConcentrationMarkdown`；`toolQueryLotDutBinAgg` 4 个返回点（probeCardType/无 × dummy/真库）均在 `compactSiteBinPasses` 前用原始 `SiteBinPass[]` 计算集中度，将 markdown 表前置到 JSON 结果之前（`dutMd ? dutMd + "\n\n" : ""`），不影响 maxChars 截断逻辑
+- `test/agentDutBinAggInsight.test.ts`（新增）：3 条断言——结果类型、不含内部字段名（cardByPassId/topShare/DutConcentrationInsight）、dummy lot DR43782.1A 判别表前置于 JSON（含「疑」字且位置在 JSON 之前）
+- Dummy lot 实测：同时产出「疑工艺/批次」（BIN55/2/3 等分散型）和「疑探针卡」（BIN98/5/10 等集中型）
+
+**测试：** 365 个测试，363 通过，0 失败，2 跳过
+
+---
+
 ## 2026-06-12 — Agent 质量改进：6 项修复（截断标记 / 空结果回退 / lot 参数名 / 机台重试 / generate_chart / aggregate_jb_bins）
 
 **完成内容：**
