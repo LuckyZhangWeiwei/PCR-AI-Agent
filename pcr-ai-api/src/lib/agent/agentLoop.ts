@@ -2095,7 +2095,7 @@ function jbBinsYieldFallbackMessage(
  * Used to inject a natural-language fallback instruction into the summary nudge
  * so the LLM knows to say "no data found" instead of outputting nothing.
  */
-function isLastToolEmptyResult(lastTool: ChatMessage | undefined): boolean {
+export function isLastToolEmptyResult(lastTool: ChatMessage | undefined): boolean {
   if (!lastTool) return false;
   const c = tryParseJsonish(String(lastTool.content ?? ""));
   if (!c || typeof c !== "object" || Array.isArray(c)) return false;
