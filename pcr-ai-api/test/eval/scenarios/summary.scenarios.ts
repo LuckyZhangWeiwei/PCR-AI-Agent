@@ -15,7 +15,27 @@ import {
   isLotListingQuestion,
   isLotDetailListingQuestion,
 } from "../../../src/lib/agent/agentJbDeterministicReply.js";
-import { expectTrue, expectFalse, type EvalScenario } from "../evalTypes.js";
+import { formatCardByPassIdMarkdown } from "../../../src/lib/agent/agentJbHistoryCompact.js";
+import { toolStatusLabel } from "../../../src/lib/agent/agentLoop.js";
+import {
+  expectTrue,
+  expectFalse,
+  expectContainsAll,
+  expectExcludesAll,
+  type EvalScenario,
+} from "../evalTypes.js";
+
+// Internal identifiers that must never appear in user-facing deterministic output.
+const INTERNAL_IDENTIFIERS = [
+  "cardByPassId",
+  "yieldByPassId",
+  "slotBadBinsCompact",
+  "binBySlot",
+  "query_jb_bins",
+  "aggregate_jb_bins",
+  "get_filter_values",
+  "Markdown",
+];
 
 export const summaryScenarios: EvalScenario[] = [
   {
@@ -71,5 +91,33 @@ export const summaryScenarios: EvalScenario[] = [
     category: "summary",
     title: "「所有 lot 的 fail bin 列出来」→ lot 明细列表",
     run: () => expectTrue(isLotDetailListingQuestion("所有lot的fail bin都列出来"), "isLotDetailListingQuestion"),
+  },
+  {
+    id: "leak-cardByPassId-header-clean",
+    category: "summary",
+    title: "探针卡确定性表头不得暴露内部字段名 cardByPassId",
+    seed: "用户报告:回答里出现内部函数/字段名",
+    run: () => {
+      const md = formatCardByPassIdMarkdown([
+        { passId: 1, cardIds: ["7804-02"], hasCardChange: false },
+      ]);
+      const r1 = expectContainsAll(md, ["各测试层探针卡"]);
+      if (!r1.pass) return r1;
+      return expectExcludesAll(md, INTERNAL_IDENTIFIERS);
+    },
+  },
+  {
+    id: "leak-tool-status-label-localized",
+    category: "summary",
+    title: "工具状态提示用中文标签,不暴露内部工具名",
+    seed: "用户报告:回答里出现内部函数/字段名",
+    run: () => {
+      const label = toolStatusLabel("query_jb_bins");
+      const r1 = expectExcludesAll(label, ["query_jb_bins", "_"]);
+      if (!r1.pass) return r1;
+      return toolStatusLabel("query_jb_bins") === "JB 测试数据查询"
+        ? { pass: true }
+        : { pass: false, detail: `映射不符: ${label}` };
+    },
   },
 ];

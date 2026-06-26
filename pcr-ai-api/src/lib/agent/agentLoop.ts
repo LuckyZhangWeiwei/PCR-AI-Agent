@@ -2106,6 +2106,26 @@ export function isLastToolEmptyResult(lastTool: ChatMessage | undefined): boolea
   return false;
 }
 
+// 面向用户的工具中文标签——状态提示里不暴露内部函数名（query_jb_bins 等）。
+const TOOL_STATUS_LABELS: Record<string, string> = {
+  query_yield_triggers: "良率监控查询",
+  aggregate_yield_triggers: "良率监控统计",
+  query_jb_bins: "JB 测试数据查询",
+  aggregate_jb_bins: "JB BIN 聚合统计",
+  get_filter_values: "可选值查询",
+  query_lot_dut_bin_agg: "DUT×BIN 聚合",
+  query_inf_site_bin_by_dut: "DUT 分布查询",
+  inf_draw_wafer_map: "绘制晶圆图",
+  inf_draw_dut_bin_map: "DUT×BIN 晶圆图",
+  generate_chart: "生成图表",
+  ask_clarification: "请求澄清",
+};
+
+/** 把内部工具名映射为面向用户的中文标签；未知工具回退为通用「数据查询」。 */
+export function toolStatusLabel(name: string): string {
+  return TOOL_STATUS_LABELS[name] ?? "数据查询";
+}
+
 /** 总结轮 LLM 空输出时：直出服务端表（无解读），避免「模型未返回分析结论」。 */
 function finishWithJbServerTablesFallback(
   sessionId: string,
@@ -3010,7 +3030,7 @@ export async function runAgentLoop(
           }
 
           emit({ type: "tool_start", name: tc.name, args: fixedArgs });
-          emit({ type: "status", message: `正在执行工具 ${tc.name}…` });
+          emit({ type: "status", message: `正在${toolStatusLabel(tc.name)}…` });
 
           let historyContent: string;
           let jbCacheForHistory: string | undefined;

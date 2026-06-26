@@ -159,6 +159,26 @@ interface ToolMessage {
   summary: string;
   open: boolean;
 }
+
+// 工具 chip 的中文友好标签——避免把内部函数名（query_jb_bins 等）暴露给用户。
+const TOOL_DISPLAY_LABELS: Record<string, string> = {
+  query_yield_triggers: "良率监控查询",
+  aggregate_yield_triggers: "良率监控统计",
+  query_jb_bins: "JB 测试数据查询",
+  aggregate_jb_bins: "JB BIN 聚合统计",
+  get_filter_values: "可选值查询",
+  query_lot_dut_bin_agg: "DUT×BIN 聚合",
+  query_inf_site_bin_by_dut: "DUT 分布查询",
+  inf_draw_wafer_map: "绘制晶圆图",
+  inf_draw_dut_bin_map: "DUT×BIN 晶圆图",
+  generate_chart: "生成图表",
+  ask_clarification: "请求澄清",
+};
+
+/** 把内部工具名映射为面向用户的中文标签；未知工具回退为通用「数据查询」。 */
+function toolDisplayName(name: string): string {
+  return TOOL_DISPLAY_LABELS[name] ?? "数据查询";
+}
 interface ChartMessage {
   kind: "chart";
   option: EChartsOption;
@@ -806,7 +826,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
                             className="ai-tool-toggle"
                             onClick={() => toggleTool(ti)}
                           >
-                            🔧 {t.name} {t.open ? "▲" : "▼"}
+                            🔧 {toolDisplayName(t.name)} {t.open ? "▲" : "▼"}
                           </button>
                         ))}
                         {msg.streaming && !msg.text && <span className="ai-cursor ai-cursor--inline" />}
@@ -904,7 +924,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
               rendered.push(
                 <div key={toolIdx} className="ai-msg ai-msg--tool">
                   <button type="button" className="ai-tool-toggle" onClick={() => toggleTool(toolIdx)}>
-                    🔧 {msg.name} {msg.open ? "▲" : "▼"}
+                    🔧 {toolDisplayName(msg.name)} {msg.open ? "▲" : "▼"}
                   </button>
                   {msg.open && msg.summary && <div className="ai-tool-detail">{msg.summary}</div>}
                 </div>

@@ -244,7 +244,7 @@ export function formatCardByPassIdMarkdown(
   if (!entries.length) return "";
   const sorted = [...entries].sort((a, b) => a.passId - b.passId);
   const lines = [
-    "**各测试层探针卡（cardByPassId）**",
+    "**各测试层探针卡**",
     "",
     "| 测试层 | passId | 卡号 | 同层中途换卡 |",
     "|---|---:|---|---|",
