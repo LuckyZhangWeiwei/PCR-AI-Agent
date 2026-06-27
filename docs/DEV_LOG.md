@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-06-27 — JB 漏斗多选：lot 及以后级别支持多选 + MASK label 修正
+
+**完成内容：**
+- `InfcontrolReport.tsx`：`FunnelChainStep.value` 改为 `string | string[]`；新增 `stepValues` / `stepDisplayValue` 辅助函数；`funnelFilter` 改用 `vals.some(...)` 支持多值 OR 过滤
+- `InfcontrolReport.tsx`：新增 `FUNNEL_MULTI_SELECT_FROM = 2`（lot 及以后）；`FunnelDrillSection` 加 `pendingValues` 状态与 `useEffect` 重置（chain.length 变化即清空）；`handleBarClick` 在多选级别改为切换选中/取消；`handleConfirmMultiSelect` 确认后写入 chain 并推进；图表 bar 用 `opacity` 高亮已选（未选变暗 0.18）
+- `InfcontrolReport.tsx`：父组件 `funnelLotVal` 返回 `string | string[]`；新增 `funnelLotKey`（join 字符串用于 effect 依赖）；多 lot 并行拉取数据（`Promise.all` 每 lot 单独请求后 `flat` 合并）；DUT 面板 `dutLot` 支持多 lot join 显示
+- `index.css`：新增 `.funnel-confirm-btn`（绿色边框/文字，hover 加背景）
+- `InfcontrolReport.tsx`：JB STAR 查询条件 MASK 字段 label 由 "Mask" 改为 "MASK(后4位)"，与字段含义对齐
+
+**测试：** tsc --noEmit 通过，无类型错误
+
+---
+
 ## 2026-06-27 — 三段会话评审修复：get_filter_values 空结果 hint + 缓存 scope 校验 + SQL 调试日志
 
 **完成内容：**

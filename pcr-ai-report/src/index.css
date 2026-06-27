@@ -1463,6 +1463,24 @@ button.chip:hover {
   color: #e6edf3;
   border-color: #58a6ff;
 }
+.funnel-confirm-btn {
+  background: none;
+  border: 1px solid #238636;
+  border-radius: 6px;
+  color: #3fb950;
+  font-size: 12px;
+  padding: 5px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-weight: 600;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+.funnel-confirm-btn:hover {
+  background: rgba(63, 185, 80, 0.1);
+  border-color: #3fb950;
+  color: #56d364;
+}
 
 .inf-dut-dist-panel-meta {
   display: flex;
