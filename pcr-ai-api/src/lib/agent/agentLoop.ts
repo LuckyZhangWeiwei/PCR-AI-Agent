@@ -37,6 +37,7 @@ import {
   buildDeterministicJbTables,
   buildEngineeringContextFromPayload,
   buildAggregateBinRankingMarkdown,
+  buildBinCardAggregateMarkdown,
   detectJbReplyMode,
   DETERMINISTIC_DATA_SECTION_TITLE,
   DETERMINISTIC_COMMENTARY_SECTION_TITLE,
@@ -44,6 +45,7 @@ import {
   extractSlotFromUserText,
   extractYmLotsFromHistory,
   isLotListingQuestion,
+  isMultiLotComparisonQuestion,
   isLotOverviewQuestion,
   isLotDetailListingQuestion,
   buildLotListingContext,
@@ -2090,6 +2092,25 @@ async function tryRunDeterministicJbSummary(
     const scopeLabel = aggArgs
       ? buildScopeLabelFromAggregateArgs(aggArgs)
       : undefined;
+    // groupBy:"bin,cardId" → 卡归属表（用户问「集中在哪张卡」）。须在 bin-only 排行前判断，
+    // 否则 buildAggregateBinRankingMarkdown 会丢掉 cardId 列、渲染成重复 BIN 行。
+    const binCardTable = buildBinCardAggregateMarkdown(
+      String(lastTool.content ?? ""),
+      scopeLabel,
+      extractBinFromUserText(userQuestion)
+    );
+    if (binCardTable?.trim()) {
+      const msg =
+        `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${binCardTable}\n\n` +
+        `${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n` +
+        `*以上为范围内 BIN×探针卡 坏 die 汇总（良品 bin 已扣除）。卡级已定位；DUT 级归属需 INF DUT map，` +
+        `可继续追问「lot <号> wafer <片号> BIN<n> 的 DUT 分布」。*`;
+      emit({ type: "status", message: "正在输出 BIN×探针卡 归属表…" });
+      emitTextInChunks(msg, emit);
+      appendMessages(sessionId, { role: "assistant", content: msg });
+      emit({ type: "done" });
+      return true;
+    }
     const binRank = buildAggregateBinRankingMarkdown(
       String(lastTool.content ?? ""),
       scopeLabel
@@ -2127,6 +2148,14 @@ async function tryRunDeterministicJbSummary(
       `[jbDeterministic/multiLot] 单 lot 回复锁定 lot=${repliedLot}，但本轮查询了 ${turnLots.length} 个 lot：` +
         `${turnLots.join(", ")}；用户问「${userQuestion.slice(0, 40)}」可能要多 lot 对比 → 当前回复或答非所问。`
     );
+    // 跨多 lot 对比类问题（「前5个lot都用什么卡」）：单 lot 概况答非所问，
+    // bail → 交回 LLM 总结轮，用本轮全部 query_jb_bins 历史作答（含各 lot 的卡）。
+    if (isMultiLotComparisonQuestion(userQuestion)) {
+      console.warn(
+        `[jbDeterministic/multiLotBail] 跨 lot 对比问题不出单 lot 概况，交回 LLM 用 ${turnLots.length} 个 lot 历史作答。`
+      );
+      return false;
+    }
   }
 
   return emitDeterministicJbTablesReply(
@@ -2199,6 +2228,14 @@ function jbBinsYieldFallbackMessage(
     const content = String(toolMsg.content ?? "");
     const table = buildMultiLotBinTable(content);
     if (table) return table;
+    const binCardTable = buildBinCardAggregateMarkdown(
+      content,
+      undefined,
+      extractBinFromUserText(userQuestion)
+    );
+    if (binCardTable?.trim()) {
+      return `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${binCardTable}`;
+    }
     const binRank = buildAggregateBinRankingMarkdown(content);
     if (binRank?.trim()) return `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${binRank}`;
     return null;

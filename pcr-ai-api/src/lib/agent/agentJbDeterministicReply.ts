@@ -559,6 +559,50 @@ export function isCrossLotQuestionMisalignedWithPayload(
   );
 }
 
+/**
+ * 用户问 mask/device 级（无具体 lot），但 payload 仅是该 family 的单个 / 限量 lot
+ * （multiLotYieldScope 或 distinctLots>1 或 recentLots>1）。此时不能用某一个 lot 的
+ * 概况 / 卡归属表代答 mask 全量问题——应改出多 lot 列表或跨 lot 聚合。
+ *
+ * 与 isCrossLotQuestionMisalignedWithPayload 区别：后者要求「坏 bin 排行 / 列表」类关键词；
+ * 本函数面向「测试情况 / 概况 / BINxx 归到哪张卡」这类**未带排行关键词**的 mask 级问题。
+ */
+export function isMaskLevelQuestionOnMultiLotPayload(
+  userMessage: string,
+  toolPayload: Record<string, unknown>
+): boolean {
+  if (extractLotFromUserText(userMessage)) return false;
+  const hasMaskOrDevice =
+    Boolean(inferMaskFromText(userMessage)) ||
+    Boolean(inferDeviceFromText(userMessage));
+  if (!hasMaskOrDevice) return false;
+  const distinct = Number(
+    toolPayload["totalDistinctLots"] ??
+      toolPayload["distinctLotCount"] ??
+      toolPayload["multiLotDistinctCount"] ??
+      0
+  );
+  const recent = toolPayload["recentLotsByTestEnd"];
+  return (
+    toolPayload["multiLotYieldScope"] === true ||
+    distinct > 1 ||
+    (Array.isArray(recent) && recent.length > 1)
+  );
+}
+
+/**
+ * 跨多 lot 对比/枚举类问题（无具体单 lot）：「前5个lot都用什么卡」「这几个lot各自…」。
+ * 本轮若 query_jb_bins 了多个 lot，单 lot 确定性概况会答非所问 → 交回 LLM 用全量历史作答。
+ */
+export function isMultiLotComparisonQuestion(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (extractLotFromUserText(t)) return false; // 指定了具体单 lot 不算
+  return /各自|分别|这几个|这些\s*lot|前\s*\d+\s*个?\s*lot|这\s*\d+\s*个?\s*lot|都\s*(用|是|为)|哪些\s*lot|逐个|对比/i.test(
+    t
+  );
+}
+
 export function isBinTrendQuestion(text: string): boolean {
   const bin = extractBinFromUserText(text);
   if (bin == null) return false;
@@ -1181,6 +1225,18 @@ export function buildDeterministicJbTables(
   }
 
   if (mode === "bin_card_attribution") {
+    // mask/device 级「BINxx 集中在哪张卡」但 payload 仅单 lot（如「N55Z bin35 集中到哪张卡」
+    // → query_jb_bins(mask) 只回最新 lot DR44436.1W）。单 lot 的 slotBadBinsCompact 不能代表
+    // 整个 family，bail → 让上层走 aggregate_jb_bins(mask, groupBy:"bin,cardId") 跨 lot 聚合。
+    if (isMaskLevelQuestionOnMultiLotPayload(userMessage, toolPayload)) {
+      console.warn(
+        `[jbDeterministic/binCardMaskScope] BIN 卡归属问题「${userMessage.slice(0, 40)}」为 mask/device 级，` +
+          `但 payload 仅 lot=${String(toolPayload["lot"] ?? "?")}（distinctLots=` +
+          `${toolPayload["totalDistinctLots"] ?? toolPayload["distinctLotCount"]}）→ ` +
+          `不能用单 lot slotBadBinsCompact 代答；应 aggregate_jb_bins(mask, groupBy:"bin,cardId") 跨 lot 聚合。`
+      );
+      return null;
+    }
     const bin = extractBinFromUserText(userMessage);
     if (bin != null) {
       const compact = toolPayload["slotBadBinsCompact"] as SlotBadBinsCompactEntry[] | undefined;
@@ -1353,6 +1409,12 @@ export function buildDeterministicJbTables(
   }
 
   if (mode === "lot_overview") {
+    // mask/device 级「测试情况 / 概况」但 payload 含多个 lot（如「P11C 最近一个月测试情况」
+    // → query_jb_bins(mask) 只锁定最新单 lot）。出该单 lot 概况会答非所问，改出多 lot 列表。
+    if (isMaskLevelQuestionOnMultiLotPayload(userMessage, toolPayload)) {
+      const listing = buildRecentLotsListingMarkdown(toolPayload, listingCtx);
+      if (listing?.trim()) return listing;
+    }
     // Prefer pre-computed overview from cache (built with full cardByPassId array).
     // Without this, formatLotYieldOverviewMarkdown would skip the probe-card section
     // because cardByPassId (raw array) is not persisted in the session cache.
@@ -1518,6 +1580,83 @@ export function buildAggregateBinRankingMarkdown(
     }),
   ];
   return `${header}\n\n${rows.join("\n")}`;
+}
+
+/**
+ * aggregate_jb_bins(groupBy:"bin,cardId") 的卡归属渲染。
+ * buildAggregateBinRankingMarkdown 只取 bin+count，会把「bin35 在 9416-04/03/01」
+ * 渲染成重复的 BIN35 行、丢掉 cardId（用户问「集中在哪张卡」却看不到卡号）。
+ * - focusBin 有值（如「bin35 集中在哪张卡」）→ 仅列该 BIN 各卡坏 die 排行。
+ * - focusBin 无值（如「9406 各卡对比」）→ bin×card 全表按坏 die 降序。
+ * groups 无 cardId 时返回 null，交回 buildAggregateBinRankingMarkdown。
+ */
+export function buildBinCardAggregateMarkdown(
+  rawContent: string,
+  scopeLabel?: string,
+  focusBin?: number | null
+): string | null {
+  let agg: Record<string, unknown>;
+  try {
+    agg = JSON.parse(rawContent) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const groups = agg["groups"] as Array<Record<string, unknown>> | undefined;
+  if (!groups?.length) return null;
+  // 必须含 cardId（即 groupBy 含 cardId）才走本渲染
+  if (!groups.some((g) => String(g["cardId"] ?? g["CARDID"] ?? "").trim())) {
+    return null;
+  }
+
+  type Row = { bin: number; cardId: string; count: number };
+  const rows: Row[] = groups
+    .map((g) => {
+      const binNum = Number(String(g["bin"] ?? g["BIN"] ?? "").replace(/^BIN/i, ""));
+      return {
+        bin: binNum,
+        cardId: String(g["cardId"] ?? g["CARDID"] ?? "").trim(),
+        count: Number(g["count"] ?? g["CNT"] ?? 0),
+      };
+    })
+    .filter((r) => Number.isFinite(r.bin) && r.bin > 0 && r.cardId && r.count > 0);
+  if (!rows.length) return null;
+
+  const scope = scopeLabel?.trim() || "查询范围";
+  const totalRows = Number(agg["totalRowsMatching"] ?? 0);
+  const rowsSuffix = totalRows > 0 ? `，匹配 ${totalRows} 行` : "";
+
+  if (focusBin != null) {
+    const forBin = rows
+      .filter((r) => r.bin === focusBin)
+      .sort((a, b) => b.count - a.count);
+    if (!forBin.length) return null; // 该 BIN 不在结果里 → 交回通用渲染
+    const total = forBin.reduce((s, r) => s + r.count, 0);
+    const lines = [
+      `**BIN${focusBin} 坏 die 所属探针卡（${scope}，坏 die 合计 ${total}${rowsSuffix}）**`,
+      "",
+      `| # | 探针卡 (CARDID) | BIN${focusBin} 坏 die 颗数 | 占比 |`,
+      "|---:|---|---:|---:|",
+      ...forBin.map((r, i) => {
+        const pct = total > 0 ? ((r.count / total) * 100).toFixed(1) : "0.0";
+        return `| ${i + 1} | ${r.cardId} | ${r.count} | ${pct}% |`;
+      }),
+    ];
+    return lines.join("\n");
+  }
+
+  const sorted = rows.sort((a, b) => b.count - a.count).slice(0, 30);
+  const total = rows.reduce((s, r) => s + r.count, 0);
+  const lines = [
+    `**坏 BIN × 探针卡（${scope}，Top ${sorted.length}，坏 die 合计 ${total}${rowsSuffix}）**`,
+    "",
+    "| # | BIN | 探针卡 (CARDID) | 坏 die 颗数 | 占比 |",
+    "|---:|---|---|---:|---:|",
+    ...sorted.map((r, i) => {
+      const pct = total > 0 ? ((r.count / total) * 100).toFixed(1) : "0.0";
+      return `| ${i + 1} | BIN${r.bin} | ${r.cardId} | ${r.count} | ${pct}% |`;
+    }),
+  ];
+  return lines.join("\n");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

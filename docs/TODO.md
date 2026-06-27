@@ -21,10 +21,11 @@
 - [ ] Phase 3 前端：`LotDutBinPanel.tsx`（lot 级堆叠条形图，调用已有 `/inf-analysis/site-bin-bylot?device&lot`）
 - [ ] YM 确定性摘要路径：类似 tryRunDeterministicJbSummary，YM lot 查询后服务端直出探针卡报警排名表
 - [ ] 报表重构：识别并提取 YM/JB 相同维度分析为共用组件（精简重复）
-- [ ] 真库验证三段会话修复：复现后收集 `[agentSql/*]`（含 SQL）、`[equipmentRoute/skip:*]`、`[jbGoodBin/suspect]`、`[jbDeterministic/staleMaskCache]` 日志，据实定位：(a) `get_filter_values(probeCardType→cardId)` 为何空（CARDID 前缀格式）；(b) BIN152 isGoodBin 是否 PASSBIN/分类与良率口径不一致；(c)「测试最差」是否改良率%口径
+- [ ] 真库验证三段会话修复：复现后收集 `[agentSql/*]`（含 SQL）、`[equipmentRoute/skip:*]`、`[jbGoodBin/suspect]`、`[jbDeterministic/staleMaskCache]`、`[jbDeterministic/binCardMaskScope]`、`[jbDeterministic/multiLotBail]` 日志，据实定位：(a) `get_filter_values(device,mask)` 与 `(probeCardType→cardId)` 为何空（看 `filterValues:*DeviceByMask:result` 的 rowCount/sampleDevices；CARDID 前缀格式）；(b) BIN152 isGoodBin 是否 PASSBIN/分类与良率口径不一致；(c)「ps16 哪个最差」是否改良率%口径（现按坏 die 总量排序，仅脚注提示用 yieldByPassId 复核）
 
 ## 已完成
 
+- ✅ 续评审修复：mask 级「测试情况」改出多 lot 列表（非单 lot 概况）+ bin_card mask 级 bail + `buildBinCardAggregateMarkdown`（groupBy:"bin,cardId" 卡归属渲染，修 cardId 丢失）+ `isMultiLotComparisonQuestion` 多 lot 对比 bail + device-by-mask SQL 日志加 sampleDevices — 2026-06-27 完成（384 测试通过）
 - ✅ 三段会话评审修复：get_filter_values 空结果 hint + 多 lot scope guide + equipment 直连缓存 scope 校验（防 N55Z↔P11C 张冠李戴）+ SQL 调试日志（query_jb_bins/aggregate_jb_bins/get_filter_values）— 2026-06-27 完成（376 测试通过）
 - ✅ agentPrompt 可维护性重构：22 个命名 TypeScript const + TOC，LLM 看到文本完全不变，typecheck 通过 — 2026-06-06 完成
 - ✅ default 兜底输出优化：cluster 警示与 AI 规律识别合并至末尾；清除 formatClusteredBadBinAlertsMarkdown 指令泄漏；detectAndFormatDataPatterns 改简洁 bullet 格式 — 2026-06-06 完成

@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-06-27 — 续评审修复：mask 级概况/卡归属误答 + bin×card 聚合渲染 + 多 lot 对比 bail
+
+**完成内容：**
+- `agentJbDeterministicReply.ts`：新增 `isMaskLevelQuestionOnMultiLotPayload`——句中无具体 lot 但有 mask/device 且 payload 多 lot 时为真。`buildDeterministicJbTables` 的 **lot_overview 分支**命中即改出 `buildRecentLotsListingMarkdown`（多 lot 列表），修掉「P11C 最近一个月测试情况」被渲染成最新单 lot（TR23373.1T）概况；**bin_card_attribution 分支**命中即 `[jbDeterministic/binCardMaskScope]` 日志 + 返回 null，不再用单 lot `slotBadBinsCompact` 代答 mask 级「BINxx 集中在哪张卡」
+- `agentJbDeterministicReply.ts`：新增 `buildBinCardAggregateMarkdown`——`aggregate_jb_bins(groupBy:"bin,cardId")` 渲染卡归属（focusBin 有值出「BINxx 各卡排行」，无值出「坏 BIN×探针卡」全表），修掉 `buildAggregateBinRankingMarkdown` 只取 bin+count、丢掉 cardId 渲染成重复 BIN 行的问题；`agentLoop.ts` 总结轮主聚合分支 + fallback 分支均在 bin-only 排行前接入
+- `agentJbDeterministicReply.ts`：新增 `isMultiLotComparisonQuestion`（「前5个lot都用什么卡」「这几个lot各自…」）；`agentLoop.ts` `tryRunDeterministicJbSummary` 本轮查 >1 lot 且命中该问法时 `[jbDeterministic/multiLotBail]` 日志 + bail，交回 LLM 用全部 lot 历史作答，修掉「问 5 个 lot 的卡、只答最后 1 个 lot 概况」答非所问
+- `agentFilterValuesTool.ts`：device-by-mask 的 `:result` SQL 日志增加 `sampleDevices`（返回前 5 个 device），便于真库判断 get_filter_values(device,mask) 空结果是 SQL 返 0（数据/mask 格式）还是下游丢弃；确认顶层 `mask` 入参已被 `resolveDeviceMaskArg` 正确解析
+- 测试：`agentJbDeterministicReply.test.ts` 新增 7 例（mask 级概况→列表、bin_card mask bail、各回归保护、`buildBinCardAggregateMarkdown` focusBin/全表/无 cardId、`isMultiLotComparisonQuestion`）
+
+**测试：** 384 个测试，382 通过、2 跳过（既有）、0 失败；`tsc --noEmit` 通过
+
+---
+
 ## 2026-06-27 — JB 漏斗多选：lot 及以后级别支持多选 + MASK label 修正
 
 **完成内容：**

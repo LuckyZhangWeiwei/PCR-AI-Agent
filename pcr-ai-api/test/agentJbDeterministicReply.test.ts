@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildBriefCommentaryUserMessage,
   buildAggregateBinRankingMarkdown,
+  buildBinCardAggregateMarkdown,
   buildDeterministicJbTables,
   buildEngineeringContextFromPayload,
   buildRecentLotsListingMarkdown,
@@ -12,6 +13,7 @@ import {
   isBinTrendQuestion,
   isInterruptCountQuestion,
   isLotListingQuestion,
+  isMultiLotComparisonQuestion,
   isProbeCardQuestion,
   isTesterMachineQuestion,
   isSlotPassYieldQuestion,
@@ -117,6 +119,64 @@ describe("agentJbDeterministicReply", () => {
     assert.ok(md?.includes("BIN61"));
     assert.ok(md?.includes("900"));
     assert.ok(md?.includes("占比"));
+  });
+
+  it("isMultiLotComparisonQuestion detects cross-lot card listing", () => {
+    assert.ok(isMultiLotComparisonQuestion("前5个lot 都是用什么卡测试的"));
+    assert.ok(isMultiLotComparisonQuestion("这几个lot 用各自用什么卡测试的"));
+    assert.ok(isMultiLotComparisonQuestion("这5个lot 分别用什么卡"));
+    // 指定单 lot → 不算（应正常出单 lot 概况）
+    assert.equal(isMultiLotComparisonQuestion("DR44049.1X 用什么卡"), false);
+    // 无跨 lot 关键词
+    assert.equal(isMultiLotComparisonQuestion("这个device 测试情况"), false);
+  });
+
+  it("buildBinCardAggregateMarkdown focusBin lists cards for one BIN", () => {
+    const raw = JSON.stringify({
+      totalRowsMatching: 3445,
+      groups: [
+        { bin: "35", cardId: "9416-04", count: 14388 },
+        { bin: "35", cardId: "9416-03", count: 13662 },
+        { bin: "35", cardId: "9416-01", count: 12905 },
+        { bin: "32", cardId: "9416-01", count: 12067 },
+        { bin: "35", cardId: "9416-02", count: 9283 },
+      ],
+    });
+    const md = buildBinCardAggregateMarkdown(raw, "mask N55Z", 35);
+    assert.ok(md?.includes("BIN35 坏 die 所属探针卡"));
+    assert.ok(md?.includes("9416-04"));
+    assert.ok(md?.includes("14388"));
+    // 不含 BIN32 行（focusBin 只看 35）
+    assert.equal(md?.includes("12067"), false);
+    // 第一行应是颗数最多的 9416-04
+    const firstCardLine = md!.split("\n").find((l) => l.includes("| 1 |"));
+    assert.ok(firstCardLine?.includes("9416-04"));
+  });
+
+  it("buildBinCardAggregateMarkdown no focusBin renders bin×card table", () => {
+    const raw = JSON.stringify({
+      totalRowsMatching: 6123,
+      groups: [
+        { bin: "152", cardId: "9406-01", count: 148464 },
+        { bin: "152", cardId: "9406-05", count: 109628 },
+        { bin: "20", cardId: "9406-01", count: 82232 },
+      ],
+    });
+    const md = buildBinCardAggregateMarkdown(raw, "probeCardType 9406", null);
+    assert.ok(md?.includes("坏 BIN × 探针卡"));
+    assert.ok(md?.includes("9406-01"));
+    assert.ok(md?.includes("9406-05"));
+    assert.ok(md?.includes("BIN152"));
+  });
+
+  it("buildBinCardAggregateMarkdown returns null when groups lack cardId", () => {
+    const raw = JSON.stringify({
+      groups: [
+        { bin: "35", count: 14388 },
+        { bin: "32", count: 12067 },
+      ],
+    });
+    assert.equal(buildBinCardAggregateMarkdown(raw, "mask N55Z", 35), null);
   });
 
   it("buildRecentLotsListingMarkdown merges JB and YM lots", () => {
@@ -231,6 +291,98 @@ describe("agentJbDeterministicReply", () => {
     assert.ok(md?.includes("测试 lot 列表"));
     assert.ok(md?.includes("NF12576.1X"));
     assert.equal(md?.includes("不应出现"), false);
+  });
+
+  it("buildDeterministicJbTables mask-level 测试情况 emits multi-lot listing not single-lot overview", () => {
+    const payload = {
+      lot: "TR23373.1T",
+      device: "WB01P11C",
+      multiLotYieldScope: true,
+      totalDistinctLots: 16,
+      recentLotsByTestEnd: [
+        {
+          lot: "TR23373.1T",
+          device: "WB01P11C",
+          testEnd: "2026-06-26",
+          slotCount: 10,
+          cardIds: [],
+          hasCardChangeInLot: false,
+          cardId: "",
+          slots: [],
+        },
+        {
+          lot: "TR22423.1A",
+          device: "WB01P11C",
+          testEnd: "2026-06-26",
+          slotCount: 25,
+          cardIds: [],
+          hasCardChangeInLot: false,
+          cardId: "",
+          slots: [],
+        },
+      ],
+      // 单 lot 概况 markdown：若被误用会出现在输出里
+      lotYieldOverviewMarkdown: "**TR23373.1T 单 lot 概况不应出现**",
+      agentTablesDigest: { lotOverview: "**TR23373.1T 单 lot 概况不应出现**" },
+    };
+    // "P11C 最近一个月的测试情况" → lot_overview 模式，但 mask 级多 lot
+    assert.equal(detectJbReplyMode("P11C 最近一个月的测试情况"), "lot_overview");
+    const md = buildDeterministicJbTables("P11C 最近一个月的测试情况", payload);
+    assert.ok(md?.includes("TR22423.1A"), "应列出其它 lot");
+    assert.equal(md?.includes("单 lot 概况不应出现"), false);
+  });
+
+  it("buildDeterministicJbTables lot-scoped 测试情况 keeps single-lot overview (regression)", () => {
+    const payload = {
+      lot: "TR21697.1K",
+      device: "WB01P11C",
+      multiLotYieldScope: true,
+      totalDistinctLots: 16,
+      recentLotsByTestEnd: [
+        { lot: "TR21697.1K", device: "WB01P11C", testEnd: "2026-06-05", slotCount: 25 },
+        { lot: "TR22423.1A", device: "WB01P11C", testEnd: "2026-06-26", slotCount: 25 },
+      ],
+      agentTablesDigest: { lotOverview: "**TR21697.1K 单 lot 概况**" },
+    };
+    // 句中带具体 lot → 仍走单 lot 概况，不退化成列表
+    const md = buildDeterministicJbTables("TR21697.1K 测试情况", payload);
+    assert.ok(md?.includes("TR21697.1K 单 lot 概况"));
+  });
+
+  it("buildDeterministicJbTables bin_card_attribution bails on mask-level single-lot payload", () => {
+    const payload = {
+      lot: "DR44436.1W",
+      device: "WC13N55Z",
+      multiLotYieldScope: true,
+      totalDistinctLots: 8,
+      slotBadBinsCompact: [
+        { slot: 1, passId: 1, cardId: "9416-03", badBins: [{ bin: 35, dieCount: 418 }] },
+      ],
+    };
+    assert.equal(
+      detectJbReplyMode("N55Z bin35 是集中到哪张卡上的"),
+      "bin_card_attribution"
+    );
+    const md = buildDeterministicJbTables(
+      "N55Z bin35 是集中到哪张卡上的",
+      payload
+    );
+    assert.equal(md, null, "mask 级单 lot 应 bail，不出单 lot 卡表");
+  });
+
+  it("buildDeterministicJbTables bin_card_attribution keeps lot-scoped single-lot answer (regression)", () => {
+    const payload = {
+      lot: "DR44436.1W",
+      device: "WC13N55Z",
+      slotBadBinsCompact: [
+        { slot: 1, passId: 1, cardId: "9416-03", badBins: [{ bin: 35, dieCount: 418 }] },
+      ],
+    };
+    const md = buildDeterministicJbTables(
+      "DR44436.1W bin35 是集中到哪张卡上的",
+      payload
+    );
+    assert.ok(md?.includes("9416-03"), "句中带具体 lot 时仍正常出卡归属表");
   });
 
   it("extractYmLotsFromHistory dedupes LOTID from query_yield_triggers", () => {

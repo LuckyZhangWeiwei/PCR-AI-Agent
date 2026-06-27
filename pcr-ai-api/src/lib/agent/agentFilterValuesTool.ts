@@ -504,6 +504,7 @@ async function oracleYieldDeviceByMaskMap(
   });
   logAgentSql("filterValues:yieldDeviceByMask:result", "(rows returned)", binds, {
     rowCount: rows.length,
+    sampleDevices: rows.slice(0, 5).map((r) => String(r["GRP_KEY"] ?? "").trim()),
   });
   const totalDistinct = rows.length > 0 ? Number(rows[0]!["TOTAL_DISTINCT"] ?? rows.length) : 0;
   const latest = new Map<string, string>();
@@ -541,6 +542,7 @@ async function oracleJbDeviceByMaskMap(
   });
   logAgentSql("filterValues:jbDeviceByMask:result", "(rows returned)", binds, {
     rowCount: rows.length,
+    sampleDevices: rows.slice(0, 5).map((r) => String(r["GRP_KEY"] ?? "").trim()),
   });
   const totalDistinct = rows.length > 0 ? Number(rows[0]!["TOTAL_DISTINCT"] ?? rows.length) : 0;
   const latest = new Map<string, string>();
