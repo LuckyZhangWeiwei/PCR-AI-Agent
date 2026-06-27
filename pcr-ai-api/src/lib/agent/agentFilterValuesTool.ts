@@ -15,6 +15,7 @@ import {
   deviceMaskOracleWhere,
   looksLikeDeviceMaskToken,
 } from "../deviceMask.js";
+import { oracleNonEmptyTrimmedColumn } from "../oracleStringSql.js";
 import { logAgentSql } from "./agentSqlDebugLog.js";
 
 const DEFAULT_LIMIT = 20;
@@ -490,7 +491,7 @@ async function oracleYieldDeviceByMaskMap(
       WHERE UPPER(TRIM(t."TYPE")) = 'DELTA_DIFF'
         AND NOT REGEXP_LIKE(t.LOTID, '^(kk|gg|c)', 'i')
         AND ${deviceMaskOracleWhere("t.DEVICE", "mask")}
-        AND t.DEVICE IS NOT NULL AND TRIM(t.DEVICE) != ''
+        AND ${oracleNonEmptyTrimmedColumn("t.DEVICE")}
       GROUP BY t.DEVICE
     )
     ORDER BY last_test DESC NULLS LAST
@@ -528,7 +529,7 @@ async function oracleJbDeviceByMaskMap(
       JOIN INFLAYERBINLIST t2 ON t1.KEYNUMBER = t2.KEYNUMBER
       WHERE NOT REGEXP_LIKE(t1.LOT, '^(kk|gg|c)', 'i')
         AND ${deviceMaskOracleWhere("t1.DEVICE", "mask")}
-        AND t1.DEVICE IS NOT NULL AND TRIM(t1.DEVICE) != ''
+        AND ${oracleNonEmptyTrimmedColumn("t1.DEVICE")}
       GROUP BY t1.DEVICE
     )
     ORDER BY last_test DESC NULLS LAST
@@ -639,7 +640,7 @@ async function oracleYield(
         SELECT ${col} AS grp_key, COUNT(*) AS cnt
         FROM YMWEB_YIELDMONITORTRIGGER t
         WHERE ${where}
-          AND ${col} IS NOT NULL AND TRIM(${col}) != ''
+          AND ${oracleNonEmptyTrimmedColumn(col)}
           ${searchCond}
         GROUP BY ${col}
       )
@@ -754,7 +755,7 @@ async function oracleJb(
       FROM (
         SELECT ${col} AS grp_key, COUNT(*) AS cnt
         ${fromClause}
-          AND ${col} IS NOT NULL AND TRIM(${col}) != ''
+          AND ${oracleNonEmptyTrimmedColumn(col)}
           ${searchCond}
         GROUP BY ${col}
       )

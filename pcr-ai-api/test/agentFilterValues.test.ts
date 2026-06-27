@@ -162,8 +162,7 @@ test("jb/device resolves mask P02G in Dummy mode", async () => {
 });
 
 // P1 回归：会话调用形状 = { domain:"both", field:"device", mask:<顶层> }（mask 不在 filterBy）。
-// 真实会话里此调用对 P11C/N55Z 返回空；xlsx(=Oracle 结构) 下对存在的 mask 必须返回数据，
-// 证明 device-by-mask 逻辑正确——真库空属部署/数据问题，非代码逻辑。
+// Oracle 路径曾用 TRIM(col)!='' 导致真库恒空（见 HANDOFF P-A / oracleStringSql.ts）；Dummy 下须仍有数据。
 test("P1 both/device with TOP-LEVEL mask (session shape) returns the device", async () => {
   const raw = await runGetFilterValues({
     domain: "both",

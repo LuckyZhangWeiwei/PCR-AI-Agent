@@ -15,9 +15,9 @@
 
 ---
 
-## 🔴 P-A（最高优先）：`get_filter_values` device-by-mask 真库恒空，但同 mask 的 query_* 有数据
+## ✅ P-A（已修复 · 2026-06-27）：`get_filter_values` device-by-mask 真库恒空
 
-### 现象（4 会话一致）
+### 现象（修复前，4 会话一致）
 | mask | `get_filter_values(domain:both,field:device,mask)` | 同会话 `query_yield_triggers(mask)` / `query_jb_bins(mask)` |
 |---|---|---|
 | P11C | `{"values":[],"totalDistinct":0,"devices":[]}` | `WB01P11C`（14 行）/ 有数据 |
@@ -25,66 +25,49 @@
 | N48A | 空 | `WA88888811N48A` / 有数据 |
 | N94W | 空 | `WK71N94W` / 有数据 |
 
-### 已排除（不要再往这些方向查）
-1. **不是旧 dist**：用户已 `npm run build` 重新部署，仍空。
-2. **不是 mask 匹配逻辑**：能查到的 `query_yield_triggers` 与返回空的 `get_filter_values` **用同一段** `deviceMaskOracleWhere`（[deviceMask.ts:45-50](../pcr-ai-api/src/lib/deviceMask.ts#L45-L50)），其中第二节 `UPPER(TRIM(col)) LIKE '%'||UPPER(:mask)||'%'` 对 `WB01P11C` **必然命中** `P11C`。
-3. **不是 `FETCH FIRST` 老 Oracle 语法**：`query_yield_triggers` 走的 `buildYieldMonitorTriggersV3Sql`（[apiV3ListSql.ts:138](../pcr-ai-api/src/lib/apiV3ListSql.ts#L138)）**也用 `FETCH FIRST :lim ROWS ONLY` 且能跑**。
-4. **范围更宽反而空**：filter 的 device-by-mask SQL **不加时间窗**，JB 侧**不限 PASSTYPE**——比能查到的 query 范围更宽，逻辑上更不该空。→ **纯靠读代码无法解释，必须看真库实际执行的 SQL + 行数。**
+### 根因（Cursor 真库探针已定位，勿再查 TYPE / mask / JOIN）
 
-### 涉及文件
-- 空的两条 SQL：[agentFilterValuesTool.ts](../pcr-ai-api/src/lib/agent/agentFilterValuesTool.ts)
-  - `oracleYieldDeviceByMaskMap`（约 481-517，`withProbeWebConnection`，表 `YMWEB_YIELDMONITORTRIGGER`，含 `UPPER(TRIM(t."TYPE"))='DELTA_DIFF'`）
-  - `oracleJbDeviceByMaskMap`（约 519-555，`withConnection`，`INFCONTROL t1 JOIN INFLAYERBINLIST t2 ON t1.KEYNUMBER=t2.KEYNUMBER`）
-  - 入口 `runGetFilterValues` domain==="both" 分支（约 820-842）
-- 能查到的对照：`toolQueryYieldTriggers`（[agentToolHandlers.ts:156-184](../pcr-ai-api/src/lib/agent/agentToolHandlers.ts#L156-L184)）→ `parseYieldMonitorTriggerV3Query`（[yieldMonitorTriggerFilters.ts:218-224](../pcr-ai-api/src/lib/yieldMonitorTriggerFilters.ts#L218-L224)）
-- 诊断日志：`logAgentSql`（[agentSqlDebugLog.ts](../pcr-ai-api/src/lib/agent/agentSqlDebugLog.ts)，`AGENT_SQL_DEBUG` 默认 true，打到 **stderr**）
+**Oracle 空字符串 = NULL 语义陷阱**：`agentFilterValuesTool.ts` 里 device-by-mask 与其它 enum SQL 使用了
 
-### 第 0 步（最快，推荐）：直接跑 SQL 探针，**不经过 LLM**
-P-A 是 **SQL 层**问题，LLM 只是触发器——别绕 LLM + 翻日志，直接对真库复跑那两条 SQL 的二分变体。脚本已备好：
+```sql
+AND t.DEVICE IS NOT NULL AND TRIM(t.DEVICE) != ''
+```
+
+在 Oracle 中 `''` 被当作 `NULL`，故 `TRIM(t.DEVICE) != ''` 实际变为 `!= NULL`，在 WHERE 里恒为 **unknown**，**把所有行（含 `WB01P11C` 等正常 device）全部滤掉**。
+
+探针二分（`npx tsx scripts/probe-device-by-mask.ts P11C` + 额外变体）：
+
+| 探针 | rowCount | 说明 |
+|---|---|---|
+| `yield/typeOnly`（TYPE + mask） | 3 | TYPE / mask 均正常 |
+| `yield/type+devNotNull`（再加 `TRIM != ''`） | **0** | 元凶 |
+| `yield/count/isNotNull` | 550 | `IS NOT NULL`  alone 正常 |
+| `yield/count/lenGt0` | 550 | `LENGTH(TRIM(...))>0` 正常 |
+| `jb/join+regexp` | 1 | JOIN 正常 |
+| `jb/full`（含 `TRIM != ''`） | **0** | 同因 |
+
+**已排除（不要再查）**：旧 dist、mask 逻辑、`FETCH FIRST`、TYPE 裸值不匹配（`distinctType` 显示 `delta_diff`）、probeweb 连错库、异常吞没（无 ORA 报错）。
+
+### 修复（已合入）
+
+- 新增 [`oracleStringSql.ts`](../pcr-ai-api/src/lib/oracleStringSql.ts) → **`oracleNonEmptyTrimmedColumn(col)`**：
+  `col IS NOT NULL AND LENGTH(TRIM(col)) > 0`
+- 替换 [`agentFilterValuesTool.ts`](../pcr-ai-api/src/lib/agent/agentFilterValuesTool.ts) 内 **4 处**（`oracleYieldDeviceByMaskMap`、`oracleJbDeviceByMaskMap`、yield/jb 通用 enum SQL）。
+- 探针脚本 [`probe-device-by-mask.ts`](../pcr-ai-api/scripts/probe-device-by-mask.ts) 同步，便于回归。
+- 单测：[`test/oracleStringSql.test.ts`](../pcr-ai-api/test/oracleStringSql.test.ts)；Dummy 形状仍走 [`test/agentFilterValues.test.ts`](../pcr-ai-api/test/agentFilterValues.test.ts)。
+
+### 部署后回归（真库）
+
 ```bash
-cd pcr-ai-api && PCR_AI_LOCAL_DUMMY=false npx tsx scripts/probe-device-by-mask.ts P11C
+cd pcr-ai-api && npm run build && npm test && npm run typecheck
+# 真库探针：yield/full、jb/full 应从 0 变为非 0
+PCR_AI_LOCAL_DUMMY=false npx tsx scripts/probe-device-by-mask.ts P11C
+PCR_AI_LOCAL_DUMMY=false npx tsx scripts/probe-device-by-mask.ts N55Z
 ```
-（必须在能连真库的环境：服务器，或本机 `.env` 配好 `ORACLE_*`。换 mask 改末尾参数。）
-它依次打印 `yield/full`(复现空) → `yield/noType` → `yield/onlyMask` → `yield/distinctType`(TYPE 裸值) → `jb/full` → `jb/onlyMaskNoJoin` 各段的 `rowCount`。**哪段从 0 变非 0，就是被哪个 WHERE 条件杀光行**；任一段抛 `❌ ERROR(ORA-xxxxx)` 则「空」其实是被吞的异常。把整段输出贴回 Claude 即可定位。
 
-### 第 1 步（备选）：抓真实 SQL（钥匙，已默认开启）
-在 AI 里问一次 `P11C 最近的测试情况`，然后到服务器：
-```bash
-pm2 logs <进程名> --err --lines 400 | grep -i DeviceByMask
-# 或
-tail -n 800 ~/.pm2/logs/<进程名>-error.log | grep -i DeviceByMask
-```
-会有两条：
-```
-[agentSql/filterValues:yieldDeviceByMask] binds={"mask":"P11C","lim":50}
-  SQL: SELECT grp_key, last_test ... WHERE UPPER(TRIM(t."TYPE"))='DELTA_DIFF' ...
-[agentSql/filterValues:yieldDeviceByMask:result] ... {"rowCount":0,"sampleDevices":[]}
-```
-**重点看**：
-- (a) `binds.mask` 实际值是否真的是 `"P11C"`（会不会被 `resolveDeviceMaskArg` / filterBy 解析坏成空或别的值）；
-- (b) `rowCount` 是否真为 0；
-- (c) 同段日志里有没有 **ORA-xxxxx** 报错（若有，则"空"其实是被吞掉的异常，见下「异常吞没」假设）。
+Agent 侧：`get_filter_values(domain:both, field:device, mask:P11C)` 应枚举出 `WB01P11C` 等。
 
-### 第 2 步：把完整 SQL 贴真库二分复跑（定位是哪个条件杀光行）
-对 **yield 侧** SQL，从真库逐步删条件，找出从哪一步开始有行：
-1. 只留 `deviceMaskOracleWhere`（去掉 `TYPE='DELTA_DIFF'`、去掉 `NOT REGEXP_LIKE(LOTID,...)`）→ 有行吗？
-2. 加回 `TYPE='DELTA_DIFF'` → **重点怀疑**：真库 `TYPE` 列实际值是否真是 `delta_diff`？大小写 / 前后空格 / 是否带其它值？（`query_yield_triggers` 返回的行 `TYPE:"delta_diff"`，但那是 enrich 后的展示值，**未必等于库内裸值**——务必查裸值 `SELECT DISTINCT "TYPE" FROM YMWEB_YIELDMONITORTRIGGER WHERE ...`。）
-3. 加回 `NOT REGEXP_LIKE(LOTID,'^(kk|gg|c)','i')` → 注意：**`'c'` 前缀**会把所有以 c/C 开头的 LOT 排除，确认目标 lot（如 `TR2...` / `DR4...` / `NF1...`）不被误伤。
-
-对 **JB 侧** SQL 同法二分（它没有 TYPE 条件，重点查 `INFCONTROL⋈INFLAYERBINLIST` 的 JOIN 键 `KEYNUMBER` 与 `t1.DEVICE` 列）。
-
-### 候选假设（按可能性排序，逐一证伪）
-1. **真库 `TYPE` 裸值 ≠ `'DELTA_DIFF'`**（大小写/空格/枚举差异）→ yield 侧被 `TYPE` 条件清零。这是 yield 侧最可能的元凶。**注意 JB 侧无 TYPE 条件却也空**，所以单这条不能解释全部，但可能 yield/JB 各有独立原因。
-2. **`binds.mask` 被解析坏**（空串 → `LIKE '%%'` 命中全部、或被截断）。看日志 (a) 即可证伪。
-3. **异常被吞没**：`oracleDeviceByMaskBoth` 里 `Promise.all([yield, jb])` 任一抛错 → 冒泡到 `runGetFilterValues` 的 try-catch → 返回 `"get_filter_values 错误: ..."`。**确认用户看到的到底是空 JSON 还是 `错误:` 字符串**（口语"空"可能混淆二者）。若是错误，完整 SQL 直接复跑即可定位 ORA 码。
-4. **连接池/库不一致**：yield 走 `withProbeWebConnection`。确认该池连的库里 `YMWEB_YIELDMONITORTRIGGER.DEVICE` 确有值且 `query_yield_triggers` 与 filter 命中**同一张表**。
-
-### 修复后回归
-- 真机验证 P11C/N55Z/N48A/N94W 都能枚举出 device；
-- **dummy-parity**：dummy 路径（`dummyDeviceByMaskBoth`）已正常，勿破坏；
-- 已有形状回归 `test/agentFilterValues.test.ts`，按真因补针对性用例。
-
-> 实害提示：即便 filter 空，Agent 仍会用 query_* fallback 给出最终答案，所以**不是致命**，但浪费一次工具轮、且偶发误导。优先级高是因为它是 P1/P6「看起来没生效」的根。
+> **给后续改 SQL 的提醒**：凡 Oracle WHERE 里判「非空字符串」，**禁止** `!= ''` / `<> ''`；用 **`LENGTH(TRIM(col)) > 0`** 或仅 **`IS NOT NULL`**（Oracle 空串即 NULL）。其它文件若仍有 `TRIM(x) != ''` 应同样替换。
 
 ---
 
@@ -178,7 +161,7 @@ curl -N -X POST http://localhost:30008/api/v4/agent/chat \
 ---
 
 ## 执行顺序建议
-1. **P-A**：先抓 pm2 日志（`DeviceByMask` 两条）→ 真库二分 → 定位（最可能是 yield 侧 `TYPE` 裸值不匹配 / 或异常吞没）。
+1. ~~**P-A**~~：**已修复**（见上文 ✅ P-A）；部署后跑探针 + `get_filter_values` 真库回归即可。
 2. **P-B、P-C**：纯文本检测正则，改动小、风险低、收益直接，配单测。
 3. **P-D**：prompt + 确定性兜底，注意 dummy-parity。
 4. **P-E、P-F**：有余力再做。

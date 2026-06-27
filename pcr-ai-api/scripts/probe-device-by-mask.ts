@@ -15,6 +15,7 @@ import "../src/loadEnv.js";
 import oracledb from "oracledb";
 import { withConnection, withProbeWebConnection } from "../src/oracle.js";
 import { deviceMaskOracleWhere } from "../src/lib/deviceMask.js";
+import { oracleNonEmptyTrimmedColumn } from "../src/lib/oracleStringSql.js";
 
 type ConnRunner = <T>(fn: (conn: oracledb.Connection) => Promise<T>) => Promise<T>;
 
@@ -47,7 +48,7 @@ async function main(): Promise<void> {
     WHERE UPPER(TRIM(t."TYPE")) = 'DELTA_DIFF'
       AND NOT REGEXP_LIKE(t.LOTID, '^(kk|gg|c)', 'i')
       AND ${where}
-      AND t.DEVICE IS NOT NULL AND TRIM(t.DEVICE) != ''`);
+      AND ${oracleNonEmptyTrimmedColumn("t.DEVICE")}`);
 
   // 2) 去掉 TYPE='DELTA_DIFF'
   await probe("yield/noType", withProbeWebConnection, `
@@ -71,7 +72,7 @@ async function main(): Promise<void> {
     FROM INFCONTROL t1 JOIN INFLAYERBINLIST t2 ON t1.KEYNUMBER = t2.KEYNUMBER
     WHERE NOT REGEXP_LIKE(t1.LOT, '^(kk|gg|c)', 'i')
       AND ${whereJb}
-      AND t1.DEVICE IS NOT NULL AND TRIM(t1.DEVICE) != ''`);
+      AND ${oracleNonEmptyTrimmedColumn("t1.DEVICE")}`);
 
   // 6) JB 只留 mask（不 JOIN）——若有行而 jb/full 无行，说明 JOIN 或 LOT 前缀杀的
   await probe("jb/onlyMaskNoJoin", withConnection,
