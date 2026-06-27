@@ -39,7 +39,15 @@
 - 能查到的对照：`toolQueryYieldTriggers`（[agentToolHandlers.ts:156-184](../pcr-ai-api/src/lib/agent/agentToolHandlers.ts#L156-L184)）→ `parseYieldMonitorTriggerV3Query`（[yieldMonitorTriggerFilters.ts:218-224](../pcr-ai-api/src/lib/yieldMonitorTriggerFilters.ts#L218-L224)）
 - 诊断日志：`logAgentSql`（[agentSqlDebugLog.ts](../pcr-ai-api/src/lib/agent/agentSqlDebugLog.ts)，`AGENT_SQL_DEBUG` 默认 true，打到 **stderr**）
 
-### 第 1 步：抓真实 SQL（钥匙，已默认开启）
+### 第 0 步（最快，推荐）：直接跑 SQL 探针，**不经过 LLM**
+P-A 是 **SQL 层**问题，LLM 只是触发器——别绕 LLM + 翻日志，直接对真库复跑那两条 SQL 的二分变体。脚本已备好：
+```bash
+cd pcr-ai-api && PCR_AI_LOCAL_DUMMY=false npx tsx scripts/probe-device-by-mask.ts P11C
+```
+（必须在能连真库的环境：服务器，或本机 `.env` 配好 `ORACLE_*`。换 mask 改末尾参数。）
+它依次打印 `yield/full`(复现空) → `yield/noType` → `yield/onlyMask` → `yield/distinctType`(TYPE 裸值) → `jb/full` → `jb/onlyMaskNoJoin` 各段的 `rowCount`。**哪段从 0 变非 0，就是被哪个 WHERE 条件杀光行**；任一段抛 `❌ ERROR(ORA-xxxxx)` 则「空」其实是被吞的异常。把整段输出贴回 Claude 即可定位。
+
+### 第 1 步（备选）：抓真实 SQL（钥匙，已默认开启）
 在 AI 里问一次 `P11C 最近的测试情况`，然后到服务器：
 ```bash
 pm2 logs <进程名> --err --lines 400 | grep -i DeviceByMask
@@ -139,6 +147,33 @@ tail -n 800 ~/.pm2/logs/<进程名>-error.log | grep -i DeviceByMask
 多个会话工具输出首行是 `BIN1 / BIN55`（good bin），`总坏die` 列填的是 good die 总数（如 `102685 / 26125 / 7050`）。应：(1) 渲染该表时**排除 good bin**（复用 `infGoodBins` 口径；`SiteBinPass.bins` entry 不带 good 标志，需调用方传入 goodBins 集合给 `buildDutConcentrationInsights`）；(2) 修正列名/取数，使「总坏die」真为坏 die。
 
 **另外**：`mqw4k5og` 会话里 `query_lot_dut_bin_agg(focusBin:79)` 的输出仍混出 **BIN55**（非 focus bin），说明 **focusBin 未严格生效**——`buildDutConcentrationInsights` 的 `focusBins` 过滤（`if (focus && !focus.has(bin)) continue`）正确，但 **handler 可能没把 `focusBin` 传成 `opts.focusBins`**。一并查 `query_lot_dut_bin_agg` handler 的 focusBin → `DutConcentrationOptions.focusBins` 传递链（[agentDutConcentration.ts:44](../pcr-ai-api/src/lib/agent/agentDutConcentration.ts#L44)）。
+
+---
+
+## 端到端验证 + 结果回传（给 Cursor）
+
+两类问题用两种验证方式，别混：
+
+### A. P-A（SQL 层）→ 直接跑脚本，**不用 LLM**
+见上方「第 0 步」。`npx tsx scripts/probe-device-by-mask.ts <mask>` → 把输出贴回 / 写进 `scratchpad/probe-result.txt` 回传给 Claude 分析。这是定位 P-A 最快路径。
+
+### B. P-B / P-C / P-D（路由 + LLM 行为）→ 走 LLM 端到端，看回答对不对
+用 curl 直接打 Agent SSE 接口提问（不用开浏览器）：
+```bash
+curl -N -X POST http://localhost:30008/api/v4/agent/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"user","content":"都测试了什么lot"}],"agentConfig":{"maxRounds":5}}'
+```
+- `apiKey` 不传则回退服务器 env `AGENT_API_KEY` / `SILICONFLOW_API_KEY`；没配就在 `agentConfig.apiKey` 里填。
+- SSE 流里能看到工具调用与最终中文回答；**确定性表是否正确、有没有答非所问**直接可判。
+- 多轮场景（如 P-C「先列 4 张卡，再问对比」）按顺序发多次，带上 `sessionId` 续跑。
+- 验证清单：
+  - P-B：问 `都测试了什么lot` / `测了哪些lot` → 应直接出 **lot 列表**，不是单 lot 概况。
+  - P-C：问 `把这4张probecard的测试情况做对比` → 应进 LLM 做**跨卡综述**，不是单 lot 卡表秒回。
+  - P-D：问 `uflex 最近三天的测试情况` 后追问 `哪个lot bin40最多` → 应出 **bin+lot 关联表**。
+- 把 SSE 输出（或关键片段）贴回 Claude 即可。SQL 相关疑点再配合 pm2 `[agentSql/...]` 日志。
+
+> 反馈环要点：**一次只验证/打透一个问题到闭环**，把脚本或 curl 的真实输出回传，Claude 据此判断真好了没——而不是攒一批日志再盲改。
 
 ---
 
