@@ -90,6 +90,7 @@ import { parseSiteBinByLotTestEndWindow } from "../siteBinByLotTestEndWindow.js"
 import {
   buildDutConcentrationInsights,
   formatDutConcentrationMarkdown,
+  goodBinNumbersFromSiteBinPasses,
 } from "./agentDutConcentration.js";
 import { shouldRunDutAnalysis } from "./agentDutInsightTrigger.js";
 
@@ -525,7 +526,6 @@ const GOOD_BIN_AVG_THRESHOLD = 100; // avg dieCount/DUT above this ≈ good/pass
 const MAX_DUTS_PER_BAD_BIN = 8;    // top DUTs shown per bad bin; 8 is enough for DUT comparison
 const MAX_BAD_BINS_DETAIL = 15;    // limit full-DUT-breakdown to top N bad bins by totalDieCount
 
-/** Pull DUT breakdown for a specific bin out of compact passes — placed at top of result so it's never truncated. */
 function extractFocusBinDuts(passes: unknown[], focusBinKey: string): unknown[] {
   const result: unknown[] = [];
   for (const p of passes) {
@@ -536,6 +536,17 @@ function extractFocusBinDuts(passes: unknown[], focusBinKey: string): unknown[] 
     result.push({ passId: pass.passId, ...(entry as object) });
   }
   return result;
+}
+
+function lotDutConcentrationOpts(
+  rawPasses: SiteBinPass[],
+  focusBinNum: number
+): Parameters<typeof buildDutConcentrationInsights>[2] {
+  const opts: Parameters<typeof buildDutConcentrationInsights>[2] = {
+    goodBins: goodBinNumbersFromSiteBinPasses(rawPasses),
+  };
+  if (Number.isFinite(focusBinNum)) opts.focusBins = [focusBinNum];
+  return opts;
 }
 
 function compactSiteBinPasses(passes: SiteBinPass[]): unknown[] {
@@ -622,7 +633,9 @@ async function toolQueryLotDutBinAgg(
       );
       if (dummy !== null) {
         const rawPasses = dummy.passes;
-        const dutMd = formatDutConcentrationMarkdown(buildDutConcentrationInsights(rawPasses, []));
+        const dutMd = formatDutConcentrationMarkdown(
+          buildDutConcentrationInsights(rawPasses, [], lotDutConcentrationOpts(rawPasses, focusBinNum))
+        );
         const passes = compactSiteBinPasses(rawPasses);
         const focusBinDuts = focusBinKey ? extractFocusBinDuts(passes, focusBinKey) : undefined;
         const body = truncateResult(
@@ -640,7 +653,9 @@ async function toolQueryLotDutBinAgg(
         device, lot, probeCardType, passIds, testEndWindow
       );
       const rawPasses = res.data.passes;
-      const dutMd = formatDutConcentrationMarkdown(buildDutConcentrationInsights(rawPasses, []));
+      const dutMd = formatDutConcentrationMarkdown(
+        buildDutConcentrationInsights(rawPasses, [], lotDutConcentrationOpts(rawPasses, focusBinNum))
+      );
       const passes = compactSiteBinPasses(rawPasses);
       const focusBinDuts = focusBinKey ? extractFocusBinDuts(passes, focusBinKey) : undefined;
       const body = truncateResult(
@@ -658,7 +673,9 @@ async function toolQueryLotDutBinAgg(
       const dummy = tryResolveSiteBinByLotDummyForLotByDirectory(device, lot, passIds);
       if (dummy !== null) {
         const rawPasses = dummy.passes;
-        const dutMd = formatDutConcentrationMarkdown(buildDutConcentrationInsights(rawPasses, []));
+        const dutMd = formatDutConcentrationMarkdown(
+          buildDutConcentrationInsights(rawPasses, [], lotDutConcentrationOpts(rawPasses, focusBinNum))
+        );
         const passes = compactSiteBinPasses(rawPasses);
         const focusBinDuts = focusBinKey ? extractFocusBinDuts(passes, focusBinKey) : undefined;
         const body = truncateResult(
@@ -674,7 +691,9 @@ async function toolQueryLotDutBinAgg(
       }
       const res = await runOutputSiteBinByLotForLotByDirectory(device, lot, passIds);
       const rawPasses = res.data.passes;
-      const dutMd = formatDutConcentrationMarkdown(buildDutConcentrationInsights(rawPasses, []));
+      const dutMd = formatDutConcentrationMarkdown(
+        buildDutConcentrationInsights(rawPasses, [], lotDutConcentrationOpts(rawPasses, focusBinNum))
+      );
       const passes = compactSiteBinPasses(rawPasses);
       const focusBinDuts = focusBinKey ? extractFocusBinDuts(passes, focusBinKey) : undefined;
       const body = truncateResult(

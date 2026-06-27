@@ -4,15 +4,15 @@
 
 | 优先级 | 任务 | 备注 |
 |--------|------|------|
-| 1 | 服务器部署新版本 | `npm run build + pm2:reload`（API）；`npm run pack:dist` → scp + tar xf（前端） |
+| 1 | 服务器部署新版本 | `npm run build + pm2:reload`（API）；验证见 [`HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md`](HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md) |
 | 2 | AI Agent 生产部署验证 | 确认 `AGENT_API_KEY`、`AGENT_STREAM_TIMEOUT_MS`（默认 120s）、PM2 重启后聊天可用；验证 query_lot_dut_bin_agg 工具正常调用 |
 | 3 | YM 确定性摘要路径 | 类似 JB 的 tryRunDeterministicJbSummary，服务端直出表，LLM 仅写解读 |
 | 4 | 跨域退化信号：阈值调优 + 生产验证 | agentCrossdomainInsights.ts 早/晚段阈值（±2pp / ×1.4）需用真实卡历史数据验证；coverageRatio 计算依赖 YM LOTID 与 JB LOT 格式一致 |
 
 ## 待办
 
-- 🔴 **P-A `get_filter_values` device-by-mask 真库恒空**（已 build 仍空，**非部署**；同会话同 mask 的 query_* 有数据）：在 AI 问 `P11C 最近的测试情况` 后抓服务器 pm2 `[agentSql/filterValues:yieldDeviceByMask]` + `:result`（看 `binds.mask` / `rowCount` / 有无 ORA 错误）→ 真库二分定位（最可能：真库 `TYPE` 裸值 ≠ `'DELTA_DIFF'`，或异常被 catch 吞成空）。完整步骤见 `docs/HANDOFF_AGENT_ISSUES_2026-06-27_ROUND2.md` P-A
-- [ ] P-F `query_lot_dut_bin_agg`：good bin（BIN1/BIN55）混进「坏die DUT集中度」表、「总坏die」列实为 good die；且 `focusBin:79` 仍混出 BIN55（focusBin 未严格生效）。无 dummy 易验证，见交接文档 P-F
+- ✅ **P-A `get_filter_values` device-by-mask 真库空** — Oracle `TRIM(col)!=''` 陷阱；`oracleStringSql.ts` + 探针闭环（2026-06-27 Cursor）；**服务器待 pm2 reload 后 SSE 复验**
+- ✅ **P-F `query_lot_dut_bin_agg`** — focusBin→focusBins + goodBins 排除（2026-06-27 Cursor）；真库 curl 待部署后复验
 - ✅ P-B「(都)测试了什么lot」误答单 lot：`isLotListingQuestion` 扩口语 — 2026-06-27 第二轮
 - ✅ P-C「4张卡对比」被单 lot 卡表劫持：`isMultiCardComparisonQuestion` bail 回 generic — 2026-06-27 第二轮
 - ✅ P-D 平台纯 bin 排行无定位：`buildAggregateBinRankingMarkdown` 脚注 + prompt `bin,lot` 路由 — 2026-06-27 第二轮

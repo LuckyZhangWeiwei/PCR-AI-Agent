@@ -1,0 +1,25 @@
+# Cursor 验证输出摘要（2026-06-27）
+# 完整版 → docs/HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md
+
+## P-A probe P11C (post-fix)
+yield/full=3  jb/full=1
+devices: WB00P11C, WA00P11C, WB01P11C
+
+## P-A probe N55Z (post-fix)
+yield/full=6  jb/full=2
+
+## P-A remote SSE (10.192.130.89, pre-deploy)
+get_filter_values: {"values":[],"totalDistinct":0}
+reply: WB01P11C + 99 lots (fallback OK)
+
+## P-B remote SSE PASS
+uflex最近三天 → 都测试了什么lot → lot list (~4)
+
+## P-C remote SSE STRICT FAIL
+9416卡的测试情况 → 4张probecard对比 → DR44436.1W single-lot card table (9416-03 only)
+
+## P-D remote SSE PASS
+uflex最近三天 → 哪个lot bin40最多 → bin+lot rank table
+
+## npm test (with P-F local)
+398 total, 396 pass, 2 skip, 0 fail; typecheck OK

@@ -2,7 +2,17 @@
 
 ---
 
-## 2026-06-27（第二轮）— New folder(3) 六会话真库复验：lot 列表/多卡对比检测 + 平台 bin 定位 + get_filter_values 翻案
+## 2026-06-27（Cursor 闭环）— P-A 探针定位 Oracle 空串陷阱 + P-B/C/D 真库 curl + P-F 实现
+
+**完整验证记录（给 Claude Code）：** [`HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md`](HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md)
+
+**P-A（已修 + 本地真库探针通过）：** `TRIM(col)!=''` 在 Oracle 恒 unknown → 新增 `oracleStringSql.ts` / 替换 `agentFilterValuesTool.ts` 6 处（含 Claude 补修的 probeCardType 2 处）。探针 `yield/full` P11C=3、N55Z=6；`jb/full` P11C=1、N55Z=2。**远程 10.192.130.89 SSE 仍见 `get_filter_values` 空 JSON** → 需 `npm run build && pm2 reload` 部署 `0177538`+`53bfb97` 后复验。
+
+**P-B/C/D 真库 curl（`scripts/verify-handoff-steps.mjs`）：** P-B lot 列表 ✅；P-D bin+lot 排行 ✅；P-C 仍秒回单 lot 卡表（脚本误判 PASS，严格 ❌）→ 待部署 `ce96b91` 或再查 deterministic 劫持。
+
+**P-F（已实现 · 本 commit）：** `lotDutConcentrationOpts` 传 `focusBins` + `goodBins`；单测 ✅；远程 curl 待 deploy 后复验。398 测试 396 通过。
+
+---
 
 **背景：** 上一轮修复 **部署后**（用户已 `npm run build`）的 6 个真库会话日志（`Desktop/New folder (3)`）。P2 链路 / BIN×卡归因 / 卡型综述已确认生效。本轮修剩余问题。
 

@@ -77,6 +77,8 @@
 
 ## P1 / P6 — get_filter_values 返回空（真库现象）
 
+> **2026-06-27 更新：** 根因已定位为 Oracle `TRIM(col)!=''` 空串陷阱（非「旧 dist / TYPE 裸值 / JOIN」）。本地探针修复后 `yield/full>0`。**完整验证见 [`HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md`](HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md)**。
+
 **真实会话原问：**
 - P1：`P11C 最近一个月的测试情况`（内部 `get_filter_values(domain:both, field:device, mask:P11C)` 返回空）
 - P6：`9416 卡的测试情况`（内部 `get_filter_values(field:cardId/probeCard, filterBy:{probeCardType:9416})` 返回空）
@@ -89,9 +91,7 @@
 | `get_filter_values{domain:"jb", field:"cardId", filterBy:{probeCardType:"8003"}}` | ✅ 8003-01 / 8003-08 |
 | `get_filter_values{domain:"yield", field:"probeCard", filterBy:{probeCardType:"8041"}}` | ✅ 8041-01 / 8041-07 |
 
-**结论：** dummy（=Oracle 结构）下 device-by-mask 与 probeCardType→卡号枚举**全部正常**，逻辑无误。真库返空属**部署/数据**问题：
-1. 优先确认服务器已 `npm run build` + `pm2 reload`（旧 dist 可致"看起来不生效"）。
-2. 仍空则看诊断 SQL 日志 `filterValues:yieldDeviceByMask:result` / `filterValues:jbDeviceByMask:result`（含 `rowCount` / `sampleDevices` 与完整 SQL），据实定位 CARDID/DEVICE 实际格式。
+**结论（已过时，见上链接）：** ~~dummy 下逻辑正常，真库空属部署/数据问题~~ → **已修正为 Oracle SQL 空串陷阱**；dummy 仍正常；远程 SSE 待 pm2 reload。
 
 已加会话形状回归测试：`test/agentFilterValues.test.ts`（P1/P6 session shape）。
 

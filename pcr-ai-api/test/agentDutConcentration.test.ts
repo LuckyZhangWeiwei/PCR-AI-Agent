@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildDutConcentrationInsights } from "../src/lib/agent/agentDutConcentration.js";
+import { buildDutConcentrationInsights, goodBinNumbersFromSiteBinPasses } from "../src/lib/agent/agentDutConcentration.js";
 import type { SiteBinPass } from "../src/lib/outputSiteBinByLot.js";
 
 function pass(passId: number, bin: string, duts: Array<[number, number]>): SiteBinPass {
@@ -31,6 +31,23 @@ test("total below minTotalDie => no insight", () => {
 test("fewer than 3 DUTs => inconclusive", () => {
   const [ins] = buildDutConcentrationInsights([pass(1, "bin11", [[1, 6], [2, 5]])], []);
   assert.equal(ins.verdict, "inconclusive");
+});
+
+test("goodBins excludes passing bins from concentration table", () => {
+  const passes = [
+    {
+      passId: 1,
+      bins: [
+        { bin: "bin1", duts: Array.from({ length: 78 }, (_, i) => ({ dut: i + 1, dieCount: 2000 })) },
+        { bin: "bin79", duts: [{ dut: 1, dieCount: 90 }, { dut: 2, dieCount: 10 }] },
+      ],
+    },
+  ];
+  const goodBins = goodBinNumbersFromSiteBinPasses(passes);
+  assert.ok(goodBins.has(1));
+  const out = buildDutConcentrationInsights(passes, [], { goodBins, focusBins: [79] });
+  assert.equal(out.length, 1);
+  assert.equal(out[0]?.bin, 79);
 });
 
 test("focusBins limits which bins are analyzed", () => {

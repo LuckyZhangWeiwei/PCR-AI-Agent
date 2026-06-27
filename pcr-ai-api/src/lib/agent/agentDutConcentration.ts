@@ -21,7 +21,26 @@ export type DutConcentrationOptions = {
   topShareThreshold?: number;
   minTotalDie?: number;
   focusBins?: number[];
+  /** BIN numbers treated as good/passing — excluded from bad-die concentration table. */
+  goodBins?: Set<number>;
 };
+
+/** Same heuristic as compactSiteBinPasses (avg die per DUT > 100 ≈ good bin). */
+export function goodBinNumbersFromSiteBinPasses(passes: SiteBinPass[]): Set<number> {
+  const good = new Set<number>();
+  for (const pass of passes) {
+    for (const entry of pass.bins) {
+      const total = entry.duts.reduce((s, d) => s + d.dieCount, 0);
+      if (total === 0) continue;
+      const dutCount = entry.duts.length;
+      const avg = dutCount > 0 ? total / dutCount : 0;
+      if (avg <= 100) continue;
+      const bin = parseBinNumber(entry.bin);
+      if (bin !== null) good.add(bin);
+    }
+  }
+  return good;
+}
 
 function parseBinNumber(bin: string): number | null {
   const m = /(\d+)/.exec(bin);
@@ -42,6 +61,7 @@ export function buildDutConcentrationInsights(
   const threshold = opts.topShareThreshold ?? 0.7;
   const minTotalDie = opts.minTotalDie ?? 8;
   const focus = opts.focusBins && opts.focusBins.length ? new Set(opts.focusBins) : null;
+  const goodBins = opts.goodBins;
 
   const insights: DutConcentrationInsight[] = [];
   for (const pass of passes) {
@@ -49,6 +69,7 @@ export function buildDutConcentrationInsights(
     for (const entry of pass.bins) {
       const bin = parseBinNumber(entry.bin);
       if (bin === null) continue;
+      if (goodBins?.has(bin)) continue;
       if (focus && !focus.has(bin)) continue;
 
       const numeric = entry.duts.filter(
