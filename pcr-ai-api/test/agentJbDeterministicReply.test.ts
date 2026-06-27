@@ -15,6 +15,7 @@ import {
   isInterruptCountQuestion,
   isLotListingQuestion,
   isMultiLotComparisonQuestion,
+  isMultiCardComparisonQuestion,
   isProbeCardQuestion,
   isTesterMachineQuestion,
   isSlotPassYieldQuestion,
@@ -105,6 +106,39 @@ describe("agentJbDeterministicReply", () => {
     assert.ok(isLotListingQuestion(q));
     assert.equal(detectJbReplyMode(q), "lot_listing");
     assert.notEqual(detectJbReplyMode(q), "lot_overview");
+  });
+
+  // P-B：「(都)测试了什么lot / 测了哪些lot」必须走 lot_listing，不是单 lot 概况。
+  it("P-B: '都测试了什么lot' routes to lot_listing not lot_overview", () => {
+    for (const q of [
+      "都测试了什么lot",
+      "测了哪些lot",
+      "这几天都有什么批次",
+      "跑了多少个lot",
+    ]) {
+      assert.ok(isLotListingQuestion(q), `isLotListingQuestion("${q}")`);
+      assert.equal(detectJbReplyMode(q), "lot_listing", `detectJbReplyMode("${q}")`);
+    }
+    // 单 lot 概况不应被误判为列表
+    assert.equal(isLotListingQuestion("P11C 最近一个月的测试情况"), false);
+    // lot 内逐片枚举仍排除
+    assert.equal(isLotListingQuestion("这个lot有哪些wafer"), false);
+  });
+
+  // P-C：多卡「测试情况对比」交回 LLM（generic），不被单 lot equipment 表劫持；单卡仍 equipment。
+  it("P-C: multi-card comparison bails to generic, single-card stays equipment", () => {
+    for (const q of [
+      "把这4张probecard 的测试情况 做一个对比",
+      "这几张卡分别怎样",
+      "9416-01 和 9416-04 对比一下",
+    ]) {
+      assert.ok(isMultiCardComparisonQuestion(q), `isMultiCardComparisonQuestion("${q}")`);
+      assert.equal(detectJbReplyMode(q), "generic", `detectJbReplyMode("${q}")`);
+    }
+    // 单卡 / 单 lot 用卡问句仍走 equipment（不被新分支误吞）
+    assert.equal(isMultiCardComparisonQuestion("DR44436.1W 用什么卡测试的"), false);
+    assert.equal(isMultiCardComparisonQuestion("这片用的什么卡"), false);
+    assert.equal(detectJbReplyMode("DR44436.1W 用几号卡测试的"), "equipment");
   });
 
   it("buildAggregateBinRankingMarkdown from scoped aggregate", () => {

@@ -413,6 +413,7 @@ const SEC_LOT_ID = `\
 
 - **批次 ID 必须原样使用**：lot ID 可能含 "." 后缀（如 "NF12551.1N"），"." 及其后面的部分是 lot ID 的有效组成部分，**绝对不能截断**。"NF12551.1N" 整体才是 lot ID，不是 "NF12551"。
 - **工具参数名区分（易错）**：\`query_yield_triggers\` 的批次参数名为 **\`lotId\`**；\`query_jb_bins\` 与 \`aggregate_jb_bins\` 的批次参数名为 **\`lot\`**——两者不同，**不可互换，传错参数将导致查询无效**。
+- **device 必须按本轮问题重新解析**：每轮工具调用的 \`device\` / \`mask\` 必须来自**当前用户问题**解析出的产品；**禁止沿用上一轮其它产品的 device**（连续问不同 mask 如先 N48A 再 N94W 时尤其注意，勿把上一产品的完整 device 残留到本轮工具参数）。
 - **区分 lot ID 与 device**：device（产品代码）通常形如 "WA03P02G"（字母+数字组合，无 "."，长度较短）；lot ID 通常含较长数字段，且可能带 "." 后缀（如 "NF12551.1N"）。若用户输入包含 "."，优先判断为 lot ID。
 - **跨域查询**：用户仅提供 lot ID 而**未明确说明要查 Yield Monitor 还是 JB STAR** 时，**必须同时查两个域**（先调 query_yield_triggers，再调 query_jb_bins），然后合并汇报两域的结果，不能只查一个域就结束。
 - **探针卡 / device / lot + 时间段联查（必须双源）**：用户询问某张卡、某 device、某 lot 在指定时间段（如「最近3个月」「2026年上半年」「去年」）内的情况时，**必须同时调用两个域**：
@@ -1346,6 +1347,8 @@ const SEC_PLATFORM_QUERY = `\
 2. 主要坏 BIN 分布：\`aggregate_jb_bins(tstype:"PS16", testEndFrom:"...", testEndTo:"...", groupBy:"bin", groupTop:30)\`
 
 **问「哪个 lot 测试最差 / 哪个 lot 坏 die 最多」时**：用 \`aggregate_jb_bins(tstype:"PS16", testEndFrom, testEndTo, groupBy:"lot", groupTop:50)\`——服务端按各 lot 坏 die 总量降序直出表，**禁止**退回单 lot 概况。
+
+**问「某个 BIN 集中在哪个 lot / 哪个 lot 的 BINxx 最多」时**：用 \`aggregate_jb_bins(tstype, testEndFrom, testEndTo, groupBy:"bin,lot", groupTop:50)\`——服务端按该 BIN 在各 lot 的坏 die 降序直出 bin+lot 关联表。**纯 \`groupBy:"bin"\` 的排行是全平台合计、无法定位批次**，仅用于概览；用户想定位批次时必须带 lot 维度。
 
 **结论包含**：
 - 该时间窗口内测试了哪些 device（按坏 die 降序列出 top 10）

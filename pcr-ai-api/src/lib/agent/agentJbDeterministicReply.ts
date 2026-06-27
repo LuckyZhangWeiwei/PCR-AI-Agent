@@ -133,6 +133,17 @@ export function isLotListingQuestion(text: string): boolean {
   if (/都列出来|都列出|列出来/i.test(t) && /lot|批次/i.test(t)) return true;
   if (/(列出|有哪些|显示|枚举).*(lot|批次)/i.test(t)) return true;
   if (/(lot|批次).*(列出|有哪些|清单|列表)/i.test(t)) return true;
+  // 口语「(都)测试了什么lot / 测了哪些lot / 都有什么批次」——跨 lot 列表，非单 lot 概况。
+  // 「什么/哪些/多少」紧接 lot/批次（含「什么lot」「哪些批次」）。wafer/片/slot 是 lot 内枚举，排除。
+  if (/(什么|哪些|多少)\s*(lot|批次)/i.test(t) && !/wafer|片|slot/i.test(t)) return true;
+  // 「什么/哪些/多少」与 lot/批次 分离但同句（「都测试了哪些批次」「跑了多少个lot」）。
+  if (
+    /(都|测试了|测了|跑了|做了|包含|涉及|有)\s*(什么|哪些|多少)/i.test(t) &&
+    /(lot|批次)/i.test(t) &&
+    !/wafer|片|slot/i.test(t)
+  ) {
+    return true;
+  }
   return false;
 }
 
@@ -635,6 +646,27 @@ export function isCardTypeLevelOverviewQuestion(text: string): boolean {
 }
 
 /**
+ * 多张探针卡「测试情况对比」泛问（无具体单 lot、未限定单一深挖卡号），如
+ * 「把这4张probecard的测试情况做对比」「这几张卡分别怎样」。equipment 单 lot 卡表会答非所问
+ * （只回最新单 lot 的卡/机台）→ bail 交回 LLM 跨卡 / 结合 YM 作答。
+ * 「哪张卡良率更差」走 card_yield_compare（需确定性表），不在此列。
+ */
+export function isMultiCardComparisonQuestion(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  // ≥2 个完整卡号（dddd-dd）即视为多卡对比——即使没出现「卡」字，且优先于 lot 排除（卡号 9416-01 可能被误当 lot）。
+  const cardNums = (t.match(/\d{4}-\d{2,3}/g) ?? []).length;
+  if (!/卡|probe\s*card|cardid/i.test(t) && cardNums < 2) return false;
+  if (cardNums < 2 && extractLotFromUserText(t)) return false; // 指定单 lot 另走概况
+  const multiCard =
+    cardNums >= 2 ||
+    /(这|那)?\s*[2-9两三四五六七八九]\s*张/.test(t) ||
+    /多张|几张|这些卡|各\s*张|每\s*张/i.test(t);
+  if (!multiCard) return false;
+  return /对比|比较|分别|各自|测试情况|的情况|概况|怎样|如何/i.test(t);
+}
+
+/**
  * 跨多 lot 对比/枚举类问题（无具体单 lot）：「前5个lot都用什么卡」「这几个lot各自…」。
  * 本轮若 query_jb_bins 了多个 lot，单 lot 确定性概况会答非所问 → 交回 LLM 用全量历史作答。
  */
@@ -709,6 +741,8 @@ export function detectJbReplyMode(userMessage: string): JbReplyMode {
   // Specific attribution/compare modes take priority over generic equipment check
   if (isBinCardAttributionQuestion(userMessage)) return "bin_card_attribution";
   if (isCardYieldCompareQuestion(userMessage)) return "card_yield_compare";
+  // 多卡「测试情况对比」必须先于 equipment：否则「这4张卡对比」被单 lot 卡表劫持（答非所问）。
+  if (isMultiCardComparisonQuestion(userMessage)) return "generic";
   if (isTesterMachineQuestion(userMessage) && isProbeCardQuestion(userMessage)) {
     return "equipment";
   }
@@ -1632,7 +1666,11 @@ export function buildAggregateBinRankingMarkdown(
       return `| ${i + 1} | BIN${b.bin} | ${b.count} | ${pct}% |`;
     }),
   ];
-  return `${header}\n\n${rows.join("\n")}`;
+  // 纯 bin 合计跨该范围全部 lot，无法定位具体批次——引导按 lot 下钻（见 P-D）。
+  const footnote =
+    "\n\n*以上为查询范围内各 BIN 的坏 die 合计排行（未区分批次）。" +
+    "如需定位到具体批次，请问「哪个 lot 的 BIN<n> 最多」（按 bin+lot 排行）。*";
+  return `${header}\n\n${rows.join("\n")}${footnote}`;
 }
 
 /**

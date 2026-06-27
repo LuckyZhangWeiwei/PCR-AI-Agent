@@ -11,6 +11,12 @@
 
 ## 待办
 
+- 🔴 **P-A `get_filter_values` device-by-mask 真库恒空**（已 build 仍空，**非部署**；同会话同 mask 的 query_* 有数据）：在 AI 问 `P11C 最近的测试情况` 后抓服务器 pm2 `[agentSql/filterValues:yieldDeviceByMask]` + `:result`（看 `binds.mask` / `rowCount` / 有无 ORA 错误）→ 真库二分定位（最可能：真库 `TYPE` 裸值 ≠ `'DELTA_DIFF'`，或异常被 catch 吞成空）。完整步骤见 `docs/HANDOFF_AGENT_ISSUES_2026-06-27_ROUND2.md` P-A
+- [ ] P-F `query_lot_dut_bin_agg`：good bin（BIN1/BIN55）混进「坏die DUT集中度」表、「总坏die」列实为 good die；且 `focusBin:79` 仍混出 BIN55（focusBin 未严格生效）。无 dummy 易验证，见交接文档 P-F
+- ✅ P-B「(都)测试了什么lot」误答单 lot：`isLotListingQuestion` 扩口语 — 2026-06-27 第二轮
+- ✅ P-C「4张卡对比」被单 lot 卡表劫持：`isMultiCardComparisonQuestion` bail 回 generic — 2026-06-27 第二轮
+- ✅ P-D 平台纯 bin 排行无定位：`buildAggregateBinRankingMarkdown` 脚注 + prompt `bin,lot` 路由 — 2026-06-27 第二轮
+- ✅ P-E device 串味：prompt「device 按本轮重新解析」提醒 — 2026-06-27 第二轮
 - [ ] 服务器部署：API `npm run build + pm2:reload`；前端 `npm run pack:dist` → scp dist.tar → nginx web root（含 INF 工具瘦身 + listDefaultLimit 2000 + New Chat 滚动修复 + 探针卡追问答案重复修复 + generic/双源总结结构化）
 - [ ] AI Agent 生产部署验证：确认 `AGENT_API_KEY` / `SILICONFLOW_API_KEY`、PM2 重启后聊天页可用；验证 `query_lot_dut_bin_agg` 工具调用正常（含 DUT 集中度判别表前置）；验证 JB lot 查询有 clusteredBadBinAlerts 时 dutConcentrationMarkdown 自动出现在警示节
 - ✅ INF DUT 面板 Agent 工具：`query_inf_site_bin_by_dut` 接入 agentPrompt + agentToolHandlers — 已完成（早于本次记录）

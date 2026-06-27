@@ -2,6 +2,26 @@
 
 ---
 
+## 2026-06-27（第二轮）— New folder(3) 六会话真库复验：lot 列表/多卡对比检测 + 平台 bin 定位 + get_filter_values 翻案
+
+**背景：** 上一轮修复 **部署后**（用户已 `npm run build`）的 6 个真库会话日志（`Desktop/New folder (3)`）。P2 链路 / BIN×卡归因 / 卡型综述已确认生效。本轮修剩余问题。
+
+**完成内容：**
+- **P-B** `agentJbDeterministicReply.ts` `isLotListingQuestion`：补「(都)测试了什么lot / 测了哪些lot / 都有什么批次 / 跑了多少个lot」口语（`什么|哪些|多少` + `lot|批次`，排除 wafer/片/slot）。修掉「都测试了什么lot」第一次被判 `lot_overview` 答成单 lot 详情（要追问第二次才出 lot 列表）。
+- **P-C** 新增 `isMultiCardComparisonQuestion`（多张卡「测试情况对比」泛问：`≥2 完整卡号` 或 `这4张/几张/这些卡` + 对比/概况词；≥2 卡号时免「卡」字且优先于 lot 排除，因卡号 `9416-01` 会被 `extractLotFromUserText` 误当 lot）；`detectJbReplyMode` 在 `isProbeCardQuestion`→equipment **之前** bail 回 `generic`。修掉「把这4张probecard的测试情况做对比」被单 lot equipment 卡表劫持（0.0s 秒回答非所问）。「哪张卡良率更差」仍走 `card_yield_compare`。
+- **P-D** 平台级纯 BIN 排行无定位价值（「uflex 最近三天」跨 54 lot 只出 bin 总排行）：`buildAggregateBinRankingMarkdown` 加引导脚注「如需定位批次请问『哪个 lot 的 BIN<n> 最多』」；`agentPrompt.ts` 平台专节补「某 BIN 集中在哪个 lot → `aggregate_jb_bins(groupBy:"bin,lot")`，纯 `groupBy:"bin"` 是全平台合计无法定位批次」。
+- **P-E** `agentPrompt.ts`：加「device 必须按本轮问题重新解析，禁止沿用上一轮其它产品的 device」（修 N94W 会话误用上一轮 N48A device 的 stray 调用；输出仍正确，低优先）。
+- **P-A 翻案（重要）：** `get_filter_values` device-by-mask **真库恒空**，但**同会话同 mask** 的 `query_yield_triggers`/`query_jb_bins` **有数据**（WB01P11C / WC13N55Z / WA88888811N48A / WK71N94W）。**已 build 仍空 → 否定上一轮「旧 dist/部署」结论**。两路径用同一 `deviceMaskOracleWhere`（含 `LIKE '%mask%'` 必命中），且 filter 范围更宽（无时间窗、JB 无 PASSTYPE），逻辑上**不该空**；`FETCH FIRST` 语法也被 query 同样使用且能跑 → 排除。**纯读代码无法解释，需服务器 pm2 日志 `[agentSql/filterValues:yieldDeviceByMask]` + `:result`（binds.mask / rowCount / 有无 ORA 错误）定位**；最可能：真库 `TYPE` 裸值 ≠ `'DELTA_DIFF'`（yield 侧）或异常被 catch 吞成空。详见交接文档。
+- **P-F（留交接）：** `query_lot_dut_bin_agg` 把 good bin（BIN1/BIN55）混进「坏die DUT集中度」表、「总坏die」列实为 good die 数；且 `focusBin:79` 仍混出 BIN55（focusBin 未严格生效）。涉 `buildDutConcentrationInsights` good-bin 集合来源 + handler focusBin 传递，无 dummy 易验证，留 Cursor。
+- 新增交接文档 `docs/HANDOFF_AGENT_ISSUES_2026-06-27_ROUND2.md`（P-A~P-F 可执行排查/修复清单 + pm2 抓日志步骤 + 真库二分法）。
+- 测试：`agentJbDeterministicReply.test.ts` 新增 P-B（4 lot 列表口语 + 单 lot 概况/wafer 枚举反例）、P-C（3 多卡对比 → generic + 单卡/单 lot 反例仍 equipment）。
+
+**测试：** 396 个测试，394 通过、2 跳过（既有）、0 失败；`tsc --noEmit` 通过。
+
+> 修正上一轮日志结论：P1/P6（get_filter_values 空）**不是部署问题**——已 build 仍空，是代码/数据层面问题，待 pm2 SQL 日志定位（见本轮 P-A）。
+
+---
+
 ## 2026-06-27 — FW_ 五会话精修：bin 特定 lot 排行 + 卡型/单片 bail + DUT 路由 + dummy-parity 展平
 
 **完成内容：**
