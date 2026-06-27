@@ -619,7 +619,7 @@ async function oracleYield(
           FROM YMWEB_YIELDMONITORTRIGGER t
           WHERE ${where}
         ) sub
-        WHERE sub.pct IS NOT NULL AND sub.pct != ''
+        WHERE ${oracleNonEmptyTrimmedColumn("sub.pct")}
         ${searchCond}
         GROUP BY sub.pct
       )
@@ -734,7 +734,7 @@ async function oracleJb(
           SELECT NVL(REGEXP_SUBSTR(TRIM(t2.CARDID), '^[^-]+', 1, 1), '') AS pct
           ${fromClause}
         ) sub
-        WHERE sub.pct IS NOT NULL AND sub.pct != ''
+        WHERE ${oracleNonEmptyTrimmedColumn("sub.pct")}
         ${searchCond}
         GROUP BY sub.pct
       )

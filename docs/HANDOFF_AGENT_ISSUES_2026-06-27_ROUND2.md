@@ -52,7 +52,7 @@ AND t.DEVICE IS NOT NULL AND TRIM(t.DEVICE) != ''
 
 - 新增 [`oracleStringSql.ts`](../pcr-ai-api/src/lib/oracleStringSql.ts) → **`oracleNonEmptyTrimmedColumn(col)`**：
   `col IS NOT NULL AND LENGTH(TRIM(col)) > 0`
-- 替换 [`agentFilterValuesTool.ts`](../pcr-ai-api/src/lib/agent/agentFilterValuesTool.ts) 内 **4 处**（`oracleYieldDeviceByMaskMap`、`oracleJbDeviceByMaskMap`、yield/jb 通用 enum SQL）。
+- 替换 [`agentFilterValuesTool.ts`](../pcr-ai-api/src/lib/agent/agentFilterValuesTool.ts) 内 **6 处**：`oracleYieldDeviceByMaskMap`、`oracleJbDeviceByMaskMap`、yield/jb 通用 enum SQL（device 列）4 处，**外加 yield/jb `probeCardType` 维度枚举的 `sub.pct != ''` 2 处**（Cursor 首轮漏修，复审补上——否则「列出有哪些卡型」也恒空）。已全库 grep `(!=|<>|=) ''` 确认无残留。
 - 探针脚本 [`probe-device-by-mask.ts`](../pcr-ai-api/scripts/probe-device-by-mask.ts) 同步，便于回归。
 - 单测：[`test/oracleStringSql.test.ts`](../pcr-ai-api/test/oracleStringSql.test.ts)；Dummy 形状仍走 [`test/agentFilterValues.test.ts`](../pcr-ai-api/test/agentFilterValues.test.ts)。
 
