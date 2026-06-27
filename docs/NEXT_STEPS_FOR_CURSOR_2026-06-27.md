@@ -5,13 +5,66 @@
 
 ---
 
+## ⚡ 现在就做：部署 + 复验（代码全部就绪，分支 `feat/dynamic-prompt-injection`）
+
+P-A/P-C/P-F 代码修复均已 push。之前远程 SSE 的 FAIL / 空，**几乎都是远程跑旧 dist**。现在一次性部署 + **严格**复验三项。
+
+### 步骤 0：拉代码 + 确认 commit
+```bash
+git pull
+git log --oneline -6   # 必须含以下（缺则没拉全）：
+#   1b6c9cb  P-C 真因（equipment 直连补多卡 bail）   ← 最关键，没有它 P-C 部署后仍 FAIL
+#   31ea104  P-F focusBin/goodBins
+#   53bfb97 + 0177538  P-A Oracle 空串
+#   ce96b91  P-B/C/D/E
+```
+
+### 步骤 1：部署（之前所有 FAIL/空的根源）
+```bash
+cd pcr-ai-api && npm run build && pm2 reload <进程名>
+pm2 logs <进程名> --lines 5    # 确认刚 reload
+```
+
+### 步骤 2：先收紧 `verify-handoff-steps.mjs` 判定（否则继续误判 PASS）
+脚本之前过宽（P-A fallback 有 WB01P11C 就过、P-C 命中 9416-03 就过）。改：
+- **P-A**：`get_filter_values` 工具 JSON 的 `totalDistinct > 0` 才 PASS（不能只看最终回答里有 WB01P11C）。
+- **P-C**：回答须**跨 ≥2 张 9416-0x** 或明确「分别/对比」综述；**只要出现单 lot 单卡 equipment 表即判 FAIL**。
+
+### 步骤 3：复跑
+```bash
+PCR_AI_LOCAL_DUMMY=false npx tsx scripts/probe-device-by-mask.ts P11C   # 期望 yield/full、jb/full > 0
+node scripts/verify-handoff-steps.mjs all
+```
+
+### 步骤 4：三项**严格**判定（看实际 SSE 内容，不是脚本 PASS 字样）
+
+| 项 | 问句 | ✅ 通过标准 | ❌ 失败 → 排查 |
+|---|---|---|---|
+| **P-A** | `P11C 最近的测试情况` | `get_filter_values(domain:both,field:device,mask:P11C)` 工具 JSON `totalDistinct>0`（含 WB01P11C 等） | 仍 `{"values":[],"totalDistinct":0}` → dist 没 reload，回步骤 1 |
+| **P-C** | ①`9416 卡的测试情况` → ②`把这4张probecard的测试情况做对比` | 第②问**不再 0.0s 秒回**；跨 9416-01/02/03/04 综述；pm2 日志见 `[equipmentRoute/skip:multiCardCompare]` | 仍单 lot DR44436.1W 单卡表 → 日志无该 skip 则确认部署的是 `1b6c9cb`；有 skip 仍 FAIL 则查 session 缓存 |
+| **P-F** | ①`NF13322.1J 哪一片 wafer bin79 最多` → ②`哪个卡 哪个dut 测试出的 bin79 最多` | DUT 集中度表**只剩 BIN79**，无 BIN1/BIN55，focusBin 生效 | 仍混出 good bin → 查 `toolQueryLotDutBinAgg` 的 focusBins/goodBins 传递 |
+
+> `verify-handoff-steps.mjs` 可能未含 P-F，必要时直接 curl（见下）。
+
+### 步骤 5：直接 curl（脚本判定不可信时看原始 SSE）
+```bash
+curl -N -X POST http://<API_HOST>:30008/api/v4/agent/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"user","content":"P11C 最近的测试情况"}],"agentConfig":{"maxRounds":5}}'
+```
+
+### 回传
+把三项实际 SSE 关键片段（P-A 的 `get_filter_values` JSON、P-C 第②问回答、P-F 集中度表）+ 各自 PASS/FAIL 写进 `scratchpad/reverify-2026-06-28.txt` 或贴回 Claude Code。
+
+---
+
 ## 当前状态快照
 
 | 项 | 状态 |
 |---|---|
 | **P-A** | ✅ 代码已修；本地探针 OK；**远程 SSE 仍空 → 待 pm2 reload** |
 | **P-B** | ✅ 单测 + 真库 curl lot 列表 OK |
-| **P-C** | ✅ 单测 OK；**真库 curl 仍单 lot 卡表（待部署/复验）** |
+| **P-C** | ✅ **真因已修**（`1b6c9cb`：equipment 直连补多卡 bail，不只 detectJbReplyMode）；待部署复验 |
 | **P-D** | ✅ 真库 curl bin+lot 排行 OK |
 | **P-F** | ✅ 代码已实现（focusBin + goodBins）；待部署后 curl 复验 |
 
