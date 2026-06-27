@@ -77,6 +77,31 @@ test("jb/lot with filterBy.device filters results", async () => {
   assert.equal(filteredResult.totalDistinct, 0, "filterBy.device should narrow to 0 for non-existent device");
 });
 
+test("jb/cardId with non-existent probeCardType returns empty + hint (no '型号无记录' giveup)", async () => {
+  const raw = await runGetFilterValues({
+    domain: "jb",
+    field: "cardId",
+    filterBy: { probeCardType: "__NO_SUCH_TYPE__" },
+  });
+  const result = JSON.parse(raw) as { totalDistinct: number; hint?: string };
+  assert.equal(result.totalDistinct, 0);
+  assert.ok(
+    result.hint && /型号|CARDID|aggregate|已知/.test(result.hint),
+    `empty probeCardType enum should carry a guidance hint, got: ${result.hint}`
+  );
+});
+
+test("yield/probeCard with non-existent probeCardType returns empty + hint", async () => {
+  const raw = await runGetFilterValues({
+    domain: "yield",
+    field: "probeCard",
+    filterBy: { probeCardType: "__NO_SUCH_TYPE__" },
+  });
+  const result = JSON.parse(raw) as { totalDistinct: number; hint?: string };
+  assert.equal(result.totalDistinct, 0);
+  assert.ok(result.hint && result.hint.length > 0, "should carry a guidance hint");
+});
+
 test("unknown field returns error string", async () => {
   const result = await runGetFilterValues({ domain: "yield", field: "nonexistent" });
   assert.ok(typeof result === "string");

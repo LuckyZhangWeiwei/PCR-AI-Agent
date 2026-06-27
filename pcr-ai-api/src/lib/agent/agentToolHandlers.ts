@@ -2,6 +2,7 @@
 import { runInfTool } from "../infTools/index.js";
 import { withConnection, withProbeWebConnection } from "../../oracle.js";
 import oracledb from "oracledb";
+import { logAgentSql } from "./agentSqlDebugLog.js";
 import {
   parseYieldMonitorTriggerV3Query,
 } from "../yieldMonitorTriggerFilters.js";
@@ -353,14 +354,23 @@ async function toolQueryJbBins(
   const sql = lotScoped
     ? buildInfcontrolLayerBinsV3SqlFullMatching(parsed.whereAndSql)
     : buildInfcontrolLayerBinsV3Sql(parsed.whereAndSql);
+  const queryBinds = lotScoped ? parsed.binds : { ...parsed.binds, lim: limit };
+  logAgentSql("query_jb_bins", sql, queryBinds, {
+    lotScoped,
+    mask: String(args["mask"] ?? "") || undefined,
+    lot: String(args["lot"] ?? "") || undefined,
+    cardId: String(args["cardId"] ?? "") || undefined,
+  });
   const [rows, distinctLots] = await Promise.all([
     withConnection(async (conn) => {
-      const result = await conn.execute(
-        sql,
-        lotScoped ? parsed.binds : { ...parsed.binds, lim: limit },
-        { outFormat: oracledb.OUT_FORMAT_OBJECT }
-      );
-      return (result.rows ?? []) as Record<string, unknown>[];
+      const result = await conn.execute(sql, queryBinds, {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+      });
+      const r = (result.rows ?? []) as Record<string, unknown>[];
+      logAgentSql("query_jb_bins:result", "(rows returned)", queryBinds, {
+        rowCount: r.length,
+      });
+      return r;
     }),
     lotScoped
       ? Promise.resolve(null)
@@ -446,6 +456,12 @@ async function toolAggregateJbBins(
     "v3-hyphen-tokens"
   );
   const totalSql = buildInfcontrolLayerBinMatchingCountSql(parsed.whereSql);
+  logAgentSql("aggregate_jb_bins", sql, { ...parsed.binds, agg_lim: parsed.groupTop }, {
+    groupBy: groupByStr,
+    mask: String(args["mask"] ?? "") || undefined,
+    device: String(args["device"] ?? "") || undefined,
+    lot: String(args["lot"] ?? "") || undefined,
+  });
 
   const { groups, total } = await withConnection(async (conn) => {
     const aggResult = await conn.execute(

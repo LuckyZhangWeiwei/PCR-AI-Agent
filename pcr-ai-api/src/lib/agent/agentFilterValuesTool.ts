@@ -15,6 +15,7 @@ import {
   deviceMaskOracleWhere,
   looksLikeDeviceMaskToken,
 } from "../deviceMask.js";
+import { logAgentSql } from "./agentSqlDebugLog.js";
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
@@ -260,6 +261,34 @@ function enrichEmptyTesterSearchResult(
   };
 }
 
+/**
+ * cardId / probeCard 按 probeCardType 枚举返回空时，附 hint：filter 索引未命中不等于
+ * 该型号无测试记录（CARDID 前缀格式差异常致空命中）。禁止据此回答「型号无记录/无法对比」。
+ */
+function enrichEmptyCardEnumResult(
+  result: FilterValuesResult,
+  field: string,
+  filterBy: Record<string, string | undefined>
+): FilterValuesResult {
+  if (result.totalDistinct > 0) return result;
+  if (field !== "cardId" && field !== "probeCard") return result;
+  const pct = filterBy["probeCardType"]?.trim();
+  if (!pct) return result;
+  const aggHint =
+    result.domain === "yield"
+      ? `query_yield_triggers(probeCard:"<完整卡号>")`
+      : `aggregate_jb_bins(probeCardType:"${pct}", groupBy:"bin,cardId", groupTop:50)`;
+  return {
+    ...result,
+    hint:
+      `未按 probeCardType="${pct}" 枚举到具体卡号；filter 索引未命中并不代表该型号无测试记录或未投入使用` +
+      `（CARDID/PROBECARD 前缀提取格式差异常致空命中）。` +
+      `请改用已知的完整卡号直接查询（query_jb_bins(cardId) / query_yield_triggers(probeCard)），` +
+      `或用 ${aggHint} 在库内按 CARDID 枚举该型号下各卡再横向对比。` +
+      `禁止据此回答「型号无记录 / 无法对比」。`,
+  };
+}
+
 async function oracleYieldWithSearchFallback(
   field: YieldField,
   filterBy: Record<string, string | undefined>,
@@ -467,9 +496,14 @@ async function oracleYieldDeviceByMaskMap(
     ORDER BY last_test DESC NULLS LAST
     FETCH FIRST :lim ROWS ONLY
   `;
+  const binds = { mask: mask.toUpperCase(), lim: limit };
+  logAgentSql("filterValues:yieldDeviceByMask", sql, binds);
   const rows = await withProbeWebConnection(async (conn) => {
-    const r = await conn.execute(sql, { mask: mask.toUpperCase(), lim: limit }, { outFormat: oracledb.OUT_FORMAT_OBJECT });
+    const r = await conn.execute(sql, binds, { outFormat: oracledb.OUT_FORMAT_OBJECT });
     return (r.rows ?? []) as Record<string, unknown>[];
+  });
+  logAgentSql("filterValues:yieldDeviceByMask:result", "(rows returned)", binds, {
+    rowCount: rows.length,
   });
   const totalDistinct = rows.length > 0 ? Number(rows[0]!["TOTAL_DISTINCT"] ?? rows.length) : 0;
   const latest = new Map<string, string>();
@@ -499,9 +533,14 @@ async function oracleJbDeviceByMaskMap(
     ORDER BY last_test DESC NULLS LAST
     FETCH FIRST :lim ROWS ONLY
   `;
+  const binds = { mask: mask.toUpperCase(), lim: limit };
+  logAgentSql("filterValues:jbDeviceByMask", sql, binds);
   const rows = await withConnection(async (conn) => {
-    const r = await conn.execute(sql, { mask: mask.toUpperCase(), lim: limit }, { outFormat: oracledb.OUT_FORMAT_OBJECT });
+    const r = await conn.execute(sql, binds, { outFormat: oracledb.OUT_FORMAT_OBJECT });
     return (r.rows ?? []) as Record<string, unknown>[];
+  });
+  logAgentSql("filterValues:jbDeviceByMask:result", "(rows returned)", binds, {
+    rowCount: rows.length,
   });
   const totalDistinct = rows.length > 0 ? Number(rows[0]!["TOTAL_DISTINCT"] ?? rows.length) : 0;
   const latest = new Map<string, string>();
@@ -607,9 +646,17 @@ async function oracleYield(
     `;
   }
 
+  logAgentSql(`filterValues:yield:${field}`, sql, binds, {
+    probeCardType: filterBy["probeCardType"],
+    device: filterBy["device"],
+    search: filterBy["search"],
+  });
   const rows = await withProbeWebConnection(async (conn) => {
     const r = await conn.execute(sql, binds, { outFormat: oracledb.OUT_FORMAT_OBJECT });
     return (r.rows ?? []) as Record<string, unknown>[];
+  });
+  logAgentSql(`filterValues:yield:${field}:result`, "(rows returned)", binds, {
+    rowCount: rows.length,
   });
 
   const totalDistinct = rows.length > 0 ? Number(rows[0]!["TOTAL_DISTINCT"] ?? rows.length) : 0;
@@ -714,9 +761,17 @@ async function oracleJb(
     `;
   }
 
+  logAgentSql(`filterValues:jb:${field}`, sql, binds, {
+    probeCardType: filterBy["probeCardType"],
+    device: filterBy["device"],
+    search: filterBy["search"],
+  });
   const rows = await withConnection(async (conn) => {
     const r = await conn.execute(sql, binds, { outFormat: oracledb.OUT_FORMAT_OBJECT });
     return (r.rows ?? []) as Record<string, unknown>[];
+  });
+  logAgentSql(`filterValues:jb:${field}:result`, "(rows returned)", binds, {
+    rowCount: rows.length,
   });
 
   const totalDistinct = rows.length > 0 ? Number(rows[0]!["TOTAL_DISTINCT"] ?? rows.length) : 0;
@@ -793,7 +848,11 @@ export async function runGetFilterValues(
         ? dummyYield(field as YieldField, filterBy, deviceMaskLimit)
         : await oracleYieldWithSearchFallback(field as YieldField, filterBy, deviceMaskLimit);
       return JSON.stringify(
-        enrichEmptyTesterSearchResult(result, field, filterBy["search"])
+        enrichEmptyCardEnumResult(
+          enrichEmptyTesterSearchResult(result, field, filterBy["search"]),
+          field,
+          filterBy
+        )
       );
     } catch (err) {
       return `get_filter_values 错误: ${err instanceof Error ? err.message : String(err)}`;
@@ -809,7 +868,11 @@ export async function runGetFilterValues(
         ? dummyJb(field as JbField, filterBy, deviceMaskLimit)
         : await oracleJbWithSearchFallback(field as JbField, filterBy, deviceMaskLimit);
       return JSON.stringify(
-        enrichEmptyTesterSearchResult(result, field, filterBy["search"])
+        enrichEmptyCardEnumResult(
+          enrichEmptyTesterSearchResult(result, field, filterBy["search"]),
+          field,
+          filterBy
+        )
       );
     } catch (err) {
       return `get_filter_values 错误: ${err instanceof Error ? err.message : String(err)}`;

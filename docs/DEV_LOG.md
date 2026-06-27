@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-06-27 — 三段会话评审修复：get_filter_values 空结果 hint + 缓存 scope 校验 + SQL 调试日志
+
+**完成内容：**
+- `agentFilterValuesTool.ts`：新增 `enrichEmptyCardEnumResult`——`cardId`/`probeCard` 按 `probeCardType` 过滤返回空时，结果内附 hint（索引未命中≠型号无记录，改用已知卡号直查或 `aggregate_jb_bins(groupBy:"bin,cardId")` 枚举），挂到 yield/jb 两出口；防止模型据空断言「型号无记录/无法对比」并臆造卡号
+- `agentJbBinFormat.ts`：`formatJbRowsForAgent` 前 `warnSuspectGoodBins`——对被标 `isGoodBin` 却累计大量 die（≥300，排除 BIN1）的 bin 打 `[jbGoodBin/suspect]`（暴露 BIN152 类 PASSBIN/分类与良率口径不一致）；多 lot 范围（`multiLotYieldScope`）结果新增 `_multiLotYieldScopeGuide`，明示 topBadBins/cardByPassId 仅代表单 lot，「BIN 集中在哪张卡」须用 `aggregate_jb_bins(groupBy:"bin,cardId")`
+- `agentLoop.ts`：`tryRunEquipmentDirectRoute` 加三道守卫——`isBinCardAttributionQuestion`（BIN-on-card 走聚合）、`equipmentRouteCrossLotBail`（跨多 lot 分析不用单批缓存）、`cachedJbScopeMismatchReason`（问题 mask/lot 与缓存 device/lot 不一致则拒绝吐缓存），修掉「N55Z 问题被上一题 P11C 缓存张冠李戴」的 0.0s 空转；`buildMultiLotBinTable` 加坏 die 总量日志 + 排序口径脚注（坏 die 绝对量≠良率最低）；`emitDeterministicJbTablesReply` 加 `[jbDeterministic/staleMaskCache]` 残缺缓存诊断；`collectQueryJbBinsLotsThisTurn` 多 lot 单卡回复诊断
+- `agentSqlDebugLog.ts`（新文件）：`logAgentSql(tag, sql, binds, extra)` 把实际 SQL+binds+行数打到 stderr（`AGENT_SQL_DEBUG=false` 可关）；接入 `query_jb_bins` / `aggregate_jb_bins`（`agentToolHandlers.ts`）与 `get_filter_values` 的 device-by-mask、字段枚举两条路径（`agentFilterValuesTool.ts`），便于把语句贴去真库定位「实查有数据但聚合/枚举为空」
+- 测试：`agentFilterValues.test.ts`（空结果 hint）、`agentJbBinFormat.test.ts`（多 lot scope guide）、`agentLoop.test.ts`（缓存 scope 不一致 / 跨 lot bail，4 例）
+
+**测试：** 376 个测试，0 失败
+
+---
+
 ## 2026-06-26 — Task 5 审查修复：focusBins 无命中不回退全量 + 测试走聚焦路径
 
 **完成内容：**

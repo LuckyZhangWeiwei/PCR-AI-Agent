@@ -21,9 +21,11 @@
 - [ ] Phase 3 前端：`LotDutBinPanel.tsx`（lot 级堆叠条形图，调用已有 `/inf-analysis/site-bin-bylot?device&lot`）
 - [ ] YM 确定性摘要路径：类似 tryRunDeterministicJbSummary，YM lot 查询后服务端直出探针卡报警排名表
 - [ ] 报表重构：识别并提取 YM/JB 相同维度分析为共用组件（精简重复）
+- [ ] 真库验证三段会话修复：复现后收集 `[agentSql/*]`（含 SQL）、`[equipmentRoute/skip:*]`、`[jbGoodBin/suspect]`、`[jbDeterministic/staleMaskCache]` 日志，据实定位：(a) `get_filter_values(probeCardType→cardId)` 为何空（CARDID 前缀格式）；(b) BIN152 isGoodBin 是否 PASSBIN/分类与良率口径不一致；(c)「测试最差」是否改良率%口径
 
 ## 已完成
 
+- ✅ 三段会话评审修复：get_filter_values 空结果 hint + 多 lot scope guide + equipment 直连缓存 scope 校验（防 N55Z↔P11C 张冠李戴）+ SQL 调试日志（query_jb_bins/aggregate_jb_bins/get_filter_values）— 2026-06-27 完成（376 测试通过）
 - ✅ agentPrompt 可维护性重构：22 个命名 TypeScript const + TOC，LLM 看到文本完全不变，typecheck 通过 — 2026-06-06 完成
 - ✅ default 兜底输出优化：cluster 警示与 AI 规律识别合并至末尾；清除 formatClusteredBadBinAlertsMarkdown 指令泄漏；detectAndFormatDataPatterns 改简洁 bullet 格式 — 2026-06-06 完成
 - ✅ Agent 三项生产 Bug 修复（wafermap composite shortcut / 逐片 bin 死循环 / 指令泄漏）：移除 BIN 高亮跟画时的 passes=composite 捷径；新增 tryRunPerSlotBinRankingDirectRoute 直连路由；清除 jbBinsYieldFallbackMessage 中的 DETERMINISTIC_TABLES_HEADER — 2026-06-06 完成

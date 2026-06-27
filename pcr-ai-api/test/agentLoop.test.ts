@@ -5,6 +5,8 @@ import {
   historyAwaitingToolSummary,
   parseGlmToolCallBody,
   parseMinimaxInvokeBody,
+  cachedJbScopeMismatchReason,
+  equipmentRouteCrossLotBail,
 } from "../src/lib/agent/agentLoop.js";
 import {
   buildDutShareChartData,
@@ -412,4 +414,31 @@ test("historyAwaitingToolSummary is false when assistant already replied after t
     { role: "assistant", content: "7772-A1 报警最多（12 次），建议检查该卡。" },
   ];
   assert.equal(historyAwaitingToolSummary(history), false);
+});
+
+// ─── equipment 直连路由：缓存 scope 校验（防止跨产品/跨 lot 张冠李戴）──────────
+const P11C_CACHE = {
+  device: "WB01P11C",
+  lot: "TR21697.1K",
+  recentLotsByTestEnd: [{ lot: "TR21697.1K" }, { lot: "TR23824.1Y" }],
+} as Record<string, unknown>;
+
+test("cachedJbScopeMismatchReason: N55Z 问题命中 P11C 缓存 → 报不一致（跨产品张冠李戴）", () => {
+  const reason = cachedJbScopeMismatchReason(P11C_CACHE, "mask=N55Z的lot 中 bin35，集中在哪张卡上");
+  assert.ok(reason && /N55Z/.test(reason) && /P11C/.test(reason), reason ?? "expected mismatch");
+});
+
+test("cachedJbScopeMismatchReason: 同产品/无新 scope 的卡问题 → null（允许用缓存）", () => {
+  assert.equal(cachedJbScopeMismatchReason(P11C_CACHE, "这批用的什么卡"), null);
+  assert.equal(cachedJbScopeMismatchReason(P11C_CACHE, "TR21697.1K 是哪台机台测的"), null);
+});
+
+test("cachedJbScopeMismatchReason: 问题含缓存外的 lot → 报不一致", () => {
+  const reason = cachedJbScopeMismatchReason(P11C_CACHE, "DR44436.1W 用的什么卡");
+  assert.ok(reason && /DR44436\.1W/.test(reason), reason ?? "expected mismatch");
+});
+
+test("equipmentRouteCrossLotBail: 跨多 lot 分析问题应禁用 equipment 直连", () => {
+  assert.equal(equipmentRouteCrossLotBail("上面这 16 个lot 中 请分析 哪个可能和probecard dut 等有关系"), true);
+  assert.equal(equipmentRouteCrossLotBail("这批用的什么卡"), false);
 });

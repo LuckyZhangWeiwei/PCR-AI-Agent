@@ -49,6 +49,7 @@ import {
   buildLotListingContext,
   isPerSlotBadBinRankingQuestion,
   isProbeCardQuestion,
+  isBinCardAttributionQuestion,
   isTesterMachineQuestion,
   jbReplySkipsCommentaryLlm,
   parseJbToolPayload,
@@ -73,6 +74,7 @@ import {
   scopedBadBinNeedsAggregateRecovery,
 } from "./agentJbScopedBadBinRoute.js";
 import { buildScopeLabelFromAggregateArgs, findLastToolCallArgs } from "./agentQueryScope.js";
+import { deviceBaseMask } from "../deviceMask.js";
 import {
   buildInfDrawArgsAfterJbLookup,
   extractLotFromUserText,
@@ -914,6 +916,21 @@ async function emitDeterministicJbTablesReply(
   options?: { withCommentaryLlm?: boolean }
 ): Promise<boolean> {
   const history = getHistory(sessionId);
+  // 诊断：用户问某个具体 lot 的「详细/测试情况」，但回复所用 payload 是 mask 限量缓存
+  // （multiLotYieldScope 且非 lotQueryFullRows）→ 数据残缺（如 20/25 片），却以「详细」出表。
+  const lotInQuestion = /[A-Z]{2}\d{4,}\.\d?[A-Z]?\w*/i.exec(userQuestion)?.[0];
+  if (
+    payload["multiLotYieldScope"] === true &&
+    payload["lotQueryFullRows"] !== true &&
+    lotInQuestion
+  ) {
+    console.warn(
+      `[jbDeterministic/staleMaskCache] 用户问 lot=${lotInQuestion} 详细，但 payload 为 mask 限量缓存` +
+        `（multiLotYieldScope=true, lotQueryFullRows!=true, count=${payload["count"]}, ` +
+        `distinctLotCount=${payload["distinctLotCount"]}, primaryLot=${payload["lot"]}）→ ` +
+        `本次出表可能基于残缺片数；应先 query_jb_bins(lot:"${lotInQuestion}", limit:200) 取全量再出详细。`
+    );
+  }
   const listingCtx = buildLotListingContext(payload, history);
   const tables = buildDeterministicJbTables(userQuestion, payload, listingCtx);
   if (!tables?.trim()) return false;
@@ -1406,6 +1423,57 @@ function requiresNewDataQuery(text: string): boolean {
   return false;
 }
 
+const QUESTION_MASK_TOKEN_RE = /\b([A-Z]\d{2}[A-Z])\b/g;
+const QUESTION_LOT_TOKEN_RE = /\b[A-Z]{2}\d{4,5}\.\d[A-Z]?\w*/g;
+
+/**
+ * 缓存 JB payload 的产品/批次是否与当前问题不一致——一致才允许直接吐缓存 equipment 表。
+ * 返回不一致原因（用于日志），一致返回 null。
+ * 防止「N55Z bin35 哪张卡」被上一题 P11C 的 TR21697.1K 缓存张冠李戴回答。
+ */
+export function cachedJbScopeMismatchReason(
+  payload: Record<string, unknown>,
+  userQuestion: string
+): string | null {
+  const q = userQuestion.toUpperCase();
+  const device = String(payload["device"] ?? "").trim();
+  const payloadMask = deviceBaseMask(device); // 缓存产品 mask（device base 末 4 位）
+
+  // 问题里出现的 mask token 与缓存产品 mask 不一致
+  if (payloadMask) {
+    for (const m of q.matchAll(QUESTION_MASK_TOKEN_RE)) {
+      if (m[1] && m[1] !== payloadMask) {
+        return `问题含 mask=${m[1]}，与缓存产品 mask=${payloadMask}（device=${device}）不一致`;
+      }
+    }
+  }
+
+  // 问题里出现的 lot 与缓存 lot（primary + recentLotsByTestEnd）都不匹配
+  const cachedLots = new Set<string>();
+  const primaryLot = String(payload["lot"] ?? "").trim().toUpperCase();
+  if (primaryLot) cachedLots.add(primaryLot);
+  const recent = payload["recentLotsByTestEnd"];
+  if (Array.isArray(recent)) {
+    for (const r of recent) {
+      const l = String((r as Record<string, unknown>)?.["lot"] ?? "").trim().toUpperCase();
+      if (l) cachedLots.add(l);
+    }
+  }
+  const lotsInQ = [...q.matchAll(QUESTION_LOT_TOKEN_RE)].map((m) => m[0]);
+  if (lotsInQ.length > 0 && cachedLots.size > 0 && !lotsInQ.some((l) => cachedLots.has(l))) {
+    return `问题含 lot=${lotsInQ.join(",")}，与缓存 lot=${[...cachedLots].join(",")} 不一致`;
+  }
+  return null;
+}
+
+/** 跨多 lot 的「哪个/分析」类问题：缓存只含单批，不能代表整组，禁用 equipment 直连。 */
+export function equipmentRouteCrossLotBail(text: string): boolean {
+  if (/\d+\s*个\s*(lot|批次)/i.test(text)) return true;
+  if (/(请分析|分析).*(哪个|哪些|哪几)/i.test(text)) return true;
+  if (/(哪个|哪些).*(lot|批次).*(有关|相关|问题|可能|异常)/i.test(text)) return true;
+  return false;
+}
+
 /**
  * 探针卡 / 机台 直连路由：用户追问 "probecard是什么" 等时，直接从 session 缓存输出
  * equipment 表，不走 LLM，避免 LLM 用历史上下文把上一轮的 lot 总览表重复输出一次。
@@ -1424,8 +1492,32 @@ async function tryRunEquipmentDirectRoute(
   // "包含机台/增加机台" 是对综合列表的补充修饰词，不是独立的机台查询——
   // 此时用户想要的是 bin fail 全量列表 + 机台号，不能只输出设备表，否则会反复输出同一段短表。
   if (/(增加|加上|包含|含).*机台|机台.*列表|列表.*机台/.test(userQuestion)) return false;
+  // 「BIN X 集中在哪张卡」需跨卡聚合（aggregate_jb_bins groupBy:bin,cardId），不能吐缓存 equipment 表
+  if (isBinCardAttributionQuestion(userQuestion)) {
+    console.warn(
+      `[equipmentRoute/skip:binOnCard] BIN-on-card 归因需 aggregate_jb_bins(groupBy:"bin,cardId")，` +
+        `不吐缓存 equipment 表：「${userQuestion.slice(0, 50)}」`
+    );
+    return false;
+  }
+  // 跨多 lot 的分析/选择问题：缓存仅单批，无法回答「哪个 lot 和卡/DUT 有关」
+  if (equipmentRouteCrossLotBail(userQuestion)) {
+    console.warn(
+      `[equipmentRoute/skip:crossLot] 跨多 lot 分析问题不能用单批缓存作答：「${userQuestion.slice(0, 50)}」`
+    );
+    return false;
+  }
   const payload = resolveJbToolPayload(sessionId);
   if (!payload) return false;
+  // 缓存产品/批次与问题不一致 → 拒绝吐陈旧缓存（避免 N55Z 问题被 P11C 缓存张冠李戴）
+  const mismatch = cachedJbScopeMismatchReason(payload, userQuestion);
+  if (mismatch) {
+    console.warn(
+      `[equipmentRoute/skip:staleCacheScopeMismatch] 拒绝用缓存作答：${mismatch}；` +
+        `问题=「${userQuestion.slice(0, 50)}」→ 应重新查询/澄清`
+    );
+    return false;
+  }
   return emitDeterministicJbTablesReply(sessionId, userQuestion, payload, agentConfig, emit);
 }
 
@@ -1935,6 +2027,17 @@ function buildMultiLotBinTable(content: string): string | null {
     const cells = bins.map(b => b.count > 0 ? `${b.bin}（${b.count}）` : "—");
     lines.push(`| ${lot} | ${cells.join(" | ")} | ${lotTotals.get(lot) ?? 0} |`);
   }
+  // 诊断：暴露排序基准（绝对坏 die 总量），供真库核对「测试最差」口径是否应改用良率%。
+  console.warn(
+    `[multiLotBinTable] 按坏die总量降序 ${sortedLots.length} lot：` +
+      sortedLots.map((l) => `${l}=${lotTotals.get(l) ?? 0}`).join(", ")
+  );
+  // 口径脚注：坏 die 多 ≠ 良率低（大片/大批自然坏 die 多），避免把绝对量当「最差」。
+  lines.push(
+    "",
+    "*注：本表按各 lot「坏 die 总量」降序（良品 bin 已在聚合中扣除）；坏 die 绝对量受片数/总 die 影响，" +
+      "并不等价于良率最低。判定「测试最差」请以各 lot 良率% 复核（对目标 lot 调 query_jb_bins(lot) 看 yieldByPassId）。*"
+  );
   return lines.join("\n");
 }
 
@@ -2014,6 +2117,18 @@ async function tryRunDeterministicJbSummary(
   );
   if (!payload) return false;
 
+  // 诊断：用户若一轮问了多个 lot（如「都用什么卡」「对比这几张卡」），单 lot 确定性回复
+  // 只取「最后一个」query_jb_bins 结果，会答非所问 / 卡号张冠李戴。暴露当前回复锁定的 lot
+  // 与本轮实际查询过的 lot 集合，供真库核对。
+  const turnLots = collectQueryJbBinsLotsThisTurn(history);
+  const repliedLot = String(payload["lot"] ?? "?");
+  if (turnLots.length > 1) {
+    console.warn(
+      `[jbDeterministic/multiLot] 单 lot 回复锁定 lot=${repliedLot}，但本轮查询了 ${turnLots.length} 个 lot：` +
+        `${turnLots.join(", ")}；用户问「${userQuestion.slice(0, 40)}」可能要多 lot 对比 → 当前回复或答非所问。`
+    );
+  }
+
   return emitDeterministicJbTablesReply(
     sessionId,
     userQuestion,
@@ -2021,6 +2136,24 @@ async function tryRunDeterministicJbSummary(
     agentConfig,
     emit
   );
+}
+
+/** 本轮（最后一条 user 之后）所有 query_jb_bins 工具结果命中的 distinct lot。 */
+function collectQueryJbBinsLotsThisTurn(history: ChatMessage[]): string[] {
+  const lots: string[] = [];
+  const seen = new Set<string>();
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i]!;
+    if (m.role === "user") break;
+    if (m.role !== "tool" || m.name !== "query_jb_bins") continue;
+    try {
+      const lot = String(
+        (JSON.parse(String(m.content ?? "")) as Record<string, unknown>)["lot"] ?? ""
+      ).trim();
+      if (lot && !seen.has(lot)) { seen.add(lot); lots.push(lot); }
+    } catch { /* non-JSON tool content (compacted) — skip */ }
+  }
+  return lots.reverse();
 }
 
 function chartToolFallbackMessage(toolMsg: ChatMessage): string {

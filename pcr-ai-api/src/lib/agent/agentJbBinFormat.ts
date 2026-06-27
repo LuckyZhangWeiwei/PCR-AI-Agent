@@ -462,10 +462,43 @@ export function buildSlotBadBinsCompact(
   return out;
 }
 
+/** 单片正片 die 数量级阈值之上仍标 isGoodBin 的 bin 视为可疑（PASSBIN/分类不一致诊断）。 */
+const SUSPECT_GOOD_BIN_DIE = 300;
+
+/**
+ * 诊断：某 bin 被标 isGoodBin=true 却累计大量 dieCount（如 BIN152 32365），通常意味着
+ * PASSBIN 解析或 good-bin 分类与 JB 良率口径不一致——会让模型把主导坏 bin 当良品 bin 排除。
+ * 仅打日志、不改分类；供真库复现时把 lot/device/bin/PASSBIN 发回核对。
+ */
+function warnSuspectGoodBins(rows: Record<string, unknown>[]): void {
+  const goodTotals = new Map<number, number>();
+  for (const row of rows) {
+    for (const b of normalizeBinsForAgent(row["bins"])) {
+      if (b.isGoodBin && b.dieCount > 0) {
+        goodTotals.set(b.bin, (goodTotals.get(b.bin) ?? 0) + b.dieCount);
+      }
+    }
+  }
+  const suspects = [...goodTotals.entries()]
+    .filter(([bin, total]) => bin !== 1 && total >= SUSPECT_GOOD_BIN_DIE)
+    .sort((a, b) => b[1] - a[1]);
+  if (suspects.length === 0) return;
+  const first = rows[0] ?? {};
+  const lot = String(first["LOT"] ?? first["lot"] ?? "?");
+  const device = String(first["DEVICE"] ?? first["device"] ?? "?");
+  const passBin = String(first["PASSBIN"] ?? first["passBin"] ?? "?");
+  console.warn(
+    `[jbGoodBin/suspect] lot=${lot} device=${device} PASSBIN=${passBin} ` +
+      `被标良品但 die 量大的 bin（可能 PASSBIN/分类与良率口径不一致，应是坏 bin）：` +
+      suspects.map(([bin, total]) => `BIN${bin}=${total}`).join(", ")
+  );
+}
+
 /** 将 query_jb_bins 行内的 bins[] 改为 badBins / goodBins（bin + dieCount）。 */
 export function formatJbRowsForAgent(
   rows: Record<string, unknown>[]
 ): Record<string, unknown>[] {
+  warnSuspectGoodBins(rows);
   return rows.map((row) => {
     const { bins: _bins, ...rest } = row;
     const all = normalizeBinsForAgent(_bins);
@@ -583,6 +616,10 @@ export function wrapJbQueryResultForAgent(
           multiLotYieldScope: true,
           multiLotYieldScopeLot: primaryLot || undefined,
           multiLotDistinctCount: distinctLotCount,
+          _multiLotYieldScopeGuide:
+            `mask/device 命中 ${distinctLotCount} 个 lot；topBadBins / cardByPassId / 良率 仅代表最新单 lot ` +
+            `${primaryLot || "?"}，不能代表整个 mask。问「某 BIN 集中在哪张卡 / 哪个 lot」时，` +
+            `禁止用本单 lot 的 topBadBins 作答，改调 aggregate_jb_bins(mask 或 device, groupBy:"bin,cardId" 或 "bin,lot", groupTop:50) 跨 lot 聚合后再比较。`,
         }
       : {}),
     ...(meta?.cardDegradationSignal

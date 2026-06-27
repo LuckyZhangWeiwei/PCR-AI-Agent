@@ -494,6 +494,11 @@ describe("agentJbBinFormat", () => {
     const out = wrapJbQueryResultForAgent(rows);
     assert.equal(out.multiLotYieldScope, true);
     assert.equal(out.lot, "LOT_A");
+    // 多 lot 范围必须带路由指引：禁止用单 lot topBadBins 答「BIN 集中在哪张卡」，改用 aggregate_jb_bins
+    assert.match(
+      String(out._multiLotYieldScopeGuide ?? ""),
+      /aggregate_jb_bins.*bin,cardId|集中在哪张卡|不能代表整个 mask/
+    );
     const summary = out.slotYieldSummary as Array<{ lot?: string; hasInterrupt: boolean }>;
     assert.equal(summary.length, 1);
     assert.equal(summary[0]!.lot, "LOT_A");
