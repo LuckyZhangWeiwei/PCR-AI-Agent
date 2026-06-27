@@ -471,6 +471,27 @@ export function isSingleSlotQuestion(text: string): boolean {
   return true;
 }
 
+/**
+ * 用户问**某一片**（上下文指代「这片 / 该片」，未给数字）wafer 的**坏 die 空间聚集**。
+ * JB lot 数据无 die 坐标，整 lot 确定性 BIN 趋势表答不了此问题（会落成「套话」）。
+ * 命中后 agentLoop 应 bail，交回 LLM（可在下一轮 inf_draw_wafer_map 看空间分布）。
+ * 注意：必须是「这片/该片」单片指代——「这批 lot 聚集」走整 lot 警示表，不在此列。
+ */
+export function isSingleWaferDieClusterQuestion(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  // 明确给了片号（第N片 / slot N）的另由 single_slot 处理，不在此函数范围
+  if (extractSlotFromUserText(t) != null) return false;
+  const singleWaferRef =
+    /这\s*片|这个\s*wafer|该\s*片|此\s*片|这\s*颗?\s*wafer|这\s*wafer|这\s*一?\s*片/i.test(
+      t
+    );
+  if (!singleWaferRef) return false;
+  return /聚集|集中.*分布|分布.*集中|空间.*分布|cluster|扎堆|成片|连片|区域.*集中/i.test(
+    t
+  );
+}
+
 /** 从用户文字提取 waferId（slot）编号；中文数字一~九也支持。 */
 export function extractSlotFromUserText(text: string): number | null {
   const chMap: Record<string, number> = {
@@ -567,15 +588,10 @@ export function isCrossLotQuestionMisalignedWithPayload(
  * 与 isCrossLotQuestionMisalignedWithPayload 区别：后者要求「坏 bin 排行 / 列表」类关键词；
  * 本函数面向「测试情况 / 概况 / BINxx 归到哪张卡」这类**未带排行关键词**的 mask 级问题。
  */
-export function isMaskLevelQuestionOnMultiLotPayload(
-  userMessage: string,
+/** payload 覆盖多个 lot（multiLotYieldScope / distinctLots>1 / recentLots>1）。 */
+export function payloadCoversMultipleLots(
   toolPayload: Record<string, unknown>
 ): boolean {
-  if (extractLotFromUserText(userMessage)) return false;
-  const hasMaskOrDevice =
-    Boolean(inferMaskFromText(userMessage)) ||
-    Boolean(inferDeviceFromText(userMessage));
-  if (!hasMaskOrDevice) return false;
   const distinct = Number(
     toolPayload["totalDistinctLots"] ??
       toolPayload["distinctLotCount"] ??
@@ -588,6 +604,34 @@ export function isMaskLevelQuestionOnMultiLotPayload(
     distinct > 1 ||
     (Array.isArray(recent) && recent.length > 1)
   );
+}
+
+export function isMaskLevelQuestionOnMultiLotPayload(
+  userMessage: string,
+  toolPayload: Record<string, unknown>
+): boolean {
+  if (extractLotFromUserText(userMessage)) return false;
+  const hasMaskOrDevice =
+    Boolean(inferMaskFromText(userMessage)) ||
+    Boolean(inferDeviceFromText(userMessage));
+  if (!hasMaskOrDevice) return false;
+  return payloadCoversMultipleLots(toolPayload);
+}
+
+/**
+ * 用户问某探针卡**型号**整体测试情况（4 位数字 + 「卡 / probe card / 型号」，无 `-NN` 具体卡号、
+ * 无具体 lot）。如「9416 卡的测试情况」。卡型横跨大量 lot——query_jb_bins(probeCardType) 只回
+ * 最新单 lot，绝不能代表整卡型 → bail 交回 LLM 跨 lot/结合 YM 聚合作答。
+ * 具体卡号（9416-04）走 card_test_overview / card_dut_question，不在此列。
+ */
+export function isCardTypeLevelOverviewQuestion(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (extractLotFromUserText(t)) return false;
+  if (/\b\d{4}-\d{2,3}\b/.test(t)) return false; // 具体卡号另有分支
+  if (!/\b\d{4}\b/.test(t)) return false;
+  if (!/卡|probe\s*card|型号|card\s*type/i.test(t)) return false;
+  return /(测试情况|的情况|整体情况|使用情况|历次测试|测试结果|性能|概况|怎么样|如何)/i.test(t);
 }
 
 /**
@@ -1415,6 +1459,15 @@ export function buildDeterministicJbTables(
       const listing = buildRecentLotsListingMarkdown(toolPayload, listingCtx);
       if (listing?.trim()) return listing;
     }
+    // 卡型级「9416 卡的测试情况」：payload 仅该卡型最新单 lot，不能代表整卡型 →
+    // bail 让 LLM 跨 lot 结合 YM 聚合作答（aggregate_yield_triggers 已可按 probeCard 枚举）。
+    if (isCardTypeLevelOverviewQuestion(userMessage)) {
+      console.warn(
+        `[jbDeterministic/cardTypeOverviewBail] 卡型级问题「${userMessage.slice(0, 40)}」` +
+          `payload 仅 lot=${String(toolPayload["lot"] ?? "?")}，不能代表整卡型 → 交回 LLM 跨 lot 作答。`
+      );
+      return null;
+    }
     // Prefer pre-computed overview from cache (built with full cardByPassId array).
     // Without this, formatLotYieldOverviewMarkdown would skip the probe-card section
     // because cardByPassId (raw array) is not persisted in the session cache.
@@ -1654,6 +1707,77 @@ export function buildBinCardAggregateMarkdown(
     ...sorted.map((r, i) => {
       const pct = total > 0 ? ((r.count / total) * 100).toFixed(1) : "0.0";
       return `| ${i + 1} | BIN${r.bin} | ${r.cardId} | ${r.count} | ${pct}% |`;
+    }),
+  ];
+  return lines.join("\n");
+}
+
+/**
+ * 用户问「哪个 lot BINnn 最多」：aggregate_jb_bins(groupBy 含 bin,lot[,cardId]) 结果里
+ * 按**指定 bin** 在各 lot 的坏 die 颗数排 lot（而非 multiLotBinTable 的「坏die总量」口径——
+ * 后者会把总坏die多但该 bin 少的 lot 误排第一，如 DR41662.1J(bin35=968) 排在
+ * DR42190.1X(bin35=1402) 之前）。无 lot 维度或该 bin 不在结果里 → 返回 null 交回其它渲染。
+ * 若 groups 含 cardId，附「探针卡」列直接回答「都是用什么卡测试的」。
+ */
+export function buildBinFocusedLotRankingMarkdown(
+  rawContent: string,
+  focusBin: number | null | undefined,
+  scopeLabel?: string
+): string | null {
+  if (focusBin == null) return null;
+  let agg: Record<string, unknown>;
+  try {
+    agg = JSON.parse(rawContent) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const groups = agg["groups"] as Array<Record<string, unknown>> | undefined;
+  if (!groups?.length) return null;
+  // 必须含 lot 维度（否则交回 buildBinCardAggregateMarkdown / multiLotBinTable）
+  if (!groups.some((g) => String(g["lot"] ?? g["LOT"] ?? "").trim())) return null;
+  const hasCard = groups.some((g) => String(g["cardId"] ?? g["CARDID"] ?? "").trim());
+
+  type LotAgg = { lot: string; count: number; cards: Map<string, number> };
+  const byLot = new Map<string, LotAgg>();
+  for (const g of groups) {
+    const binNum = Number(String(g["bin"] ?? g["BIN"] ?? "").replace(/^BIN/i, ""));
+    if (binNum !== focusBin) continue;
+    const lot = String(g["lot"] ?? g["LOT"] ?? "").trim();
+    if (!lot) continue;
+    const count = Number(g["count"] ?? g["CNT"] ?? 0);
+    if (!(count > 0)) continue;
+    const cardId = String(g["cardId"] ?? g["CARDID"] ?? "").trim();
+    let entry = byLot.get(lot);
+    if (!entry) {
+      entry = { lot, count: 0, cards: new Map() };
+      byLot.set(lot, entry);
+    }
+    entry.count += count;
+    if (cardId) entry.cards.set(cardId, (entry.cards.get(cardId) ?? 0) + count);
+  }
+  const ranked = [...byLot.values()].sort((a, b) => b.count - a.count);
+  if (!ranked.length) return null;
+
+  const scope = scopeLabel?.trim() || "查询范围";
+  const total = ranked.reduce((s, r) => s + r.count, 0);
+  const header = hasCard
+    ? `| # | Lot | BIN${focusBin} 坏 die 颗数 | 占比 | 探针卡 |`
+    : `| # | Lot | BIN${focusBin} 坏 die 颗数 | 占比 |`;
+  const divider = hasCard ? "|---:|---|---:|---:|---|" : "|---:|---|---:|---:|";
+  const lines = [
+    `**各 lot BIN${focusBin} 坏 die 排行（${scope}，坏 die 合计 ${total}）**`,
+    "",
+    header,
+    divider,
+    ...ranked.map((r, i) => {
+      const pct = total > 0 ? ((r.count / total) * 100).toFixed(1) : "0.0";
+      if (!hasCard) return `| ${i + 1} | ${r.lot} | ${r.count} | ${pct}% |`;
+      const cards =
+        [...r.cards.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .map(([c]) => c)
+          .join(", ") || "—";
+      return `| ${i + 1} | ${r.lot} | ${r.count} | ${pct}% | ${cards} |`;
     }),
   ];
   return lines.join("\n");

@@ -4,6 +4,7 @@ import {
   buildBriefCommentaryUserMessage,
   buildAggregateBinRankingMarkdown,
   buildBinCardAggregateMarkdown,
+  buildBinFocusedLotRankingMarkdown,
   buildDeterministicJbTables,
   buildEngineeringContextFromPayload,
   buildRecentLotsListingMarkdown,
@@ -17,6 +18,8 @@ import {
   isProbeCardQuestion,
   isTesterMachineQuestion,
   isSlotPassYieldQuestion,
+  isSingleWaferDieClusterQuestion,
+  isCardTypeLevelOverviewQuestion,
   resolveJbToolPayload,
 } from "../src/lib/agent/agentJbDeterministicReply.js";
 import {
@@ -177,6 +180,84 @@ describe("agentJbDeterministicReply", () => {
       ],
     });
     assert.equal(buildBinCardAggregateMarkdown(raw, "mask N55Z", 35), null);
+  });
+
+  // P2: 「哪个 lot BIN35 最多」必须按 BIN35 颗数排 lot，而非坏 die 总量
+  // （否则 DR41662(bin35=968,总2024) 会排在 DR42190(bin35=1402,总1402) 之前 — 误导）。
+  it("buildBinFocusedLotRankingMarkdown ranks lots by the named BIN, not total bad die", () => {
+    const raw = JSON.stringify({
+      totalRowsMatching: 972,
+      groups: [
+        { bin: "18", lot: "DR41662.1J", count: 1056 },
+        { bin: "35", lot: "DR41662.1J", count: 968 },
+        { bin: "35", lot: "DR42190.1X", count: 1402 },
+        { bin: "2", lot: "DR44312.1Y", count: 1512 },
+      ],
+    });
+    const md = buildBinFocusedLotRankingMarkdown(raw, 35, "device WC13N55Z");
+    assert.ok(md?.includes("各 lot BIN35 坏 die 排行"));
+    // DR42190.1X(1402) 必须排在 DR41662.1J(968) 之前
+    const firstRow = md!.split("\n").find((l) => l.includes("| 1 |"));
+    assert.ok(firstRow?.includes("DR42190.1X"));
+    assert.ok(firstRow?.includes("1402"));
+    const secondRow = md!.split("\n").find((l) => l.includes("| 2 |"));
+    assert.ok(secondRow?.includes("DR41662.1J"));
+    // 与 BIN35 无关的 lot（只有 BIN2/BIN18）不应出现
+    assert.equal(md?.includes("DR44312.1Y"), false);
+  });
+
+  it("buildBinFocusedLotRankingMarkdown appends card column when groups have cardId", () => {
+    const raw = JSON.stringify({
+      groups: [
+        { bin: "35", lot: "TR21699.1W", cardId: "7810-04", count: 1337 },
+        { bin: "35", lot: "TR21697.1K", cardId: "7810-04", count: 1216 },
+      ],
+    });
+    const md = buildBinFocusedLotRankingMarkdown(raw, 35, "mask P11C");
+    assert.ok(md?.includes("探针卡"));
+    assert.ok(md?.includes("7810-04"));
+    const firstRow = md!.split("\n").find((l) => l.includes("| 1 |"));
+    assert.ok(firstRow?.includes("TR21699.1W"));
+  });
+
+  it("buildBinFocusedLotRankingMarkdown returns null without lot dimension or when bin absent", () => {
+    // 无 lot 维度（groupBy bin,cardId）→ 交回 buildBinCardAggregateMarkdown
+    const noLot = JSON.stringify({
+      groups: [{ bin: "35", cardId: "9416-04", count: 12901 }],
+    });
+    assert.equal(buildBinFocusedLotRankingMarkdown(noLot, 35), null);
+    // 该 bin 不在结果里
+    const noBin = JSON.stringify({
+      groups: [{ bin: "2", lot: "DR44312.1Y", count: 1512 }],
+    });
+    assert.equal(buildBinFocusedLotRankingMarkdown(noBin, 35), null);
+    // focusBin 为 null
+    assert.equal(buildBinFocusedLotRankingMarkdown(noLot, null), null);
+  });
+
+  // P7: 「这片 wafer 是否有坏 die 聚集性」(单片空间聚集) 不能被整 lot 表答
+  it("isSingleWaferDieClusterQuestion detects contextual single-wafer clustering", () => {
+    assert.ok(isSingleWaferDieClusterQuestion("这片wafer 是否有坏die 聚集性问题"));
+    assert.ok(isSingleWaferDieClusterQuestion("这个wafer 坏die 集中在哪个区域分布"));
+    assert.ok(isSingleWaferDieClusterQuestion("该片 是否扎堆"));
+    // 给了具体片号 → 由 single_slot 处理，不在此函数
+    assert.equal(isSingleWaferDieClusterQuestion("第14片 坏die 聚集吗"), false);
+    // lot/批次级聚集 → 整 lot 警示表
+    assert.equal(isSingleWaferDieClusterQuestion("这批lot 有没有聚集坏bin"), false);
+    // 无聚集关键词
+    assert.equal(isSingleWaferDieClusterQuestion("这片wafer 良率多少"), false);
+  });
+
+  // P5: 「9416 卡的测试情况」是卡型级，不能用单 lot 概况代答
+  it("isCardTypeLevelOverviewQuestion detects bare card-type overview", () => {
+    assert.ok(isCardTypeLevelOverviewQuestion("9416 卡的测试情况"));
+    assert.ok(isCardTypeLevelOverviewQuestion("8003 型号整体情况怎么样"));
+    // 具体卡号 → card_test_overview / card_dut，不在此列
+    assert.equal(isCardTypeLevelOverviewQuestion("9416-04 卡的测试情况"), false);
+    // 给了具体 lot → 单 lot 概况
+    assert.equal(isCardTypeLevelOverviewQuestion("DR44436.1W 测试情况"), false);
+    // 无 4 位卡型数字
+    assert.equal(isCardTypeLevelOverviewQuestion("这个卡的测试情况"), false);
   });
 
   it("buildRecentLotsListingMarkdown merges JB and YM lots", () => {

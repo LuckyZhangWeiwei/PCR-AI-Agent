@@ -21,10 +21,11 @@
 - [ ] Phase 3 前端：`LotDutBinPanel.tsx`（lot 级堆叠条形图，调用已有 `/inf-analysis/site-bin-bylot?device&lot`）
 - [ ] YM 确定性摘要路径：类似 tryRunDeterministicJbSummary，YM lot 查询后服务端直出探针卡报警排名表
 - [ ] 报表重构：识别并提取 YM/JB 相同维度分析为共用组件（精简重复）
-- [ ] 真库验证三段会话修复：复现后收集 `[agentSql/*]`（含 SQL）、`[equipmentRoute/skip:*]`、`[jbGoodBin/suspect]`、`[jbDeterministic/staleMaskCache]`、`[jbDeterministic/binCardMaskScope]`、`[jbDeterministic/multiLotBail]` 日志，据实定位：(a) `get_filter_values(device,mask)` 与 `(probeCardType→cardId)` 为何空（看 `filterValues:*DeviceByMask:result` 的 rowCount/sampleDevices；CARDID 前缀格式）；(b) BIN152 isGoodBin 是否 PASSBIN/分类与良率口径不一致；(c)「ps16 哪个最差」是否改良率%口径（现按坏 die 总量排序，仅脚注提示用 yieldByPassId 复核）
+- [ ] 真库验证会话修复（先 `npm run build` + `pm2:reload` 排除旧 dist「看起来不生效」）：复现后收集 `[agentSql/*]`（含 SQL）、`[equipmentRoute/skip:*]`、`[jbGoodBin/suspect]`、`[jbDeterministic/staleMaskCache]`、`[jbDeterministic/binCardMaskScope]`、`[jbDeterministic/multiLotBail]`、`[jbDeterministic/cardTypeOverviewBail]`、`[jbDeterministic/singleWaferClusterBail]` 日志，据实定位：(a) `get_filter_values(device,mask)` 与 `(probeCardType→cardId)` 真库为何空（dummy=Oracle 结构下逻辑已证正确；看 `filterValues:*DeviceByMask:result` 的 rowCount/sampleDevices + SQL，核 CARDID/DEVICE 实际格式）；(b) BIN152 isGoodBin 是否 PASSBIN/分类与良率口径不一致；(c)「ps16 哪个最差」是否改良率%口径（现按坏 die 总量排序，仅脚注提示用 yieldByPassId 复核）
 
 ## 已完成
 
+- ✅ FW_ 五会话精修：`buildBinFocusedLotRankingMarkdown`（「哪个 lot BINnn 最多」按指定 bin 排序，修按坏 die 总量误排）+ `isCardTypeLevelOverviewQuestion` 卡型级 bail（修单 lot 深挖代答卡型）+ `isSingleWaferDieClusterQuestion` 单片空间聚集 bail（修整 lot 表"套话"劫持）+ DUT 聚集追问路由强化 `query_lot_dut_bin_agg(focusBin)` + **dummy-parity 真 bug 修复**（`aggregate_jb_bins`/`aggregate_yield_triggers` dummy 组由嵌套 `{key,parts}` 展平为 `{bin,lot,count}` 与 Oracle 对齐）+ P1/P6 dummy 验证逻辑正确（真库空属部署/数据）+ 验证文档 `AGENT_FIX_VERIFICATION_2026-06-27.md` — 2026-06-27 完成（394 测试通过）
 - ✅ 续评审修复：mask 级「测试情况」改出多 lot 列表（非单 lot 概况）+ bin_card mask 级 bail + `buildBinCardAggregateMarkdown`（groupBy:"bin,cardId" 卡归属渲染，修 cardId 丢失）+ `isMultiLotComparisonQuestion` 多 lot 对比 bail + device-by-mask SQL 日志加 sampleDevices — 2026-06-27 完成（384 测试通过）
 - ✅ 三段会话评审修复：get_filter_values 空结果 hint + 多 lot scope guide + equipment 直连缓存 scope 校验（防 N55Z↔P11C 张冠李戴）+ SQL 调试日志（query_jb_bins/aggregate_jb_bins/get_filter_values）— 2026-06-27 完成（376 测试通过）
 - ✅ agentPrompt 可维护性重构：22 个命名 TypeScript const + TOC，LLM 看到文本完全不变，typecheck 通过 — 2026-06-06 完成

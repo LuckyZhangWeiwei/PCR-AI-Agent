@@ -2,6 +2,22 @@
 
 ---
 
+## 2026-06-27 — FW_ 五会话精修：bin 特定 lot 排行 + 卡型/单片 bail + DUT 路由 + dummy-parity 展平
+
+**完成内容：**
+- `agentJbDeterministicReply.ts`：新增 `buildBinFocusedLotRankingMarkdown`——「哪个 lot BINnn 最多」按**指定 bin** 在各 lot 的坏 die 颗数排序（含探针卡列），修掉 `buildMultiLotBinTable` 按**坏 die 总量**排序把该 bin 少但总量大的 lot 误排第一（真实会话 N55Z：bin35=968 的 DR41662 错排在 bin35=1402 的 DR42190 之前）；`agentLoop.ts` 总结轮主聚合分支 + fallback 分支均在 `buildMultiLotBinTable` 之前接入（gate=`extractBinFromUserText` 有值）
+- `agentJbDeterministicReply.ts`：新增 `isCardTypeLevelOverviewQuestion`（4 位卡型 + 「卡/型号」+ 概况词，排除具体卡号 `dddd-dd`/具体 lot）；`buildDeterministicJbTables` lot_overview 分支命中即 `[jbDeterministic/cardTypeOverviewBail]` 日志 + 返回 null，交回 LLM 跨 lot 结合 YM 聚合作答，修掉「9416 卡的测试情况」被渲染成最新单 lot 概况；`agentLoop.ts` fallback 分支同步 bail
+- `agentJbDeterministicReply.ts`：新增 `isSingleWaferDieClusterQuestion`（「这片/该片 wafer」+「聚集/集中分布」，排除给了具体片号者）；`agentLoop.ts` `tryRunDeterministicJbSummary` + fallback 在 query_jb_bins 单片空间聚集问题时 `[jbDeterministic/singleWaferClusterBail]` 日志 + bail，修掉整 lot BIN 趋势警示表"套话"劫持；`agentPrompt.ts` 改为「device+lot+slot 已知时直接 `inf_cluster_detect`，勿先 `query_jb_bins`」
+- `agentPrompt.ts`：DUT×BIN 路由行强化「是否聚集到某个 DUT / BINxx 是否集中在某 DUT」追问 → `query_lot_dut_bin_agg(device, focusBin)`，明确禁止用 `aggregate_jb_bins(groupBy:"bin,lot")` 代答（lot 维度答不了哪个 DUT）
+- `agentToolHandlers.ts`（**dummy-parity 真 bug**）：`aggregate_jb_bins` / `aggregate_yield_triggers` 的 **dummy 分支**原返回嵌套组 `{key, parts:{bin,lot}, count}`，而 **Oracle 分支**返回展平 `{bin, lot, count}`——所有确定性渲染器读 `g["bin"]`/`g["lot"]` 在 dummy 下恒空、与生产分叉（即 P2 链路 dummy 下不渲染的根因）。已将 dummy 组展平 `{...g.parts, count: g.count}` 与 Oracle 对齐
+- P1/P6（get_filter_values 返回空）：用 docs 两个 xlsx（=Oracle 结构）实跑 device-by-mask（N57U/P55A）与 probeCardType→卡号（8003/8041）枚举**全部正常**，逻辑无误 → 真库返空属部署（旧 dist 未 reload）/数据格式问题，看 `filterValues:*DeviceByMask:result` 的 rowCount/sampleDevices 与 SQL 日志定位
+- 新增验证文档 `docs/AGENT_FIX_VERIFICATION_2026-06-27.md`（P1–P7 验证问答 + dummy 等价对象 + 实测结果）
+- 测试：`agentJbDeterministicReply.test.ts`（+`buildBinFocusedLotRankingMarkdown` 3 例、`isSingleWaferDieClusterQuestion`、`isCardTypeLevelOverviewQuestion`）、`agentFilterValues.test.ts`（P1/P6 会话形状 3 例）、`agentAggregateGuard.test.ts`（dummy-parity 展平 2 例）；live DeepSeek-V4-Pro + dummy 实测 P2 链路、P5 跨卡型综述通过
+
+**测试：** 394 个测试，392 通过、2 跳过（既有）、0 失败；`tsc --noEmit` 通过
+
+---
+
 ## 2026-06-27 — 续评审修复：mask 级概况/卡归属误答 + bin×card 聚合渲染 + 多 lot 对比 bail
 
 **完成内容：**

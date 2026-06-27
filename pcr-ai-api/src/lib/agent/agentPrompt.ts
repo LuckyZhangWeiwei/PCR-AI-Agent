@@ -114,8 +114,8 @@ const SEC_ROUTING = `\
 | lot 良率 / 坏 bin 数量 / 批次概况 | \`query_jb_bins\` / \`query_yield_triggers\`（Oracle） | 调用任何 \`inf_*\` 工具 |
 | 报警次数 / DUT 不均衡趋势 | \`query_yield_triggers\` / \`aggregate_yield_triggers\` | 调用 \`inf_*\` 工具 |
 | **「lot 坏 bin 聚集/突增」**（批次级） | \`query_jb_bins(lot)\` 读 \`clusteredBadBinAlerts\`（Oracle，已预计算） | 调用 \`inf_cluster_detect\`（那是 die 级坐标聚集） |
-| **「这片 wafer 坏 die 是否形成 cluster」**（die 级） | 先 \`query_jb_bins\` → 再 \`inf_cluster_detect\` | 只看 JB 表格就下「无聚集」结论 |
-| **DUT×BIN 数量汇总**（哪个DUT坏bin最多/各DUT数量/**某BIN集中在哪些DUT**）| \`query_inf_site_bin_by_dut\`（单片）/ \`query_lot_dut_bin_agg\`（整批，可传 \`focusBin\`），始终可用 | 跳过第一级直接调 \`inf_site_stats\` 或 \`inf_draw_dut_bin_map\` |
+| **「这片 wafer 坏 die 是否形成 cluster / 空间聚集」**（die 级，指代上下文某片） | device+lot+slot **已在本轮历史确知**（前轮 \`query_jb_bins\` / wafer map）→ **直接** \`inf_cluster_detect(device, lot, slot)\`；**勿**再 \`query_jb_bins(lot)\`（会触发整 lot 警示表答非所问）。仅当 device/slot 未知时才先 \`query_jb_bins\` 取参 | 用整 lot 的 \`clusteredBadBinAlerts\` 表当「这片」的空间聚集结论；只看 JB 表格就下「无聚集」结论 |
+| **DUT×BIN 数量汇总**（哪个DUT坏bin最多/各DUT数量/**某BIN集中在哪些DUT**/**「是否聚集到某个DUT」「BINxx是否集中在某DUT」**，含承接前轮卡级结论的追问）| \`query_lot_dut_bin_agg(device, focusBin=<上一轮的BIN>)\`（整批，跨 lot）/ \`query_inf_site_bin_by_dut\`（单片），始终可用；**禁止**用 \`aggregate_jb_bins(groupBy:"bin,lot")\` 代答（那是 lot 维度，回答不了「哪个 DUT」） | 跳过第一级直接调 \`inf_site_stats\` 或 \`inf_draw_dut_bin_map\`；用 lot 排行表当 DUT 聚集结论 |
 | **DUT 良率诊断 / 偏位 / 视觉图**（die 级）| 先第一级查数量 → 再 \`inf_site_stats\` → 再 \`inf_draw_dut_bin_map\` | 仅凭 JB STAR 就声称「DUT 正常」|
 | **各DUT良率柱状图 / DUT yield分布图**（yield% per DUT） | \`inf_site_stats(device, lot, slot)\` 取数 → \`generate_chart(chartType=bar, title="各DUT良率%", data={labels:["DUT1",...],series:[{name:"良率%",values:[yield×100,...]}]})\` | \`inf_draw_wafer_map\`（die 坐标图，无法展示 DUT 良率统计） |
 | **Touchdown / 探针接触次数**（单片或指定 slot） | \`query_jb_bins(lot)\` 取 device → \`inf_touch_analysis(device, lot, slot)\` | 用 JB 表格回答（JB 无 touch 字段） |
@@ -144,7 +144,7 @@ const SEC_ROUTING = `\
 
 **「聚集」判断规则（易混淆）：**
 - 用户说「**lot** 有没有聚集坏 bin」「**批次**坏 bin 突增」→ JB STAR 预计算，读 \`clusteredBadBinAlerts\`，**不调 \`inf_cluster_detect\`**
-- 用户说「**这片 wafer**（第 N 片）坏 die 在哪」「die 级 cluster」「想看空间分布」→ 需要 INF，调 \`inf_cluster_detect(device, lot, slot)\`
+- 用户说「**这片 wafer**（第 N 片 / 上下文指代的「这片」）坏 die 在哪」「die 级 cluster」「想看空间分布」→ 需要 INF，调 \`inf_cluster_detect(device, lot, slot)\`；**device+lot+slot 若已在历史确知（含上一轮 wafer map 的片），直接调，勿先 \`query_jb_bins(lot)\`**（那会让服务端直出整 lot 警示表，答非所问）
 - 两者区别：lot 级用"批次""lot"，die 级用"片""wafer""坐标""位置"
 
 **画晶圆图硬规则（四步固定流程）：**

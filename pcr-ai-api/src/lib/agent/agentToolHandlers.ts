@@ -206,7 +206,12 @@ async function toolAggregateYieldTriggers(
       parsed.dimensions as YieldMonitorV3AggDim[],
       parsed.groupTop
     );
-    return truncateResult(result, maxChars);
+    // dummy-parity：与 Oracle 路径（builtGroups）一致展平 { key, parts, count } → { ...parts, count }。
+    const flatGroups = result.groups.map((g) => ({ ...g.parts, count: g.count }));
+    return truncateResult(
+      { totalRowsMatching: result.totalRowsMatching, groups: flatGroups },
+      maxChars
+    );
   }
 
   const sql = buildYieldMonitorTriggerV3AggregateSql(
@@ -447,7 +452,15 @@ async function toolAggregateJbBins(
       parsed.groupBy as InfcontrolLayerBinGroupBy[],
       parsed.groupTop
     );
-    return truncateResult(result, maxChars);
+    // dummy-parity：Oracle 路径将组展平为 { bin, lot, cardId, count }（见下方 builtGroups）。
+    // Dummy 原始组为 { key, parts:{...}, count } 嵌套——必须同样展平，否则确定性渲染器
+    // （buildMultiLotBinTable / buildBinFocusedLotRankingMarkdown / buildBinCardAggregateMarkdown）
+    // 读 g["bin"]/g["lot"] 在 dummy 下恒为空，dummy 与 Oracle 行为分叉。
+    const flatGroups = result.groups.map((g) => ({ ...g.parts, count: g.count }));
+    return truncateResult(
+      { totalRowsMatching: result.totalRowsMatching, groups: flatGroups },
+      maxChars
+    );
   }
 
   const sql = buildInfcontrolLayerBinAggregateSql(

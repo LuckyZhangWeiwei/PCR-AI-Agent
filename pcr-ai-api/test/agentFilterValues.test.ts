@@ -161,6 +161,53 @@ test("jb/device resolves mask P02G in Dummy mode", async () => {
   assert.ok(result.totalDistinct >= 1, "jb dummy should also match P02G");
 });
 
+// P1 回归：会话调用形状 = { domain:"both", field:"device", mask:<顶层> }（mask 不在 filterBy）。
+// 真实会话里此调用对 P11C/N55Z 返回空；xlsx(=Oracle 结构) 下对存在的 mask 必须返回数据，
+// 证明 device-by-mask 逻辑正确——真库空属部署/数据问题，非代码逻辑。
+test("P1 both/device with TOP-LEVEL mask (session shape) returns the device", async () => {
+  const raw = await runGetFilterValues({
+    domain: "both",
+    field: "device",
+    mask: "N57U", // 存在于 dummy(JB WB10N57U/WL10N57U)，等价真库 WB01P11C→P11C
+  });
+  const result = JSON.parse(raw) as {
+    totalDistinct: number;
+    devices?: Array<{ device: string }>;
+  };
+  assert.ok(
+    result.totalDistinct >= 1,
+    `top-level mask N57U should resolve devices, got ${result.totalDistinct}`
+  );
+  assert.ok((result.devices ?? []).some((d) => d.device.endsWith("N57U")));
+});
+
+// P6 回归：会话调用形状 = { domain:"jb", field:"cardId", filterBy:{probeCardType} }。
+// 真实会话里对 9416 返回空；xlsx 下对存在的卡型必须枚举出具体卡号。
+test("P6 jb/cardId by probeCardType (session shape) enumerates concrete cards", async () => {
+  const raw = await runGetFilterValues({
+    domain: "jb",
+    field: "cardId",
+    filterBy: { probeCardType: "8003" }, // 存在于 dummy JB，等价真库 9416
+  });
+  const result = JSON.parse(raw) as { totalDistinct: number; values: string[] };
+  assert.ok(
+    result.totalDistinct >= 1,
+    `probeCardType 8003 should enumerate cards, got ${result.totalDistinct}`
+  );
+  assert.ok(result.values.every((v) => v.startsWith("8003-")), result.values.join(","));
+});
+
+test("P6 yield/probeCard by probeCardType (session shape) enumerates concrete cards", async () => {
+  const raw = await runGetFilterValues({
+    domain: "yield",
+    field: "probeCard",
+    filterBy: { probeCardType: "8041" },
+  });
+  const result = JSON.parse(raw) as { totalDistinct: number; values: string[] };
+  assert.ok(result.totalDistinct >= 1, `probeCardType 8041 should enumerate cards`);
+  assert.ok(result.values.every((v) => v.startsWith("8041-")), result.values.join(","));
+});
+
 test("both/device merges yield+jb mask hits (N84R: WC07 in yield, WC06 in jb)", async () => {
   const raw = await runGetFilterValues({
     domain: "both",
