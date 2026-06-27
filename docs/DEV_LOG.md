@@ -2,6 +2,18 @@
 
 ---
 
+## 2026-06-27（第三轮·P-C 真因）— equipment 直连路由缺多卡对比 bail
+
+**背景：** Cursor 真库 curl 验证（见 [`HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md`](HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md) §3.2）发现 P-C「把这4张probecard的测试情况做对比」**远程 SSE 严格 FAIL**——仍 0.0s 秒回单 lot DR44436.1W 卡表（仅 9416-03）。
+
+**真因（Claude Code 复审定位）：** 我上一轮的 P-C 修复只动了 `detectJbReplyMode`（在 `buildDeterministicJbTables` / 总结轮 `tryRunDeterministicJbSummary` 路径）。但 **`agentLoop.ts` 的 `tryRunEquipmentDirectRoute`（LLM 调用前的直连路由，0.0s 秒回的来源）在它之前就截胡了**——该路由只判 `isProbeCardQuestion` / `isTesterMachineQuestion`，有 binOnCard / crossLot / staleCache 三个 bail，**独缺多卡对比 bail**。「4张probecard」命中 `isProbeCardQuestion` → 直连吐单 lot 缓存 equipment 表，**绕过了 detectJbReplyMode**。即使部署 `ce96b91` 也仍会 FAIL。
+
+**修复：** `tryRunEquipmentDirectRoute` 加 `isMultiCardComparisonQuestion` bail（`[equipmentRoute/skip:multiCardCompare]` 日志 + return false），与 detectJbReplyMode 的 generic bail 共用同一检测函数。多卡对比不再走单批缓存直连，交回 LLM 做跨卡综述。
+
+**测试：** 398 个，396 通过、2 跳过、0 失败；typecheck 通过。`isMultiCardComparisonQuestion` 单测已覆盖检测；该函数现被 detectJbReplyMode + equipment 直连两处共用。**待部署后真库 curl 复验 P-C。**
+
+---
+
 ## 2026-06-27（Cursor 闭环）— P-A 探针定位 Oracle 空串陷阱 + P-B/C/D 真库 curl + P-F 实现
 
 **完整验证记录（给 Claude Code）：** [`HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md`](HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md)

@@ -54,6 +54,7 @@ import {
   buildLotListingContext,
   isPerSlotBadBinRankingQuestion,
   isProbeCardQuestion,
+  isMultiCardComparisonQuestion,
   isBinCardAttributionQuestion,
   isTesterMachineQuestion,
   jbReplySkipsCommentaryLlm,
@@ -1502,6 +1503,15 @@ async function tryRunEquipmentDirectRoute(
     console.warn(
       `[equipmentRoute/skip:binOnCard] BIN-on-card 归因需 aggregate_jb_bins(groupBy:"bin,cardId")，` +
         `不吐缓存 equipment 表：「${userQuestion.slice(0, 50)}」`
+    );
+    return false;
+  }
+  // 多卡「测试情况对比」：需跨卡综述（detectJbReplyMode 已 bail 回 generic 交回 LLM），
+  // 不能在此 LLM 前直连吐单 lot 缓存 equipment 表（否则 0.0s 秒回单卡表、答非所问 —— P-C 真因）。
+  if (isMultiCardComparisonQuestion(userQuestion)) {
+    console.warn(
+      `[equipmentRoute/skip:multiCardCompare] 多卡对比需跨卡综述，不吐单 lot 缓存 equipment 表：` +
+        `「${userQuestion.slice(0, 50)}」`
     );
     return false;
   }
