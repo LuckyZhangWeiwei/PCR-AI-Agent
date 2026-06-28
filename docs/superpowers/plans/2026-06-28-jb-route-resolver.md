@@ -313,17 +313,17 @@ Expected: 该断言 PASS(parity 已保证);若引用未编译则先补 import。
 
 - [ ] **Step 3: 实现 —— 替换收口点的重算与守卫**
 
-在 `emitDeterministicJbTablesReply`(agentLoop.ts:916)开头,把现有多卡守卫(`5df7c9a` 加的 `if (isMultiCardComparisonQuestion(userQuestion)) return false;`)替换为:
+在 `emitDeterministicJbTablesReply`(agentLoop.ts:916)开头计算一次 decision,**保留**现有多卡守卫的精确语义(只 bail 多卡;**不要**用 `decision.mode === "generic"` ——那会把条件推理/fallback 等其它 generic 也误 bail,破坏 Phase-1 等价,实测为回归):
 
 ```ts
 const decision = resolveJbRoute(userQuestion, getHistory(sessionId), payload);
-if (decision.mode === "generic") {
-  console.warn(`[jbDeterministic/routeGeneric] mode=generic 交回 LLM:「${userQuestion.slice(0,50)}」(${decision.reason})`);
+if (isMultiCardComparisonQuestion(userQuestion)) {
+  console.warn(`[jbDeterministic/multiCardCompareBail] 多卡对比交回 LLM:「${userQuestion.slice(0,50)}」`);
   return false;
 }
 ```
 
-并把 line 944 `const mode = detectJbReplyMode(userQuestion);` 改为 `const mode = decision.mode;`,把 `buildDeterministicJbTables(userQuestion, payload, listingCtx)` 改为 `buildDeterministicJbTables(userQuestion, payload, listingCtx, decision.mode)`。
+并把 line 944 `const mode = detectJbReplyMode(userQuestion);` 改为 `const mode = decision.mode;`(dedup;parity 保证等价),把 `buildDeterministicJbTables(userQuestion, payload, listingCtx)` 改为 `buildDeterministicJbTables(userQuestion, payload, listingCtx, decision.mode)`。**不要**改动 chart-emit 分支的 `mode === "generic" || mode === "lot_overview"`(generic 仍可达)。
 
 - [ ] **Step 4: 全量回归**
 
