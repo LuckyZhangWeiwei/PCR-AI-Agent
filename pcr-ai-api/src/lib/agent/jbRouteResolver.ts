@@ -5,6 +5,8 @@ import {
   extractSlotFromUserText,
 } from "./agentJbDeterministicReply.js";
 import { extractLotFromUserText } from "./agentInfWaferMapTool.js";
+import { callJbIntentClassifier, type ChatFn } from "./jbIntentClassifier.js";
+import type { AgentConfig } from "./agentConfig.js";
 
 export interface JbRouteParams {
   focusBin?: number;
@@ -52,5 +54,34 @@ export function resolveJbRoute(
     confidence: "high",
     params: extractJbRouteParams(q),
     reason: `detectJbReplyMode → ${mode}`,
+  };
+}
+
+function isAmbiguous(q: string): boolean {
+  // 无 lot 锚点 + 短/口语 → 模糊;有明确 lot 号的不进 LLM(同步已足够)
+  return !/[A-Z]{2}\d{4,}\.\d?[A-Z]?/i.test(q);
+}
+
+export async function resolveJbRouteAsync(
+  q: string,
+  ctx: { lastToolName?: string; cachedLot?: string },
+  agentConfig: AgentConfig,
+  deps?: { chat?: ChatFn },
+  history?: unknown,
+  payload?: Record<string, unknown>
+): Promise<JbRouteDecision> {
+  const base = resolveJbRoute(q, history, payload);
+  if (process.env.JB_LLM_INTENT_CLASSIFIER !== "true") return base;
+  if (base.mode !== "generic" || !isAmbiguous(q)) return base;
+  const r = await callJbIntentClassifier(q, ctx, agentConfig, deps);
+  if (!r) {
+    return { ...base, source: "default", confidence: "low", reason: "LLM 分类失败,降级 generic" };
+  }
+  return {
+    mode: r.mode,
+    source: "llm",
+    confidence: r.confidence,
+    params: { ...base.params, ...r.params },
+    reason: `LLM 分类 → ${r.mode}`,
   };
 }

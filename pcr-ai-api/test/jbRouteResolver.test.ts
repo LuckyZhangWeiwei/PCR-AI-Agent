@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { extractJbRouteParams, resolveJbRoute } from "../src/lib/agent/jbRouteResolver.js";
+import { extractJbRouteParams, resolveJbRoute, resolveJbRouteAsync } from "../src/lib/agent/jbRouteResolver.js";
 import { detectJbReplyMode } from "../src/lib/agent/agentJbDeterministicReply.js";
 
 test("extractJbRouteParams pulls focusBin and lot", () => {
@@ -37,4 +37,29 @@ test("resolveJbRoute carries source=regex and params", () => {
   const d = resolveJbRoute("NF13322.1J 哪片 bin79 最多");
   assert.equal(d.source, "regex");
   assert.equal(d.params.focusBin, 79);
+});
+
+test("开关关 → 不调分类器,等于同步结果", async () => {
+  delete process.env.JB_LLM_INTENT_CLASSIFIER;
+  const chat = async () => '{"mode":"equipment"}';
+  const d = await resolveJbRouteAsync("这几张卡咋样", {}, { subAgentModel: "x" } as any, { chat });
+  assert.equal(d.source, "regex");          // 未走 LLM
+});
+
+test("开关开 + 同步 generic + 模糊 → 用分类器结果", async () => {
+  process.env.JB_LLM_INTENT_CLASSIFIER = "true";
+  const chat = async () => '{"mode":"card_test_overview","confidence":"high"}';
+  const d = await resolveJbRouteAsync("这几张卡最近咋样", {}, { subAgentModel: "x" } as any, { chat });
+  assert.equal(d.mode, "card_test_overview");
+  assert.equal(d.source, "llm");
+  delete process.env.JB_LLM_INTENT_CLASSIFIER;
+});
+
+test("开关开 + 分类器 null → 降级 generic", async () => {
+  process.env.JB_LLM_INTENT_CLASSIFIER = "true";
+  const chat = async () => "garbage";
+  const d = await resolveJbRouteAsync("这几张卡最近咋样", {}, { subAgentModel: "x" } as any, { chat });
+  assert.equal(d.mode, "generic");
+  assert.equal(d.source, "default");
+  delete process.env.JB_LLM_INTENT_CLASSIFIER;
 });
