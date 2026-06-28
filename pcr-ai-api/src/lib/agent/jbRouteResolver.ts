@@ -58,8 +58,9 @@ export function resolveJbRoute(
 }
 
 function isAmbiguous(q: string): boolean {
-  // 无 lot 锚点 + 短/口语 → 模糊;有明确 lot 号的不进 LLM(同步已足够)
-  return !/[A-Z]{2}\d{4,}\.\d?[A-Z]?/i.test(q);
+  // 无 lot 锚点 → 模糊,才进 LLM 兜底;有明确 lot 号的同步已足够。
+  // 复用 extractLotFromUserText(与 params 抽取同源),避免再写一份 lot 正则导致长期漂移。
+  return !extractLotFromUserText(q);
 }
 
 export async function resolveJbRouteAsync(

@@ -44,13 +44,18 @@ export async function callJbIntentClassifier(
   const chat = deps?.chat ?? defaultChat;
   const prompt = `问题:${q}\n上一工具:${ctx.lastToolName ?? "无"}\n缓存lot:${ctx.cachedLot ?? "无"}`;
   let raw: string;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     raw = await Promise.race([
       chat(prompt, agentConfig),
-      new Promise<string>((_, rej) => setTimeout(() => rej(new Error("timeout")), 4000)),
+      new Promise<string>((_, rej) => {
+        timer = setTimeout(() => rej(new Error("timeout")), 4000);
+      }),
     ]);
   } catch {
     return null;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
   const m = raw.match(/\{[\s\S]*\}/);
   if (!m) return null;

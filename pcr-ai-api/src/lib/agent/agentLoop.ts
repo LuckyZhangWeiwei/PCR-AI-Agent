@@ -39,7 +39,6 @@ import {
   buildAggregateBinRankingMarkdown,
   buildBinCardAggregateMarkdown,
   buildBinFocusedLotRankingMarkdown,
-  detectJbReplyMode,
   DETERMINISTIC_DATA_SECTION_TITLE,
   DETERMINISTIC_COMMENTARY_SECTION_TITLE,
   extractBinFromUserText,

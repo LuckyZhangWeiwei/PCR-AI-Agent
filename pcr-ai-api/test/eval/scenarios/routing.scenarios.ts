@@ -139,11 +139,15 @@ export const routingScenarios: EvalScenario[] = [
     live: true,
     run: async () => {
       process.env.JB_LLM_INTENT_CLASSIFIER = "true";
-      const { resolveJbRouteAsync } = await import("../../../src/lib/agent/jbRouteResolver.js");
-      const d = await resolveJbRouteAsync("这几张卡最近咋样", {}, { subAgentModel: process.env.AGENT_SUBAGENT_MODEL } as any);
-      return d.mode === "lot_overview"
-        ? { pass: false, detail: "模糊多卡问被判 lot_overview(应 generic/card_test_overview)" }
-        : { pass: true };
+      try {
+        const { resolveJbRouteAsync } = await import("../../../src/lib/agent/jbRouteResolver.js");
+        const d = await resolveJbRouteAsync("这几张卡最近咋样", {}, { subAgentModel: process.env.AGENT_SUBAGENT_MODEL } as any);
+        return d.mode === "lot_overview"
+          ? { pass: false, detail: "模糊多卡问被判 lot_overview(应 generic/card_test_overview)" }
+          : { pass: true };
+      } finally {
+        delete process.env.JB_LLM_INTENT_CLASSIFIER;
+      }
     },
   },
 ];
