@@ -27,6 +27,8 @@
 |---|---|---|
 | `pcr-ai-api/src/lib/agent/jbRouteResolver.ts` | `JbRouteDecision` 类型、`JbRouteParams` 抽取、`resolveJbRoute`(阶段 0 纯正则;阶段 2 加 LLM 段) | 新建 |
 | `pcr-ai-api/src/lib/agent/jbIntentClassifier.ts` | `callJbIntentClassifier`(LLM 兜底,阶段 2) | 新建 |
+| `pcr-ai-api/src/lib/agent/jbPreLlmDispatch.ts` | pre-LLM 直连调度纯谓词 + `mode→route` 表(范围 B,阶段 1b) | 新建 |
+| `pcr-ai-api/test/jbPreLlmDispatch.test.ts` | 调度 parity(new vs old) | 新建 |
 | `pcr-ai-api/src/lib/agent/agentJbDeterministicReply.ts` | `buildDeterministicJbTables` 增可选 `modeOverride`;`detectJbReplyMode` 保留 | 改 |
 | `pcr-ai-api/src/lib/agent/agentLoop.ts` | dispatch 表 + 消费 `resolveJbRoute`;`emitDeterministicJbTablesReply` 吃 `decision` | 改 |
 | `pcr-ai-api/test/jbRouteResolver.test.ts` | resolver 单测 + parity(新 vs 旧) | 新建 |
@@ -396,6 +398,226 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 ---
 
+# 阶段 1b:13 条直连 → 声明式 dispatch 表(范围 B,spec §4.2)
+
+> **设计:** agentLoop 的 `if (!awaitingSummary)` 块里 5 条 pre-LLM 直连(顺序:lot_listing → scopedBadBin → lot_overview → equipment → perSlot)的**文本门槛**替换为"一次 `resolveJbRoute` + 表查找"。**关键纪律:** 表只按文本选路由;每条 runner **保留其运行时 guard**(equipment 的 `crossLot`/`staleCache`、payload 缺失等——这些非纯文本,继续在 runner 内 `return false` 兜底交回 LLM)。等价性用**纯谓词 parity** 证明。
+>
+> **确认的门槛函数:** `canRunLotListingDirectRoute(text)`(agentJbLotListingRoute.ts:17)、`canRunScopedBadBinDirectRoute(text, history)`(agentJbScopedBadBinRoute.ts:21)、`canRunLotOverviewDirectRoute(text)`(agentJbOverviewRoute.ts:14)、equipment 内联(`isProbeCardQuestion(text)||isTesterMachineQuestion(text)`)、`isPerSlotBadBinRankingQuestion(text)`(agentJbDeterministicReply.ts:376)。
+
+### Task 5b: 抽取当前调度的纯谓词 + 刻画 parity 基线
+
+**Files:**
+- Create: `pcr-ai-api/src/lib/agent/jbPreLlmDispatch.ts`
+- Test: `pcr-ai-api/test/jbPreLlmDispatch.test.ts`
+
+**Interfaces:**
+- Produces:
+  - `type PreLlmRouteId = "lot_listing" | "scoped_bad_bin" | "lot_overview" | "equipment" | "per_slot" | null`
+  - `function pickPreLlmRouteOld(q: string, history: ChatMessage[]): PreLlmRouteId` —— 复刻**当前** if 链:按序返回第一个文本门槛为真者。
+
+- [ ] **Step 1: 写测试(刻画当前调度的文本选择)**
+
+```ts
+// test/jbPreLlmDispatch.test.ts
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { pickPreLlmRouteOld } from "../src/lib/agent/jbPreLlmDispatch.js";
+
+test("equipment 单 lot 用卡 → equipment", () => {
+  assert.equal(pickPreLlmRouteOld("DR44436.1W 用几号卡测试的", []), "equipment");
+});
+test("lot 列表口语 → lot_listing", () => {
+  assert.equal(pickPreLlmRouteOld("WA01P14E 在 b3uflex24 近3个月测试的所有lot都列出来", []), "lot_listing");
+});
+test("多卡对比 → null(交回 LLM)", () => {
+  assert.equal(pickPreLlmRouteOld("把这4张probecard的测试情况做对比", []), null);
+});
+```
+
+- [ ] **Step 2: 跑测试确认失败**
+
+Run: `cd pcr-ai-api && npx tsx --test test/jbPreLlmDispatch.test.ts`
+Expected: FAIL —— 模块不存在。
+
+- [ ] **Step 3: 实现(按现有 if 链顺序复刻)**
+
+```ts
+// src/lib/agent/jbPreLlmDispatch.ts
+import type { ChatMessage } from "./agentHistory.js";
+import { canRunLotListingDirectRoute } from "./agentJbLotListingRoute.js";
+import { canRunScopedBadBinDirectRoute } from "./agentJbScopedBadBinRoute.js";
+import { canRunLotOverviewDirectRoute } from "./agentJbOverviewRoute.js";
+import {
+  isProbeCardQuestion,
+  isTesterMachineQuestion,
+  isPerSlotBadBinRankingQuestion,
+  isMultiCardComparisonQuestion,
+  isBinCardAttributionQuestion,
+} from "./agentJbDeterministicReply.js";
+
+export type PreLlmRouteId =
+  | "lot_listing" | "scoped_bad_bin" | "lot_overview" | "equipment" | "per_slot" | null;
+
+// equipment 文本门槛(运行时 crossLot/staleCache 不在此,留 runner 内兜底):
+// 与现 tryRunEquipmentDirectRoute 文本层一致——多卡对比 / binOnCard 先排除。
+function equipmentTextGate(q: string): boolean {
+  if (isMultiCardComparisonQuestion(q)) return false;
+  if (isBinCardAttributionQuestion(q)) return false;
+  return isProbeCardQuestion(q) || isTesterMachineQuestion(q);
+}
+
+export function pickPreLlmRouteOld(q: string, history: ChatMessage[]): PreLlmRouteId {
+  if (canRunLotListingDirectRoute(q)) return "lot_listing";
+  if (canRunScopedBadBinDirectRoute(q, history)) return "scoped_bad_bin";
+  if (canRunLotOverviewDirectRoute(q)) return "lot_overview";
+  if (equipmentTextGate(q)) return "equipment";
+  if (isPerSlotBadBinRankingQuestion(q)) return "per_slot";
+  return null;
+}
+```
+
+> 实现者注:照搬 agentLoop.ts:2709-2748 的**实际顺序与门槛**核对;若 equipment 文本门槛与现 `tryRunEquipmentDirectRoute` 开头(line 1494-1517)不一致,以 runner 为准修正本函数,使 parity 成立。
+
+- [ ] **Step 4: 跑测试确认通过**
+
+Run: `cd pcr-ai-api && npx tsx --test test/jbPreLlmDispatch.test.ts`
+Expected: PASS（3 项）。
+
+- [ ] **Step 5: 提交**
+
+```bash
+git add pcr-ai-api/src/lib/agent/jbPreLlmDispatch.ts pcr-ai-api/test/jbPreLlmDispatch.test.ts
+git commit -m "feat(agent): 抽取 pre-LLM 调度纯谓词 pickPreLlmRouteOld(阶段1b)
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
+```
+
+### Task 5c: `mode → PreLlmRouteId` 表 + parity 证明
+
+**Files:**
+- Modify: `pcr-ai-api/src/lib/agent/jbPreLlmDispatch.ts`
+- Test: `pcr-ai-api/test/jbPreLlmDispatch.test.ts`
+
+**Interfaces:**
+- Produces:
+  - `const MODE_TO_PRE_LLM_ROUTE: Partial<Record<JbReplyMode, Exclude<PreLlmRouteId, null>>>`
+  - `function pickPreLlmRouteNew(q: string, history: ChatMessage[]): PreLlmRouteId` —— `MODE_TO_PRE_LLM_ROUTE[resolveJbRoute(q).mode] ?? null`。
+- 契约:对语料 `pickPreLlmRouteNew === pickPreLlmRouteOld`。
+
+- [ ] **Step 1: 写 parity 测试(失败优先)**
+
+```ts
+import { pickPreLlmRouteNew } from "../src/lib/agent/jbPreLlmDispatch.js";
+
+const CORPUS = [
+  "DR44436.1W 用几号卡测试的",
+  "WA01P14E 在 b3uflex24 近3个月测试的所有lot都列出来",
+  "把这4张probecard的测试情况做对比",
+  "都测试了什么lot",
+  "NF13322.1J 哪片 bin79 最多",
+  "DR44117.1Y 整体测试情况",
+  "这批主要的fail bin有哪些",
+  "9416 卡的测试情况",
+  "N55Z bin35 是集中到哪张卡上的",
+  "第二片的测试情况",
+];
+
+test("pre-LLM 调度 parity: new === old", () => {
+  for (const q of CORPUS) {
+    assert.equal(pickPreLlmRouteNew(q, []), pickPreLlmRouteOld(q, []), `parity fail: ${q}`);
+  }
+});
+```
+
+- [ ] **Step 2: 跑测试确认失败**
+
+Run: `cd pcr-ai-api && npx tsx --test test/jbPreLlmDispatch.test.ts`
+Expected: FAIL —— `pickPreLlmRouteNew` 未定义。
+
+- [ ] **Step 3: 实现表 + new picker**
+
+```ts
+import { resolveJbRoute } from "./jbRouteResolver.js";
+import type { JbReplyMode } from "./agentJbDeterministicReply.js";
+
+const MODE_TO_PRE_LLM_ROUTE: Partial<Record<JbReplyMode, Exclude<PreLlmRouteId, null>>> = {
+  lot_listing: "lot_listing",
+  bad_bin_ranking: "scoped_bad_bin",
+  lot_overview: "lot_overview",
+  equipment: "equipment",
+  tester_machine: "equipment",
+  per_slot_bin_ranking: "per_slot",
+};
+
+export function pickPreLlmRouteNew(q: string, _history: ChatMessage[]): PreLlmRouteId {
+  return MODE_TO_PRE_LLM_ROUTE[resolveJbRoute(q).mode] ?? null;
+}
+```
+
+> 实现者注:若某条语料 parity 不过,**不是改语料**——而是核对 `MODE_TO_PRE_LLM_ROUTE` 映射或 `pickPreLlmRouteOld` 谓词哪个偏离真实 if 链,修到一致。parity 不过即代表表与现行为有差,必须查清。
+
+- [ ] **Step 4: 跑测试确认通过 + 全量回归**
+
+Run: `cd pcr-ai-api && npm test && npm run typecheck`
+Expected: PASS。
+
+- [ ] **Step 5: 提交**
+
+```bash
+git add pcr-ai-api/src/lib/agent/jbPreLlmDispatch.ts pcr-ai-api/test/jbPreLlmDispatch.test.ts
+git commit -m "feat(agent): mode→pre-LLM 路由表 + parity 证明(阶段1b)
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
+```
+
+### Task 5d: agentLoop 调度改用表(runner 保留运行时 guard)
+
+**Files:**
+- Modify: `pcr-ai-api/src/lib/agent/agentLoop.ts:2709-2748`
+- Test: 全量 `npm test` + eval
+
+**Interfaces:**
+- Consumes: `pickPreLlmRouteNew`(from `jbPreLlmDispatch.js`)。
+- 把 5 个顺序 `if (await tryRunXxx()) return;` 换成:先 `pickPreLlmRouteNew(userQuestion, history)` 选一条,再 `switch` 调对应 runner(runner **不动**,其内部文本门槛变冗余但保留作防御,运行时 guard 照旧)。
+
+- [ ] **Step 1: 实现替换**
+
+把 agentLoop.ts:2709-2748 的 5 连 if 改为:
+
+```ts
+if (!awaitingSummary) {
+  const preRoute = pickPreLlmRouteNew(userQuestion, history);
+  if (preRoute === "lot_listing") { if (await tryRunLotListingDirectRoute(sessionId, userQuestion, agentConfig, emit)) return; }
+  else if (preRoute === "scoped_bad_bin") { if (await tryRunScopedBadBinDirectRoute(sessionId, userQuestion, agentConfig, emit)) return; }
+  else if (preRoute === "lot_overview") { if (await tryRunLotOverviewDirectRoute(sessionId, userQuestion, agentConfig, emit)) return; }
+  else if (preRoute === "equipment") { if (await tryRunEquipmentDirectRoute(sessionId, userQuestion, agentConfig, emit)) return; }
+  else if (preRoute === "per_slot") { if (await tryRunPerSlotBinRankingDirectRoute(sessionId, userQuestion, agentConfig, emit)) return; }
+
+  // 以下保持原样(范围外:DUT-bin map / wafermap 自动取 device / wafer plan)
+  const dutBinDone = await tryRunDutBinMapDirectRoute(sessionId, userQuestion, emit);
+  if (dutBinDone) return;
+  // ...(wafer map 等原有逻辑不变)
+}
+```
+
+> runner 内部仍自检门槛 + 运行时 guard:若 `pickPreLlmRouteNew` 选了某条但其运行时 guard(crossLot/staleCache/payload 缺)不满足,runner `return false`,**自动落到 LLM 流程**(等价于今天该 guard 触发后的 fallthrough)。
+
+- [ ] **Step 2: 全量回归 + eval**
+
+Run: `cd pcr-ai-api && npm test && npm run typecheck && npx tsx test/eval/runEval.ts`
+Expected: 全 PASS;routing 类不回归。
+
+- [ ] **Step 3: 提交**
+
+```bash
+git add pcr-ai-api/src/lib/agent/agentLoop.ts
+git commit -m "refactor(agent): pre-LLM 直连调度改用声明式路由表(阶段1b/范围B)
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
+```
+
+---
+
 # 阶段 2:加 LLM 兜底(开关默认关)
 
 ### Task 6: `callJbIntentClassifier`(LLM 分类器,mock 可测)
@@ -738,6 +960,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 |---|---|
 | 0 | `resolveJbRoute(q).mode === detectJbReplyMode(q)` parity 全绿;`npm test` 398+ 全过 |
 | 1 | agentLoop 接线后 `npm test` + eval routing 全绿;行为等价 |
+| 1b | `pickPreLlmRouteNew === pickPreLlmRouteOld` parity 全绿;调度改表后 eval 不回归 |
 | 2 | 开关**关**时行为同阶段 1;开关开 + mock 分类器单测全绿;降级路径覆盖 |
 | 3 | 真库 `AGENT_EVAL_LIVE=1` + curl 比对;403 降级不报错 |
 
