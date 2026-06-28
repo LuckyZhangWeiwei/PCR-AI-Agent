@@ -672,4 +672,13 @@ describe("agentJbDeterministicReply", () => {
     assert.ok(ctx.includes("passId"));
     assert.ok(ctx.includes("换卡"));
   });
+
+  it("buildDeterministicJbTables 用 modeOverride 时不再自行 detect", () => {
+    const payload = { lot: "NF13322.1J", slotBadBinsCompact: [
+      { slot: 1, passId: 1, cardId: "9416-03", badBins: [{ bin: 35, dieCount: 418 }] },
+    ] };
+    // override 成 bad_bin_ranking,即使问句像 lot_overview
+    const md = buildDeterministicJbTables("NF13322.1J 整体测试情况", payload as any, undefined, "bad_bin_ranking");
+    assert.ok(md && md.length > 0);
+  });
 });

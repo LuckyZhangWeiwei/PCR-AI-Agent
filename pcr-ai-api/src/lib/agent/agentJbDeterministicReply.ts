@@ -1260,9 +1260,10 @@ function buildCardTestOverviewMarkdown(
 export function buildDeterministicJbTables(
   userMessage: string,
   toolPayload: Record<string, unknown>,
-  listingCtx?: Partial<LotListingContext>
+  listingCtx?: Partial<LotListingContext>,
+  modeOverride?: JbReplyMode
 ): string | null {
-  const mode = detectJbReplyMode(userMessage);
+  const mode = modeOverride ?? detectJbReplyMode(userMessage);
 
   if (mode === "lot_listing") {
     const detailed = isLotDetailListingQuestion(userMessage);
