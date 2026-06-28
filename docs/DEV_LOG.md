@@ -2,6 +2,22 @@
 
 ---
 
+## 2026-06-28（架构）— JB 路由收敛 resolveJbRoute + 混合(正则快路/LLM 兜底)
+
+**目标：** 彻底治理 JB 确定性表路由的「打地鼠」结构（三套重叠正则 + 顺序敏感调度 + 一轮重算意图 3+ 次）。spec `docs/superpowers/specs/2026-06-28-jb-route-resolver-design.md`、plan `docs/superpowers/plans/2026-06-28-jb-route-resolver.md`，subagent-driven 执行。
+
+**完成内容（绞杀者分阶段）：**
+- **阶段 0/1：单一真相源。** 新增 `jbRouteResolver.ts`：`JbRouteDecision` + 集中 params 抽取 + `resolveJbRoute`（纯正则,委托 `detectJbReplyMode`,parity 锁等价）。收口点 `emitDeterministicJbTablesReply` 改为一次 `resolveJbRoute` 并透传 `decision.mode`,消除两处重算。`buildDeterministicJbTables` 加 `modeOverride`。
+- **阶段 1b / 范围 B：声明式调度。** agentLoop 5 条 pre-LLM 直连 → `PRE_LLM_DIRECT_ROUTES` 有序数组循环（各 runner self-gate,逐字节等价）。注:probe 证实 `detectJbReplyMode` mode 与 `canRunXxx` 门槛非 1:1,故未按 mode 建表,改有序 runner 列表（用户裁定方案 A）。
+- **阶段 2：LLM 兜底（默认关）。** 新增 `jbIntentClassifier.ts`（DI 可测,失败返 null）；`resolveJbRouteAsync` 在 `JB_LLM_INTENT_CLASSIFIER=true` 且问句模糊(generic+无 lot 锚点)时调便宜模型分类,失败安全降级回 generic；收口点接 async。开关关 = 与今天逐字节等价。
+- **阶段 3：灰度。** routing eval 加历史痛点回归锁(多卡/equipment/lot列表/per-slot) + `live:true` 兜底场景(默认 skip)；`NEXT_STEPS_FOR_CURSOR` 加灰度复验清单。
+
+**关键修正（评审发现）：** 阶段 1 收口点守卫一度误用 `decision.mode === "generic"`（会 bail 非多卡 generic,回归),改回仅 `isMultiCardComparisonQuestion`。
+
+**测试：** 408 通过 / 2 跳过 / 0 失败；typecheck 干净；eval 37/37（routing 11/11）。纯路由层,不触发 dummy-parity。每任务独立提交 + 两段式评审。
+
+---
+
 ## 2026-06-28（重构）— 多卡对比 bail 收口到单一守卫点
 
 **背景：** P-C 之前修了三次（`detectJbReplyMode`→generic、`tryRunEquipmentDirectRoute` bail、`tryRunDeterministicJbSummary` summary bail），每次都因「同一意图、另一条路绕过」而补一处 bail。这是脆弱的「打地鼠」结构——下一条直连路由仍可能漏护。
