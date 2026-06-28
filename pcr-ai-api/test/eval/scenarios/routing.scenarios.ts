@@ -9,6 +9,7 @@ import { classifyIntent } from "../../../src/lib/agent/agentPrompt.js";
 import { buildJbScopeArgs } from "../../../src/lib/agent/agentQueryScope.js";
 import { detectPendingQuery } from "../../../src/lib/agent/agentPendingQuery.js";
 import { canRunLotListingDirectRoute } from "../../../src/lib/agent/agentJbLotListingRoute.js";
+import { resolveJbRoute } from "../../../src/lib/agent/jbRouteResolver.js";
 import type { ChatMessage } from "../../../src/lib/agent/agentHistory.js";
 import {
   expectEqual,
@@ -104,5 +105,31 @@ export const routingScenarios: EvalScenario[] = [
         canRunLotListingDirectRoute("WA01P14E 在 b3uflex24 台近3个月测试的所有lot都列出来"),
         "canRunLotListingDirectRoute"
       ),
+  },
+  {
+    id: "route-multi-card-compare-generic",
+    category: "routing",
+    title: "多卡对比 → generic(交回 LLM,不出单 lot 卡表)",
+    seed: "P-C 真因",
+    run: () => expectEqual(resolveJbRoute("把这4张probecard的测试情况做对比").mode, "generic", "mode"),
+  },
+  {
+    id: "route-equipment-single-lot",
+    category: "routing",
+    title: "单 lot 用卡问 → equipment",
+    run: () => expectEqual(resolveJbRoute("DR44436.1W 用几号卡测试的").mode, "equipment", "mode"),
+  },
+  {
+    id: "route-lot-listing-colloquial",
+    category: "routing",
+    title: "「都测试了什么lot」→ lot_listing",
+    seed: "P-B",
+    run: () => expectEqual(resolveJbRoute("都测试了什么lot").mode, "lot_listing", "mode"),
+  },
+  {
+    id: "route-per-slot-bin",
+    category: "routing",
+    title: "「每片坏die情况」→ per_slot_bin_ranking",
+    run: () => expectEqual(resolveJbRoute("每片坏die情况").mode, "per_slot_bin_ranking", "mode"),
   },
 ];
