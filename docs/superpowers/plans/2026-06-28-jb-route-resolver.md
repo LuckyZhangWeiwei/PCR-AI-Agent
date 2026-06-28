@@ -376,8 +376,9 @@ import { resolveJbRoute } from "../../../src/lib/agent/jbRouteResolver.js";
 {
   id: "route-per-slot-bin",
   category: "routing",
-  title: "「哪片 binNN 最多」→ per_slot_bin_ranking",
-  run: () => expectEqual(resolveJbRoute("NF13322.1J 哪片 bin79 最多").mode, "per_slot_bin_ranking", "mode"),
+  title: "「每片坏die情况」→ per_slot_bin_ranking",
+  // 注:带「最多/排名」会被更高优先级的 bad_bin_ranking 先判;逐片义需「每片/各片/逐片」+ 坏bin/坏die
+  run: () => expectEqual(resolveJbRoute("每片坏die情况").mode, "per_slot_bin_ranking", "mode"),
 },
 ```
 
