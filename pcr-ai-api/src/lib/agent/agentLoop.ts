@@ -2645,6 +2645,18 @@ export async function runAgentLoop(
     new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 5000)),
   ]).catch(() => undefined);
 
+  // 声明式有序直连调度表(范围 B / spec §4.2):取代原 5 条顺序 if。各 runner 内部 self-gate,
+  // 顺序即优先级,与旧 if 链按构造等价(同序、同 runner、同门槛)。新增 pre-LLM 直连只需加进此数组。
+  // 注:不按 detectJbReplyMode 的 mode 建表——mode 与 canRunXxx 门槛非 1:1(mode 更宽),
+  // 按 mode 路由会把门槛不满足的问句误路由;有序 runner 列表才是真正等价的声明式形式。
+  const PRE_LLM_DIRECT_ROUTES: Array<typeof tryRunLotListingDirectRoute> = [
+    tryRunLotListingDirectRoute,
+    tryRunScopedBadBinDirectRoute,
+    tryRunLotOverviewDirectRoute,
+    tryRunEquipmentDirectRoute,
+    tryRunPerSlotBinRankingDirectRoute,
+  ];
+
   const maxRounds = agentConfig.maxRounds;
   for (let round = 0; round < maxRounds; round++) {
     const history = getHistory(sessionId);
@@ -2704,45 +2716,11 @@ export async function runAgentLoop(
     }
 
     if (!awaitingSummary) {
-      const listingDone = await tryRunLotListingDirectRoute(
-        sessionId,
-        userQuestion,
-        agentConfig,
-        emit
-      );
-      if (listingDone) return;
-
-      const scopedBinDone = await tryRunScopedBadBinDirectRoute(
-        sessionId,
-        userQuestion,
-        agentConfig,
-        emit
-      );
-      if (scopedBinDone) return;
-
-      const overviewDone = await tryRunLotOverviewDirectRoute(
-        sessionId,
-        userQuestion,
-        agentConfig,
-        emit
-      );
-      if (overviewDone) return;
-
-      const equipmentDone = await tryRunEquipmentDirectRoute(
-        sessionId,
-        userQuestion,
-        agentConfig,
-        emit
-      );
-      if (equipmentDone) return;
-
-      const perSlotDone = await tryRunPerSlotBinRankingDirectRoute(
-        sessionId,
-        userQuestion,
-        agentConfig,
-        emit
-      );
-      if (perSlotDone) return;
+      // 有序直连调度:依次调用,首个返回 true 即结束;各 runner 内部 self-gate。
+      // 等价于原 5 条顺序 if(同序、同 runner、同门槛)。范围 B / spec §4.2。
+      for (const runDirectRoute of PRE_LLM_DIRECT_ROUTES) {
+        if (await runDirectRoute(sessionId, userQuestion, agentConfig, emit)) return;
+      }
 
       const dutBinDone = await tryRunDutBinMapDirectRoute(
         sessionId,
