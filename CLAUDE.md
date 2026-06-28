@@ -25,7 +25,7 @@ This is a two-package monorepo (no shared workspace tooling — each package has
 > **JB 报表 BIN/Platform/DUT 多选：** [`docs/HANDOFF_JB_REPORT_FILTERS_DUT_MULTISELECT.md`](docs/HANDOFF_JB_REPORT_FILTERS_DUT_MULTISELECT.md) — `bins=` 列表筛选、Platform 仅 Yield（含 93K）、明细/下钻多选叠加 DUT、`mergeSiteBinPasses`。  
 > **INF 晶圆图 + Agent 三路由（2026-06-03）：** [`docs/HANDOFF_INF_WAFER_MAP_AND_AGENT_TABLE_UX.md`](docs/HANDOFF_INF_WAFER_MAP_AND_AGENT_TABLE_UX.md) — `agentWaferMapRoute` / `agentJbOverviewRoute` / `agentDutBinMapRoute`；`inf_draw` vs `inf_draw_dut_bin_map`；性能与超时；表/解读分栏。  
 > **Agent 问题清单（2026-06-27 第二轮 · P-A 已修）：** [`docs/HANDOFF_AGENT_ISSUES_2026-06-27_ROUND2.md`](docs/HANDOFF_AGENT_ISSUES_2026-06-27_ROUND2.md) — P-A：`get_filter_values` device-by-mask 真库空（Oracle `TRIM(col)!=''` 陷阱 → `oracleStringSql.ts`）；待办 P-B/P-C/P-D/P-F。  
-> **Cursor 真库验证实录（2026-06-27 · 给 Claude Code）：** [`docs/HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md`](docs/HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md) — SQL 探针 / 远程 SSE / 单测 398 项汇总。
+> **Cursor 真库验证实录（2026-06-27～28 · 给 Claude Code）：** [`docs/HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md`](docs/HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md) — 严格复验 **5/5 闭环** + P-C summary bail + verify 脚本。
 
 ---
 

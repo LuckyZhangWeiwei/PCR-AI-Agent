@@ -129,6 +129,7 @@ describe("agentJbDeterministicReply", () => {
   it("P-C: multi-card comparison bails to generic, single-card stays equipment", () => {
     for (const q of [
       "把这4张probecard 的测试情况 做一个对比",
+      "把这4张probecard的测试情况做对比",
       "这几张卡分别怎样",
       "9416-01 和 9416-04 对比一下",
     ]) {

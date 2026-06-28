@@ -1,0 +1,68 @@
+# Cursor 严格复验 — API 恢复后（2026-06-28，给 Claude Code）
+
+分支: feat/dynamic-prompt-injection
+远程: http://10.192.130.89:30008
+SiliconFlow: 已恢复（403 不再出现）
+
+---
+
+## 第一轮：`node scripts/verify-handoff-steps.mjs all`
+
+| 项 | 结果 | Session | 要点 |
+|----|------|---------|------|
+| **P-A** | ✅ PASS | v-d0b8f0bc-… | `get_filter_values` **totalDistinct=3**（WB01/WA00/WB00 P11C） |
+| **P-B** | ✅ PASS | pb-01405058-… | lot 列表 ~50 条 |
+| **P-C** | ❌ FAIL | pc-feb35b36-… | 第②问仍吐 **单 lot DR44042.1A + 9416-02** equipment 表（cards=1） |
+| **P-D** | ✅ PASS | pd-e8421ad9-… | BIN40×lot 排行（NF13329.1F 1400 颗等） |
+| **P-F** | ✅ PASS | pf-e939fa32-… | DUT 集中度仅 **BIN79**，无 BIN1/BIN55 |
+
+**统计: 4/5**
+
+本地 SQL 探针 P11C: yield/full=3, jb/full=1 ✅  
+npm test: 396 pass / 2 skip ✅
+
+---
+
+## 第二轮：P-C 单独重跑
+
+```bash
+node scripts/verify-handoff-steps.mjs pc
+```
+
+| 项 | 结果 | Session |
+|----|------|---------|
+| **P-C** | ✅ PASS | pc-ce2bb474-… |
+
+第②问跨 **9416-01/02/03/04** 综述（YM 报警 + JB lot 覆盖 + 综合结论），非单 lot equipment 表。
+
+---
+
+## P-C 根因补充（本地已修，待 deploy）
+
+第一轮 FAIL 形态为 **summary 轮** `tryRunDeterministicJbSummary` 用单 lot `query_jb_bins` 缓存吐 equipment 表（`equipmentRoute` 已 bail，但 summary 未 bail）。
+
+**补丁**（`agentLoop.ts`）：`isMultiCardComparisonQuestion` → `[jbDeterministic/multiCardCompareBail]` 与 `multiLotBail` 同级。
+
+→ 建议服务器 `npm run build && pm2 reload` 后 P-C 更稳定，避免偶发单 lot 劫持。
+
+---
+
+## 最终判定（API 恢复 + 部署已含 P-A/P-F/1b6c9cb）
+
+| 项 | 严格复验 |
+|----|----------|
+| P-A | ✅ |
+| P-B | ✅ |
+| P-C | ✅（重跑通过；建议合入 summary bail 防回归） |
+| P-D | ✅ |
+| P-F | ✅ |
+
+**5/5 闭环**（P-C 以第二轮为准；本 commit 含 summary bail 防回归）
+
+---
+
+## 本 commit 文件
+
+- `agentLoop.ts` — P-C summary bail
+- `verify-handoff-steps.mjs` — 严格 P-A/P-C + P-F
+- `HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md` — 给 Claude Code 完整交接

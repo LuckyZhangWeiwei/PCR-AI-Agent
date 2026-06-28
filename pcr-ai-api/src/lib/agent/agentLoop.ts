@@ -2205,6 +2205,16 @@ async function tryRunDeterministicJbSummary(
     }
   }
 
+  // 多卡「测试情况对比」：summary 轮勿用单 lot query_jb_bins 缓存吐 equipment 表（P-C 真因之二；
+  // equipment 直连已在 tryRunEquipmentDirectRoute bail，此处补 summary 短路）。
+  if (isMultiCardComparisonQuestion(userQuestion)) {
+    console.warn(
+      `[jbDeterministic/multiCardCompareBail] 多卡对比不出单 lot 概况，交回 LLM：` +
+        `「${userQuestion.slice(0, 50)}」`
+    );
+    return false;
+  }
+
   return emitDeterministicJbTablesReply(
     sessionId,
     userQuestion,

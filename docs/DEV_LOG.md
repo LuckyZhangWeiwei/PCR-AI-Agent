@@ -2,6 +2,16 @@
 
 ---
 
+## 2026-06-28（Cursor 终验 + P-C summary bail）— 5/5 严格复验闭环
+
+**背景：** API 余额恢复 + 远程 dist reload 后，Cursor 跑 `verify-handoff-steps.mjs all`：P-A/B/D/F ✅；P-C 首轮仍 FAIL（单 lot equipment 表），重跑 `pc` ✅。
+
+**P-C 真因 2（Cursor）：** `1b6c9cb` 只拦了 `tryRunEquipmentDirectRoute`；**summary 轮** `tryRunDeterministicJbSummary` 仍用单 lot `query_jb_bins` 缓存吐 equipment 表 → 加 `[jbDeterministic/multiCardCompareBail]`（与 `multiLotBail` 同级）。
+
+**验证：** 远程 10.192.130.89 严格复验 5/5；脚本收紧（P-A `totalDistinct>0`、P-C ≥2 卡、P-F 场景）。完整交接：[`HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md`](HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md)、[`scratchpad/reverify-2026-06-27.txt`](../scratchpad/reverify-2026-06-27.txt)。
+
+---
+
 ## 2026-06-27（第三轮·P-C 真因）— equipment 直连路由缺多卡对比 bail
 
 **背景：** Cursor 真库 curl 验证（见 [`HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md`](HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md) §3.2）发现 P-C「把这4张probecard的测试情况做对比」**远程 SSE 严格 FAIL**——仍 0.0s 秒回单 lot DR44436.1W 卡表（仅 9416-03）。

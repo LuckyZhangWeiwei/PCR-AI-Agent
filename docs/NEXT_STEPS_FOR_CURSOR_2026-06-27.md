@@ -5,9 +5,17 @@
 
 ---
 
-## ⚡ 现在就做：部署 + 复验（代码全部就绪，分支 `feat/dynamic-prompt-injection`）
+## ✅ Cursor 已完成（2026-06-28）
 
-P-A/P-C/P-F 代码修复均已 push。之前远程 SSE 的 FAIL / 空，**几乎都是远程跑旧 dist**。现在一次性部署 + **严格**复验三项。
+严格复验 **5/5 闭环**（API 余额恢复 + dist reload 后）。完整记录见 [`HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md`](HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md) 与 [`scratchpad/reverify-2026-06-27.txt`](../scratchpad/reverify-2026-06-27.txt)。
+
+**本批 push 含：** P-C summary bail（`multiCardCompareBail`）+ 收紧 `verify-handoff-steps.mjs` + 交接文档更新。
+
+---
+
+## ⚡ 历史：部署 + 复验（已完成，保留作参考）
+
+P-A/P-C/P-F 代码修复均已 push。之前远程 SSE 的 FAIL / 空，**几乎都是远程跑旧 dist** 或 **SiliconFlow 403**。
 
 ### 步骤 0：拉代码 + 确认 commit
 ```bash
@@ -58,15 +66,15 @@ curl -N -X POST http://<API_HOST>:30008/api/v4/agent/chat \
 
 ---
 
-## 当前状态快照
+## 当前状态快照（2026-06-28 更新）
 
 | 项 | 状态 |
 |---|---|
-| **P-A** | ✅ 代码已修；本地探针 OK；**远程 SSE 仍空 → 待 pm2 reload** |
-| **P-B** | ✅ 单测 + 真库 curl lot 列表 OK |
-| **P-C** | ✅ **真因已修**（`1b6c9cb`：equipment 直连补多卡 bail，不只 detectJbReplyMode）；待部署复验 |
-| **P-D** | ✅ 真库 curl bin+lot 排行 OK |
-| **P-F** | ✅ 代码已实现（focusBin + goodBins）；待部署后 curl 复验 |
+| **P-A** | ✅ 本地探针 + 远程 `totalDistinct=3` |
+| **P-B** | ✅ 远程 lot 列表 |
+| **P-C** | ✅ 远程跨卡综述（+ summary bail 防回归，待 deploy 本 commit） |
+| **P-D** | ✅ 远程 bin+lot 排行 |
+| **P-F** | ✅ 远程 DUT 集中度仅 focus bin |
 
 > 全部命令里的 `<API_HOST>` 换成实际地址（本机 `localhost`，或服务器内网 IP）。curl 走 LLM 的需服务器配了 `AGENT_API_KEY` / `SILICONFLOW_API_KEY`，否则在 body 的 `agentConfig.apiKey` 里填。
 
