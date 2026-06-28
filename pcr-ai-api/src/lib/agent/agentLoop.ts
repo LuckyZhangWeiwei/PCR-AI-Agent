@@ -921,6 +921,18 @@ async function emitDeterministicJbTablesReply(
   emit: (event: AgentSseEvent) => void,
   options?: { withCommentaryLlm?: boolean }
 ): Promise<boolean> {
+  // 多卡「测试情况对比」统一守卫（P-C 真因收口）：本函数是所有「单 lot/卡确定性表」的唯一出口
+  // —— equipment 直连、summary 轮、lot 概况/列表/逐片排名 直连路由均 `return` 本函数。多卡对比
+  // 需要跨卡综述（detectJbReplyMode 亦把它归 generic），不能在 LLM 前/总结轮直接吐单 lot 缓存表。
+  // 在此一处拦截，返回 false 让各调用方放行给 LLM；新增任何走本函数的直连路由都自动受此保护，
+  // 不必再各自补 bail（旧版散落在 tryRunEquipmentDirectRoute / tryRunDeterministicJbSummary）。
+  if (isMultiCardComparisonQuestion(userQuestion)) {
+    console.warn(
+      `[jbDeterministic/multiCardCompareBail] 多卡对比交回 LLM 跨卡综述，不出单 lot/卡确定性表：` +
+        `「${userQuestion.slice(0, 50)}」`
+    );
+    return false;
+  }
   const history = getHistory(sessionId);
   // 诊断：用户问某个具体 lot 的「详细/测试情况」，但回复所用 payload 是 mask 限量缓存
   // （multiLotYieldScope 且非 lotQueryFullRows）→ 数据残缺（如 20/25 片），却以「详细」出表。
@@ -1506,15 +1518,8 @@ async function tryRunEquipmentDirectRoute(
     );
     return false;
   }
-  // 多卡「测试情况对比」：需跨卡综述（detectJbReplyMode 已 bail 回 generic 交回 LLM），
-  // 不能在此 LLM 前直连吐单 lot 缓存 equipment 表（否则 0.0s 秒回单卡表、答非所问 —— P-C 真因）。
-  if (isMultiCardComparisonQuestion(userQuestion)) {
-    console.warn(
-      `[equipmentRoute/skip:multiCardCompare] 多卡对比需跨卡综述，不吐单 lot 缓存 equipment 表：` +
-        `「${userQuestion.slice(0, 50)}」`
-    );
-    return false;
-  }
+  // 多卡「测试情况对比」的 bail 已收口到 emitDeterministicJbTablesReply 入口（统一守卫），
+  // 此处不再单独拦截——本路由末尾 `return emitDeterministicJbTablesReply(...)` 会被该守卫放行。
   // 跨多 lot 的分析/选择问题：缓存仅单批，无法回答「哪个 lot 和卡/DUT 有关」
   if (equipmentRouteCrossLotBail(userQuestion)) {
     console.warn(
@@ -2205,16 +2210,8 @@ async function tryRunDeterministicJbSummary(
     }
   }
 
-  // 多卡「测试情况对比」：summary 轮勿用单 lot query_jb_bins 缓存吐 equipment 表（P-C 真因之二；
-  // equipment 直连已在 tryRunEquipmentDirectRoute bail，此处补 summary 短路）。
-  if (isMultiCardComparisonQuestion(userQuestion)) {
-    console.warn(
-      `[jbDeterministic/multiCardCompareBail] 多卡对比不出单 lot 概况，交回 LLM：` +
-        `「${userQuestion.slice(0, 50)}」`
-    );
-    return false;
-  }
-
+  // 多卡「测试情况对比」的 bail 已收口到 emitDeterministicJbTablesReply 入口（统一守卫），
+  // summary 轮的单 lot 概况出口即下方 `return emitDeterministicJbTablesReply(...)`，会被守卫放行。
   return emitDeterministicJbTablesReply(
     sessionId,
     userQuestion,

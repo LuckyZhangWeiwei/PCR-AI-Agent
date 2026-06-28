@@ -2,6 +2,23 @@
 
 ---
 
+## 2026-06-28（重构）— 多卡对比 bail 收口到单一守卫点
+
+**背景：** P-C 之前修了三次（`detectJbReplyMode`→generic、`tryRunEquipmentDirectRoute` bail、`tryRunDeterministicJbSummary` summary bail），每次都因「同一意图、另一条路绕过」而补一处 bail。这是脆弱的「打地鼠」结构——下一条直连路由仍可能漏护。
+
+**改动：** 把多卡对比 bail **收口到 `emitDeterministicJbTablesReply` 入口**（`agentLoop.ts`）。该函数是所有「单 lot/卡确定性表」的**唯一出口**（6 处调用全是 `return emitDeterministicJbTablesReply(...)`：equipment 直连、summary 轮、lot 概况/列表/逐片排名 直连）。在入口处 `if (isMultiCardComparisonQuestion) return false`，各调用方按既有逻辑放行给 LLM 做跨卡综述。
+
+- 删除 `tryRunEquipmentDirectRoute` 内联多卡 bail（原 `[equipmentRoute/skip:multiCardCompare]`）。
+- 删除 `tryRunDeterministicJbSummary` 内联多卡 bail。
+- 统一日志 tag `[jbDeterministic/multiCardCompareBail]`。
+- **新增任何走 `emitDeterministicJbTablesReply` 的直连路由自动受保护**，不必再各自补 bail。
+
+**保留不动：** `detectJbReplyMode`→generic（纯分类，单测依赖，非调度顺序脆弱项）；summary 轮 `aggregate_jb_bins` 跨卡聚合分支（产出本就是跨卡表，非单 lot 误答，原 bail 也未护，无回归）。
+
+**测试：** 398 个，396 通过、2 跳过、0 失败；typecheck 通过。行为等价重构，不影响现有回复质量。
+
+---
+
 ## 2026-06-28（Cursor 终验 + P-C summary bail）— 5/5 严格复验闭环
 
 **背景：** API 余额恢复 + 远程 dist reload 后，Cursor 跑 `verify-handoff-steps.mjs all`：P-A/B/D/F ✅；P-C 首轮仍 FAIL（单 lot equipment 表），重跑 `pc` ✅。
