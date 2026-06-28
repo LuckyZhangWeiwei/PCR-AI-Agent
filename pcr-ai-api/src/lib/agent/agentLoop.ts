@@ -38,6 +38,7 @@ import {
   buildEngineeringContextFromPayload,
   buildAggregateBinRankingMarkdown,
   buildBinCardAggregateMarkdown,
+  buildBinDeviceAggregateMarkdown,
   buildBinFocusedLotRankingMarkdown,
   DETERMINISTIC_DATA_SECTION_TITLE,
   DETERMINISTIC_COMMENTARY_SECTION_TITLE,
@@ -83,6 +84,7 @@ import { deviceBaseMask } from "../deviceMask.js";
 import {
   buildInfDrawArgsAfterJbLookup,
   extractLotFromUserText,
+  extractLotsFromUserText,
   findJbLotContext,
   infDrawWaferMapArgsComplete,
 } from "./agentInfWaferMapTool.js";
@@ -942,6 +944,21 @@ async function emitDeterministicJbTablesReply(
     return false;
   }
   const history = getHistory(sessionId);
+  // 多 lot 守卫（与多卡 bail 同收口）：本轮查了多个 lot（turnLots>1），但单 lot 确定性表只取
+  // 最后一个 lot——若用户跨 lot 对比，或本句未点名具体 lot（指代/复数，如「把对应的卡和dut都列
+  // 出来」），单 lot 表答非所问（见 B4）→ 交回 LLM 用全部 lot 历史作答。direct route 在工具前
+  // 运行时 turnLots 为空、不触发；仅 summary 轮（工具后）实际生效，新增的工具后路由自动受护。
+  const turnLots = collectQueryJbBinsLotsThisTurn(history);
+  if (turnLots.length > 1) {
+    const lotNamedInQuestion = Boolean(extractLotFromUserText(userQuestion));
+    if (isMultiLotComparisonQuestion(userQuestion) || !lotNamedInQuestion) {
+      console.warn(
+        `[jbDeterministic/multiLotBail] 多 lot 场景（${turnLots.length} 个 lot，本句点名 lot=${lotNamedInQuestion}）` +
+          `不出单 lot 概况，交回 LLM 用全部 lot 历史作答:「${userQuestion.slice(0, 40)}」`
+      );
+      return false;
+    }
+  }
   // 诊断：用户问某个具体 lot 的「详细/测试情况」，但回复所用 payload 是 mask 限量缓存
   // （multiLotYieldScope 且非 lotQueryFullRows）→ 数据残缺（如 20/25 片），却以「详细」出表。
   const lotInQuestion = /[A-Z]{2}\d{4,}\.\d?[A-Z]?\w*/i.exec(userQuestion)?.[0];
@@ -1501,6 +1518,14 @@ export function equipmentRouteCrossLotBail(text: string): boolean {
 }
 
 /**
+ * equipment 缓存表只有卡号 + 机台，**没有 DUT 级数据**（DUT 归属需 query_lot_dut_bin_agg）。
+ * 问到 DUT 时用缓存只能出残缺答案（见 B4：「把对应的卡和 dut 都列出来」只出卡表）→ 交回 LLM。
+ */
+export function equipmentRouteDutLevelBail(text: string): boolean {
+  return /\bdut\b|嫌疑\s*die|哪些?\s*die/i.test(text);
+}
+
+/**
  * 探针卡 / 机台 直连路由：用户追问 "probecard是什么" 等时，直接从 session 缓存输出
  * equipment 表，不走 LLM，避免 LLM 用历史上下文把上一轮的 lot 总览表重复输出一次。
  * 注意：跨批次/时间范围/多 lot 查询不适用，此时 session 缓存仅含单批次数据。
@@ -1523,6 +1548,15 @@ async function tryRunEquipmentDirectRoute(
     console.warn(
       `[equipmentRoute/skip:binOnCard] BIN-on-card 归因需 aggregate_jb_bins(groupBy:"bin,cardId")，` +
         `不吐缓存 equipment 表：「${userQuestion.slice(0, 50)}」`
+    );
+    return false;
+  }
+  // 问到 DUT 级归属（如「把对应的卡和 dut 都列出来」）：equipment 缓存表只有卡号 + 机台，
+  // **没有 DUT 数据**（DUT 归属需 query_lot_dut_bin_agg）→ 用缓存只能出残缺答案（见 B4）。
+  // bail 交回 LLM，由其调 query_lot_dut_bin_agg 补全 DUT。
+  if (equipmentRouteDutLevelBail(userQuestion)) {
+    console.warn(
+      `[equipmentRoute/skip:dutLevel] DUT 级归属 equipment 缓存无此数据，交回 LLM：「${userQuestion.slice(0, 50)}」`
     );
     return false;
   }
@@ -2069,6 +2103,111 @@ function buildMultiLotBinTable(content: string): string | null {
   return lines.join("\n");
 }
 
+/**
+ * aggregate_jb_bins 结果 → 选出唯一应直出的渲染表（单一真相源）。
+ *
+ * 此前这条「binLot → multiLot → binCard → binDevice → binRank」选择链被**复制**在
+ * tryRunDeterministicJbSummary（emit SSE）与 jbBinsYieldFallbackMessage（返字符串）两处，
+ * 任何新增/修复都要改两遍（B1/B3 即如此）——典型「打地鼠」。这里收敛为一处，两个站点
+ * 各自按返回值做自己的输出（SSE / 字符串），新增渲染分支只改这一个函数。
+ *
+ * 返回 null 表示无可直出表（交回上层）。`withDataTitle=false` 用于 multiLot 表
+ * （自带表头，不加「## 实测数据」标题）；`statusMessage` 为空时调用方不发 status。
+ */
+export interface AggregateJbBinsRender {
+  table: string;
+  commentaryNote: string;
+  statusMessage: string;
+  withDataTitle: boolean;
+}
+
+export function renderAggregateJbBinsResult(
+  aggContent: string,
+  userQuestion: string,
+  scopeLabel: string | undefined
+): AggregateJbBinsRender | null {
+  const focusBin = extractBinFromUserText(userQuestion);
+  const namedLots = extractLotsFromUserText(userQuestion);
+
+  // 用户问「哪个 lot BINnn 最多」: 按指定 bin 在各 lot 的颗数排序（含卡），须在 multiLotBinTable
+  // 之前判断——后者按「坏die总量」排序会把该 bin 少但总坏die多的 lot 误排第一。
+  // 点名多个 lot（B3）时仅保留这些 lot 并对缺失者补 0 行。
+  const binLotTable = buildBinFocusedLotRankingMarkdown(
+    aggContent,
+    focusBin,
+    scopeLabel,
+    namedLots
+  );
+  if (binLotTable?.trim()) {
+    return {
+      table: binLotTable,
+      commentaryNote:
+        `*以上按 BIN${focusBin} 在各 lot 的坏 die 颗数降序（非坏die总量口径）。` +
+        `如需某 lot 逐片分布，请追问「<lot> 哪片 BIN${focusBin} 最多」。*`,
+      statusMessage: "正在输出指定 BIN 的各 lot 排行…",
+      withDataTitle: true,
+    };
+  }
+
+  const multiLot = buildMultiLotBinTable(aggContent);
+  if (multiLot?.trim()) {
+    return {
+      table: multiLot,
+      commentaryNote: "如需深入分析某批次，请告知批次号（如上表第1行）。",
+      statusMessage: "", // multiLot 表自带表头与口径脚注，summary 站原本不发 status
+      withDataTitle: false,
+    };
+  }
+
+  // groupBy:"bin,cardId" → 卡归属表（用户问「集中在哪张卡」）。须在 bin-only 排行前判断，
+  // 否则 buildAggregateBinRankingMarkdown 会丢掉 cardId 列、渲染成重复 BIN 行。
+  const binCardTable = buildBinCardAggregateMarkdown(
+    aggContent,
+    scopeLabel,
+    focusBin
+  );
+  if (binCardTable?.trim()) {
+    return {
+      table: binCardTable,
+      commentaryNote:
+        `*以上为范围内 BIN×探针卡 坏 die 汇总（良品 bin 已扣除）。卡级已定位；DUT 级归属需 INF DUT map，` +
+        `可继续追问「lot <号> wafer <片号> BIN<n> 的 DUT 分布」。*`,
+      statusMessage: "正在输出 BIN×探针卡 归属表…",
+      withDataTitle: true,
+    };
+  }
+
+  // groupBy:"device,bin" → BIN×device 表（用户「把 device 也要列出来」）。须在 bin-only 排行前判断，
+  // 否则 buildAggregateBinRankingMarkdown 会丢掉 device 列、跨 device 求和（见 B1）。
+  const binDeviceTable = buildBinDeviceAggregateMarkdown(
+    aggContent,
+    scopeLabel,
+    focusBin
+  );
+  if (binDeviceTable?.trim()) {
+    return {
+      table: binDeviceTable,
+      commentaryNote:
+        `*以上为范围内 BIN×device 坏 die 汇总（良品 bin 已扣除）。如需定位到具体批次，` +
+        `请问「哪个 lot 的 BIN<n> 最多」（按 bin+lot 排行）。*`,
+      statusMessage: "正在输出 BIN×device 汇总表…",
+      withDataTitle: true,
+    };
+  }
+
+  const binRank = buildAggregateBinRankingMarkdown(aggContent, scopeLabel);
+  if (binRank?.trim()) {
+    return {
+      table: binRank,
+      commentaryNote: "*以上为范围内坏 BIN 按 dieCount 降序汇总。*",
+      statusMessage: "正在输出坏 BIN 排行表…",
+      withDataTitle: true,
+    };
+  }
+
+  return null;
+}
+
 async function tryRunDeterministicJbSummary(
   sessionId: string,
   userQuestion: string,
@@ -2111,63 +2250,19 @@ async function tryRunDeterministicJbSummary(
     const scopeLabel = aggArgs
       ? buildScopeLabelFromAggregateArgs(aggArgs)
       : undefined;
-    const focusBin = extractBinFromUserText(userQuestion);
-    // 用户问「哪个 lot BINnn 最多」: 按指定 bin 在各 lot 的颗数排序（含卡），须在 multiLotBinTable
-    // 之前判断——后者按「坏die总量」排序会把该 bin 少但总坏die多的 lot 误排第一。
-    const binLotTable = buildBinFocusedLotRankingMarkdown(
-      aggContent,
-      focusBin,
-      scopeLabel
-    );
-    if (binLotTable?.trim()) {
-      const msg =
-        `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${binLotTable}\n\n` +
-        `${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n` +
-        `*以上按 BIN${focusBin} 在各 lot 的坏 die 颗数降序（非坏die总量口径）。` +
-        `如需某 lot 逐片分布，请追问「<lot> 哪片 BIN${focusBin} 最多」。*`;
-      emit({ type: "status", message: "正在输出指定 BIN 的各 lot 排行…" });
-      emitTextInChunks(msg, emit);
-      appendMessages(sessionId, { role: "assistant", content: msg });
-      emit({ type: "done" });
-      return true;
-    }
-    const table = buildMultiLotBinTable(aggContent);
-    if (table) {
-      const msg = table + "\n\n如需深入分析某批次，请告知批次号（如上表第1行）。";
-      emit({ type: "text", delta: msg });
-      appendMessages(sessionId, { role: "assistant", content: msg });
-      emit({ type: "done" });
-      return true;
-    }
-    // groupBy:"bin,cardId" → 卡归属表（用户问「集中在哪张卡」）。须在 bin-only 排行前判断，
-    // 否则 buildAggregateBinRankingMarkdown 会丢掉 cardId 列、渲染成重复 BIN 行。
-    const binCardTable = buildBinCardAggregateMarkdown(
-      aggContent,
-      scopeLabel,
-      focusBin
-    );
-    if (binCardTable?.trim()) {
-      const msg =
-        `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${binCardTable}\n\n` +
-        `${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n` +
-        `*以上为范围内 BIN×探针卡 坏 die 汇总（良品 bin 已扣除）。卡级已定位；DUT 级归属需 INF DUT map，` +
-        `可继续追问「lot <号> wafer <片号> BIN<n> 的 DUT 分布」。*`;
-      emit({ type: "status", message: "正在输出 BIN×探针卡 归属表…" });
-      emitTextInChunks(msg, emit);
-      appendMessages(sessionId, { role: "assistant", content: msg });
-      emit({ type: "done" });
-      return true;
-    }
-    const binRank = buildAggregateBinRankingMarkdown(
-      aggContent,
-      scopeLabel
-    );
-    if (binRank?.trim()) {
-      const msg =
-        `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${binRank}\n\n` +
-        `${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n` +
-        `*以上为范围内坏 BIN 按 dieCount 降序汇总。*`;
-      emit({ type: "status", message: "正在输出坏 BIN 排行表…" });
+    const rendered = renderAggregateJbBinsResult(aggContent, userQuestion, scopeLabel);
+    if (rendered) {
+      const dataBlock = rendered.withDataTitle
+        ? `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${rendered.table}`
+        : rendered.table;
+      const msg = !rendered.commentaryNote
+        ? dataBlock
+        : rendered.withDataTitle
+          ? `${dataBlock}\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n${rendered.commentaryNote}`
+          : `${dataBlock}\n\n${rendered.commentaryNote}`;
+      if (rendered.statusMessage) {
+        emit({ type: "status", message: rendered.statusMessage });
+      }
       emitTextInChunks(msg, emit);
       appendMessages(sessionId, { role: "assistant", content: msg });
       emit({ type: "done" });
@@ -2198,28 +2293,9 @@ async function tryRunDeterministicJbSummary(
   );
   if (!payload) return false;
 
-  // 诊断：用户若一轮问了多个 lot（如「都用什么卡」「对比这几张卡」），单 lot 确定性回复
-  // 只取「最后一个」query_jb_bins 结果，会答非所问 / 卡号张冠李戴。暴露当前回复锁定的 lot
-  // 与本轮实际查询过的 lot 集合，供真库核对。
-  const turnLots = collectQueryJbBinsLotsThisTurn(history);
-  const repliedLot = String(payload["lot"] ?? "?");
-  if (turnLots.length > 1) {
-    console.warn(
-      `[jbDeterministic/multiLot] 单 lot 回复锁定 lot=${repliedLot}，但本轮查询了 ${turnLots.length} 个 lot：` +
-        `${turnLots.join(", ")}；用户问「${userQuestion.slice(0, 40)}」可能要多 lot 对比 → 当前回复或答非所问。`
-    );
-    // 跨多 lot 对比类问题（「前5个lot都用什么卡」）：单 lot 概况答非所问，
-    // bail → 交回 LLM 总结轮，用本轮全部 query_jb_bins 历史作答（含各 lot 的卡）。
-    if (isMultiLotComparisonQuestion(userQuestion)) {
-      console.warn(
-        `[jbDeterministic/multiLotBail] 跨 lot 对比问题不出单 lot 概况，交回 LLM 用 ${turnLots.length} 个 lot 历史作答。`
-      );
-      return false;
-    }
-  }
-
-  // 多卡「测试情况对比」的 bail 已收口到 emitDeterministicJbTablesReply 入口（统一守卫），
-  // summary 轮的单 lot 概况出口即下方 `return emitDeterministicJbTablesReply(...)`，会被守卫放行。
+  // 多卡 / 多 lot 「单 lot 表答非所问」的 bail 已收口到 emitDeterministicJbTablesReply 入口
+  // （统一守卫），summary 轮的单 lot 概况出口即下方 `return emitDeterministicJbTablesReply(...)`，
+  // 会被守卫放行。
   return emitDeterministicJbTablesReply(
     sessionId,
     userQuestion,
@@ -2288,25 +2364,12 @@ function jbBinsYieldFallbackMessage(
   }
   if (toolMsg.name === "aggregate_jb_bins") {
     const content = String(toolMsg.content ?? "");
-    const focusBin = extractBinFromUserText(userQuestion);
-    // 「哪个 lot BINnn 最多」: 优先按指定 bin 排 lot（含卡），先于 multiLotBinTable 的总坏die口径。
-    const binLotTable = buildBinFocusedLotRankingMarkdown(content, focusBin);
-    if (binLotTable?.trim()) {
-      return `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${binLotTable}`;
-    }
-    const table = buildMultiLotBinTable(content);
-    if (table) return table;
-    const binCardTable = buildBinCardAggregateMarkdown(
-      content,
-      undefined,
-      focusBin
-    );
-    if (binCardTable?.trim()) {
-      return `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${binCardTable}`;
-    }
-    const binRank = buildAggregateBinRankingMarkdown(content);
-    if (binRank?.trim()) return `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${binRank}`;
-    return null;
+    // 与 tryRunDeterministicJbSummary 共用同一渲染选择链（单一真相源），此处仅取字符串。
+    const rendered = renderAggregateJbBinsResult(content, userQuestion, undefined);
+    if (!rendered) return null;
+    return rendered.withDataTitle
+      ? `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${rendered.table}`
+      : rendered.table;
   }
   if (toolMsg.name !== "query_jb_bins") return null;
   // 单片坏 die 空间聚集问题：交回 LLM，勿用整 lot 表兜底（见 tryRunDeterministicJbSummary 同名 bail）。

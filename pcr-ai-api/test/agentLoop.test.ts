@@ -7,6 +7,8 @@ import {
   parseMinimaxInvokeBody,
   cachedJbScopeMismatchReason,
   equipmentRouteCrossLotBail,
+  equipmentRouteDutLevelBail,
+  renderAggregateJbBinsResult,
 } from "../src/lib/agent/agentLoop.js";
 import {
   buildDutShareChartData,
@@ -446,4 +448,62 @@ test("equipmentRouteCrossLotBail: 跨多 lot 分析问题应禁用 equipment 直
 
 test("多卡对比 → mode generic(收口守卫等价)", () => {
   assert.equal(resolveJbRoute("把这4张probecard的测试情况做对比").mode, "generic");
+});
+
+// B4（S4-T5 真库回归）：问到 DUT 级归属时 equipment 直连不能用缓存（缓存只有卡+机台，无 DUT）。
+test("equipmentRouteDutLevelBail: DUT 级归属问题应禁用 equipment 直连", () => {
+  assert.equal(equipmentRouteDutLevelBail("ok 把对应用的卡 和 dut lot 都列出来"), true);
+  assert.equal(equipmentRouteDutLevelBail("哪些 die 是嫌疑"), true);
+  // 纯卡/机台问题不受影响
+  assert.equal(equipmentRouteDutLevelBail("这批用的什么卡"), false);
+  assert.equal(equipmentRouteDutLevelBail("DR43338.1R 在哪个机台测的"), false);
+});
+
+// B-core：aggregate_jb_bins 渲染选择链单一真相源（summary 站与 fallback 站共用此函数）。
+// 各 groupBy 形状选对渲染器 + withDataTitle 正确，避免「改一处漏另一处」的打地鼠。
+test("renderAggregateJbBinsResult: 各 groupBy 形状选对渲染器", () => {
+  // groupBy:"device,bin" → BIN×device（B1）
+  const dev = renderAggregateJbBinsResult(
+    JSON.stringify({ groups: [{ device: "WB01P11C", bin: "2", count: 100 }] }),
+    "把device也要列出来",
+    undefined
+  );
+  assert.ok(dev?.table.includes("Device"));
+  assert.equal(dev?.withDataTitle, true);
+
+  // groupBy:"bin,cardId" → BIN×探针卡
+  const card = renderAggregateJbBinsResult(
+    JSON.stringify({ groups: [{ cardId: "9416-04", bin: "35", count: 100 }] }),
+    "bin35 集中在哪张卡",
+    undefined
+  );
+  assert.ok(card?.table.includes("9416-04"));
+
+  // groupBy:"bin,lot" 多 lot → multiLotBinTable（自带表头，无「## 实测数据」标题）
+  const multi = renderAggregateJbBinsResult(
+    JSON.stringify({
+      groups: [
+        { lot: "A1.1A", bin: "2", count: 100 },
+        { lot: "B2.1B", bin: "3", count: 80 },
+      ],
+    }),
+    "这些批次坏bin对比",
+    undefined
+  );
+  assert.equal(multi?.withDataTitle, false);
+
+  // 纯 groupBy:"bin" → 坏 BIN 排行
+  const rank = renderAggregateJbBinsResult(
+    JSON.stringify({ groups: [{ bin: "61", count: 900 }] }),
+    "主要坏bin排行",
+    undefined
+  );
+  assert.ok(rank?.table.includes("BIN61"));
+  assert.equal(rank?.withDataTitle, true);
+
+  // 空 groups → null（交回上层）
+  assert.equal(
+    renderAggregateJbBinsResult(JSON.stringify({ groups: [] }), "x", undefined),
+    null
+  );
 });

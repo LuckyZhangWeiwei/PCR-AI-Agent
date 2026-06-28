@@ -203,6 +203,19 @@ export function extractLotFromUserText(text: string): string | undefined {
   return m ? m[1]! : undefined;
 }
 
+/** 抽取问句中**所有**点名的 lot 号（去重，保持出现顺序）；复用 extractLotFromUserText 的同一模式。 */
+export function extractLotsFromUserText(text: string): string[] {
+  const re = /(?<![A-Za-z0-9])([A-Z]{1,3}\d{4,6}\.\d+[A-Z0-9]+)(?![A-Za-z0-9])/gi;
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const m of text.matchAll(re)) {
+    const lot = m[1]!;
+    const key = lot.toUpperCase();
+    if (!seen.has(key)) { seen.add(key); out.push(lot); }
+  }
+  return out;
+}
+
 /**
  * User only wants an interactive wafer map link — not lot-wide JB tables / commentary.
  */

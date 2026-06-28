@@ -4,6 +4,7 @@ import {
   buildBriefCommentaryUserMessage,
   buildAggregateBinRankingMarkdown,
   buildBinCardAggregateMarkdown,
+  buildBinDeviceAggregateMarkdown,
   buildBinFocusedLotRankingMarkdown,
   buildDeterministicJbTables,
   buildEngineeringContextFromPayload,
@@ -215,6 +216,106 @@ describe("agentJbDeterministicReply", () => {
       ],
     });
     assert.equal(buildBinCardAggregateMarkdown(raw, "mask N55Z", 35), null);
+  });
+
+  // B5（S5-T1 真库回归）：cardId 仅命中 1 个 JB lot 时，recentLotsByTestEnd 不进缓存，
+  // 旧行为列表只剩 YM 告警 lot、丢掉该 JB lot。兜底用 payload 主 lot 补一行 JB STAR。
+  it("buildRecentLotsListingMarkdown includes single JB lot from payload.lot when recentLotsByTestEnd absent", () => {
+    const payload = {
+      lot: "DR44037.1N",
+      device: "WC13N55Z",
+      yieldByPassId: [{ passId: 1, slotCount: 1 }],
+      // 注意：无 recentLotsByTestEnd（模拟单 lot 缓存）
+    } as Record<string, unknown>;
+    const md = buildRecentLotsListingMarkdown(payload, {
+      ymLots: [{ lot: "DR43338.1R", device: "WC13N55Z", testEnd: "2026-06-04" }],
+    });
+    assert.ok(md?.includes("DR44037.1N"), "JB lot must not be dropped");
+    assert.ok(md?.includes("JB STAR"));
+    assert.ok(md?.includes("DR43338.1R"), "YM lot still listed");
+  });
+
+  // B3（S4-T3 真库回归）：用户点名 4 个 lot 问「有测出 bin35 吗」→ 仅保留这 4 个 lot，
+  // 缺失的显式补 0（旧行为给全局排行，3 个被问的 lot 根本没出现）。
+  it("buildBinFocusedLotRankingMarkdown restricts to named lots and shows 0 for absent", () => {
+    const raw = JSON.stringify({
+      totalRowsMatching: 980,
+      groups: [
+        { bin: "35", lot: "DR41662.1J", count: 968 },
+        { bin: "35", lot: "DR44039.1Y", count: 358 },
+        { bin: "35", lot: "DR42190.1X", count: 1402 }, // 未点名 → 应被排除
+        { bin: "2", lot: "DR44040.1R", count: 500 }, // 非 bin35
+      ],
+    });
+    const md = buildBinFocusedLotRankingMarkdown(raw, 35, "device WC13N55Z", [
+      "DR44039.1Y",
+      "DR44040.1R",
+      "DR43338.1R",
+      "DR41662.1J",
+    ]);
+    assert.ok(md?.includes("DR41662.1J"));
+    assert.ok(md?.includes("DR44039.1Y"));
+    // 未点名的 lot 不出现
+    assert.equal(md?.includes("DR42190.1X"), false);
+    // 被点名但本 bin 为 0 的 lot 仍列出（DR44040.1R 只有 bin2、DR43338.1R 无数据）
+    assert.ok(md?.includes("DR44040.1R"));
+    assert.ok(md?.includes("DR43338.1R"));
+  });
+
+  // B1（S3-T2 真库回归）：用户「把 device 也要列出来」→ groupBy "device,bin"。
+  // 旧行为：落到 buildAggregateBinRankingMarkdown 渲染纯 BIN 排行、丢掉 device 列。
+  it("buildBinDeviceAggregateMarkdown renders BIN×device table (single device keeps device column)", () => {
+    const raw = JSON.stringify({
+      totalRowsMatching: 401,
+      groups: [
+        { device: "WB01P11C", bin: "2", mask: "P11C", count: 10031 },
+        { device: "WB01P11C", bin: "6", mask: "P11C", count: 7579 },
+        { device: "WB01P11C", bin: "9", mask: "P11C", count: 4201 },
+      ],
+    });
+    const md = buildBinDeviceAggregateMarkdown(raw, "mask P11C", null);
+    assert.ok(md?.includes("WB01P11C"), "device column must be present");
+    assert.ok(md?.includes("BIN2"));
+    assert.ok(md?.includes("10031"));
+    assert.ok(md?.includes("Device"));
+  });
+
+  it("buildBinDeviceAggregateMarkdown focusBin lists devices for one BIN", () => {
+    const raw = JSON.stringify({
+      totalRowsMatching: 980,
+      groups: [
+        { device: "WC13N55Z", bin: "35", count: 819 },
+        { device: "WC12N55Z", bin: "35", count: 358 },
+        { device: "WC13N55Z", bin: "2", count: 1512 },
+      ],
+    });
+    const md = buildBinDeviceAggregateMarkdown(raw, "mask N55Z", 35);
+    assert.ok(md?.includes("BIN35 坏 die 所属 device"));
+    assert.ok(md?.includes("WC13N55Z"));
+    assert.ok(md?.includes("819"));
+    // focusBin 只看 35，不含 BIN2 的 1512
+    assert.equal(md?.includes("1512"), false);
+  });
+
+  it("buildBinDeviceAggregateMarkdown returns null when groups lack device", () => {
+    const raw = JSON.stringify({
+      groups: [
+        { bin: "2", count: 10031 },
+        { bin: "6", count: 7579 },
+      ],
+    });
+    assert.equal(buildBinDeviceAggregateMarkdown(raw, "mask P11C", null), null);
+  });
+
+  // B1 防御：纯 BIN 排行渲染器遇到含 device 维度的 groups 必须 bail（避免跨 device 求和、丢列）。
+  it("buildAggregateBinRankingMarkdown returns null when groups contain device dimension", () => {
+    const raw = JSON.stringify({
+      groups: [
+        { device: "WB01P11C", bin: "2", count: 10031 },
+        { device: "WB01P11C", bin: "6", count: 7579 },
+      ],
+    });
+    assert.equal(buildAggregateBinRankingMarkdown(raw, "mask P11C"), null);
   });
 
   // P2: 「哪个 lot BIN35 最多」必须按 BIN35 颗数排 lot，而非坏 die 总量

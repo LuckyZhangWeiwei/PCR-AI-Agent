@@ -414,6 +414,7 @@ const SEC_LOT_ID = `\
 - **批次 ID 必须原样使用**：lot ID 可能含 "." 后缀（如 "NF12551.1N"），"." 及其后面的部分是 lot ID 的有效组成部分，**绝对不能截断**。"NF12551.1N" 整体才是 lot ID，不是 "NF12551"。
 - **工具参数名区分（易错）**：\`query_yield_triggers\` 的批次参数名为 **\`lotId\`**；\`query_jb_bins\` 与 \`aggregate_jb_bins\` 的批次参数名为 **\`lot\`**——两者不同，**不可互换，传错参数将导致查询无效**。
 - **device 必须按本轮问题重新解析**：每轮工具调用的 \`device\` / \`mask\` 必须来自**当前用户问题**解析出的产品；**禁止沿用上一轮其它产品的 device**（连续问不同 mask 如先 N48A 再 N94W 时尤其注意，勿把上一产品的完整 device 残留到本轮工具参数）。
+- **「这个 lot / 该批次 / 此 lot」单数指代**：用户用这类指代词追问而**未点名 lot 号**时，指的是**上一轮刚列出/讨论的那个具体 lot**（如刚列了 lot 列表则为最新/第一行的 lot；刚分析了某 lot 则为该 lot）。**必须**对这个具体 lot 调 \`aggregate_jb_bins(lot:"<该lot>", groupBy:"bin", groupTop:20)\` 或读其 \`topBadBins\`——**禁止**改用 \`device\`/\`mask\` 维度统计整个产品（那是跨所有 lot 的合计，答非所问）。
 - **区分 lot ID 与 device**：device（产品代码）通常形如 "WA03P02G"（字母+数字组合，无 "."，长度较短）；lot ID 通常含较长数字段，且可能带 "." 后缀（如 "NF12551.1N"）。若用户输入包含 "."，优先判断为 lot ID。
 - **跨域查询**：用户仅提供 lot ID 而**未明确说明要查 Yield Monitor 还是 JB STAR** 时，**必须同时查两个域**（先调 query_yield_triggers，再调 query_jb_bins），然后合并汇报两域的结果，不能只查一个域就结束。
 - **探针卡 / device / lot + 时间段联查（必须双源）**：用户询问某张卡、某 device、某 lot 在指定时间段（如「最近3个月」「2026年上半年」「去年」）内的情况时，**必须同时调用两个域**：

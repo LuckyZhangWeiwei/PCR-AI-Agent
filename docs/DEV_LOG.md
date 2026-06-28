@@ -2,6 +2,26 @@
 
 ---
 
+## 2026-06-28（缺陷修复）— 五会话日志复盘:JB 聚合/列表确定性渲染 5 个真库缺陷
+
+**背景：** 基于最新代码的 5 份 Agent 会话日志复盘,发现 5 个缺陷。systematic-debugging 逐个定位根因后修复;B1/B3/B4/B5 为确定性代码层(行为可测),B2 为 prompt 窄规则(LLM 指代消解,依赖遵守)。改动只在路由/渲染层,不碰 SQL/WHERE/响应形状,未触发 dummy-parity。
+
+**完成内容：**
+- **B1（S3-T2）`groupBy device,bin` 丢 device 列。** `buildAggregateBinRankingMarkdown` 只在含 `lot` 时 bail、含 `device` 时不 bail → 跨 device 求和丢列。新增 `buildBinDeviceAggregateMarkdown`（镜像 bin×card 渲染器,focusBin/全表两态）+ 纯 BIN 排行加 device bail + agentLoop 两处 dispatch 在 binRank 前插入。
+- **B4（S4-T4/T5）多 lot 卡/dut 问题只出单 lot + 0.0s 缓存重放残缺。** ① summary 路径 `turnLots>1 且本句未点名具体 lot`（指代/复数）→ bail 回 LLM 用全部 lot 历史作答（原仅 `isMultiLotComparisonQuestion` 触发,漏「把对应的卡和dut都列出来」）；② equipment 直连新增 `equipmentRouteDutLevelBail`——问到 DUT 时缓存表只有卡+机台、无 DUT,bail 回 LLM 调 `query_lot_dut_bin_agg`。
+- **B5（S5-T1）cardId lot 列表丢 JB lot。** cardId 仅命中 1 个 JB lot 时 `multiLotListingFields` 仅在 `distinctLotCount>1` 保留 `recentLotsByTestEnd` → 该字段不进会话缓存,列表只剩 YM 告警 lot。`buildRecentLotsListingMarkdown` 用 payload 主 `lot` 兜底补一行 JB STAR（slotCount 取 yieldByPassId 最大）。
+- **B3（S4-T3）点名多个 lot 未被过滤。** 用户点名 4 个 lot 问「有测出 binXX 吗」,`buildBinFocusedLotRankingMarkdown` 仍出全局排行。新增 `extractLotsFromUserText`(复数,复用同一 lot 正则);该渲染器加 `restrictLots`——≥2 个点名 lot 时仅保留这些 lot,对缺失者显式补 0 行（直接回答「有没有测出」）。两处 dispatch 传入。
+- **B2（S3-T4）「这个lot」单数指代未锁定 lot。** 模型把「这个lot 主要 failed bin」按整个 device 聚合。`agentPrompt.ts` 加窄规则:「这个 lot/该批次/此 lot」指代上一轮最近 lot,对该具体 lot `aggregate_jb_bins(lot, groupBy:"bin")` 或读 `topBadBins`,禁用 device 维度。
+
+**B-core 结构收敛（拔「打地鼠」根,非仅按住）：** 用户点破 B1/B3/B4 是"同一毛病多处各补一次"的打地鼠结构后,做结构收敛:
+- **抽单一渲染真相源 `renderAggregateJbBinsResult`**:此前「binLot→multiLot→binCard→binDevice→binRank」选择链被复制在 `tryRunDeterministicJbSummary`(emit SSE)与 `jbBinsYieldFallbackMessage`(返字符串)两处,B1/B3 都要改两遍。收敛为一处,两站点各按返回值(`table/commentaryNote/statusMessage/withDataTitle`)做自己的输出。新增渲染分支只改一个函数。
+- **多 lot 拦截收口到 chokepoint**:把「本轮查多 lot 但单 lot 表答非所问」的 bail 从 summary 路径移入 `emitDeterministicJbTablesReply` 入口(与已有多卡 bail 同处);走该收口点的工具后路由自动受护。(DUT bail 仍留 equipment 路由——其语义是"该路由缓存无 DUT",非通用,不能上提。)
+- 加 `renderAggregateJbBinsResult` 单测钉死各 groupBy 形状的渲染器选择。
+
+**测试：** 418 个测试,0 失败（新增 8 条回归:B1×4 / B5×1 / B3×1 / B4×1 / B-core×1）；typecheck 干净；eval 37/37。
+
+---
+
 ## 2026-06-28（架构）— JB 路由收敛 resolveJbRoute + 混合(正则快路/LLM 兜底)
 
 **目标：** 彻底治理 JB 确定性表路由的「打地鼠」结构（三套重叠正则 + 顺序敏感调度 + 一轮重算意图 3+ 次）。spec `docs/superpowers/specs/2026-06-28-jb-route-resolver-design.md`、plan `docs/superpowers/plans/2026-06-28-jb-route-resolver.md`，subagent-driven 执行。
