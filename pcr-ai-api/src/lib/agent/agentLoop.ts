@@ -101,6 +101,7 @@ import {
   WAFER_MAP_JB_LOOKUP_NUDGE,
   type WaferMapRoutePlan,
 } from "./agentWaferMapRoute.js";
+import { resolveJbRoute } from "./jbRouteResolver.js";
 
 export type AgentSseEvent =
   | { type: "text"; delta: string }
@@ -921,16 +922,11 @@ async function emitDeterministicJbTablesReply(
   emit: (event: AgentSseEvent) => void,
   options?: { withCommentaryLlm?: boolean }
 ): Promise<boolean> {
-  // 多卡「测试情况对比」统一守卫（P-C 真因收口）：本函数是所有「单 lot/卡确定性表」的唯一出口
-  // —— equipment 直连、summary 轮、lot 概况/列表/逐片排名 直连路由均 `return` 本函数。多卡对比
-  // 需要跨卡综述（detectJbReplyMode 亦把它归 generic），不能在 LLM 前/总结轮直接吐单 lot 缓存表。
-  // 在此一处拦截，返回 false 让各调用方放行给 LLM；新增任何走本函数的直连路由都自动受此保护，
-  // 不必再各自补 bail（旧版散落在 tryRunEquipmentDirectRoute / tryRunDeterministicJbSummary）。
-  if (isMultiCardComparisonQuestion(userQuestion)) {
-    console.warn(
-      `[jbDeterministic/multiCardCompareBail] 多卡对比交回 LLM 跨卡综述，不出单 lot/卡确定性表：` +
-        `「${userQuestion.slice(0, 50)}」`
-    );
+  // 统一路由决策守卫（Phase-1 refactor）：resolveJbRoute 内部仍委托 detectJbReplyMode，
+  // generic 覆盖多卡对比 + 其他兜底场景，行为与旧 isMultiCardComparisonQuestion 守卫等价。
+  const decision = resolveJbRoute(userQuestion, getHistory(sessionId), payload);
+  if (decision.mode === "generic") {
+    console.warn(`[jbDeterministic/routeGeneric] mode=generic 交回 LLM:「${userQuestion.slice(0, 50)}」(${decision.reason})`);
     return false;
   }
   const history = getHistory(sessionId);
@@ -950,10 +946,10 @@ async function emitDeterministicJbTablesReply(
     );
   }
   const listingCtx = buildLotListingContext(payload, history);
-  const tables = buildDeterministicJbTables(userQuestion, payload, listingCtx);
+  const tables = buildDeterministicJbTables(userQuestion, payload, listingCtx, decision.mode);
   if (!tables?.trim()) return false;
 
-  const mode = detectJbReplyMode(userQuestion);
+  const mode = decision.mode;
   const withCommentary =
     options?.withCommentaryLlm ??
     !jbReplySkipsCommentaryLlm(mode);
@@ -962,8 +958,9 @@ async function emitDeterministicJbTablesReply(
   emit({ type: "status", message: "正在输出服务端预计算表…" });
   emitTextInChunks(tablesBlock, emit);
 
-  // 主分析 / lot 概况场景：topBadBins ≥3 项时自动生成坏 BIN bar chart
-  if (mode === "generic" || mode === "lot_overview") {
+  // lot 概况场景：topBadBins ≥3 项时自动生成坏 BIN bar chart
+  // （generic 已在函数入口守卫处 return false，此处不可达，移除以消除 TS2367 警告）
+  if (mode === "lot_overview") {
     tryEmitTopBinBarChart(payload, emit);
     // 探针卡问题：自动追加 DUT 坏 die 总量对比图（失败静默跳过，不阻断主流程）
     await tryEmitCardDutBadDieChart(userQuestion, payload, agentConfig, emit);

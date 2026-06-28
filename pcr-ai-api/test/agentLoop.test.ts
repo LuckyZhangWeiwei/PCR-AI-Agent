@@ -17,6 +17,7 @@ import {
 } from "../src/lib/agent/agentChartTool.js";
 import { runTool } from "../src/lib/agent/agentToolHandlers.js";
 import type { ChatMessage } from "../src/lib/agent/agentHistory.js";
+import { resolveJbRoute } from "../src/lib/agent/jbRouteResolver.js";
 
 const THINK_OPEN = "<" + "think>";
 const THINK_CLOSE = "</" + "think>";
@@ -441,4 +442,8 @@ test("cachedJbScopeMismatchReason: 问题含缓存外的 lot → 报不一致", 
 test("equipmentRouteCrossLotBail: 跨多 lot 分析问题应禁用 equipment 直连", () => {
   assert.equal(equipmentRouteCrossLotBail("上面这 16 个lot 中 请分析 哪个可能和probecard dut 等有关系"), true);
   assert.equal(equipmentRouteCrossLotBail("这批用的什么卡"), false);
+});
+
+test("多卡对比 → mode generic(收口守卫等价)", () => {
+  assert.equal(resolveJbRoute("把这4张probecard的测试情况做对比").mode, "generic");
 });
