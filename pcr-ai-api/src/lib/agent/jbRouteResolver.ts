@@ -39,3 +39,18 @@ export function extractJbRouteParams(q: string): JbRouteParams {
   else if (/低温|sort\s*3|pass\s*5/i.test(q)) params.passId = 5;
   return params;
 }
+
+export function resolveJbRoute(
+  q: string,
+  _history?: unknown,
+  _payload?: Record<string, unknown>
+): JbRouteDecision {
+  const mode = detectJbReplyMode(q);
+  return {
+    mode,
+    source: "regex",
+    confidence: "high",
+    params: extractJbRouteParams(q),
+    reason: `detectJbReplyMode → ${mode}`,
+  };
+}
