@@ -1,0 +1,58 @@
+# JB 路由收敛 resolveJbRoute — 真库验证回传（2026-06-28 完整版）
+
+环境：分支 commit = d553eee，远程 http://10.192.130.89:30008
+- Pass A：JB_LLM_INTENT_CLASSIFIER 关（默认），deploy + reload 后 5/5
+- Pass B/C：JB_LLM_INTENT_CLASSIFIER=true，用户已配置并 reload
+
+---
+
+## Pass A（开关关 / 回归）— 5/5 PASS
+
+| 项 | 结果 |
+|---|---|
+| A0 npm test | 408/410 pass，0 fail |
+| A0 eval | 37/37 |
+| A1 探针 P11C | yield/full=3，jb/full=1 |
+| A2 P-A~P-F | 全部 PASS（deploy 后首轮 5/5） |
+
+---
+
+## Pass B（开关开 / LLM 兜底）
+
+### B0 live eval（本地 AGENT_EVAL_LIVE=1）
+- 38/38 PASS，含 route-llm-fallback-colloquial
+
+### B1 口语问句（远程，classifier ON）— 3/3 PASS
+
+| 问句 | 结果 | 行为 |
+|---|---|---|
+| 这几张卡最近咋样 | PASS | **主动澄清**卡号，未误吐单 lot 表 |
+| 最近测得怎么样 | PASS | **主动澄清**范围（device/lot/卡/机台） |
+| 看看这几个批次的情况 | PASS | **主动澄清**批次号，未锁单 lot |
+
+对比开关关基线：「这几张卡最近咋样」曾误用 session 上下文输出单 lot NF12388.1T 逐片表 → **开关开明显改善**。
+
+---
+
+## Pass C（降级安全）
+
+| 场景 | 方法 | 结果 |
+|---|---|---|
+| 模糊 + 分类器故障 | 请求体 apiKey=invalid | **PASS** — SSE error `HTTP 401 Invalid token`，无 HTTP 500/崩溃 |
+| 明确 + 正则快路 | 有效 key，`P11C 最近的测试情况` | **PASS** — get_filter_values totalDistinct=3，快路不受 classifier 开关牵连 |
+
+说明：Pass C「明确」须用服务器有效 key；无效 key 会整请求 401（非快路本身问题）。
+
+---
+
+## 总判
+
+| 问题 | 结论 |
+|---|---|
+| 开关关 = 等价（无回归）？ | **是** — 5/5 |
+| 开关开 = 兜底有效？ | **是** — B0 + B1 口语均澄清/合理路由，不再误吐单 lot 表 |
+| 降级安全？ | **是** — 分类器 401 无崩溃；明确问句快路照常 |
+
+**建议：** Pass B/C 测完可将 `JB_LLM_INTENT_CLASSIFIER` 改回 `false` 或保持 `true` 上线（按产品决策）。
+
+详细 SSE → `scratchpad/realdb-jb-route-pass-bc.txt`

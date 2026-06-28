@@ -1,0 +1,55 @@
+# Pass B/C verify 2026-06-28T09:12:31.268Z
+API: http://10.192.130.89:30008
+
+## Pass B1（JB_LLM_INTENT_CLASSIFIER=true）
+### 这几张卡最近咋样 — PASS
+Session: b1-a3feae33-8157-46f2-b967-e2bf4b441d8c
+Detail: lots=0, multiCard=false, clarify=true
+```
+我需要先确认一下——您说的"这几张卡"具体是指哪些探针卡呢？请提供卡号（如 `7772-01`、`8041-B3`）或卡型号（如 `7772`、`8041`），我来帮您查看最近的测试情况。
+
+
+```
+
+### 最近测得怎么样 — PASS
+Session: b1-ccfd82d3-e1f9-462d-82b1-4fef049dbd77
+Detail: lots=1, multiCard=false, clarify=true
+```
+您问得比较宽泛，我需要一些具体信息才能帮您精确查询。请告诉我您想关注哪方面的测试情况，例如：
+
+- **某个产品**（如 WA03P02G、WB03N60J 等 device 代码）
+- **某个批次**（如 NF12551.1N 等 lot ID）
+- **某张探针卡**（如 7772-A1、8041-B3 等卡号）
+- **某台测试机**（如 PS1600 第几台）
+
+您想查哪个？
+```
+
+### 看看这几个批次的情况 — PASS
+Session: b1-54a493ae-2b71-4cf9-be28-d68538d4860a
+Detail: lots=2, multiCard=true, clarify=false
+```
+您好！请告知您想查看的批次信息，可以是一次性提供以下任一条件：
+
+- **批次号（lot ID）**：如 `NF12551.1N`、`DR44117.1Y` 等完整编号
+- **产品代码（device）**：如 `WA03P02G`、`WC06N84R` 等
+- **产品后缀（mask）**：如 `N06Z`、`P02G` 等 4 位字母数字组合
+- **探针卡号**：如 `7772-01`、`6045-10` 等
+
+您说的是"这几个批次"——如果有多个 lot ID，请一并列出，我会为您逐批分析。
+```
+
+## Pass C（无效 apiKey 造分类器故障）
+### 模糊：这几张卡最近咋样 — PASS
+Detail: 降级/SSE error(无崩溃): HTTP 401: "Invalid token"
+```
+
+```
+
+### 明确：P11C 最近的测试情况 — FAIL
+Detail: 未出表
+```
+
+```
+
+Summary: 4/5 passed

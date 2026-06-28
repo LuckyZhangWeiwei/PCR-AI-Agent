@@ -1,0 +1,22 @@
+# Handoff reverify 2026-06-28T08:16:08.364Z
+API: http://10.192.130.89:30008
+STEP: pb
+
+## PB — PASS
+Session: pb-d66f4152-1408-41f8-bd92-8d617f6f7e1b
+Detail: listed ~50 lot ids
+```
+## 实测数据
+
+**测试 lot 列表（device=WA11P55A，机台=b3uflex02）（共 65 个 lot，下表列前 50 个）**
+
+| # | Lot | Device | 测试结束 | 片数 | 数据来源 |
+|---:|---|---|---|---:|---|
+| 1 | NF13341.1L | WA11P55A | 2026-06-27 | 19 | JB STAR |
+| 2 | NF13309.1J | WB10N33V | 2026-06-27 | 21 | JB STAR |
+| 3 | NF13199.1F | WK10P09C | 2026-06-27 | 23 | JB STAR |
+| 4 | NF13268.1Y | WB10N57U | 2026-06-27 | 25 | JB STAR |
+| 5 | NF13367.1L | WB10N
+```
+
+Summary: 1/1 passed
