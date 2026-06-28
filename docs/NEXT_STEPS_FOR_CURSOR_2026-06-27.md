@@ -5,6 +5,54 @@
 
 ---
 
+## 阶段3：JB 路由灰度复验清单
+
+部署所有前期修复后，进行 LLM 兜底路由的灰度验证。**Live eval** 场景用 `AGENT_EVAL_LIVE=1` 触发（正常 `npm test` 自动跳过）。
+
+### 部署 + 灰度启用
+1. 确认前期 P-A～P-F 修复已部署（见 ✅ 已完成）。
+2. 设置 `JB_LLM_INTENT_CLASSIFIER=true`：
+   ```bash
+   # .env 或 pm2 环境变量
+   JB_LLM_INTENT_CLASSIFIER=true
+   pm2 reload <进程名>
+   ```
+3. 验证服务启动无误：`pm2 logs <进程名> --lines 3`
+
+### Live eval 验证
+```bash
+cd pcr-ai-api
+AGENT_EVAL_LIVE=1 npx tsx test/eval/runEval.ts
+```
+**判定**：`route-llm-fallback-colloquial` 应通过（模糊口语问句正确路由至 generic/card_test_overview，不误判 lot_overview）。
+
+### 真库 curl 对比（开/关）
+对一组口语/模糊问句，分别开关 `JB_LLM_INTENT_CLASSIFIER` 再发问，对比回答：
+```bash
+# 关
+JB_LLM_INTENT_CLASSIFIER=false curl -N -X POST http://<API_HOST>:30008/api/v4/agent/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"user","content":"这几张卡最近咋样"}]}'
+
+# 开
+JB_LLM_INTENT_CLASSIFIER=true curl -N -X POST http://<API_HOST>:30008/api/v4/agent/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"user","content":"这几张卡最近咋样"}]}'
+```
+**判定**：两版回答应不同；开启版本应更准确（使用 LLM 进一步理解）。
+
+### SiliconFlow 403 降级验证
+当 SiliconFlow API 配额不足（403 Forbidden）时，LLM 兜底路由应 graceful fallback 至 generic，**无错误报告**。
+- 观察 pm2 日志是否出现 `[jbRouteResolver] SiliconFlow 403, degrading to generic`。
+- 前端收到的回答应是通用分析，而非错误堆栈。
+
+### 通过条件
+- ✅ `AGENT_EVAL_LIVE=1 npx tsx test/eval/runEval.ts` 的 `route-llm-fallback-colloquial` 通过
+- ✅ 口语/模糊问句的开关对比符合预期
+- ✅ 403 降级不报错，用户体验连贯
+
+---
+
 ## ✅ Cursor 已完成（2026-06-28）
 
 严格复验 **5/5 闭环**（API 余额恢复 + dist reload 后）。完整记录见 [`HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md`](HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md) 与 [`scratchpad/reverify-2026-06-27.txt`](../scratchpad/reverify-2026-06-27.txt)。

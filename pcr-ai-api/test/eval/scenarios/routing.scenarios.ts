@@ -132,4 +132,18 @@ export const routingScenarios: EvalScenario[] = [
     title: "「每片坏die情况」→ per_slot_bin_ranking",
     run: () => expectEqual(resolveJbRoute("每片坏die情况").mode, "per_slot_bin_ranking", "mode"),
   },
+  {
+    id: "route-llm-fallback-colloquial",
+    category: "routing",
+    title: "[live] 口语模糊「这几张卡最近咋样」→ 非单 lot 误答",
+    live: true,
+    run: async () => {
+      process.env.JB_LLM_INTENT_CLASSIFIER = "true";
+      const { resolveJbRouteAsync } = await import("../../../src/lib/agent/jbRouteResolver.js");
+      const d = await resolveJbRouteAsync("这几张卡最近咋样", {}, { subAgentModel: process.env.AGENT_SUBAGENT_MODEL } as any);
+      return d.mode === "lot_overview"
+        ? { pass: false, detail: "模糊多卡问被判 lot_overview(应 generic/card_test_overview)" }
+        : { pass: true };
+    },
+  },
 ];
