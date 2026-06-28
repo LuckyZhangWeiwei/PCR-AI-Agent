@@ -1428,7 +1428,7 @@ function isTestItemMappingQuestion(text: string): boolean {
  * 判断用户是否在请求跨批次/多 lot/时间范围的新数据查询。
  * 此类问题不能用 session 缓存（单批次数据）直接作答。
  */
-function requiresNewDataQuery(text: string): boolean {
+export function requiresNewDataQuery(text: string): boolean {
   // 跨 tester / 机台 比较
   if (/不同.*(tester|机台|测试机)/i.test(text)) return true;
   // 多批次列表
