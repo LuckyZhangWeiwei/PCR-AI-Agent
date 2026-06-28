@@ -101,7 +101,7 @@ import {
   WAFER_MAP_JB_LOOKUP_NUDGE,
   type WaferMapRoutePlan,
 } from "./agentWaferMapRoute.js";
-import { resolveJbRoute } from "./jbRouteResolver.js";
+import { resolveJbRoute, resolveJbRouteAsync } from "./jbRouteResolver.js";
 
 export type AgentSseEvent =
   | { type: "text"; delta: string }
@@ -926,7 +926,16 @@ async function emitDeterministicJbTablesReply(
   // —— equipment 直连、summary 轮、lot 概况/列表/逐片排名 直连路由均 `return` 本函数。多卡对比
   // 需要跨卡综述，不能在 LLM 前/总结轮直接吐单 lot 缓存表。
   // 在此一处拦截，返回 false 让各调用方放行给 LLM；新增任何走本函数的直连路由都自动受此保护。
-  const decision = resolveJbRoute(userQuestion, getHistory(sessionId), payload);
+  const lastToolName = lastToolMessage(getHistory(sessionId))?.name;
+  const cachedLot = typeof payload["lot"] === "string" ? (payload["lot"] as string) : undefined;
+  const decision = await resolveJbRouteAsync(
+    userQuestion,
+    { lastToolName, cachedLot },
+    agentConfig,
+    undefined,
+    getHistory(sessionId),
+    payload
+  );
   if (isMultiCardComparisonQuestion(userQuestion)) {
     console.warn(
       `[jbDeterministic/multiCardCompareBail] 多卡对比交回 LLM:「${userQuestion.slice(0, 50)}」`
