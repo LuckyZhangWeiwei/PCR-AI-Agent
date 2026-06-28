@@ -399,7 +399,12 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 ---
 
-# 阶段 1b:13 条直连 → 声明式 dispatch 表(范围 B,spec §4.2)
+# 阶段 1b:13 条直连 → 声明式 dispatch(范围 B,spec §4.2)
+
+> **执行纪要(2026-06-28):** 原 5b/5c/5d 设计按 `detectJbReplyMode` mode 建表。实施时 probe 证实 **mode 与 `canRunXxx` 直连门槛非 1:1**(mode 更宽,5 处发散),按 mode 路由不等价。经用户裁定改用**方案 A:有序 runner 列表**——把 5 条直连收进 `PRE_LLM_DIRECT_ROUTES` 数组循环调用、各自 self-gate,与旧 if 链按构造逐字节等价(commit `59fdc89`)。5b 的 mode-keyed 残件已删。以下 5b/5c/5d 原文保留作设计存档。
+
+---
+
 
 > **设计:** agentLoop 的 `if (!awaitingSummary)` 块里 5 条 pre-LLM 直连(顺序:lot_listing → scopedBadBin → lot_overview → equipment → perSlot)的**文本门槛**替换为"一次 `resolveJbRoute` + 表查找"。**关键纪律:** 表只按文本选路由;每条 runner **保留其运行时 guard**(equipment 的 `crossLot`/`staleCache`、payload 缺失等——这些非纯文本,继续在 runner 内 `return false` 兜底交回 LLM)。等价性用**纯谓词 parity** 证明。
 >
