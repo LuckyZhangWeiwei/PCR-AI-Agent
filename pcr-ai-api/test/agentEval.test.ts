@@ -21,3 +21,17 @@ test("黄金集:纯正则打分可用且无崩溃", async () => {
   const r = scoreRegexOnGolden();
   assert.ok(r.total >= 30, `黄金集应≥30条,实际 ${r.total}`);
 });
+
+test("闸门:纯正则在 baseline 问句上零回退", async () => {
+  const { scoreRegexOnGolden, REGEX_BASELINE_PASS_QUESTIONS } = await import("./eval/routingGoldenScore.js");
+  const failingNow = new Set(scoreRegexOnGolden().failures.map((f) => f.question));
+  const regressed = REGEX_BASELINE_PASS_QUESTIONS.filter((q) => failingNow.has(q));
+  assert.deepEqual(regressed, [], `baseline 问句回退: ${regressed.join(" | ")}`);
+});
+
+test("闸门[live]:混合路由对黄金集零 mode 回退", { skip: process.env.AGENT_EVAL_LIVE !== "1" }, async () => {
+  const { scoreHybridOnGolden } = await import("./eval/routingGoldenScore.js");
+  const cfg = { subAgentModel: process.env.AGENT_SUBAGENT_MODEL, apiKey: process.env.AGENT_API_KEY } as any;
+  const { regressions } = await scoreHybridOnGolden(cfg);
+  assert.deepEqual(regressions, [], `混合路由回退: ${regressions.join(" | ")}`);
+});

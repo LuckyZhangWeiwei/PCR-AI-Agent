@@ -2,6 +2,26 @@
 
 ---
 
+## 2026-06-29 — 阶段一+二完收：单一语义决策 + 黄金集闸门（Tasks 1–7）
+
+**阶段一：单一语义决策（Tasks 1–4）**
+- `jbRouteResolver.ts`：`resolveJbRoute`（纯正则单一真相源）+ `classifyJbIntent`（可选 LLM 兜底，`JB_LLM_INTENT_CLASSIFIER` 默认 **off**）+ `isAmbiguous` 快路（有 lot 锚点跳过 LLM）
+- `agentJbDeterministicReply.ts`：`extractJbIntentFlags` 集中三谓词（多卡对比/多lot/DUT bail）→ `JbRouteDecision` 三必填字段 `isMultiCardCompare/isMultiLotCompare/isDutLevel`
+- `jbIntentClassifier.ts`：DI 可测分类器，失败安全降级 generic
+- 三处 bail 收口到 `emitDeterministicJbTablesReply` 入口（多卡 + 多lot + DUT，各路由自动受护）
+
+**阶段二：黄金集闸门（Tasks 5–7）**
+- `test/eval/scenarios/routing-golden.ts`：57 条问句黄金集（覆盖 14 个 mode）
+- `test/eval/routingGoldenScore.ts`：`scoreRegexOnGolden` 打分器 + `REGEX_BASELINE_PASS_QUESTIONS`（47 条，当前纯正则实际通过） + `scoreHybridOnGolden`（live LLM 对比器，开 flag 后跑全集）
+- `test/agentEval.test.ts`：新增两个闸门测试 — 「纯正则 baseline 零回退」（CI 必跑）+ 「混合路由零 mode 回退」（`AGENT_EVAL_LIVE=1` 才跑）
+
+**文件清单（纯路由/eval 层，未碰 SQL/Dummy/响应形状）：**
+`src/lib/agent/jbRouteResolver.ts`, `jbIntentClassifier.ts`, `agentJbDeterministicReply.ts`（extractJbIntentFlags），`src/lib/agent/agentLoop.ts`（收口守卫）, `test/eval/routingGoldenScore.ts`, `test/eval/scenarios/routing-golden.ts`, `test/agentEval.test.ts`, `test/jbRouteResolver.test.ts`
+
+**测试计数：** 全套 425 个测试，422 通过，0 失败，3 skip（含 live 闸门）；typecheck 干净；`JB_LLM_INTENT_CLASSIFIER` 默认仍 off；正则 baseline 47/57（10 条黄金集待 LLM 覆盖）
+
+---
+
 ## 2026-06-29 — Task 2: JbRouteDecision 携带集中后的多卡/多lot/DUT flag
 
 **完成内容：**
