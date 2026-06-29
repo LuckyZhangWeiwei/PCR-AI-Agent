@@ -3,6 +3,7 @@ import {
   detectJbReplyMode,
   extractBinFromUserText,
   extractSlotFromUserText,
+  extractJbIntentFlags,
 } from "./agentJbDeterministicReply.js";
 import { extractLotFromUserText } from "./agentInfWaferMapTool.js";
 import { callJbIntentClassifier, type ChatFn } from "./jbIntentClassifier.js";
@@ -22,6 +23,9 @@ export interface JbRouteDecision {
   confidence: "high" | "low";
   params: JbRouteParams;
   reason: string;
+  isMultiCardCompare: boolean;
+  isMultiLotCompare: boolean;
+  isDutLevel: boolean;
 }
 
 const CARD_ID_RE = /\b(\d{4}-\d{2,3})\b/;
@@ -54,6 +58,7 @@ export function resolveJbRoute(
     confidence: "high",
     params: extractJbRouteParams(q),
     reason: `detectJbReplyMode → ${mode}`,
+    ...extractJbIntentFlags(q),
   };
 }
 
@@ -84,5 +89,8 @@ export async function resolveJbRouteAsync(
     confidence: r.confidence,
     params: { ...base.params, ...r.params },
     reason: `LLM 分类 → ${r.mode}`,
+    isMultiCardCompare: base.isMultiCardCompare,
+    isMultiLotCompare: base.isMultiLotCompare,
+    isDutLevel: base.isDutLevel,
   };
 }

@@ -2,6 +2,18 @@
 
 ---
 
+## 2026-06-29 — Task 2: JbRouteDecision 携带集中后的多卡/多lot/DUT flag
+
+**完成内容：**
+- `agentJbDeterministicReply.ts`：新增 `extractJbIntentFlags(q)` — 将三个 bail 谓词（`isMultiCardComparisonQuestion` / `isMultiLotComparisonQuestion` / `equipmentRouteDutLevelBail`）集中成单一纯函数，优先级：多卡对比命中时 `isMultiLotCompare` 设 false（避免「对比」关键词双命中）
+- `jbRouteResolver.ts`：`JbRouteDecision` 接口新增三个必填字段 `isMultiCardCompare / isMultiLotCompare / isDutLevel`；import 加 `extractJbIntentFlags`；`resolveJbRoute` 返回体用 spread `...extractJbIntentFlags(q)` 填充
+- `jbRouteResolver.ts`：`resolveJbRouteAsync` LLM 成功分支补 `isMultiCardCompare / isMultiLotCompare / isDutLevel` 透传（Task 3 正式重构前的最小 typecheck 修复）
+- `test/jbRouteResolver.test.ts`：新增 TDD 测试「resolveJbRoute 决策携带集中后的三 flag」，先 RED（`undefined !== true`），再 GREEN（8/8 通过）
+
+**测试：** 8 个测试，0 失败；typecheck 干净
+
+---
+
 ## 2026-06-28（缺陷修复）— 五会话日志复盘:JB 聚合/列表确定性渲染 5 个真库缺陷
 
 **背景：** 基于最新代码的 5 份 Agent 会话日志复盘,发现 5 个缺陷。systematic-debugging 逐个定位根因后修复;B1/B3/B4/B5 为确定性代码层(行为可测),B2 为 prompt 窄规则(LLM 指代消解,依赖遵守)。改动只在路由/渲染层,不碰 SQL/WHERE/响应形状,未触发 dummy-parity。

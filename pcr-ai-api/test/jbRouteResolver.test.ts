@@ -39,6 +39,19 @@ test("resolveJbRoute carries source=regex and params", () => {
   assert.equal(d.params.focusBin, 79);
 });
 
+test("resolveJbRoute 决策携带集中后的三 flag", () => {
+  const d = resolveJbRoute("把这4张probecard的测试情况做对比");
+  assert.equal(d.isMultiCardCompare, true);
+  assert.equal(d.isMultiLotCompare, false);
+  assert.equal(d.isDutLevel, false);
+
+  const e = resolveJbRoute("这几个lot分别用什么卡");
+  assert.equal(e.isMultiLotCompare, true);
+
+  const f = resolveJbRoute("这lot哪些die是嫌疑die");
+  assert.equal(f.isDutLevel, true);
+});
+
 test("开关关 → 不调分类器,等于同步结果", async () => {
   delete process.env.JB_LLM_INTENT_CLASSIFIER;
   const chat = async () => '{"mode":"equipment"}';

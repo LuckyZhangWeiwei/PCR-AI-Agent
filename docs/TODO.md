@@ -13,6 +13,7 @@
 
 - ✅ **五会话日志复盘:JB 聚合/列表 5 缺陷 + B-core 结构收敛** — B1 device 列丢(新 `buildBinDeviceAggregateMarkdown`)、B3 多 lot 未过滤(`restrictLots`+`extractLotsFromUserText`)、B4 多 lot/DUT 单 lot 答非所问(收口 chokepoint + `equipmentRouteDutLevelBail`)、B5 cardId 单 JB lot 丢(主 lot 兜底)、B2 「这个lot」指代(prompt 窄规则)。**B-core**:抽 `renderAggregateJbBinsResult` 单一渲染真相源(消除两站点重复链)+ 多 lot bail 收口。418 测试/eval 37/37 — 2026-06-28 完成。**B2 依赖 LLM 遵守,待真库验证。**
 - ✅ **JB 路由收敛(打地鼠彻底治理)** — `resolveJbRoute` 单一真相源 + 有序 runner 列表 + LLM 兜底(开关 `JB_LLM_INTENT_CLASSIFIER` 默认关) + 安全降级；408 测试/eval 37/37 — 2026-06-28 完成。**待办：阶段3 灰度** — 部署后设 `JB_LLM_INTENT_CLASSIFIER=true` + pm2 reload,`AGENT_EVAL_LIVE=1` 跑 live eval + 真库 curl 比对开/关,确认 403 降级；稳定后默认开启。spec/plan 见 `docs/superpowers/`。
+- ✅ **Task 2: JbRouteDecision 携带集中后三 flag** — `extractJbIntentFlags` 集中三谓词(多卡对比优先级排除多 lot 双命中)；`JbRouteDecision` 新增 `isMultiCardCompare/isMultiLotCompare/isDutLevel`；`resolveJbRoute` spread 填充；async 分支透传；8 测试全绿 — 2026-06-29 完成
 - ✅ **P-C 多卡对比 bail 收口重构** — 散落的 3 处 bail（equipment 直连 + summary 轮 + detectJbReplyMode）收敛到 `emitDeterministicJbTablesReply` 入口单一守卫；所有走该收口点的直连路由自动受保护，新增路由免补 bail；行为等价（398 测试全绿） — 2026-06-28 完成
 - ✅ **P-A `get_filter_values` device-by-mask 真库空** — Oracle `TRIM(col)!=''` 陷阱；`oracleStringSql.ts` + 探针闭环（2026-06-27 Cursor）；**服务器待 pm2 reload 后 SSE 复验**
 - ✅ **P-F `query_lot_dut_bin_agg`** — focusBin→focusBins + goodBins 排除（2026-06-27 Cursor）；真库 curl 待部署后复验

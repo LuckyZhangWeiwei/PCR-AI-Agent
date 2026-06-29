@@ -684,6 +684,23 @@ export function equipmentRouteDutLevelBail(text: string): boolean {
   return /\bdut\b|嫌疑\s*die|哪些?\s*die/i.test(text);
 }
 
+/** 把三个 bail 谓词集中成一个决策对象,供 jbRouteResolver 单点产出。
+ * 优先级：多卡对比（isMultiCardCompare）命中时，isMultiLotCompare 设为 false，
+ * 避免「这4张卡对比」被误判为跨 lot 对比（"对比" 关键词在两侧均有匹配）。
+ */
+export function extractJbIntentFlags(q: string): {
+  isMultiCardCompare: boolean;
+  isMultiLotCompare: boolean;
+  isDutLevel: boolean;
+} {
+  const isMultiCardCompare = isMultiCardComparisonQuestion(q);
+  return {
+    isMultiCardCompare,
+    isMultiLotCompare: isMultiCardCompare ? false : isMultiLotComparisonQuestion(q),
+    isDutLevel: equipmentRouteDutLevelBail(q),
+  };
+}
+
 export function isBinTrendQuestion(text: string): boolean {
   const bin = extractBinFromUserText(text);
   if (bin == null) return false;
