@@ -42,12 +42,10 @@ import {
   buildBinFocusedLotRankingMarkdown,
   DETERMINISTIC_DATA_SECTION_TITLE,
   DETERMINISTIC_COMMENTARY_SECTION_TITLE,
-  equipmentRouteDutLevelBail,
   extractBinFromUserText,
   extractSlotFromUserText,
   extractYmLotsFromHistory,
   isLotListingQuestion,
-  isMultiLotComparisonQuestion,
   isSingleWaferDieClusterQuestion,
   isCardTypeLevelOverviewQuestion,
   isLotOverviewQuestion,
@@ -55,7 +53,6 @@ import {
   buildLotListingContext,
   isPerSlotBadBinRankingQuestion,
   isProbeCardQuestion,
-  isMultiCardComparisonQuestion,
   isBinCardAttributionQuestion,
   isTesterMachineQuestion,
   jbReplySkipsCommentaryLlm,
@@ -938,7 +935,7 @@ async function emitDeterministicJbTablesReply(
     getHistory(sessionId),
     payload
   );
-  if (isMultiCardComparisonQuestion(userQuestion)) {
+  if (decision.isMultiCardCompare) {
     console.warn(
       `[jbDeterministic/multiCardCompareBail] 多卡对比交回 LLM:「${userQuestion.slice(0, 50)}」`
     );
@@ -952,7 +949,7 @@ async function emitDeterministicJbTablesReply(
   const turnLots = collectQueryJbBinsLotsThisTurn(history);
   if (turnLots.length > 1) {
     const lotNamedInQuestion = Boolean(extractLotFromUserText(userQuestion));
-    if (isMultiLotComparisonQuestion(userQuestion) || !lotNamedInQuestion) {
+    if (decision.isMultiLotCompare || !lotNamedInQuestion) {
       console.warn(
         `[jbDeterministic/multiLotBail] 多 lot 场景（${turnLots.length} 个 lot，本句点名 lot=${lotNamedInQuestion}）` +
           `不出单 lot 概况，交回 LLM 用全部 lot 历史作答:「${userQuestion.slice(0, 40)}」`
@@ -1549,7 +1546,7 @@ async function tryRunEquipmentDirectRoute(
   // 问到 DUT 级归属（如「把对应的卡和 dut 都列出来」）：equipment 缓存表只有卡号 + 机台，
   // **没有 DUT 数据**（DUT 归属需 query_lot_dut_bin_agg）→ 用缓存只能出残缺答案（见 B4）。
   // bail 交回 LLM，由其调 query_lot_dut_bin_agg 补全 DUT。
-  if (equipmentRouteDutLevelBail(userQuestion)) {
+  if (resolveJbRoute(userQuestion).isDutLevel) {
     console.warn(
       `[equipmentRoute/skip:dutLevel] DUT 级归属 equipment 缓存无此数据，交回 LLM：「${userQuestion.slice(0, 50)}」`
     );
