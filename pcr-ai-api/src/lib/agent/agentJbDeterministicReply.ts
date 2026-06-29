@@ -679,6 +679,11 @@ export function isMultiLotComparisonQuestion(text: string): boolean {
   );
 }
 
+/** equipment 直连路由的 DUT 级 bail:问 dut/嫌疑die 时不走单 lot equipment 缓存表,交回 LLM。 */
+export function equipmentRouteDutLevelBail(text: string): boolean {
+  return /\bdut\b|嫌疑\s*die|哪些?\s*die/i.test(text);
+}
+
 export function isBinTrendQuestion(text: string): boolean {
   const bin = extractBinFromUserText(text);
   if (bin == null) return false;

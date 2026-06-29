@@ -10,6 +10,7 @@ import {
   buildEngineeringContextFromPayload,
   buildRecentLotsListingMarkdown,
   detectJbReplyMode,
+  equipmentRouteDutLevelBail,
   extractBinFromUserText,
   extractYmLotsFromHistory,
   isBinTrendQuestion,
@@ -38,6 +39,12 @@ import {
 } from "../src/lib/agent/agentJbBinFormat.js";
 
 describe("agentJbDeterministicReply", () => {
+  it("equipmentRouteDutLevelBail: DUT/嫌疑die 类问句为 true,纯卡问句为 false", () => {
+    assert.equal(equipmentRouteDutLevelBail("ok 把对应用的卡 和 dut lot 都列出来"), true);
+    assert.equal(equipmentRouteDutLevelBail("哪些 die 是嫌疑"), true);
+    assert.equal(equipmentRouteDutLevelBail("这批用的什么卡"), false);
+  });
+
   it("detects bin trend vs lot overview", () => {
     assert.equal(
       detectJbReplyMode("NF12316.1X 中 bin7 的趋势"),

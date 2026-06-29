@@ -42,6 +42,7 @@ import {
   buildBinFocusedLotRankingMarkdown,
   DETERMINISTIC_DATA_SECTION_TITLE,
   DETERMINISTIC_COMMENTARY_SECTION_TITLE,
+  equipmentRouteDutLevelBail,
   extractBinFromUserText,
   extractSlotFromUserText,
   extractYmLotsFromHistory,
@@ -1517,13 +1518,7 @@ export function equipmentRouteCrossLotBail(text: string): boolean {
   return false;
 }
 
-/**
- * equipment 缓存表只有卡号 + 机台，**没有 DUT 级数据**（DUT 归属需 query_lot_dut_bin_agg）。
- * 问到 DUT 时用缓存只能出残缺答案（见 B4：「把对应的卡和 dut 都列出来」只出卡表）→ 交回 LLM。
- */
-export function equipmentRouteDutLevelBail(text: string): boolean {
-  return /\bdut\b|嫌疑\s*die|哪些?\s*die/i.test(text);
-}
+export { equipmentRouteDutLevelBail } from "./agentJbDeterministicReply.js";
 
 /**
  * 探针卡 / 机台 直连路由：用户追问 "probecard是什么" 等时，直接从 session 缓存输出
