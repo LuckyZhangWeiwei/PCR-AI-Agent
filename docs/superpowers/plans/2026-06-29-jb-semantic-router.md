@@ -30,9 +30,8 @@
 | `src/lib/agent/jbIntentClassifier.ts` | LLM 分类器 | SYSTEM + 解析扩成输出 3 flag |
 | `src/lib/agent/agentLoop.ts` | 消费点 | 3 处 bail 改读 decision;`equipmentRouteDutLevelBail` 改为 re-export |
 | `test/eval/scenarios/routing-golden.ts` | 黄金集数据 | 新建 |
-| `test/eval/routingGoldenScore.ts` | 三路打分器 | 新建 |
-| `test/eval/allScenarios.ts` | 汇总 | 挂入 golden |
-| `test/agentEval.test.ts` | 闸门 | 加 baseline 零回退断言 |
+| `test/eval/routingGoldenScore.ts` | 纯正则打分器 + baseline 闸门 | 新建 |
+| `test/agentEval.test.ts` | total≥30 + baseline 零回退 + live 混合 | 加断言 |
 
 ---
 
@@ -489,20 +488,20 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 ---
 
-### Task 6: 三路打分器 `routingGoldenScore.ts` + 挂入 eval
+### Task 6: 纯正则打分器 `routingGoldenScore.ts`(不挂 allScenarios)
 
-对黄金集逐条跑 ①纯正则 ②（live）LLM ③混合,产出准确率与逐条 diff;把"纯正则在黄金集上的命中"作为确定性 scenario 挂进 `allScenarios`(CI 可跑)。
+对黄金集跑纯正则,产出 `{ total, passed, failures }` 与逐条 diff,供 Task 7 的 baseline 闸门消费。
+
+> **关键(计划修正 2026-06-29):** **不**把 58 条逐条断言挂进 `allScenarios`。黄金集**刻意含「正则不命中、待 LLM 覆盖」的发散条目**(见 Task 5),而 [`agentEval.test.ts`](../../../pcr-ai-api/test/agentEval.test.ts) 对 allScenarios 断言 `failures===0` —— 挂进去会让发散条目直接把 `npm test` 搞红。CI 对黄金集的硬约束只有两条:**`total≥30`**(本 Task)+ **baseline 零回退**(Task 7);发散条目由 Task 7 的 `live` 混合测试覆盖。
 
 **Files:**
 - Create: `pcr-ai-api/test/eval/routingGoldenScore.ts`
-- Modify: `pcr-ai-api/test/eval/allScenarios.ts`
-- Test: `pcr-ai-api/test/agentEval.test.ts`(已跑 allScenarios)
+- Test: `pcr-ai-api/test/agentEval.test.ts`
 
 **Interfaces:**
 - Consumes: `routingGolden`(Task 5),`resolveJbRoute`(Task 2)
 - Produces:
   - `export function scoreRegexOnGolden(): { total: number; passed: number; failures: { question: string; got: string; want: string }[] }`
-  - `export const goldenRegexScenarios: EvalScenario[]`(每条一个 `category: "routing"` scenario,断言纯正则 mode+flag 命中)
 
 - [ ] **Step 1: 写失败测试**(`test/agentEval.test.ts` 新增)
 
@@ -524,8 +523,6 @@ Expected: FAIL —— 找不到 `./eval/routingGoldenScore.js`。
 ```ts
 import { routingGolden } from "./scenarios/routing-golden.js";
 import { resolveJbRoute } from "../../src/lib/agent/jbRouteResolver.js";
-import type { EvalScenario } from "./evalTypes.js";
-import { ok, fail } from "./evalTypes.js";
 
 function regexDecisionMatches(q: string, want: (typeof routingGolden)[number]["expected"]) {
   const d = resolveJbRoute(q);
@@ -557,38 +554,20 @@ export function scoreRegexOnGolden(): {
   }
   return { total: routingGolden.length, passed, failures };
 }
-
-/** 每条黄金集 → 一个确定性 routing scenario(断言纯正则命中)。CI 可跑。 */
-export const goldenRegexScenarios: EvalScenario[] = routingGolden.map((c, i) => ({
-  id: `golden-regex-${i}-${c.expected.mode}`,
-  category: "routing",
-  title: `[golden] 「${c.question.slice(0, 24)}」→ ${c.expected.mode}`,
-  seed: c.seed,
-  run: () => {
-    const r = regexDecisionMatches(c.question, c.expected);
-    return r.pass ? ok() : fail(`正则得 ${JSON.stringify(r.got)},期望 ${JSON.stringify(c.expected)}`);
-  },
-}));
 ```
 
-- [ ] **Step 4: 挂入 `allScenarios.ts`**(import 并 concat `goldenRegexScenarios`)
+> 注意:**不导出** `goldenRegexScenarios`、**不 import** `EvalScenario`/`ok`/`fail` —— 本文件只做纯打分,不向 allScenarios 注入逐条断言(理由见本 Task 顶部"关键"框)。
 
-在 `allScenarios.ts` 顶部加:
-```ts
-import { goldenRegexScenarios } from "./routingGoldenScore.js";
-```
-并把 `goldenRegexScenarios` 加进导出的 scenarios 汇总数组(与现有 `routingScenarios` 等并列 `...goldenRegexScenarios`)。
-
-- [ ] **Step 5: 跑确认通过**
+- [ ] **Step 4: 跑确认通过**
 
 Run: `cd pcr-ai-api && npx tsx --test test/agentEval.test.ts`
-Expected: PASS。**若有黄金集条目纯正则不命中**,这是预期信号:它标出"正则覆盖不到、需 LLM 兜底"的问句。处理:把该条 `expected.mode` 核对无误后,**不改正则去硬凑**;在 Task 7 把这些条目登记为 baseline 的"已知正则未命中集",由混合路由(LLM)覆盖。本 Step 仅要求 `scoreRegexOnGolden()` 能跑出结果;允许部分 fail,先记录数量。
+Expected: PASS(`total≥30` 断言绿)。可临时 `console.log(scoreRegexOnGolden().passed)` 看纯正则在黄金集上的当前命中数 —— 命中数 < total 是**预期**的:差额就是"正则覆盖不到、待 LLM 兜底"的发散集。**不改正则去硬凑这些条目**;它们由 Task 7 `live` 混合测试覆盖。看完删掉临时 log。
 
-- [ ] **Step 6: 提交**
+- [ ] **Step 5: 提交**
 
 ```bash
-git add pcr-ai-api/test/eval/routingGoldenScore.ts pcr-ai-api/test/eval/allScenarios.ts pcr-ai-api/test/agentEval.test.ts
-git commit -m "test(agent): 黄金集三路打分器 + 纯正则 scenario 挂入 eval
+git add pcr-ai-api/test/eval/routingGoldenScore.ts pcr-ai-api/test/agentEval.test.ts
+git commit -m "test(agent): 黄金集纯正则打分器(scoreRegexOnGolden)
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
@@ -609,9 +588,12 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 - [ ] **Step 1: 先跑一次取当前纯正则通过的 question 列表,写入 baseline 常量**
 
-Run: `cd pcr-ai-api && npx tsx -e "import('./test/eval/routingGoldenScore.js').then(m=>{const r=m.scoreRegexOnGolden();console.log(JSON.stringify(routingGoldenPassList(),null,0))}).catch(e=>console.error(e))"`
+Run(打印当前纯正则**通过**的问句原文 = 全集去掉 failures):
+```bash
+cd pcr-ai-api && npx tsx -e "Promise.all([import('./test/eval/routingGoldenScore.js'),import('./test/eval/scenarios/routing-golden.js')]).then(([s,g])=>{const fail=new Set(s.scoreRegexOnGolden().failures.map(f=>f.question));console.log(JSON.stringify(g.routingGolden.map(c=>c.question).filter(q=>!fail.has(q)),null,2))})"
+```
 
-> 实操:直接读 `scoreRegexOnGolden().failures` 反推通过集即可。把**当前通过**的 `question` 原文数组,粘进 `routingGoldenScore.ts`:
+> 把打印出的**当前通过**的 `question` 原文数组,逐条粘进 `routingGoldenScore.ts`:
 
 ```ts
 /** 锁定:这些问句纯正则当前已正确命中,任何后续改动不得使其回退。 */
