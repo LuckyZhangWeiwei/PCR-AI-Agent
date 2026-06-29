@@ -68,7 +68,7 @@ function isAmbiguous(q: string): boolean {
   return !extractLotFromUserText(q);
 }
 
-export async function resolveJbRouteAsync(
+export async function classifyJbIntent(
   q: string,
   ctx: { lastToolName?: string; cachedLot?: string },
   agentConfig: AgentConfig,
@@ -78,19 +78,24 @@ export async function resolveJbRouteAsync(
 ): Promise<JbRouteDecision> {
   const base = resolveJbRoute(q, history, payload);
   if (process.env.JB_LLM_INTENT_CLASSIFIER !== "true") return base;
-  if (base.mode !== "generic" || !isAmbiguous(q)) return base;
+  if (base.mode !== "generic" || !isAmbiguous(q)) return base; // 高置信快路
   const r = await callJbIntentClassifier(q, ctx, agentConfig, deps);
   if (!r) {
     return { ...base, source: "default", confidence: "low", reason: "LLM 分类失败,降级 generic" };
   }
   return {
+    ...base,
     mode: r.mode,
     source: "llm",
     confidence: r.confidence,
     params: { ...base.params, ...r.params },
     reason: `LLM 分类 → ${r.mode}`,
-    isMultiCardCompare: base.isMultiCardCompare,
-    isMultiLotCompare: base.isMultiLotCompare,
-    isDutLevel: base.isDutLevel,
+    // LLM 返回 flag 则采用,否则继承正则 base
+    isMultiCardCompare: r.flags?.isMultiCardCompare ?? base.isMultiCardCompare,
+    isMultiLotCompare: r.flags?.isMultiLotCompare ?? base.isMultiLotCompare,
+    isDutLevel: r.flags?.isDutLevel ?? base.isDutLevel,
   };
 }
+
+/** @deprecated 旧名,等价 classifyJbIntent。 */
+export const resolveJbRouteAsync = classifyJbIntent;

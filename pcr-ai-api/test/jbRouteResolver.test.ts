@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { extractJbRouteParams, resolveJbRoute, resolveJbRouteAsync } from "../src/lib/agent/jbRouteResolver.js";
+import { extractJbRouteParams, resolveJbRoute, resolveJbRouteAsync, classifyJbIntent } from "../src/lib/agent/jbRouteResolver.js";
 import { detectJbReplyMode } from "../src/lib/agent/agentJbDeterministicReply.js";
 
 test("extractJbRouteParams pulls focusBin and lot", () => {
@@ -74,4 +74,26 @@ test("开关开 + 分类器 null → 降级 generic", async () => {
   assert.equal(d.mode, "generic");
   assert.equal(d.source, "default");
   delete process.env.JB_LLM_INTENT_CLASSIFIER;
+});
+
+test("classifyJbIntent: LLM 命中时采用 LLM 的 mode 与 flag", async () => {
+  const fakeChat = async () =>
+    JSON.stringify({ mode: "generic", confidence: "high",
+      isMultiCardCompare: true, isMultiLotCompare: false, isDutLevel: false });
+  process.env.JB_LLM_INTENT_CLASSIFIER = "true";
+  try {
+    const d = await classifyJbIntent(
+      "这几张卡最近咋样", {}, { subAgentModel: "x" } as any, { chat: fakeChat });
+    assert.equal(d.source, "llm");
+    assert.equal(d.isMultiCardCompare, true);
+  } finally {
+    delete process.env.JB_LLM_INTENT_CLASSIFIER;
+  }
+});
+
+test("classifyJbIntent: flag off 时纯正则,flag 来自正则 base", async () => {
+  const d = await classifyJbIntent(
+    "把这4张probecard的测试情况做对比", {}, { subAgentModel: "x" } as any);
+  assert.equal(d.source, "regex");
+  assert.equal(d.isMultiCardCompare, true);
 });

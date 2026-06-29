@@ -14,12 +14,13 @@ export interface JbClassifierResult {
   mode: JbReplyMode;
   confidence: "high" | "low";
   params?: JbRouteParams;
+  flags?: { isMultiCardCompare: boolean; isMultiLotCompare: boolean; isDutLevel: boolean };
 }
 
 export type ChatFn = (prompt: string, agentConfig: AgentConfig) => Promise<string>;
 
-const SYSTEM = `你是测试数据问句的意图分类器。仅输出 JSON:{"mode":<枚举>,"confidence":"high|low","focusBin":<数字或null>,"lot":<字符串或null>,"cardId":<字符串或null>}。mode 必须是以下之一:` +
-  [...VALID_MODES].join(",") + `。多卡对比/模糊/跨实体一律 mode=generic。`;
+const SYSTEM = `你是测试数据问句的意图分类器。仅输出 JSON:{"mode":<枚举>,"confidence":"high|low","focusBin":<数字或null>,"lot":<字符串或null>,"cardId":<字符串或null>,"isMultiCardCompare":<bool>,"isMultiLotCompare":<bool>,"isDutLevel":<bool>}。mode 必须是以下之一:` +
+  [...VALID_MODES].join(",") + `。多卡对比/模糊/跨实体一律 mode=generic。isMultiCardCompare:对比≥2张卡;isMultiLotCompare:对比/枚举多个lot;isDutLevel:问dut/嫌疑die。`;
 
 async function defaultChat(prompt: string, agentConfig: AgentConfig): Promise<string> {
   const { streamSiliconFlow } = await import("./agentStream.js");
@@ -66,9 +67,18 @@ export async function callJbIntentClassifier(
   if (typeof obj.focusBin === "number") params.focusBin = obj.focusBin;
   if (typeof obj.lot === "string" && obj.lot) params.lot = obj.lot;
   if (typeof obj.cardId === "string" && obj.cardId) params.cardId = obj.cardId;
+  const flags =
+    typeof obj.isMultiCardCompare === "boolean"
+      ? {
+          isMultiCardCompare: !!obj.isMultiCardCompare,
+          isMultiLotCompare: !!obj.isMultiLotCompare,
+          isDutLevel: !!obj.isDutLevel,
+        }
+      : undefined;
   return {
     mode: obj.mode as JbReplyMode,
     confidence: obj.confidence === "high" ? "high" : "low",
     params,
+    flags,
   };
 }
