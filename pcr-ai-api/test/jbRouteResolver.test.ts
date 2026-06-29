@@ -42,7 +42,6 @@ test("resolveJbRoute carries source=regex and params", () => {
 test("resolveJbRoute 决策携带集中后的三 flag", () => {
   const d = resolveJbRoute("把这4张probecard的测试情况做对比");
   assert.equal(d.isMultiCardCompare, true);
-  assert.equal(d.isMultiLotCompare, false);
   assert.equal(d.isDutLevel, false);
 
   const e = resolveJbRoute("这几个lot分别用什么卡");

@@ -693,10 +693,9 @@ export function extractJbIntentFlags(q: string): {
   isMultiLotCompare: boolean;
   isDutLevel: boolean;
 } {
-  const isMultiCardCompare = isMultiCardComparisonQuestion(q);
   return {
-    isMultiCardCompare,
-    isMultiLotCompare: isMultiCardCompare ? false : isMultiLotComparisonQuestion(q),
+    isMultiCardCompare: isMultiCardComparisonQuestion(q),
+    isMultiLotCompare: isMultiLotComparisonQuestion(q),
     isDutLevel: equipmentRouteDutLevelBail(q),
   };
 }
