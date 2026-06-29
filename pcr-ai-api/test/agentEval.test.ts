@@ -15,3 +15,9 @@ test("agent quality eval — all deterministic scenarios pass", async () => {
   const msg = failures.map((f) => `[${f.scenario.category}] ${f.scenario.id}: ${f.detail}`).join("\n");
   assert.equal(failures.length, 0, `\n${failures.length} 个质量场景失败:\n${msg}`);
 });
+
+test("黄金集:纯正则打分可用且无崩溃", async () => {
+  const { scoreRegexOnGolden } = await import("./eval/routingGoldenScore.js");
+  const r = scoreRegexOnGolden();
+  assert.ok(r.total >= 30, `黄金集应≥30条,实际 ${r.total}`);
+});
