@@ -43,3 +43,13 @@ test("resolveDispatch: lot_yield_ranking → query_jb_bins + emitTables", () => 
   assert.equal(r!.renderKind, "emitTables");
   assert.equal(r!.args["device"], "WA03P02G");
 });
+
+test("resolveDispatch: lot_yield_ranking 裸 mask N55Z → mask fallback", () => {
+  const r = resolveDispatch(
+    dec({ mode: "lot_yield_ranking" }),
+    "N55Z 各 lot 良率 top5", []);
+  assert.ok(r, "N55Z 应走 mask fallback → 非空 plan");
+  assert.equal(r!.queryTool, "query_jb_bins");
+  assert.equal(r!.renderKind, "emitTables");
+  assert.equal(r!.args["mask"], "N55Z");
+});

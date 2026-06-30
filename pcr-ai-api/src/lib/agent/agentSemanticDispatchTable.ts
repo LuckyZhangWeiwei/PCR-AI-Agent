@@ -1,6 +1,6 @@
 import type { JbRouteDecision } from "./jbRouteResolver.js";
 import type { ChatMessage } from "./agentHistory.js";
-import { buildJbScopeArgs } from "./agentQueryScope.js";
+import { buildJbScopeArgs, inferMaskFromText } from "./agentQueryScope.js";
 import { scopedBadBinAggregateArgsFromUser } from "./agentJbScopedBadBinRoute.js";
 
 export type DispatchRenderKind = "aggregate" | "emitTables";
@@ -28,8 +28,15 @@ function planFor(
     case "lot_yield_ranking":
     case "card_yield_compare": {
       const args = buildJbScopeArgs(userQuestion, history, "query_jb_bins");
-      if (!args || !String(args["device"] ?? "").trim()) return null;
-      return { queryTool: "query_jb_bins", args, renderKind: "emitTables" };
+      const deviceStr = args ? String(args["device"] ?? "").trim() : "";
+      if (args && deviceStr) {
+        return { queryTool: "query_jb_bins", args, renderKind: "emitTables" };
+      }
+      // mask fallback: 裸 mask（如 N55Z）或 WC 前缀设备在 buildJbScopeArgs 无法解析 device 时
+      const mask = inferMaskFromText(userQuestion);
+      if (!mask) return null;
+      const fallbackArgs = { ...(args ?? {}), mask };
+      return { queryTool: "query_jb_bins", args: fallbackArgs, renderKind: "emitTables" };
     }
     default:
       return null;
