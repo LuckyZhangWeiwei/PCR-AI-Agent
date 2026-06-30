@@ -2,6 +2,32 @@
 
 ---
 
+## 2026-06-29 — 阶段三完收：决策驱动确定性预 LLM 派发（Tasks 1–5，dark-launch）
+
+**背景：** 真库会话日志 mqygf9mq 复盘显示，turn1 LLM 在高置信意图（`bin_card_attribution` / `lot_yield_ranking` / `card_yield_compare`）下仍会选错工具（如用 `query_jb_bins` 替代 `aggregate_jb_bins`），导致无效往返与无效输出。根治方案：在 LLM 发言前，服务端根据意图决策直接发起正确工具。
+
+**设计：**
+- `agentSemanticDispatchTable.ts`（新增）：纯函数 `resolveDispatch(intent, q)` — 三行显式映射表（`bin_card_attribution`→`aggregate_jb_bins`+renderKind `"aggregate"`；`lot_yield_ranking`→`aggregate_jb_bins`+renderKind `"aggregate"`；`card_yield_compare`→`query_jb_bins`+renderKind `"emitTables"`），`confidence==="high"` 才出，其余返回 `null`。
+- `agentLoop.ts`：新增 `tryRunSemanticDispatchDirectRoute`，追加到 `PRE_LLM_DIRECT_ROUTES` 尾部；aggregate 模式 → 调 `aggregate_jb_bins` + `renderAggregateJbBinsResult`；query 模式 → 调 `query_jb_bins(device|mask)` + `emitDeterministicJbTablesReply`；mask fallback 与现有路由对齐。
+- 空结果 / 工具错误 → 返回 `false`，LLM 自然兜底；仅 `confidence==="high"` 才派发，低置信意图无影响。
+- `.env.example`：`JB_DETERMINISTIC_DISPATCH=false`（dark-launch，默认 **OFF**）。
+
+**黄金集与闸门：**
+- `test/eval/scenarios/routing-golden.ts`：问句从 57 条扩充到 85 条（≥ spec 要求的 80 条）。
+- `test/agentEval.test.ts`：新增两个 CI 闸门 — `scoreDispatchOnGolden`（flag ON 时：派发条目 ≥ 2，且核心 bug 场景 mqygf9mq 必须命中）；`AGENT_EVAL_LIVE=1` live 闸门：实测误分类率 ≤ 2%（真库/真 LLM 环境运行，本 CI 跳过）。
+- `test/routingGoldenScore.ts`：新增 `scoreDispatchOnGolden` 打分器，与已有 `scoreRegexOnGolden` / `scoreHybridOnGolden` 并列。
+
+**安全边界（flag 默认 OFF 下零变更）：**
+- `JB_DETERMINISTIC_DISPATCH` 未设或非 `"true"` → `tryRunSemanticDispatchDirectRoute` 直接返回 `false`，全量行为与阶段一+二逐字节等价。
+- CI 回归（flag 不设）：**429 pass / 0 fail / 4 skip**（含 live 闸门 skip），typecheck 干净。
+
+**FLIP 是用户的决策（Claude 不翻）：** 用户在 Cursor 真库环境设 `AGENT_EVAL_LIVE=1` + 真 LLM 跑实测，确认误分类率 ≤ 2% 后，单独 commit 将 `.env` 的 `JB_DETERMINISTIC_DISPATCH` 改为 `true`。
+
+**文件清单（纯路由/eval 层，未碰 SQL/Dummy/响应形状）：**
+`src/lib/agent/agentSemanticDispatchTable.ts`（新增）, `src/lib/agent/agentLoop.ts`（追加 `tryRunSemanticDispatchDirectRoute`）, `.env.example`（新增 flag 注释+默认），`test/eval/scenarios/routing-golden.ts`（57→85 条）, `test/eval/routingGoldenScore.ts`（新增 `scoreDispatchOnGolden`）, `test/agentEval.test.ts`（新增两个闸门）
+
+---
+
 ## 2026-06-29 — 阶段一+二完收：单一语义决策 + 黄金集闸门（Tasks 1–7）
 
 **阶段一：单一语义决策（Tasks 1–4）**
