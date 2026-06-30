@@ -1,5 +1,6 @@
 import { routingGolden } from "./scenarios/routing-golden.js";
 import { resolveJbRoute, classifyJbIntent } from "../../src/lib/agent/jbRouteResolver.js";
+import { resolveDispatch } from "../../src/lib/agent/agentSemanticDispatchTable.js";
 import type { AgentConfig } from "../../src/lib/agent/agentConfig.js";
 
 function regexDecisionMatches(q: string, want: (typeof routingGolden)[number]["expected"]) {
@@ -97,4 +98,55 @@ export async function scoreHybridOnGolden(agentConfig: AgentConfig): Promise<{ r
     delete process.env.JB_LLM_INTENT_CLASSIFIER;
   }
   return { regressions };
+}
+
+const DISPATCH_MODES = new Set(["bin_card_attribution", "lot_yield_ranking", "card_yield_compare"]);
+
+/**
+ * CI 派发正确性:对黄金集中三个跨实体 mode 的条目,
+ * 纯正则已命中正确 mode 时,验证 resolveDispatch 产出的 plan 正确。
+ * null plan = resolveDispatch 无法解析 scope → 正确落回 LLM,非失败。
+ */
+export function scoreDispatchOnGolden(): {
+  total: number;
+  dispatched: number;
+  failures: { question: string; reason: string }[];
+} {
+  const failures: { question: string; reason: string }[] = [];
+  let dispatched = 0;
+  let total = 0;
+  for (const c of routingGolden) {
+    if (!DISPATCH_MODES.has(c.expected.mode)) continue;
+    total++;
+    const d = resolveJbRoute(c.question); // 纯正则;source="regex" 视为 high
+    if (d.mode !== c.expected.mode) continue; // 正则未命中=已知发散,留 LLM,不测派发
+    const plan = resolveDispatch(d, c.question, []);
+    if (!plan) continue; // 无可解析 scope → 正确落回 LLM,非失败
+    // plan 存在 → 验证派发正确
+    if (c.expected.mode === "bin_card_attribution") {
+      if (plan.queryTool !== "aggregate_jb_bins" || plan.args["groupBy"] !== "bin,cardId") {
+        failures.push({
+          question: c.question,
+          reason: `bin_card 派发错: tool=${plan.queryTool} groupBy=${plan.args["groupBy"]}`,
+        });
+        continue;
+      }
+    } else {
+      // lot_yield_ranking / card_yield_compare
+      if (plan.queryTool !== "query_jb_bins") {
+        failures.push({
+          question: c.question,
+          reason: `${c.expected.mode} 应 query_jb_bins, 实际 ${plan.queryTool}`,
+        });
+        continue;
+      }
+    }
+    dispatched++;
+  }
+  return { total, dispatched, failures };
+}
+
+/** 误分类率 = regressions.length / total（total=0 时返回 0）。 */
+export function hybridMisclassRate(report: { regressions: string[] }, total: number): number {
+  return total === 0 ? 0 : report.regressions.length / total;
 }
