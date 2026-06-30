@@ -19,7 +19,7 @@ test("agent quality eval — all deterministic scenarios pass", async () => {
 test("黄金集:纯正则打分可用且无崩溃", async () => {
   const { scoreRegexOnGolden } = await import("./eval/routingGoldenScore.js");
   const r = scoreRegexOnGolden();
-  assert.ok(r.total >= 30, `黄金集应≥30条,实际 ${r.total}`);
+  assert.ok(r.total >= 80, `黄金集应≥80条,实际 ${r.total}`);
 });
 
 test("闸门:纯正则在 baseline 问句上零回退", async () => {

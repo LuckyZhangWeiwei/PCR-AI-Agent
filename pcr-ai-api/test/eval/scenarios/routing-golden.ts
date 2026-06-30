@@ -342,4 +342,152 @@ export const routingGolden: GoldenCase[] = [
     expected: F({ mode: "card_dut_question" }),
     seed: "isCardDutQuestion 卡号+site问题",
   },
+
+  // ── 阶段三扩充: bin_card_attribution 变体 ─────────────────────────────
+  {
+    question: "n55z 哪片卡 bin35 出得最多",
+    expected: F({ mode: "bin_card_attribution", focusBin: 35 }),
+    seed: "阶段三 哪片卡变体",
+  },
+  {
+    question: "WC13N55Z 哪个探针卡 BIN12 颗数最高",
+    expected: F({ mode: "bin_card_attribution", focusBin: 12 }),
+    seed: "阶段三 探针卡变体",
+  },
+  {
+    question: "各卡 bin8 分布对比一下",
+    expected: F({ mode: "bin_card_attribution", focusBin: 8 }),
+    seed: "阶段三 陈述式发散(正则未必命中)",
+  },
+  {
+    question: "BIN20 归因到哪张卡",
+    expected: F({ mode: "bin_card_attribution", focusBin: 20 }),
+    seed: "阶段三 归因动词变体",
+  },
+  {
+    question: "各探针卡的 BIN3 数量有什么差异",
+    expected: F({ mode: "bin_card_attribution", focusBin: 3 }),
+    seed: "阶段三 数量差异陈述式-正则发散",
+  },
+  {
+    question: "每张卡测出 BIN55 各多少颗",
+    expected: F({ mode: "bin_card_attribution", focusBin: 55 }),
+    seed: "阶段三 每张卡变体",
+  },
+  {
+    question: "bin66 是从哪张卡来的",
+    expected: F({ mode: "bin_card_attribution", focusBin: 66 }),
+    seed: "阶段三 来源动词变体-正则发散",
+  },
+  {
+    question: "哪些卡有 BIN37 问题",
+    expected: F({ mode: "bin_card_attribution", focusBin: 37 }),
+    seed: "阶段三 哪些卡有问题变体",
+  },
+
+  // ── 阶段三扩充: lot_yield_ranking 变体 ───────────────────────────────
+  {
+    question: "这个产品哪些 lot 良率最差",
+    expected: F({ mode: "lot_yield_ranking" }),
+    seed: "阶段三 lot_yield 口语",
+  },
+  {
+    question: "WC13N55Z 各批次良率从低到高排",
+    expected: F({ mode: "lot_yield_ranking" }),
+    seed: "阶段三 lot_yield 排序",
+  },
+  {
+    question: "近期哪几批良率掉得厉害",
+    expected: F({ mode: "lot_yield_ranking" }),
+    seed: "阶段三 lot_yield 发散-正则未必命中",
+  },
+  {
+    question: "最近几个lot良率对比",
+    expected: F({ mode: "lot_yield_ranking" }),
+    seed: "阶段三 lot_yield 对比变体-正则发散",
+  },
+  {
+    question: "良率最低的批次是哪几个",
+    expected: F({ mode: "lot_yield_ranking" }),
+    seed: "阶段三 lot_yield 倒序变体",
+  },
+  {
+    question: "各批次的通过率排行",
+    expected: F({ mode: "lot_yield_ranking" }),
+    seed: "阶段三 通过率陈述式-正则发散",
+  },
+  {
+    question: "哪几批良率比较低",
+    expected: F({ mode: "lot_yield_ranking" }),
+    seed: "阶段三 比较低口语变体-正则发散",
+  },
+
+  // ── 阶段三扩充: card_yield_compare 变体 ──────────────────────────────
+  {
+    question: "这两张卡哪张良率更差",
+    expected: F({ mode: "card_yield_compare" }),
+    seed: "阶段三 card_yield 二选一",
+  },
+  {
+    question: "比一下这几张卡的良率高低",
+    expected: F({ mode: "card_yield_compare" }),
+    seed: "阶段三 card_yield 发散-正则未必命中",
+  },
+  {
+    question: "各卡良率差距大吗",
+    expected: F({ mode: "card_yield_compare" }),
+    seed: "阶段三 card_yield 陈述问句-正则发散",
+  },
+  {
+    question: "哪块卡良率最好",
+    expected: F({ mode: "card_yield_compare" }),
+    seed: "阶段三 最好变体(意图仍是卡间对比)",
+  },
+  {
+    question: "各张探针卡良率怎么样",
+    expected: F({ mode: "card_yield_compare" }),
+    seed: "阶段三 各张陈述式-正则发散",
+  },
+
+  // ── 补充既有 mode 变体（避免分布倾斜）────────────────────────────────
+  {
+    question: "这个lot的坏die主要集中在哪些片",
+    expected: F({ mode: "per_slot_bin_ranking" }),
+    seed: "per_slot_bin 口语变体",
+  },
+  {
+    question: "DR44436.1W 测试中途有没有停下来",
+    expected: F({ mode: "interrupt_count" }),
+    seed: "interrupt_count 口语发散-正则发散",
+  },
+  {
+    question: "9416-04 卡最近一批lot是多少",
+    expected: F({ mode: "lot_listing" }),
+    seed: "lot_listing 卡号+最近一批变体",
+  },
+  {
+    question: "DR44435.1C 第8片有哪些坏bin",
+    expected: F({ mode: "single_slot" }),
+    seed: "single_slot 第N片坏bin变体",
+  },
+  {
+    question: "BIN35 逐片趋势图",
+    expected: F({ mode: "bin_trend", focusBin: 35 }),
+    seed: "bin_trend 趋势图变体",
+  },
+  {
+    question: "把这两张卡 9416-03 和 8041-05 的良率做个对比",
+    expected: F({ mode: "card_yield_compare", isMultiCardCompare: true }),
+    seed: "card_yield_compare 含卡号双卡对比",
+  },
+  {
+    question: "8041-08 卡整体测试表现如何",
+    expected: F({ mode: "card_test_overview" }),
+    seed: "card_test_overview 整体测试表现变体",
+  },
+  {
+    question: "这批测试报告总体来看怎么样",
+    expected: F({ mode: "lot_overview" }),
+    seed: "lot_overview 测试报告陈述式-正则发散",
+  },
 ];
