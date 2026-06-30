@@ -48,6 +48,10 @@ export function resolveDispatch(
   userQuestion: string,
   history: ChatMessage[]
 ): DispatchResult | null {
-  if (decision.confidence !== "high") return null; // 红线:不确定不抢
+  // 红线:不确定不抢。注意——当 JB_LLM_INTENT_CLASSIFIER 关时,resolveJbRoute 的
+  // confidence 恒为 "high"(纯正则),故此处真正的闸门是 planFor 里那三个 mode 的正则
+  // (isBinCardAttributionQuestion 等)。将来放宽这些正则 = 悄悄放大自动派发面,须配套
+  // 扩黄金集 + 跑 live 误分类率验证。
+  if (decision.confidence !== "high") return null;
   return planFor(decision, userQuestion, history);
 }
