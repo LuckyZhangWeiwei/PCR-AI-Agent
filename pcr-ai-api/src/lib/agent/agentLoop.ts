@@ -101,6 +101,8 @@ import {
   type WaferMapRoutePlan,
 } from "./agentWaferMapRoute.js";
 import { resolveJbRoute, resolveJbRouteAsync } from "./jbRouteResolver.js";
+import { resolveDispatch } from "./agentSemanticDispatchTable.js";
+import type { DispatchResult } from "./agentSemanticDispatchTable.js";
 
 export type AgentSseEvent =
   | { type: "text"; delta: string }
@@ -1596,6 +1598,72 @@ async function tryRunPerSlotBinRankingDirectRoute(
   return emitDeterministicJbTablesReply(sessionId, userQuestion, payload, agentConfig, emit);
 }
 
+/**
+ * 阶段三：决策驱动确定性派发（dark-launch，flag `JB_DETERMINISTIC_DISPATCH=true` 才生效）。
+ * 对 `resolveDispatch` 返回高置信 plan 的跨实体 mode 在 LLM 前服务端直发查询与渲染。
+ * 查询失败 / 渲染为空 → return false 交回 LLM，绝不 dead-end。
+ */
+export async function tryRunSemanticDispatchDirectRoute(
+  sessionId: string,
+  userQuestion: string,
+  agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void
+): Promise<boolean> {
+  if (process.env.JB_DETERMINISTIC_DISPATCH !== "true") return false; // dark-launch
+
+  const history = getHistory(sessionId);
+  const lastToolName = lastToolMessage(history)?.name;
+  const decision = await resolveJbRouteAsync(
+    userQuestion, { lastToolName }, agentConfig, undefined, history
+  );
+  const plan: DispatchResult | null = resolveDispatch(decision, userQuestion, history);
+  if (!plan) return false; // 低置信 / 不在派发表 → 交 LLM
+
+  emit({ type: "status", message: "正在按意图直发查询…" });
+  emit({ type: "tool_start", name: plan.queryTool, args: plan.args });
+  let raw = "";
+  let jbCache: string | undefined;
+  try {
+    const result = await runTool(plan.queryTool, plan.args, {
+      toolResultMaxChars: agentConfig.toolResultMaxChars,
+      history,
+      onJbBinsWrapped: (wrapped) => { jbCache = storeJbQuerySessionCache(sessionId, wrapped); },
+    });
+    raw = typeof result === "string" ? result : JSON.stringify(result);
+    emit({ type: "tool_result", name: plan.queryTool, summary: raw.slice(0, 200) });
+    appendMessages(sessionId, {
+      role: "tool", name: plan.queryTool,
+      tool_call_id: `jb_dispatch_${Date.now()}`,
+      content: raw.slice(0, agentConfig.toolResultMaxChars ?? 12000),
+    });
+  } catch {
+    return false; // 查询失败 → 落回 LLM（不 dead-end）
+  }
+
+  if (plan.renderKind === "aggregate") {
+    const scopeLabel = buildScopeLabelFromAggregateArgs(plan.args);
+    const rendered = renderAggregateJbBinsResult(raw, userQuestion, scopeLabel);
+    if (!rendered?.table?.trim()) return false; // 渲染空 → 落回 LLM
+    const block =
+      (rendered.withDataTitle ? `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n` : "") +
+      rendered.table +
+      (rendered.commentaryNote
+        ? `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n${rendered.commentaryNote}`
+        : "");
+    emitTextInChunks(block, emit);
+    appendMessages(sessionId, { role: "assistant", content: block });
+    emit({ type: "done" });
+    return true;
+  }
+
+  // renderKind === "emitTables": 解析 payload → emitDeterministicJbTablesReply
+  const payload =
+    (jbCache ? parseJbToolPayload(jbCache) : null) ??
+    resolveJbToolPayload(sessionId, raw);
+  if (!payload) return false;
+  return emitDeterministicJbTablesReply(sessionId, userQuestion, payload, agentConfig, emit);
+}
+
 /** 从 query_lot_dut_bin_agg 结果中提取 DUT 分布，直接 emit bar chart。 */
 function tryEmitDutBinBarChart(
   rawContent: string,
@@ -2718,6 +2786,7 @@ export async function runAgentLoop(
     tryRunLotOverviewDirectRoute,
     tryRunEquipmentDirectRoute,
     tryRunPerSlotBinRankingDirectRoute,
+    tryRunSemanticDispatchDirectRoute,
   ];
 
   const maxRounds = agentConfig.maxRounds;

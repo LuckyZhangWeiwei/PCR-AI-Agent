@@ -9,6 +9,7 @@ import {
   equipmentRouteCrossLotBail,
   equipmentRouteDutLevelBail,
   renderAggregateJbBinsResult,
+  tryRunSemanticDispatchDirectRoute,
 } from "../src/lib/agent/agentLoop.js";
 import {
   buildDutShareChartData,
@@ -506,4 +507,12 @@ test("renderAggregateJbBinsResult: 各 groupBy 形状选对渲染器", () => {
     renderAggregateJbBinsResult(JSON.stringify({ groups: [] }), "x", undefined),
     null
   );
+});
+
+test("tryRunSemanticDispatchDirectRoute: flag 未开时整体短路 return false", async () => {
+  delete process.env.JB_DETERMINISTIC_DISPATCH;
+  const sid = "t-flag-off-" + Date.now();
+  const handled = await tryRunSemanticDispatchDirectRoute(
+    sid, "n55z 哪个卡测出bin35 多", {} as any, () => {});
+  assert.equal(handled, false);
 });
