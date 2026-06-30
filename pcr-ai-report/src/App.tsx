@@ -54,6 +54,7 @@ export default function App() {
   // Sync input when apiBase changes externally (resetApiBase)
   useEffect(() => { setApiBaseInput(apiBase); }, [apiBase]);
 
+  const showSettings = new URLSearchParams(window.location.search).get("settings") === "true";
   const [tab, setTab] = useState<Tab>("yield");
   const [settingsUnlocked, setSettingsUnlocked] = useState(false);
   const [settingsPwInput, setSettingsPwInput] = useState("");
@@ -146,13 +147,15 @@ export default function App() {
             🤖 AI Agent
           </button>
         )}
-        <button
-          type="button"
-          className={`tab tab-settings ${tab === "settings" ? "active" : ""}`}
-          onClick={() => setTab("settings")}
-        >
-          ⚙ Settings
-        </button>
+        {showSettings && (
+          <button
+            type="button"
+            className={`tab tab-settings ${tab === "settings" ? "active" : ""}`}
+            onClick={() => setTab("settings")}
+          >
+            ⚙ Settings
+          </button>
+        )}
       </nav>
 
       <div className="tab-panel" hidden={tab !== "yield"}>
@@ -164,7 +167,7 @@ export default function App() {
       <div className="tab-panel tab-panel--agent" hidden={tab !== "ai"}>
         <AiAgentReport apiBase={apiBase} agentConfig={agentConfig} />
       </div>
-      <div className="tab-panel" hidden={tab !== "settings"}>
+      {showSettings && <div className="tab-panel" hidden={tab !== "settings"}>
         {!settingsUnlocked ? (
           <div className="settings-lock-gate">
             <div className="settings-lock-box">
@@ -491,7 +494,7 @@ export default function App() {
           </section>
         </div>
         )}
-      </div>
+      </div>}
     </div>
   );
 }
