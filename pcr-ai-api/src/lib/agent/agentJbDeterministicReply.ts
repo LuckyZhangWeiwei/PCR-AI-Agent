@@ -685,8 +685,11 @@ export function equipmentRouteDutLevelBail(text: string): boolean {
 }
 
 /** 把三个 bail 谓词集中成一个决策对象,供 jbRouteResolver 单点产出。
- * 优先级：多卡对比（isMultiCardCompare）命中时，isMultiLotCompare 设为 false，
- * 避免「这4张卡对比」被误判为跨 lot 对比（"对比" 关键词在两侧均有匹配）。
+ * 纯聚合：三个字段各自独立调用对应谓词,不做仲裁/互斥。
+ * 已知点(留待阶段三派发时处理):多卡对比串(如「这4张卡对比」)会同时令
+ * isMultiLotCompare=true(谓词的「对比」关键词双命中)。阶段二无害——多卡 bail
+ * 在消费侧(agentLoop ~938)先于多 lot bail(~952)短路;阶段三让 flag 驱动确定性
+ * 派发时,需在此引入明确的 flag 优先级并加测试,届时再改为互斥。
  */
 export function extractJbIntentFlags(q: string): {
   isMultiCardCompare: boolean;

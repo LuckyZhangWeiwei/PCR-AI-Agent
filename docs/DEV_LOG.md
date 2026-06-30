@@ -25,7 +25,7 @@
 ## 2026-06-29 — Task 2: JbRouteDecision 携带集中后的多卡/多lot/DUT flag
 
 **完成内容：**
-- `agentJbDeterministicReply.ts`：新增 `extractJbIntentFlags(q)` — 将三个 bail 谓词（`isMultiCardComparisonQuestion` / `isMultiLotComparisonQuestion` / `equipmentRouteDutLevelBail`）集中成单一纯函数，优先级：多卡对比命中时 `isMultiLotCompare` 设 false（避免「对比」关键词双命中）
+- `agentJbDeterministicReply.ts`：新增 `extractJbIntentFlags(q)` — 将三个 bail 谓词（`isMultiCardComparisonQuestion` / `isMultiLotComparisonQuestion` / `equipmentRouteDutLevelBail`）集中成单一**纯聚合**函数（三字段各自独立调谓词，不做仲裁）。已知点：多卡对比串会同时令 `isMultiLotCompare=true`（「对比」双命中），阶段二无害（消费侧多卡 bail 先短路），**留待阶段三 flag 驱动派发时引入明确优先级 + 测试**
 - `jbRouteResolver.ts`：`JbRouteDecision` 接口新增三个必填字段 `isMultiCardCompare / isMultiLotCompare / isDutLevel`；import 加 `extractJbIntentFlags`；`resolveJbRoute` 返回体用 spread `...extractJbIntentFlags(q)` 填充
 - `jbRouteResolver.ts`：`resolveJbRouteAsync` LLM 成功分支补 `isMultiCardCompare / isMultiLotCompare / isDutLevel` 透传（Task 3 正式重构前的最小 typecheck 修复）
 - `test/jbRouteResolver.test.ts`：新增 TDD 测试「resolveJbRoute 决策携带集中后的三 flag」，先 RED（`undefined !== true`），再 GREEN（8/8 通过）
