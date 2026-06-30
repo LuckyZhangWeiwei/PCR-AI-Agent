@@ -546,16 +546,7 @@ function reAggByUserDims(groups: AggregateGroup[], userDims: string[]): Aggregat
 
 // ── Funnel drill-down ─────────────────────────────────────────────────────────
 
-type FunnelChainStep = { level: string; value: string | string[] };
-
-function stepValues(step: FunnelChainStep): string[] {
-  return Array.isArray(step.value) ? step.value : [step.value];
-}
-
-function stepDisplayValue(step: FunnelChainStep): string {
-  if (!Array.isArray(step.value)) return step.value;
-  return step.value.length === 1 ? step.value[0] : `${step.value.length}个`;
-}
+type FunnelChainStep = { level: string; value: string };
 
 const FUNNEL_LEVEL_DEFS: ReadonlyArray<{ key: string; label: string; color: string }> = [
   { key: "mask",   label: "Mask",      color: "#79c0ff" },
@@ -575,15 +566,14 @@ function funnelFilter(
   rows: InfcontrolLayerBinV3Row[],
   chain: FunnelChainStep[],
 ): InfcontrolLayerBinV3Row[] {
-  return chain.reduce<InfcontrolLayerBinV3Row[]>((acc, step) => {
-    const vals = stepValues(step);
-    switch (step.level) {
-      case "mask":   return acc.filter(r => vals.some(v => (jbRowDimValue(r, "mask") ?? "") === v));
-      case "device": return acc.filter(r => vals.some(v => String(r.DEVICE ?? "").trim() === v));
-      case "lot":    return acc.filter(r => vals.some(v => String(r.LOT ?? "").trim() === v));
-      case "slot":   return acc.filter(r => vals.some(v => String(r.SLOT ?? "") === v));
-      case "passId": return acc.filter(r => vals.some(v => String(r.PASSID ?? "") === v));
-      case "cardId": return acc.filter(r => vals.some(v => String(r.CARDID ?? "").trim() === v));
+  return chain.reduce<InfcontrolLayerBinV3Row[]>((acc, { level, value }) => {
+    switch (level) {
+      case "mask":   return acc.filter(r => (jbRowDimValue(r, "mask") ?? "") === value);
+      case "device": return acc.filter(r => String(r.DEVICE ?? "").trim() === value);
+      case "lot":    return acc.filter(r => String(r.LOT ?? "").trim() === value);
+      case "slot":   return acc.filter(r => String(r.SLOT ?? "") === value);
+      case "passId": return acc.filter(r => String(r.PASSID ?? "") === value);
+      case "cardId": return acc.filter(r => String(r.CARDID ?? "").trim() === value);
       default:       return acc;
     }
   }, rows);
@@ -643,8 +633,6 @@ function computeFunnelBars(rows: InfcontrolLayerBinV3Row[], levelKey: string): F
 
 // FUNNEL_LEVEL_DEFS index at which a fresh DB fetch is used instead of list.rows
 const FUNNEL_DB_FETCH_FROM = 3; // passId (index 3) and deeper
-// chain.length at which multi-select mode activates (lot = index 2, and all deeper levels)
-const FUNNEL_MULTI_SELECT_FROM = 2;
 
 function FunnelDrillSection({
   rows, chain, onChainChange, apiBase,
@@ -660,11 +648,6 @@ function FunnelDrillSection({
 }) {
   const isDut = chain.length >= FUNNEL_LEVEL_DEFS.length;
   const levelDef = isDut ? undefined : FUNNEL_LEVEL_DEFS[chain.length];
-  const isMultiSelectLevel = !isDut && chain.length >= FUNNEL_MULTI_SELECT_FROM;
-
-  const [pendingValues, setPendingValues] = useState<string[]>([]);
-  // Reset pending selection when the chain advances or retreats
-  useEffect(() => { setPendingValues([]); }, [chain.length]);
 
   // For slot/passId/probecard levels: use freshly-fetched lotRows (all wafers, no limit).
   // For mask/device/lot levels: derive from existing list.rows.
@@ -689,10 +672,6 @@ function FunnelDrillSection({
   const { chartOption, displayItems } = useMemo((): { chartOption: EChartsOption; displayItems: FunnelBarItem[] } => {
     if (!levelDef || !bars.length) return { chartOption: {}, displayItems: [] };
     const color = levelDef.color;
-    const hasPending = isMultiSelectLevel && pendingValues.length > 0;
-
-    const barOpacity = (value: string) =>
-      !hasPending ? 1 : pendingValues.includes(value) ? 1 : 0.18;
 
     if (levelDef.key === "slot") {
       const sorted = [...bars].sort((a, b) => Number(a.value) - Number(b.value));
@@ -723,7 +702,7 @@ function FunnelDrillSection({
           },
           series: [{
             type: "bar",
-            data: sorted.map(d => ({ value: d.badDie, itemStyle: { color, opacity: barOpacity(d.value), borderRadius: [4, 4, 0, 0] as unknown as number } })),
+            data: sorted.map(d => ({ value: d.badDie, itemStyle: { color, borderRadius: [4, 4, 0, 0] as unknown as number } })),
             animationDuration: 600,
           }],
         },
@@ -768,35 +747,23 @@ function FunnelDrillSection({
         },
         series: [{
           type: "bar",
-          data: sorted.map(d => ({ value: d.badDie, itemStyle: { color, opacity: barOpacity(d.value), borderRadius: [0, 4, 4, 0] as unknown as number } })),
+          data: sorted.map(d => ({ value: d.badDie, itemStyle: { color, borderRadius: [0, 4, 4, 0] as unknown as number } })),
           label: { show: true, position: "right", color: chartAxisColor, fontSize: 10 },
           animationDuration: 600,
         }],
       },
     };
-  }, [bars, levelDef, isMultiSelectLevel, pendingValues]);
+  }, [bars, levelDef]);
 
   const handleBarClick = useCallback(
     (params: { dataIndex: number }) => {
       if (isDut || !levelDef) return;
       const item = displayItems[params.dataIndex];
       if (!item) return;
-      if (!isMultiSelectLevel) {
-        onChainChange([...chain, { level: levelDef.key, value: item.value }]);
-      } else {
-        setPendingValues(prev =>
-          prev.includes(item.value) ? prev.filter(v => v !== item.value) : [...prev, item.value]
-        );
-      }
+      onChainChange([...chain, { level: levelDef.key, value: item.value }]);
     },
-    [displayItems, chain, isDut, levelDef, isMultiSelectLevel, onChainChange],
+    [displayItems, chain, isDut, levelDef, onChainChange],
   );
-
-  const handleConfirmMultiSelect = useCallback(() => {
-    if (!levelDef || pendingValues.length === 0) return;
-    const value: string | string[] = pendingValues.length === 1 ? pendingValues[0] : [...pendingValues];
-    onChainChange([...chain, { level: levelDef.key, value }]);
-  }, [levelDef, pendingValues, chain, onChainChange]);
 
   const { dutWafers, dutDevice, dutLot, dutGoodBins } = useMemo(() => {
     const empty = { dutWafers: [] as InfDutWaferSpec[], dutDevice: "", dutLot: "", dutGoodBins: new Set<number>([HARD_GOOD_BIN]) };
@@ -804,8 +771,6 @@ function FunnelDrillSection({
     const deviceStep = chain.find(s => s.level === "device");
     const lotStep    = chain.find(s => s.level === "lot");
     if (!deviceStep || !lotStep) return empty;
-    const dutDevice = Array.isArray(deviceStep.value) ? deviceStep.value[0] : deviceStep.value;
-    const dutLot = Array.isArray(lotStep.value) ? lotStep.value.join(", ") : lotStep.value;
     const waferMap = new Map<string, InfDutWaferSpec>();
     const goodBins = new Set<number>([HARD_GOOD_BIN]);
     for (const row of filteredRows) {
@@ -820,7 +785,7 @@ function FunnelDrillSection({
       }
       for (const n of collectGoodBinNumbersFromJbRow(row)) goodBins.add(n);
     }
-    return { dutWafers: [...waferMap.values()], dutDevice, dutLot, dutGoodBins: goodBins };
+    return { dutWafers: [...waferMap.values()], dutDevice: deviceStep.value, dutLot: lotStep.value, dutGoodBins: goodBins };
   }, [isDut, filteredRows, chain]);
 
   const chartHeight = !levelDef ? 0
@@ -853,7 +818,7 @@ function FunnelDrillSection({
                 disabled={isFuture}
               >
                 <span className="funnel-step-name">{def.label}</span>
-                {step && <span className="funnel-step-val">{stepDisplayValue(step)}</span>}
+                {step && <span className="funnel-step-val">{step.value}</span>}
                 {isCurrent && !step && <span className="funnel-step-selecting">▼ 选择中</span>}
               </button>
             </Fragment>
@@ -873,29 +838,17 @@ function FunnelDrillSection({
       <div className="funnel-chart-header">
         <span className="funnel-chart-title">
           {isDut
-            ? `DUT × BIN — ${chain.map(s => stepDisplayValue(s)).join(" › ")}`
+            ? `DUT × BIN — ${chain.map(s => s.value).join(" › ")}`
             : chain.length === 0
               ? "点击条形开始钻取"
-              : `${chain.map(s => stepDisplayValue(s)).join(" › ")} — 选择 ${levelDef?.label ?? ""}`
+              : `${chain.map(s => s.value).join(" › ")} — 选择 ${levelDef?.label ?? ""}`
           }
-          {isMultiSelectLevel && pendingValues.length > 0 && (
-            <span style={{ marginLeft: 8, color: "#3fb950", fontSize: 12 }}>
-              · 已选 {pendingValues.length} 个
-            </span>
-          )}
         </span>
-        <div style={{ display: "flex", gap: 8 }}>
-          {isMultiSelectLevel && pendingValues.length > 0 && (
-            <button type="button" className="funnel-confirm-btn" onClick={handleConfirmMultiSelect}>
-              确认选择 →
-            </button>
-          )}
-          {chain.length > 0 && (
-            <button type="button" className="funnel-back-btn" onClick={() => onChainChange(chain.slice(0, -1))}>
-              ← 返回上一级
-            </button>
-          )}
-        </div>
+        {chain.length > 0 && (
+          <button type="button" className="funnel-back-btn" onClick={() => onChainChange(chain.slice(0, -1))}>
+            ← 返回上一级
+          </button>
+        )}
       </div>
 
       {/* Chart */}
@@ -1027,22 +980,16 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
   }, []);
 
   // Extract device+lot from funnel chain so the effect only re-runs when they actually change
-  const funnelDeviceVal = useMemo(() => {
-    const step = funnelChain.find(s => s.level === "device");
-    if (!step) return undefined;
-    return Array.isArray(step.value) ? step.value[0] : step.value;
-  }, [funnelChain]);
-  const funnelLotVal = useMemo(
-    () => funnelChain.find(s => s.level === "lot")?.value, // string | string[] | undefined
+  const funnelDeviceVal = useMemo(
+    () => funnelChain.find(s => s.level === "device")?.value,
     [funnelChain],
   );
-  const funnelLotKey = useMemo(
-    () => funnelLotVal == null ? "" : Array.isArray(funnelLotVal) ? funnelLotVal.join(",") : funnelLotVal,
-    [funnelLotVal],
+  const funnelLotVal = useMemo(
+    () => funnelChain.find(s => s.level === "lot")?.value,
+    [funnelChain],
   );
 
-  // Fetch all rows for the selected device+lot(s) from DB (no limit) when drilling to slot level.
-  // When multiple lots are selected, parallel-fetch each and merge results.
+  // Fetch all rows for the selected device+lot from DB (no limit) when drilling to slot level
   useEffect(() => {
     if (!funnelDeviceVal || !funnelLotVal) {
       setFunnelLotRows(null);
@@ -1050,25 +997,20 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       setFunnelLotLoading(false);
       return;
     }
-    const lotValues = Array.isArray(funnelLotVal) ? funnelLotVal : [funnelLotVal];
     let cancelled = false;
     setFunnelLotLoading(true);
     setFunnelLotError(null);
     setFunnelLotRows(null);
-    Promise.all(
-      lotValues.map(lot =>
-        apiGetJson<InfcontrolLayerBinsV3Response>(apiBase, INFCONTROL_COMBINED_PATH, {
-          device: funnelDeviceVal,
-          lot,
-          limit: 2000,
-        }).then(res => (res.rows ?? []) as InfcontrolLayerBinV3Row[])
-      )
-    )
-      .then(results => { if (!cancelled) setFunnelLotRows(results.flat()); })
+    apiGetJson<InfcontrolLayerBinsV3Response>(apiBase, INFCONTROL_COMBINED_PATH, {
+      device: funnelDeviceVal,
+      lot: funnelLotVal,
+      limit: 2000,
+    })
+      .then(res => { if (!cancelled) setFunnelLotRows((res.rows ?? []) as InfcontrolLayerBinV3Row[]); })
       .catch(e  => { if (!cancelled) setFunnelLotError(e instanceof Error ? e.message : String(e)); })
       .finally(() => { if (!cancelled) setFunnelLotLoading(false); });
     return () => { cancelled = true; };
-  }, [funnelDeviceVal, funnelLotKey, apiBase]);
+  }, [funnelDeviceVal, funnelLotVal, apiBase]);
 
   const applyDateShortcut = useCallback((fn: () => [string, string]) => {
     const [from, to] = fn();
