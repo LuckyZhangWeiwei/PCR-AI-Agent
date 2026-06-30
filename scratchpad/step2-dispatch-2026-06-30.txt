@@ -1,0 +1,128 @@
+# Step 2 dispatch verify 2026-06-30T12:13:05.277Z
+API: http://10.192.130.89:30008
+STEP: all
+Expected: JB_DETERMINISTIC_DISPATCH=true, JB_LLM_INTENT_CLASSIFIER=false
+
+## A1-1 — PASS
+Session: a1-1-81a879ad-9dda-4dc2-b616-ec3963d1b0be
+Detail: dispatch=true tool=aggregate_jb_bins groupBy ok cards=4
+Tools: [{"name":"aggregate_jb_bins","args":{"groupBy":"bin,cardId","groupTop":20,"mask":"N55Z"}}]
+```
+## 实测数据
+
+**BIN35 坏 die 所属探针卡（mask N55Z，坏 die 合计 51102，匹配 3412 行）**
+
+| # | 探针卡 (CARDID) | BIN35 坏 die 颗数 | 占比 |
+|---:|---|---:|---:|
+| 1 | 9416-03 | 14526 | 28.4% |
+| 2 | 9416-04 | 14388 | 28.2% |
+| 3 | 9416-01 | 12905 | 25.3% |
+| 4 | 9416-02 | 9283 | 18.2% |
+
+## 分析结论
+
+*以上为范围内 BIN×探针卡 坏 die 汇总（良品 bin 已扣除）。卡级已定位；DUT 级归属需 INF DUT map，可继续追问「lot <号> wafer <片号> BIN<n> 的 DUT 分布」。*
+```
+
+## A1-2 — PASS
+Session: a1-2-6aa82751-fa88-4a47-9de5-44976e0d9b1c
+Detail: dispatch=true first=aggregate_jb_bins cards=9416-03,9416-04,9416-01,9416-02
+```
+## 实测数据
+
+**BIN35 坏 die 所属探针卡（mask N55Z，坏 die 合计 51102，匹配 3412 行）**
+
+| # | 探针卡 (CARDID) | BIN35 坏 die 颗数 | 占比 |
+|---:|---|---:|---:|
+| 1 | 9416-03 | 14526 | 28.4% |
+| 2 | 9416-04 | 14388 | 28.2% |
+| 3 | 9416-01 | 12905 | 25.3% |
+| 4 | 9416-02 | 9283 | 18.2% |
+
+## 分析结论
+
+*以上为范围内 BIN×探针卡 坏 die 汇总（良品 bin 已扣除）。卡级已定位；DUT 级归属需 INF DUT map，可继续追问「lot <号> wafer <片号> BIN<n> 的 DUT 分布」。*
+```
+
+## A1-4 — PASS
+Session: a1-4-b255611a-2a4c-4165-b1bd-eecfac0b08f9
+Detail: dispatch=false first=query_jb_bins lots=1
+```
+## 实测数据
+
+**DR44919.1F** 测试机台
+
+| 批次 lot | 机台 TESTERID | 本批出现过的机台 |
+|---|---|---|
+| DR44919.1F | b3ps1618 | b3ps1618 |
+
+**各测试层探针卡**
+
+| 测试层 | passId | 卡号 | 同层中途换卡 |
+|---|---:|---|---|
+| pass1 | 1 | 9416-03 | 否 |
+
+**分测试层（sort）批次良率**
+
+| 测试层 | passId | 片数 | 总die | 坏die | 良率% |
+|---|---:|---:|---:|---:|---:|
+| pass1 | 1 | 25 | 49225 | 2103 | 95.73% |
+
+**DR44919.1F**（WC13N55Z） 各片良率（按测试层分列）
+
+| Slot | pass1 良率% | 坏die合计 | Slot | pass1 良率% | 坏die合计 |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 96.85% | 62 | 2 | 95.07% | 97 |
+| 3 | 96.75% | 64 | 4 | 96.09% | 77 |
+| 5 | 96.19% | 75 | 6 | 95.58% | 87 |
+| 7 | 94.3
+```
+
+## A2-1 — PASS
+Session: a2-1-7e188bd1-f901-4293-bfe0-53ddd8eca01b
+Detail: first=query_jb_bins overview=true
+```
+## 实测数据
+
+**NF13338.1K** 测试机台
+
+| 批次 lot | 机台 TESTERID | 本批出现过的机台 |
+|---|---|---|
+| NF13338.1K | b3uflex15 | b3uflex15 |
+
+**各测试层探针卡**
+
+| 测试层 | passId | 卡号 | 同层中途换卡 |
+|---|---:|---|---|
+| pass1 | 1 | 8041-08 | 否 |
+
+**分测试层（sort）批次良率**
+
+| 测试层 | passId | 片数 | 总die | 坏die | 良率% |
+|---|---:|---:|---:|---:|---:|
+| pass1 | 1 | 25 | 74275 | 3817 | 94.86% |
+
+**NF13338.1K**（WA03P02G） 各片良率（按测试层分列）
+
+| Slot | pass1 良率% | 坏die合计 | Slot | pass1 良率% | 坏die合计 |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 95.39% | 137 | 2
+```
+
+## A2-4 — PASS
+Session: a2-4-f0ec4f4e-336f-4613-b094-35d8e036ef4a
+Detail: reply ok emptyHint=true
+```
+`ZZZZZ` 在 device 候选列表中未找到匹配结果，我再做一步全量历史验证确认。
+
+在 JB STAR 和 Yield Monitor 两侧均未找到 `ZZZZZ` 相关的任何测试或报警记录。常见原因可能是：
+
+- 产品后缀（mask）**拼写有误**，或 `ZZZZZ` 在实际系统中并非有效的 device 后缀。
+- 该后缀对应的产品尚未进入当前数据库覆盖的时间范围（约截至 2026‑06‑30 之前一年）。
+
+**排查建议**：  
+① 请确认完整的 device 代码（如 `WA12N34Z`）或具体 lot 号，我可以直接按完整产品查询 BIN99 的卡级分布。  
+② 若仅有后缀，也可尝试提供其他相邻后缀或已知的批次号，通过交叉验证定位实际 device。
+```
+
+Summary: 5/5 passed

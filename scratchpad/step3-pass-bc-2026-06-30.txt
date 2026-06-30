@@ -1,0 +1,51 @@
+# Pass B/C verify 2026-06-30T12:24:23.235Z
+API: http://10.192.130.89:30008
+
+## Pass B1（JB_LLM_INTENT_CLASSIFIER=true）
+### 这几张卡最近咋样 — FAIL
+Session: b1-b73e29c4-eac8-4d52-91f5-2a078c78ed44
+Detail: empty reply
+```
+
+```
+
+### 最近测得怎么样 — PASS
+Session: b1-a5b3d6b0-808b-4f36-bcab-60f5738a031b
+Detail: lots=0, multiCard=false, clarify=true
+```
+您好！要帮您查看最近的测试情况，需要先确认几个信息——请问您想查询的是：
+
+- **哪个产品（device 代码）**？比如 WA03P02G、WC13N55Z 等
+- 或者直接给我 **批次号（lot ID）**、**探针卡号** 或 **机台信息**？
+
+您可以告诉我其中任意一项，我就能帮您拉取最近的测试数据。
+```
+
+### 看看这几个批次的情况 — PASS
+Session: b1-435f2e03-f2d0-4bfd-8e68-f97376a10185
+Detail: lots=2, multiCard=false, clarify=true
+```
+我需要先确认您想查看哪些批次。请提供以下任一信息：
+
+- **批次号（lot ID）**：如 `NF12551.1N`、`DR44117.1Y` 等（含 `.` 后缀的完整编号）
+- **产品代码（device）**：如 `WA03P02G`、`WB03N60J` 等
+- **产品后缀（mask）**：如 `N60J`、`P02G` 等 4 位代码
+- **探针卡号（cardId）**：如 `7772-A1`、`8041-B3` 等
+
+请告诉我您关注的是哪个批次或产品，我来帮您分析测试情况。
+```
+
+## Pass C（无效 apiKey 造分类器故障）
+### 模糊：这几张卡最近咋样 — PASS
+Detail: 降级/SSE error(无崩溃): HTTP 401: "Invalid token"
+```
+
+```
+
+### 明确：P11C 最近的测试情况 — FAIL
+Detail: 未出表
+```
+
+```
+
+Summary: 3/5 passed
