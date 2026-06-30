@@ -37,10 +37,9 @@ test("resolveDispatch: 不在派发表的 mode → null", () => {
 test("resolveDispatch: lot_yield_ranking → query_jb_bins + emitTables", () => {
   const r = resolveDispatch(
     dec({ mode: "lot_yield_ranking" }),
-    "WC13N55Z 各 lot 良率 top5", []);
-  // device 解析依赖文本/历史;若解析不到 device 则 null(由 buildJbScopeArgs 决定)
-  if (r) {
-    assert.equal(r.queryTool, "query_jb_bins");
-    assert.equal(r.renderKind, "emitTables");
-  }
+    "WA03P02G 各 lot 良率 top5", []);
+  assert.ok(r, "WA03P02G 应解析出 device → 非空 plan");
+  assert.equal(r!.queryTool, "query_jb_bins");
+  assert.equal(r!.renderKind, "emitTables");
+  assert.equal(r!.args["device"], "WA03P02G");
 });
