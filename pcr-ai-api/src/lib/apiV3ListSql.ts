@@ -1,4 +1,5 @@
 import { INFCONTROL_LAYER_BIN_V2_MAX_TOP } from "./infcontrolLayerBinV2Filters.js";
+import { infcontrolLayerBinV3BaseWhereBlock } from "./infcontrolLayerBinPasstypeScope.js";
 
 /** v3 列表 `limit` 上限（与 v2 列表一致） */
 export const API_V3_LIST_LIMIT_MAX = INFCONTROL_LAYER_BIN_V2_MAX_TOP;
@@ -46,10 +47,7 @@ const ORDER_BY_LAYER_BINS_V3_OUTER =
  * 拉 **BIN1…BIN255**，通常比单段宽选列排序更易让优化器做 **Top-N**。
  */
 export function buildInfcontrolLayerBinsV3Sql(whereAndSql: string): string {
-  const extra = whereAndSql.trim();
-  const whereBlock = extra
-    ? `WHERE UPPER(TRIM(t2.PASSTYPE)) IN ('TEST', 'INTERRUPT') AND UPPER(TRIM(t2.LAYERNAME)) <> 'ABANDONED' AND ${extra}`
-    : `WHERE UPPER(TRIM(t2.PASSTYPE)) IN ('TEST', 'INTERRUPT') AND UPPER(TRIM(t2.LAYERNAME)) <> 'ABANDONED'`;
+  const whereBlock = infcontrolLayerBinV3BaseWhereBlock("t2", whereAndSql);
   const selectList = infcontrolLayerBinsV3SelectList("ic", "lb");
   return `
 SELECT
@@ -77,10 +75,7 @@ ${ORDER_BY_LAYER_BINS_V3_OUTER}
  * `COUNT(*) OVER ()` = total distinct lots in filter window; `FETCH FIRST :lot_lim` caps list size.
  */
 export function buildInfcontrolLayerBinsV3DistinctLotsSql(whereAndSql: string): string {
-  const extra = whereAndSql.trim();
-  const whereBlock = extra
-    ? `WHERE UPPER(TRIM(t2.PASSTYPE)) IN ('TEST', 'INTERRUPT') AND UPPER(TRIM(t2.LAYERNAME)) <> 'ABANDONED' AND ${extra}`
-    : `WHERE UPPER(TRIM(t2.PASSTYPE)) IN ('TEST', 'INTERRUPT') AND UPPER(TRIM(t2.LAYERNAME)) <> 'ABANDONED'`;
+  const whereBlock = infcontrolLayerBinV3BaseWhereBlock("t2", whereAndSql);
   return `
 SELECT lot, device, last_testend, slot_count, total_distinct
 FROM (
@@ -101,10 +96,7 @@ FETCH FIRST :lot_lim ROWS ONLY
 }
 
 export function buildInfcontrolLayerBinsV3SqlFullMatching(whereAndSql: string): string {
-  const extra = whereAndSql.trim();
-  const whereBlock = extra
-    ? `WHERE UPPER(TRIM(t2.PASSTYPE)) IN ('TEST', 'INTERRUPT') AND UPPER(TRIM(t2.LAYERNAME)) <> 'ABANDONED' AND ${extra}`
-    : `WHERE UPPER(TRIM(t2.PASSTYPE)) IN ('TEST', 'INTERRUPT') AND UPPER(TRIM(t2.LAYERNAME)) <> 'ABANDONED'`;
+  const whereBlock = infcontrolLayerBinV3BaseWhereBlock("t2", whereAndSql);
   const selectList = infcontrolLayerBinsV3SelectList("ic", "lb");
   return `
 SELECT

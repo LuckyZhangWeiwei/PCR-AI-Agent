@@ -11,6 +11,7 @@ import { loadInfcontrolLayerBinRowsFromJbStartXlsx } from "./dummyRowsFromExcel.
 import { listApisForceOracleNoDummy } from "./listDummyRuntime.js";
 import { probeCardTypeLeadingSegment } from "./probeCardTypeLeadingSegment.js";
 import { deviceBaseMask, deviceMatchesMask } from "./deviceMask.js";
+import { infcontrolLayerBinV3PasstypeMatches } from "./infcontrolLayerBinPasstypeScope.js";
 import { rowMatchesInfcontrolBinColumnFilters } from "./infcontrolBinColumnFilters.js";
 
 /**
@@ -443,9 +444,8 @@ export function filterInfcontrolLayerBinV3DummyRowsMatching(
   applied: Record<string, unknown>
 ): Array<InfcontrolLayerBinDummyRow & { PROBECARDTYPE: string | null }> {
   let rows = [...getInfcontrolLayerBinDummyRowsInternal()].filter((r) => {
-    const pt = String(r.PASSTYPE).trim().toUpperCase();
     return (
-      (pt === "TEST" || pt === "INTERRUPT") &&
+      infcontrolLayerBinV3PasstypeMatches(r.PASSTYPE) &&
       String(r.LAYERNAME ?? "").trim().toUpperCase() !== "ABANDONED" &&
       !["kk", "gg", "c"].some((pfx) =>
         String(r.LOT ?? "").trim().toLowerCase().startsWith(pfx)

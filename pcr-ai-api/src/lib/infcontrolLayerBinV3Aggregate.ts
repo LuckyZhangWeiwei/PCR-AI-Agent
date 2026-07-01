@@ -1,4 +1,5 @@
 import type { BindParameters } from "oracledb";
+import { infcontrolLayerBinV3BaseWhereBlock } from "./infcontrolLayerBinPasstypeScope.js";
 import { parseInfcontrolLayerBinsV3Query } from "./infcontrolLayerBinFilters.js";
 import {
   parseInfcontrolLayerBinAggregateGroupSpec,
@@ -61,10 +62,7 @@ export function parseInfcontrolLayerBinsV3AggregateQuery(
   const adapted = adaptInfcontrolV3WhereAndSqlToAggregateAliases(
     v3.whereAndSql
   );
-  const whereSql =
-    adapted.length > 0
-      ? `WHERE UPPER(TRIM(lb.PASSTYPE)) IN ('TEST', 'INTERRUPT') AND UPPER(TRIM(lb.LAYERNAME)) <> 'ABANDONED' AND ${adapted}`
-      : `WHERE UPPER(TRIM(lb.PASSTYPE)) IN ('TEST', 'INTERRUPT') AND UPPER(TRIM(lb.LAYERNAME)) <> 'ABANDONED'`;
+  const whereSql = infcontrolLayerBinV3BaseWhereBlock("lb", adapted);
 
   const applied = {
     ...v3.applied,

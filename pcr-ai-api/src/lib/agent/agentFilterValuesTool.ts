@@ -9,6 +9,7 @@ import {
   infcontrolLayerBinsUseDummy,
   getInfcontrolLayerBinDummyRows,
 } from "../infcontrolLayerBinDummy.js";
+import { infcontrolLayerBinV3PasstypeMatches } from "../infcontrolLayerBinPasstypeScope.js";
 import { probeCardTypeLeadingSegment } from "../probeCardTypeLeadingSegment.js";
 import {
   deviceMatchesMask,
@@ -16,6 +17,7 @@ import {
   looksLikeDeviceMaskToken,
 } from "../deviceMask.js";
 import { oracleNonEmptyTrimmedColumn } from "../oracleStringSql.js";
+import { infcontrolLayerBinV3PasstypeOracleIn } from "../infcontrolLayerBinPasstypeScope.js";
 import { logAgentSql } from "./agentSqlDebugLog.js";
 
 const DEFAULT_LIMIT = 20;
@@ -447,8 +449,7 @@ function dummyJb(
   }
 
   const rows = getInfcontrolLayerBinDummyRows().filter((r) => {
-    const pt = String(r.PASSTYPE).trim().toUpperCase();
-    if (pt !== "TEST" && pt !== "INTERRUPT") return false;
+    if (!infcontrolLayerBinV3PasstypeMatches(r.PASSTYPE)) return false;
     if (String(r.LAYERNAME ?? "").trim().toUpperCase() === "ABANDONED") return false;
     if (filterBy["device"] && String(r.DEVICE).trim() !== filterBy["device"]) return false;
     if (filterBy["probeCardType"]) {
@@ -700,7 +701,7 @@ async function oracleJb(
   }
 
   const conditions: string[] = [
-    `UPPER(TRIM(t2.PASSTYPE)) IN ('TEST', 'INTERRUPT')`,
+    infcontrolLayerBinV3PasstypeOracleIn("t2"),
     `UPPER(TRIM(t2.LAYERNAME)) <> 'ABANDONED'`,
     `NOT REGEXP_LIKE(t1.LOT, '^(kk|gg|c)', 'i')`,
   ];

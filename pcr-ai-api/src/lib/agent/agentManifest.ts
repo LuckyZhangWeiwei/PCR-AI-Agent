@@ -9,6 +9,7 @@ import {
   infcontrolLayerBinsUseDummy,
   getInfcontrolLayerBinDummyRows,
 } from "../infcontrolLayerBinDummy.js";
+import { infcontrolLayerBinV3PasstypeMatches, infcontrolLayerBinV3PasstypeOracleIn } from "../infcontrolLayerBinPasstypeScope.js";
 
 export interface DataManifest {
   fetchedAt: number;
@@ -106,9 +107,8 @@ async function fetchYieldDomain(): Promise<DataManifest["yield"]> {
 async function fetchJbDomain(): Promise<DataManifest["jb"]> {
   if (infcontrolLayerBinsUseDummy()) {
     const rows = getInfcontrolLayerBinDummyRows().filter((r) => {
-      const pt = String(r.PASSTYPE).trim().toUpperCase();
       return (
-        (pt === "TEST" || pt === "INTERRUPT") &&
+        infcontrolLayerBinV3PasstypeMatches(r.PASSTYPE) &&
         String(r.LAYERNAME ?? "").trim().toUpperCase() !== "ABANDONED" &&
         !/^(kk|gg|c)/i.test(String(r.LOT))
       );
@@ -137,11 +137,12 @@ async function fetchJbDomain(): Promise<DataManifest["jb"]> {
     return { timeMin, timeMax, topDevices };
   }
 
+  const jbPasstypeIn = infcontrolLayerBinV3PasstypeOracleIn("t2");
   const timeRangeSql = `
     SELECT MIN(t2.TESTEND) AS ts_min, MAX(t2.TESTEND) AS ts_max
     FROM INFCONTROL t1
     JOIN INFLAYERBINLIST t2 ON t1.KEYNUMBER = t2.KEYNUMBER
-    WHERE UPPER(TRIM(t2.PASSTYPE)) IN ('TEST', 'INTERRUPT')
+    WHERE ${jbPasstypeIn}
       AND UPPER(TRIM(t2.LAYERNAME)) <> 'ABANDONED'
       AND NOT REGEXP_LIKE(t1.LOT, '^(kk|gg|c)', 'i')
   `;
@@ -149,7 +150,7 @@ async function fetchJbDomain(): Promise<DataManifest["jb"]> {
     SELECT t1.DEVICE, COUNT(*) AS cnt
     FROM INFCONTROL t1
     JOIN INFLAYERBINLIST t2 ON t1.KEYNUMBER = t2.KEYNUMBER
-    WHERE UPPER(TRIM(t2.PASSTYPE)) IN ('TEST', 'INTERRUPT')
+    WHERE ${jbPasstypeIn}
       AND UPPER(TRIM(t2.LAYERNAME)) <> 'ABANDONED'
       AND NOT REGEXP_LIKE(t1.LOT, '^(kk|gg|c)', 'i')
     GROUP BY t1.DEVICE
