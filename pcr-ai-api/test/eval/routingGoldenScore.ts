@@ -59,6 +59,7 @@ export const REGEX_BASELINE_PASS_QUESTIONS: string[] = [
   "这lot第5片情况",
   "slot 12 的测试结果",
   "lot良率排名 bottom3",
+  "N55Z device 各 lot 良率 top5",
   "哪张卡良率最低",
   "哪张卡良率更差",
   "探针卡哪个最差",
