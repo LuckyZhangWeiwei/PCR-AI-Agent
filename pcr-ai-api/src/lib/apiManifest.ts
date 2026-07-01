@@ -828,6 +828,60 @@ export const apiManifest = {
         "/api/v1/inf-analysis/site-bin-bylot?infPath=/data/probe_logs/ps16_SMTPID/teststuffs/infanylist/r_1-1&passId=1; lot: ?device=WA03P02G&lot=NF12551.1N&passId=1; device: ?device=WA03P02G&passId=1",
     },
     {
+      path: "/api/v1/inf-analysis/lot-underperforming-duts",
+      method: "GET",
+      purpose:
+        "Lot-level probe-card DUT yield screening from aggregated INF site-bin data. For each pass, lot overall yield (sum good/total across DUTs) is baseline; list DUTs with yieldPct < baseline × thresholdRatio (default 0.75). Requires lot only; device and probeCardType resolved from JB STAR when omitted. Same JB-filtered INF fetch as site-bin-bylot lot+probeCardType mode.",
+      queryParameters: [
+        {
+          name: "lot",
+          type: "string",
+          optional: false,
+          note: "Target lot ID (only required parameter)",
+        },
+        {
+          name: "device",
+          type: "string",
+          optional: true,
+          note: "Omit to resolve unique device from JB STAR by lot",
+        },
+        {
+          name: "passId",
+          type: "number",
+          optional: true,
+          note: "Default 1,3,5 when omitted; repeat or comma-separated",
+        },
+        {
+          name: "probeCardType",
+          type: "string",
+          optional: true,
+          note: "Omit to resolve dominant card type from JB for this lot; overrides auto-resolve when set",
+        },
+        {
+          name: "thresholdRatio",
+          type: "number",
+          optional: true,
+          note: "Relative threshold vs lotOverall baseline; default 0.75 (alias threshold_ratio)",
+        },
+      ],
+      responseShape: {
+        meta: "{ apiVersion: '4', requestId, summary, aggregateScope: 'lot' }",
+        device: "string",
+        lot: "string",
+        passIds: "number[]",
+        probeCardType: "string",
+        deviceResolvedFromJb: "boolean (when device omitted)",
+        probeCardTypeResolvedFromJb: "boolean (when probeCardType omitted)",
+        waferCount: "number",
+        waferSlots: "number[]",
+        filters: "{ thresholdRatio, baselineMethod: 'lotOverall' }",
+        passes:
+          "[{ passId, sortLabel, dutCount, lotGoodDie, lotTotalDie, baseline, allDuts, underperformingDuts }]",
+      },
+      example:
+        "/api/v1/inf-analysis/lot-underperforming-duts?lot=DR43782.1A&thresholdRatio=0.75",
+    },
+    {
       path: "/api/v1/db/ping",
       method: "GET",
       purpose: "Health check against Oracle via SELECT 1 FROM DUAL (main pool).",

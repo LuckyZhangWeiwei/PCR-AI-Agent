@@ -27,6 +27,11 @@ import { reqId } from "../lib/routeHelpers.js";
 import { parseSiteBinDeviceTopN } from "../lib/siteBinByLotDeviceTopN.js";
 import { parseSiteBinByLotTestEndWindow } from "../lib/siteBinByLotTestEndWindow.js";
 import { validateProbeCardType } from "../lib/siteBinByLotWaferResolve.js";
+import { parseUnderperformingThresholdRatio } from "../lib/lotUnderperformingDuts.js";
+import {
+  parsePassIdsFromQueryOrDefault,
+  runLotUnderperformingDuts,
+} from "../lib/lotUnderperformingDutsResolve.js";
 
 export const infAnalysisRouter = Router();
 
@@ -247,6 +252,59 @@ async function handleDeviceAgg(
 }
 
 // ── route ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Lot 级 probe DUT 良率筛选：DUT 良率 < lot 整体良率 × thresholdRatio（默认 0.75）。
+ *
+ * `GET /api/v4/inf-analysis/lot-underperforming-duts?lot=...`
+ */
+infAnalysisRouter.get("/inf-analysis/lot-underperforming-duts", async (req, res) => {
+  const lotStr = firstQueryString(req.query.lot);
+  const deviceStr = firstQueryString(req.query.device);
+  const probeCardTypeOpt = optionalProbeCardType(
+    firstQueryString(req.query.probeCardType ?? req.query.probe_card_type)
+  );
+
+  if (!lotStr.trim()) {
+    return sendAgentError(res, 400, "VALIDATION_ERROR", "Missing or empty query parameter: lot");
+  }
+
+  let passIds: number[];
+  let thresholdRatio: number;
+  try {
+    passIds = parsePassIdsFromQueryOrDefault(req.query.passId ?? req.query.pass_id);
+    thresholdRatio = parseUnderperformingThresholdRatio(
+      req.query.thresholdRatio ?? req.query.threshold_ratio
+    );
+  } catch (e) {
+    if (e instanceof OutputSiteBinByLotValidationError) {
+      return sendAgentError(res, 400, e.code, e.message);
+    }
+    throw e;
+  }
+
+  try {
+    const testEndWindow = parseSiteBinByLotTestEndWindow(req.query as Record<string, unknown>);
+    const body = await runLotUnderperformingDuts({
+      lot: lotStr,
+      device: deviceStr || undefined,
+      passIds,
+      probeCardType: probeCardTypeOpt,
+      thresholdRatio,
+      testEndWindow,
+      includeMarkdown: false,
+    });
+    return res.json({ ...body, meta: { ...body.meta, requestId: reqId(req) } });
+  } catch (e) {
+    if (e instanceof OutputSiteBinByLotValidationError) {
+      return sendAgentError(res, 400, e.code, e.message);
+    }
+    if (e instanceof OutputSiteBinByLotNotFoundError) {
+      return sendAgentError(res, 404, e.code, e.message);
+    }
+    return handleAggError(res, e, "lot");
+  }
+});
 
 /**
  * 按 wafer 测试 pass（可多个）汇总：各 bin 测试结果由 probe card 哪个 DUT 测得。

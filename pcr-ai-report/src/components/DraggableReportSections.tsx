@@ -503,6 +503,7 @@ const TOP_SECTION_LABELS: Record<string, string> = {
   pcType: "ProbeCard Type 不良对比",
   timeTrend: "每日触发量趋势",
   lotYield: "LOT Yield% 最差 Top 10",
+  underperformingDuts: "低良率 DUT",
   chartsGrid: "图表矩阵",
   tree: "分组汇总",
   detail: "明细表",

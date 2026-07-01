@@ -2479,6 +2479,7 @@ const TOOL_STATUS_LABELS: Record<string, string> = {
   aggregate_jb_bins: "JB BIN 聚合统计",
   get_filter_values: "可选值查询",
   query_lot_dut_bin_agg: "DUT×BIN 聚合",
+  query_lot_underperforming_duts: "Lot 低良率 DUT",
   query_inf_site_bin_by_dut: "DUT 分布查询",
   inf_draw_wafer_map: "绘制晶圆图",
   inf_draw_dut_bin_map: "DUT×BIN 晶圆图",

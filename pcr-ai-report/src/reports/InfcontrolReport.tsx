@@ -22,6 +22,7 @@ import {
 } from "../components/DraggableReportSections";
 import { DrillDownPanel } from "../components/DrillDownPanel";
 import { InfDutDistPanel } from "../components/InfDutDistPanel";
+import { LotUnderperformingDutsPanel } from "../components/LotUnderperformingDutsPanel";
 import { KpiCard } from "../components/KpiCard";
 import { TreeTable } from "../components/TreeTable";
 import {
@@ -171,6 +172,7 @@ const JB_REPORT_SECTION_ORDER = [
   "funnel",
   "device",
   "lotYield",
+  "underperformingDuts",
   "pcType",
   "tree",
   "detail",
@@ -2032,11 +2034,22 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       />
     );
 
+    const lotFilter = form.lot.trim();
+    const underperformingDutsSection =
+      lotFilter.length > 0 ? (
+        <LotUnderperformingDutsPanel
+          apiBase={apiBase}
+          lot={lotFilter}
+          device={form.device.trim() || undefined}
+        />
+      ) : null;
+
     return {
       kpi: kpiSection,
       funnel: funnelSection,
       device: deviceSection,
       lotYield: lotYieldSection,
+      underperformingDuts: underperformingDutsSection,
       pcType: pcTypeSection,
       tree: treeSection,
       detail: detailSection,

@@ -15,3 +15,7 @@ export const YIELD_AGGREGATE_PATH =
 
 /** INF wafer pass × bin × DUT distribution — uses v1 path (stable across API_PREFIX changes) */
 export const SITE_BIN_BY_LOT_PATH = "/api/v1/inf-analysis/site-bin-bylot";
+
+/** Lot 低良率 DUT 筛选（v4 INF 分析） */
+export const LOT_UNDERPERFORMING_DUTS_PATH =
+  "/api/v4/inf-analysis/lot-underperforming-duts";

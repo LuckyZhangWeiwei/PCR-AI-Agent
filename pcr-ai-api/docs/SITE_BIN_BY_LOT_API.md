@@ -98,6 +98,16 @@ curl -s "http://10.192.130.89:30008/api/v1/inf-analysis/site-bin-bylot?device=WA
 
 上限：`SITE_BIN_BY_LOT_MAX_WAFERS_DEVICE`（默认 **100** 片）。
 
+### 2.6 Lot 低良率 DUT 筛选（`lot-underperforming-duts`）
+
+在 lot 级 `site-bin-bylot` 聚合基础上，计算各 probe DUT 良率，列出 **低于该 pass lot 整体良率 × thresholdRatio（默认 0.75）** 的 site。仅需 **`lot`**；device / probeCardType 由 JB 反查。
+
+```bash
+curl -s "http://10.192.130.89:30008/api/v4/inf-analysis/lot-underperforming-duts?lot=DR43782.1A"
+```
+
+完整语义、响应字段、Dummy 注意点：[`../../docs/HANDOFF_LOT_UNDERPERFORMING_DUTS_API.md`](../../docs/HANDOFF_LOT_UNDERPERFORMING_DUTS_API.md)。
+
 ### 2.5 单片 wafer（`infPath`）
 
 | 参数 | 必填 | 说明 |

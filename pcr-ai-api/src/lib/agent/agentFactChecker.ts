@@ -113,7 +113,12 @@ const JB_CONTEXT_RE = /\b(BIN\s*\d+|slot\s*\d+|坏\s*die|中断|CARDID|探针卡
 // ── Build Fact Sheet ──────────────────────────────────────────────────────────
 
 /** JB tool names */
-const JB_TOOL_NAMES = new Set(["query_jb_bins", "aggregate_jb_bins", "query_lot_dut_bin_agg"]);
+const JB_TOOL_NAMES = new Set([
+  "query_jb_bins",
+  "aggregate_jb_bins",
+  "query_lot_dut_bin_agg",
+  "query_lot_underperforming_duts",
+]);
 /** YM tool names */
 const YM_TOOL_NAMES = new Set(["query_yield_triggers", "aggregate_yield_triggers"]);
 

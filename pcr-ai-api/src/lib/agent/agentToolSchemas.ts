@@ -322,6 +322,39 @@ export const TOOL_SCHEMAS = [
   {
     type: "function",
     function: {
+      name: "query_lot_underperforming_duts",
+      description:
+        "按 lot 筛选 probe DUT 良率偏低的 site：DUT良率 < lot 整体良率 × thresholdRatio（默认 0.75）。" +
+        "仅需 lot；device / probeCardType 由 JB 反查。按 pass 分开输出。数据来自 INF 聚合，非 Oracle。",
+      parameters: {
+        type: "object",
+        properties: {
+          lot: { type: "string", description: "批次 ID，含 '.' 后缀，必填" },
+          device: {
+            type: "string",
+            description: "可选；省略时由 JB STAR 按 lot 反查",
+          },
+          passId: {
+            type: "number",
+            description: "PASS_ID：pass1→1，pass3→3，pass5→5",
+          },
+          passIds: {
+            type: "array",
+            items: { type: "number" },
+            description: "多 pass，默认 [1,3,5]",
+          },
+          thresholdRatio: {
+            type: "number",
+            description: "相对 lot 整体良率的比例阈值，默认 0.75",
+          },
+        },
+        required: ["lot"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "query_inf_site_bin_by_dut",
       description:
         "读取该片 wafer 的 INF 文件（服务端由 device+lot+slot 自动拼路径），按 pass 统计各 bin 由哪个 DUT(site) 测得及 dieCount。数据来自磁盘 INF，非 Oracle JB；与 query_jb_bins 数据源不同。调用前须已通过 query_jb_bins 获得 device+lot+slot+CARDID。",
