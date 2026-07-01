@@ -1,0 +1,53 @@
+# Pass B/C verify 2026-07-01T11:01:46.701Z
+API: http://10.192.130.89:30008
+
+## Pass B1（JB_LLM_INTENT_CLASSIFIER=true）
+### 这几张卡最近咋样 — PASS
+Session: b1-4a65dc76-8d4f-4ef1-9c4e-ec6093a48de7
+Detail: lots=0, multiCard=true, clarify=true
+```
+您好！当前对话中我没有找到之前提到的"几张卡"的记录——可能是之前的对话上下文已过期。
+
+请告诉我您想查哪几张探针卡？可以直接给我卡号，例如：
+
+- 完整卡号：如 `7772-01`、`8041-B3`、`6045-10`
+- 卡型号：如 `7772`、`8041`、`9477`
+- 或者相关的 device / lot 信息，我帮您反查
+
+这样我可以立刻帮您查看最近的测试情况和报警记录。
+```
+
+### 最近测得怎么样 — FAIL
+Session: b1-f9a5bf43-e677-4bb9-806d-83232da51c6e
+Detail: SSE error: Request timeout after 250000ms
+```
+
+```
+
+### 看看这几个批次的情况 — PASS
+Session: b1-8bdea82f-8bc7-4bf0-b3e7-93ce25284cb7
+Detail: lots=1, multiCard=false, clarify=true
+```
+我需要先确认您指的是哪些批次。请提供以下任一信息：
+
+- **批次号（lot ID）**，如 `NF12551.1N` 等完整编号
+- **产品代码（device）**，如 `WA03P02G` 等
+- **产品后缀（mask）**，如 `N06Z`、`P02G` 等 4 位代码
+
+这样我可以直接帮您查测试数据与良率情况。
+```
+
+## Pass C（无效 apiKey 造分类器故障）
+### 模糊：这几张卡最近咋样 — PASS
+Detail: 降级/SSE error(无崩溃): HTTP 401: "Invalid token"
+```
+
+```
+
+### 明确：P11C 最近的测试情况 — FAIL
+Detail: 未出表
+```
+
+```
+
+Summary: 3/5 passed

@@ -1,0 +1,80 @@
+# Handoff reverify 2026-07-01T10:42:57.261Z
+API: http://10.192.130.89:30008
+STEP: all
+
+## PA — PASS
+Session: v-54c779a4-509e-4e7d-be88-afb7a46fcdbc
+Detail: get_filter_values totalDistinct=3
+```
+{"domain":"both","field":"device","values":["WB01P11C (Yield: 2026-06-18, JB: 2026-07-01)","WA00P11C (Yield: 2024-11-05)","WB00P11C (Yield: 2024-10-19)"],"totalDistinct":3,"devices":[{"device":"WB01P1
+```
+
+## PB — PASS
+Session: pb-ccb0f8c8-5f5d-4e73-912c-627532a2f9d8
+Detail: listed ~50 lot ids
+```
+## 实测数据
+
+**测试 lot 列表（device=WB00N97V，机台=b3uflex30）（共 69 个 lot，下表列前 50 个）**
+
+| # | Lot | Device | 测试结束 | 片数 | 数据来源 |
+|---:|---|---|---|---:|---|
+| 1 | NF13304.1X | WB00N97V | 2026-06-30 | 25 | JB STAR |
+| 2 | NF13398.1Y | WA00P07H | 2026-06-30 | 4 | JB STAR |
+| 3 | NF13390.1K | WA00P23N | 2026-06-30 | 19 | JB STAR |
+| 4 | NF13442.1K | WB10N33V | 2026-06-30 | 9 | JB STAR |
+| 5 | NF13322.1J | WB10N57
+```
+
+## PC — PASS
+Session: pc-006c986b-d05a-44ea-ba33-361781169d75
+Detail: multi-card: 9416-02, 9416-01, 9416-03, 9416-04
+```
+### YM 侧（Yield Monitor 报警）
+- 四张卡共触发 552 次 DUT 良率不均衡报警，其中 **9416-02 报警最多（232 次，占 42%）**，其次为 9416-01（187 次）、9416-03（102 次）、9416-04（31 次）。
+- 报警高度集中在 **DUT0**，在 9416-01/02/03 上反复出现，该 DUT 良率常低于 50% 而其他 DUT 可达 100%，指向该卡型共性的 DUT0 针脚接触退化。
+- 9416-04 报警仅 31 次且涉及 DUT 分散（DUT11/14），相对表现最好。
+
+### JB 侧（JB STAR 测试）
+- 9416-01 最新 lot DR44042.1A（6 片）良率 97.08%，历史 47 个 lot 整体表现稳定；9416-03 最新 lot DR44919.1F（25 片）良率 95.73%，为当前主力量产卡。
+- **9416-02 最新 lot DR44042.1A 仅 1 片数据，良率 89.94%，BIN2 坏 die 达 37 颗**；其历史 lot 中 DR41662.1J 最差片良率仅 89.19%，是四张卡中良率最低的。
+- 9416-04 最新 lot DR44037.1N 仅 1 片数据，良率 93.89%，整体表现居中；其历史 lot DR42189.1F 最
+```
+
+## PD — FAIL
+Session: pd-8b68ee21-d7da-4115-903d-35420aeb48a4
+Detail: 
+```
+
+```
+
+## PF — PASS
+Session: pf-91deec0a-78e9-4b8e-ad10-76d0fe8ecd58
+Detail: BIN79 present, no BIN1/BIN55 in table
+```
+**坏 die 的 DUT 集中度（卡 vs 工艺判别）**
+
+| BIN | 测试层 | 卡号 | 总坏die | 主要 DUT(占比) | 判别 |
+|---:|---|---|---:|---|---|
+| BIN79 | pass1 | — | 776 | DUT91(2%)、DUT71(2%)、DUT30(2%) | 疑工艺/批次 |
+
+{"focusBin":"bin79","focu### 数据摘要
+
+- BIN79 在 pass1 下共 776 颗坏 die，分布在 127 个 DUT 上，每个 DUT 平均仅 6 颗，整体高度分散。
+- 坏 die 最多的 DUT 为 DUT91（16 颗，占比 2%）、DUT71（15 颗）、DUT30（14 颗），三者合计仅占 BIN79 总坏 die 的 5.8%。
+- pass1 使用的探针卡为 8003-03；工具判定 BIN79 属“疑工艺/批次”，即非探针卡单一 DUT 集中失效。
+
+### 主要发现
+
+- BIN79 在整批 24 片中分散于 127 个 DUT，无任何一个 DUT 占比超过 2%，说明该 BIN 的失效与特定探针卡针位无关。
+- 即使最高 DUT91（16 颗）也与第二名 DUT71（15 颗）无明显差异，不存在某 DUT 单侧压倒性集中。
+- 该分布模式指向 wafer 工艺或测试程序参数一致性不足，而非 8003-03 这张卡的物理接触故障。
+
+### 建议
+
+- 暂不安排 8003-03 卡针检查，优先排查 BIN79 测试项在 pass1 中的参数余量是否偏紧。
+- 可提取 waferId 19（BIN79 最高峰 81 颗）单片 INF map，观察坏 die 是否在 wafer 边缘或特定区域聚集，辅助判工艺 vs 测试项漂移。
+- 若后续其他 lot 同样出现 BIN79 跨
+```
+
+Summary: 4/5 passed
