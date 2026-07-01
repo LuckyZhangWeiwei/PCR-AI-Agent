@@ -1,0 +1,53 @@
+# Pass B/C verify 2026-07-01T11:32:08.675Z
+API: http://10.192.130.89:30008
+
+## Pass B1（JB_LLM_INTENT_CLASSIFIER=true）
+### 这几张卡最近咋样 — PASS
+Session: b1-c8d22be4-a530-4527-90d7-8fb342d8f0a0
+Detail: lots=0, multiCard=false, clarify=true
+```
+您好！您提到「这几张卡」，请问具体是指哪几张探针卡呢？可以给我卡号或卡型号名称，我来帮您查看它们近期的测试表现。
+```
+
+### 最近测得怎么样 — PASS
+Session: b1-c5814eb6-a457-4948-aa61-41913da86c28
+Detail: lots=0, multiCard=false, clarify=true
+```
+您好！欢迎使用晶圆测试数据分析助手。😊
+
+您问"最近测得怎么样"比较宽泛，请问您想从哪个角度了解近期的测试情况？
+
+1. **某个具体产品（device）** — 如 WB03N60J、WA00N53A 等，想看它们的近期良率或坏 bin 表现？
+2. **某张探针卡** — 想查某张卡近期的报警或测试情况？
+3. **某个批次（lot）** — 有具体的批次号需要分析？
+4. **某台测试机** — 想了解某台机台的测试情况？
+
+请告诉我具体的方向或产品/批次/卡号，我来帮您查询分析！
+```
+
+### 看看这几个批次的情况 — PASS
+Session: b1-d396b57b-a6e6-487a-a242-34fdd1c97277
+Detail: lots=1, multiCard=false, clarify=true
+```
+您好！请问您想看的是哪个产品（device）或哪个探针卡（cardId）下的批次情况？或者您有具体的批次号（lot ID）吗？
+
+请提供以下任一信息，我就能帮您查询：
+- **产品代码**（如 WB03N60J、WA00N53A 等）
+- **批次号**（如 NF12592.1Y 等）
+- **探针卡号**（如 7772-A1 等）
+```
+
+## Pass C（无效 apiKey 造分类器故障）
+### 模糊：这几张卡最近咋样 — PASS
+Detail: 降级/SSE error(无崩溃): HTTP 401: "Invalid token"
+```
+
+```
+
+### 明确：P11C 最近的测试情况 — FAIL
+Detail: 未出表
+```
+
+```
+
+Summary: 4/5 passed

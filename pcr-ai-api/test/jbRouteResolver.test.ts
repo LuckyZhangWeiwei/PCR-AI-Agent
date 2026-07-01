@@ -97,3 +97,29 @@ test("classifyJbIntent: flag off 时纯正则,flag 来自正则 base", async () 
   assert.equal(d.source, "regex");
   assert.equal(d.isMultiCardCompare, true);
 });
+
+test("classifyJbIntent: 非 generic 模式不调 LLM（lot_yield_ranking 保 regex）", async () => {
+  process.env.JB_LLM_INTENT_CLASSIFIER = "true";
+  const chat = async () => '{"mode":"generic","confidence":"high"}';
+  try {
+    const d = await classifyJbIntent(
+      "WC13N55Z 各 lot 良率 top5", {}, { subAgentModel: "x" } as any, { chat });
+    assert.equal(d.mode, "lot_yield_ranking");
+    assert.equal(d.source, "regex");
+  } finally {
+    delete process.env.JB_LLM_INTENT_CLASSIFIER;
+  }
+});
+
+test("classifyJbIntent: LLM 失败 + mask 概况降级 lot_overview", async () => {
+  process.env.JB_LLM_INTENT_CLASSIFIER = "true";
+  const chat = async () => "garbage";
+  try {
+    const d = await classifyJbIntent(
+      "P11C 最近的测试情况", {}, { subAgentModel: "x" } as any, { chat });
+    assert.equal(d.mode, "lot_overview");
+    assert.equal(d.source, "regex");
+  } finally {
+    delete process.env.JB_LLM_INTENT_CLASSIFIER;
+  }
+});

@@ -369,7 +369,19 @@ export function isLotYieldRankingQuestion(text: string): boolean {
   if (/(最差|最低).*(lot|批次)/i.test(t)) return true;
   // "lot良率排行/排名"
   if (/(lot|批次).*(良率|良品率|yield).*(排行|排名|ranking)/i.test(t)) return true;
+  // "各 lot 良率 top5" / "WC13N55Z 各 lot 良率 top5"（A1-4；不含「前5个lot各自的良率」口语对比）
+  if (/各\s*lot.*(良率|yield).*(top\s*\d+|前\s*\d+\s*个?)/i.test(t)) return true;
+  if (/(top\s*\d+|前\s*\d+\s*个?).*各\s*lot.*(良率|yield)/i.test(t)) return true;
   return false;
+}
+
+/** 用户问「哪个 lot 的 BINnn 最多」（须带 lot 维度排行，非纯 bin 总量）。 */
+export function isBinLotRankingQuestion(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (extractBinFromUserText(t) == null) return false;
+  if (extractLotFromUserText(t)) return false;
+  return /哪个\s*lot|哪\s*个\s*批次|lot.*最多|哪个批次|哪批/i.test(t);
 }
 
 /** 用户要看每片 wafer 的坏 bin 排名（每片前 N 名）。 */

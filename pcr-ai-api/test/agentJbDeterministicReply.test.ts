@@ -16,6 +16,8 @@ import {
   isBinTrendQuestion,
   isInterruptCountQuestion,
   isLotListingQuestion,
+  isLotYieldRankingQuestion,
+  isBinLotRankingQuestion,
   isMultiLotComparisonQuestion,
   isMultiCardComparisonQuestion,
   isProbeCardQuestion,
@@ -131,6 +133,15 @@ describe("agentJbDeterministicReply", () => {
     assert.equal(isLotListingQuestion("P11C 最近一个月的测试情况"), false);
     // lot 内逐片枚举仍排除
     assert.equal(isLotListingQuestion("这个lot有哪些wafer"), false);
+  });
+
+  it("isLotYieldRankingQuestion matches WC13N55Z 各 lot 良率 top5 (A1-4)", () => {
+    assert.ok(isLotYieldRankingQuestion("WC13N55Z 各 lot 良率 top5"));
+    assert.equal(detectJbReplyMode("WC13N55Z 各 lot 良率 top5"), "lot_yield_ranking");
+  });
+
+  it("isBinLotRankingQuestion matches 哪个lot bin40最多 (P-D)", () => {
+    assert.ok(isBinLotRankingQuestion("哪个lot bin40最多"));
   });
 
   // P-C：多卡「测试情况对比」交回 LLM（generic），不被单 lot equipment 表劫持；单卡仍 equipment。
