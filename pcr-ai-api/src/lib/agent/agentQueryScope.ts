@@ -27,6 +27,8 @@ export function findLastToolCallArgs(
 }
 
 export function inferDeviceFromText(text: string): string | undefined {
+  const full = text.match(DEVICE_FULL_RE);
+  if (full) return full[1]!.toUpperCase();
   const m = text.match(/\b(WA\d{2}P\d{2}[A-Z0-9]+)\b/i);
   return m ? m[1]!.toUpperCase() : undefined;
 }

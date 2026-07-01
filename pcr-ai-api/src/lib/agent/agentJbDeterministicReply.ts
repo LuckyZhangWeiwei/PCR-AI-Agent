@@ -2344,8 +2344,8 @@ export function buildEngineeringContextFromPayload(
         lines.push(
           `测试机台（JB TESTERID${lot ? `，lot ${lot}` : ""}）：${hit.primaryTesterId}`
         );
-        if (hit.testerIds.length > 1) {
-          lines.push(`本批该 lot 还曾出现机台：${hit.testerIds.join(", ")}`);
+        if ((hit.testerIds?.length ?? 0) > 1) {
+          lines.push(`本批该 lot 还曾出现机台：${hit.testerIds!.join(", ")}`);
         }
       }
     } else {

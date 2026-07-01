@@ -182,10 +182,11 @@ async function oracleDeviceByMaskBoth(
     yieldData.totalDistinct,
     jbData.totalDistinct
   );
-  if (merged.totalDistinct > merged.values.length) {
+  const valueCount = merged.values?.length ?? 0;
+  if (merged.totalDistinct > valueCount) {
     merged.note =
       (merged.note ? `${merged.note}；` : "") +
-      `共 ${merged.totalDistinct} 个 device，已展示最近 ${merged.values.length} 个`;
+      `共 ${merged.totalDistinct} 个 device，已展示最近 ${valueCount} 个`;
   }
   return merged;
 }

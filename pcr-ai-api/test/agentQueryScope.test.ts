@@ -5,6 +5,7 @@ import {
   buildJbScopeArgs,
   buildLotListingQueryArgs,
   buildScopedBadBinAggregateArgs,
+  inferDeviceFromText,
   inferMaskFromText,
   inferPlatformFromText,
   inferRecentMonthsWindow,
@@ -226,5 +227,16 @@ describe("agentQueryScope", () => {
     const args = buildScopedBadBinAggregateArgs(q, []);
     assert.equal(args?.["tstype"], "PS16");
     assert.ok(args?.["testEndFrom"]);
+  });
+
+  it("inferDeviceFromText matches WC/WB full device codes (A1-4)", () => {
+    assert.equal(inferDeviceFromText("WC13N55Z 各 lot 良率 top5"), "WC13N55Z");
+    assert.equal(inferDeviceFromText("WA03P02G 测试情况"), "WA03P02G");
+    assert.equal(inferMaskFromText("WC13N55Z 各 lot 良率 top5"), "N55Z");
+  });
+
+  it("buildJbScopeArgs resolves WC13N55Z device for lot listing", () => {
+    const args = buildJbScopeArgs("WC13N55Z 各 lot 良率 top5", [], "query_jb_bins");
+    assert.equal(args?.["device"], "WC13N55Z");
   });
 });
