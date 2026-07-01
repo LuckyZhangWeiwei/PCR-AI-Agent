@@ -26,7 +26,8 @@ This is a two-package monorepo (no shared workspace tooling — each package has
 > **INF 晶圆图 + Agent 三路由（2026-06-03）：** [`docs/HANDOFF_INF_WAFER_MAP_AND_AGENT_TABLE_UX.md`](docs/HANDOFF_INF_WAFER_MAP_AND_AGENT_TABLE_UX.md) — `agentWaferMapRoute` / `agentJbOverviewRoute` / `agentDutBinMapRoute`；`inf_draw` vs `inf_draw_dut_bin_map`；性能与超时；表/解读分栏。 
 > **Lot 低良率 DUT REST（2026-07-01）：** [`docs/HANDOFF_LOT_UNDERPERFORMING_DUTS_API.md`](docs/HANDOFF_LOT_UNDERPERFORMING_DUTS_API.md) — `GET /api/v4/inf-analysis/lot-underperforming-duts?lot=`；lotOverall×0.75 阈值；JB 反查 device。 
 > **Agent 问题清单（2026-06-27 第二轮 · P-A 已修）：** [`docs/HANDOFF_AGENT_ISSUES_2026-06-27_ROUND2.md`](docs/HANDOFF_AGENT_ISSUES_2026-06-27_ROUND2.md) — P-A：`get_filter_values` device-by-mask 真库空（Oracle `TRIM(col)!=''` 陷阱 → `oracleStringSql.ts`）；待办 P-B/P-C/P-D/P-F。  
-> **Cursor 真库验证实录（2026-06-27～28 · 给 Claude Code）：** [`docs/HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md`](docs/HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md) — 严格复验 **5/5 闭环** + P-C summary bail + verify 脚本。
+> **Cursor 真库验证实录（2026-06-27～28 · 给 Claude Code）：** [`docs/HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md`](docs/HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-06-27.md) — 严格复验 **5/5 闭环** + P-C summary bail + verify 脚本。  
+> **Cursor 真库验证（2026-07-01 · 部署后）：** [`docs/HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-07-01.md`](docs/HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-07-01.md) — 新 API `NF12316.1X` ✅；派发 A1-1/2 ✅；A1-4/P-D/分类器待修；双开关 FLIP 建议。
 
 ---
 
