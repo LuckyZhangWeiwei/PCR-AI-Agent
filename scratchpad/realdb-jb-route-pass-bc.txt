@@ -1,42 +1,50 @@
-# Pass B/C verify 2026-06-28T09:12:31.268Z
+# Pass B/C verify 2026-07-01T13:39:06.544Z
 API: http://10.192.130.89:30008
 
 ## Pass B1（JB_LLM_INTENT_CLASSIFIER=true）
 ### 这几张卡最近咋样 — PASS
-Session: b1-a3feae33-8157-46f2-b967-e2bf4b441d8c
+Session: b1-e3572c77-a61f-4ee9-954c-6a6ca4466fd8
 Detail: lots=0, multiCard=false, clarify=true
 ```
-我需要先确认一下——您说的"这几张卡"具体是指哪些探针卡呢？请提供卡号（如 `7772-01`、`8041-B3`）或卡型号（如 `7772`、`8041`），我来帮您查看最近的测试情况。
+您好！您说的「这几张卡」——能否告诉我具体是哪几张探针卡（如卡号）或来自哪个批次/device？这样我才能查询它们的近期测试情况。
 
+比如您可以提供：
+- 具体卡号，如 `7772-A1`、`8041-B3` 等
+- 或所属的批次 lot ID
+- 或产品 device 代码
 
+方便我同时查 JB STAR（实测数据）和 Yield Monitor（报警记录），给您出一份综合的近期状态。
 ```
 
 ### 最近测得怎么样 — PASS
-Session: b1-ccfd82d3-e1f9-462d-82b1-4fef049dbd77
-Detail: lots=1, multiCard=false, clarify=true
+Session: b1-b0726ab8-3bee-4a8f-96fd-f19798f4d6a2
+Detail: lots=0, multiCard=false, clarify=true
 ```
-您问得比较宽泛，我需要一些具体信息才能帮您精确查询。请告诉我您想关注哪方面的测试情况，例如：
 
-- **某个产品**（如 WA03P02G、WB03N60J 等 device 代码）
-- **某个批次**（如 NF12551.1N 等 lot ID）
-- **某张探针卡**（如 7772-A1、8041-B3 等卡号）
-- **某台测试机**（如 PS1600 第几台）
 
-您想查哪个？
+您好！请问您想了解哪个具体的信息维度？比如：
+
+1. **某个产品/device**（如 WB03N60J、WA00N53A 等）的最近测试情况？
+2. **某张探针卡**的近期表现？
+3. **某个批次（lot）** 的良率？
+4. **某个机台或平台**（如 PS16、J750）的测试情况？
+
+请提供一下您关注的范围，方便我帮您查询！
 ```
 
 ### 看看这几个批次的情况 — PASS
-Session: b1-54a493ae-2b71-4cf9-be28-d68538d4860a
-Detail: lots=2, multiCard=true, clarify=false
+Session: b1-55fbea94-1f03-48e0-8d1f-6599b7ad40fd
+Detail: lots=1, multiCard=false, clarify=true
 ```
-您好！请告知您想查看的批次信息，可以是一次性提供以下任一条件：
 
-- **批次号（lot ID）**：如 `NF12551.1N`、`DR44117.1Y` 等完整编号
-- **产品代码（device）**：如 `WA03P02G`、`WC06N84R` 等
-- **产品后缀（mask）**：如 `N06Z`、`P02G` 等 4 位字母数字组合
-- **探针卡号**：如 `7772-01`、`6045-10` 等
 
-您说的是"这几个批次"——如果有多个 lot ID，请一并列出，我会为您逐批分析。
+我需要先了解您指的是哪几个批次。请问能否提供以下信息之一：
+
+1. **批次号（lot ID）** — 比如 "NF12592.1Y"
+2. **产品代码（device）或 mask** — 比如 "WB03N60J" 或 "N60J"
+3. **探针卡编号** — 比如 "7772-01"
+
+请告诉我您想查看哪些批次，我来查询它们的测试情况。
 ```
 
 ## Pass C（无效 apiKey 造分类器故障）
@@ -46,10 +54,20 @@ Detail: 降级/SSE error(无崩溃): HTTP 401: "Invalid token"
 
 ```
 
-### 明确：P11C 最近的测试情况 — FAIL
-Detail: 未出表
+### 明确：P11C 最近的测试情况 — PASS
+Detail: 正则快路/出表正常
+```
+## 实测数据
+
+**测试 lot 列表（device=WB01P11C，机台=b3flex32）（共 96 个 lot，下表列前 50 个）**
+
+| # | Lot | Device | 测试结束 | 片数 | 数据来源 |
+|---:|---|---|---|---:|---|
+| 1 | TR23827.1A | WB01P11C | 2026-07-01 | 22 | JB STAR |
+| 2 | TR22424.1T | WB01P11C | 2026-06-29 | 25 | JB STAR |
+| 3 | TR23373.1T | WB01P11C | 2026-06-27 | 25 | JB STAR |
+| 4 | TR22423.1A | WB01P11C | 2026-06-26 | 25 | JB STAR |
+| 5 | TR22899.1N | WB01P1
 ```
 
-```
-
-Summary: 4/5 passed
+Summary: 5/5 passed

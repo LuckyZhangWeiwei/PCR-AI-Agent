@@ -1,0 +1,111 @@
+# Step 2 dispatch verify 2026-07-01T13:39:06.735Z
+API: http://10.192.130.89:30008
+STEP: all
+Expected: JB_DETERMINISTIC_DISPATCH=true, JB_LLM_INTENT_CLASSIFIER=false
+
+## A1-1 — PASS
+Session: a1-1-8601d5ee-9c53-42e8-9529-7deb63c6f322
+Detail: dispatch=true tool=aggregate_jb_bins groupBy ok cards=4
+Tools: [{"name":"aggregate_jb_bins","args":{"groupBy":"bin,cardId","groupTop":20,"mask":"N55Z"}}]
+```
+## 实测数据
+
+**BIN35 坏 die 所属探针卡（mask N55Z，坏 die 合计 59883，匹配 5877 行）**
+
+| # | 探针卡 (CARDID) | BIN35 坏 die 颗数 | 占比 |
+|---:|---|---:|---:|
+| 1 | 9416-04 | 19659 | 32.8% |
+| 2 | 9416-03 | 16395 | 27.4% |
+| 3 | 9416-01 | 13899 | 23.2% |
+| 4 | 9416-02 | 9930 | 16.6% |
+
+## 分析结论
+
+*以上为范围内 BIN×探针卡 坏 die 汇总（良品 bin 已扣除）。卡级已定位；DUT 级归属需 INF DUT map，可继续追问「lot <号> wafer <片号> BIN<n> 的 DUT 分布」。*
+```
+
+## A1-2 — FAIL
+Session: a1-2-19df1e93-4917-440d-b71d-ae12bb41cb31
+Detail: dispatch=false first=query_lot_dut_bin_agg cards=none
+```
+## 实测数据
+
+**坏 die 的 DUT 集中度（卡 vs 工艺判别）**
+
+| BIN | 测试层 | 卡号 | 总坏die | 主要 DUT(占比) | 判别 |
+|---:|---|---|---:|---|---|
+| BIN35 | pass1 | — | 968 | DUT9(9%)、DUT10(9%)、DUT1(8%) | 疑工艺/批次 |
+
+{"focusBin":"bin35","focusBinDuts":[{"passId":1,"bin":"bin35","dutCount":16,"totalDieCount":968,"avgPerDut":61,"duts":[{"dut":9,"dieCount":89},{"dut":10,"dieCount":83},{"dut":1,"dieCount":80},{"dut":6,"dieCount":76},{"dut":5,"dieCount":75},{"dut":11,"dieCount":71},{"dut":12,"dieCount":64},{"dut":4,"dieCount":63}],"moreDuts":"另有 8 个 DUT 未展示"}],"device":"WC13N55Z","lot":"DR44919.1F","waferCount":25,"waferSlots":[1,2,
+```
+
+## A1-4 — PASS
+Session: a1-4-3965e7ef-aefa-4ac5-b4e0-92460d74564e
+Detail: dispatch=true first=query_jb_bins lots=5
+```
+## 实测数据
+
+**良率最差 5 个 lot（共 8 个 lot，按最差 slot×pass 良率% 升序）**
+
+| lot | device | 最差 (waferId / pass) | 良率% | 测试结束时间 |
+|---|---|---|---|---|
+| DR44437.1L | WC13N55Z | waferId 18 / pass1 | 78.2% | Mon Jun 22 |
+| DR44435.1C | WC13N55Z | waferId 12 / pass1 | 92.6% | Mon Jun 29 |
+| DR44037.1N | WC13N55Z | waferId 16 / pass1 | 93.4% | Sat Jun 20 |
+| DR44919.1F | WC13N55Z | waferId 14 / pass1 | 94.2% | Tue Jun 30 |
+| DR44042.1A | WC13N55Z | waferId 12 / pass1 | 94.2% | Sun Jun 21 |
+
+## 分析结论
+
+*以上为服务端实测表。如需某 BIN 逐片趋势或晶圆图，请继续提问。*
+```
+
+## A2-1 — PASS
+Session: a2-1-473e8b3b-f814-4a2e-9ed9-f846f04f985f
+Detail: first=query_jb_bins overview=true
+```
+## 实测数据
+
+**NF13338.1K** 测试机台
+
+| 批次 lot | 机台 TESTERID | 本批出现过的机台 |
+|---|---|---|
+| NF13338.1K | b3uflex21 | b3uflex15, b3uflex21 |
+
+**各测试层探针卡**
+
+| 测试层 | passId | 卡号 | 同层中途换卡 |
+|---|---:|---|---|
+| pass1 | 1 | 8041-08 | 否 |
+| pass3 | 3 | 8041-04 | 否 |
+
+**分测试层（sort）批次良率**
+
+| 测试层 | passId | 片数 | 总die | 坏die | 良率% |
+|---|---:|---:|---:|---:|---:|
+| pass1 | 1 | 25 | 74275 | 3817 | 94.86% |
+| pass3 | 3 | 3 | 8500 | 23 | 99.73% |
+
+**NF13338.1K**（WA03P02G） 各片良率（按测试层分列）
+
+| Slot | pass1 良率% | pass3 良率% | 坏
+```
+
+## A2-4 — FAIL
+Session: a2-4-08167055-0987-4793-9ec6-e10204dbd7c9
+Detail: SSE error: Request timeout after 250000ms
+```
+我先查一下 "ZZZZZ" 这个 mask 对应的完整 device 代码。
+
+"ZZZZZ" 在系统中未匹配到已知 device 代码。让我扩大范围，直接用 mask 做全量验证。
+
+当前系统中未找到 "ZZZZZ" 的相关记录。
+
+可能原因：
+- "ZZZZZ" 并非系统中存在的有效 mask（产品后缀）
+- 拼写或输入有误（如大小写、多余空格）
+
+建议您核实完整 device 代码（如 "WA03P02G" 格式）或提供 lot 号，以便进一步查询 BIN99 的卡号
+```
+
+Summary: 3/5 passed

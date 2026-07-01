@@ -1,0 +1,57 @@
+# Pass B/C verify 2026-07-01T13:01:11.951Z
+API: http://10.192.130.89:30008
+
+## Pass B1（JB_LLM_INTENT_CLASSIFIER=true）
+### 这几张卡最近咋样 — PASS
+Session: b1-08fdadd3-95f5-49f7-aeab-b7f48a3a2a3b
+Detail: lots=0, multiCard=false, clarify=true
+```
+您好！您说的是哪几张探针卡呢？请提供具体的卡号（如 7772-A1、9440-001），我帮您查一下它们近期的测试情况和报警记录。
+```
+
+### 最近测得怎么样 — PASS
+Session: b1-4eca841c-b9a6-4ba5-bb7f-b5236b01f99b
+Detail: lots=1, multiCard=false, clarify=true
+```
+您好！"最近测得怎么样"这个范围比较广，请问您想看**哪个产品（device）** 或 **哪个批次（lot）** 的信息呢？或者您可以告诉我的场景，比如：
+
+1. **某款产品** — 如 WA03P02G、WC13N06Z 等
+2. **某张探针卡** — 如 7772-A1、6045-10 等
+3. **某个批次** — 如 NF12827.1R 等
+4. **某个测试平台** — 如 PS16、J750 等
+
+请提供具体方向，我立即帮您查！
+```
+
+### 看看这几个批次的情况 — PASS
+Session: b1-e2c3e464-6b51-4764-8876-fa8a197382ba
+Detail: lots=1, multiCard=false, clarify=true
+```
+您好！请问您想看哪几个批次的情况？请提供批次号（lot ID），例如：
+
+- 一个具体的 lot ID（如 `NF12551.1N`）
+- 某 device 下的多个批次
+- 某张探针卡测试过的所有批次
+
+或者，您也可以提供以下信息让我先筛选：
+- **device 代码**（如 `WA03P02G`）
+- **探针卡型号**（如 `7772`、`8041`）
+- **测试时间段**
+
+请把具体的批次号或筛选条件告诉我，我来为您查询分析。
+```
+
+## Pass C（无效 apiKey 造分类器故障）
+### 模糊：这几张卡最近咋样 — PASS
+Detail: 降级/SSE error(无崩溃): HTTP 401: "Invalid token"
+```
+
+```
+
+### 明确：P11C 最近的测试情况 — FAIL
+Detail: 未出表
+```
+
+```
+
+Summary: 4/5 passed

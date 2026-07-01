@@ -1,0 +1,107 @@
+# Handoff reverify 2026-07-01T13:39:06.753Z
+API: http://10.192.130.89:30008
+STEP: all
+
+## PA — PASS
+Session: v-be9850a1-77b0-4d89-ab99-243aafd4260e
+Detail: get_filter_values totalDistinct=3
+```
+{"domain":"both","field":"device","values":["WB01P11C (Yield: 2026-06-18, JB: 2026-07-01)","WA00P11C (Yield: 2024-11-05)","WB00P11C (Yield: 2024-10-19)"],"totalDistinct":3,"devices":[{"device":"WB01P1
+```
+
+## PB — PASS
+Session: pb-44358355-7d08-472a-b84d-aa13771ca9f5
+Detail: listed ~50 lot ids
+```
+## 实测数据
+
+**测试 lot 列表（device=WB00N97V，机台=b3uflex30）（共 69 个 lot，下表列前 50 个）**
+
+| # | Lot | Device | 测试结束 | 片数 | 数据来源 |
+|---:|---|---|---|---:|---|
+| 1 | NF13304.1X | WB00N97V | 2026-06-30 | 25 | JB STAR |
+| 2 | NF13398.1Y | WA00P07H | 2026-06-30 | 4 | JB STAR |
+| 3 | NF13390.1K | WA00P23N | 2026-06-30 | 19 | JB STAR |
+| 4 | NF13442.1K | WB10N33V | 2026-06-30 | 9 | JB STAR |
+| 5 | NF13322.1J | WB10N57
+```
+
+## PC — PASS
+Session: pc-c23b0f01-a36a-4ada-be5f-b022cf662501
+Detail: multi-card: 9416-01, 9416-02, 9416-03, 9416-04
+```
+
+
+用户想知道 9416 卡族下的 4 张具体卡（9416-01/02/03/04）的对比情况。我需要分别从 YM 和 JB 两个域查各卡的详细数据。
+
+先查各卡在 YM 的聚合报警情况：
+
+9416-01/02/03/04 四张具体卡的对比分析如下：
+
+### YM 侧（Yield Monitor 报警）
+- 报警次数排名：**9416-02**（232 次）> **9416-01**（187 次）> **9416-03**（102 次）> **9416-04**（31 次）。
+- 9416-02 和 9416-01 合计占该卡族报警总量的 **76%**（419/552），是主要问题卡。
+- 四张卡的报警均发生于 pass1、device WC13N55Z，且以 DUT0（9416-02/03 集中）和 DUT6（9416-02 在 DR41662.1J lot 集中）为主。
+
+### JB 侧（JB STAR 测试）
+- **9416-01**：涉 36 个 lot，累计 109 片 wafer，最新 6 片良率 97.08%；但历史最差 lot 良率仅 89.94%（DR44042.1A），BIN2 为主要坏 die。
+- **9416-02**：涉 44 个 lot，最新 lot DR44919.1F 良率 95.73%，BIN35 坏 die 1652 颗为该卡最高，B
+```
+
+## PD — PASS
+Session: pd-959b7537-4fd8-4d23-b9ca-38c1d82a1c54
+Detail: 
+
+好的，从上一轮数据来看，BIN40 主要集中在 **WA03P02G** 这个 device 上（9260 颗），我来查一下该 device 在所有 UFLEX 测试的 lot 中，BIN40 的分布情况。
+
+## 实测数据
+
+**各 lot BIN40 坏 die 排行（WA03P02G 2026-06-28～2026-07-01，坏 die 合计 9164）**
+
+| # | Lot | BIN40 坏 die 颗数 | 占比 |
+|---:|---|---:|---:|
+| 1 | NF13389.1T | 2276 | 24.8% |
+| 2 | NF13386.1R | 1402 | 15.3% |
+| 3 | NF13340.1W | 1278 | 13.9% |
+| 4 | NF13338.1K | 1117 | 12.2% |
+| 5 | NF13394.1F | 10
+```
+
+
+好的，从上一轮数据来看，BIN40 主要集中在 **WA03P02G** 这个 device 上（9260 颗），我来查一下该 device 在所有 UFLEX 测试的 lot 中，BIN40 的分布情况。
+
+## 实测数据
+
+**各 lot BIN40 坏 die 排行（WA03P02G 2026-06-28～2026-07-01，坏 die 合计 9164）**
+
+| # | Lot | BIN40 坏 die 颗数 | 占比 |
+|---:|---|---:|---:|
+| 1 | NF13389.1T | 2276 | 24.8% |
+| 2 | NF13386.1R | 1402 | 15.3% |
+| 3 | NF13340.1W | 1278 | 13.9% |
+| 4 | NF13338.1K | 1117 | 12.2% |
+| 5 | NF13394.1F | 10
+```
+
+## PF — PASS
+Session: pf-89e06330-e254-4cfe-8d96-3e4af154f8c9
+Detail: BIN79 present, no BIN1/BIN55 in table
+```
+**坏 die 的 DUT 集中度（卡 vs 工艺判别）**
+
+| BIN | 测试层 | 卡号 | 总坏die | 主要 DUT(占比) | 判别 |
+|---:|---|---|---:|---|---|
+| BIN79 | pass1 | — | 776 | DUT91(2%)、DUT71(2%)、DUT30(2%) | 疑工艺/批次 |
+
+{"focusBin":"bin79","focu## 实测数据
+
+**坏 die 的 DUT 集中度（卡 vs 工艺判别）**
+
+| BIN | 测试层 | 卡号 | 总坏die | 主要 DUT(占比) | 判别 |
+|---:|---|---|---:|---|---|
+| BIN79 | pass1 | — | 776 | DUT91(2%)、DUT71(2%)、DUT30(2%) | 疑工艺/批次 |
+
+{"focusBin":"bin79","focusBinDuts":[{"passId":1,"bin":"bin79","dutCount":127,"totalDieCount":776,"avgPerDut":6,"duts":[{"dut":91,"dieCount":16},{"dut":71,"dieCount":15},{"dut":30,"dieCount":14},{"dut":72,"dieCount":12},{"dut":0,"dieCount":11},{"dut":2,"dieCount":11},{"dut":53,"dieCount":11},{"dut":58,"dieCount":11}],"moreDuts":"另有 119 个 DUT 未展示"}],"device":"WB10N57U","lot":"NF13322.1J","waferCount":24,"waferSlots
+```
+
+Summary: 5/5 passed
