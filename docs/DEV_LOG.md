@@ -2,6 +2,17 @@
 
 ---
 
+## 2026-07-02 — A1-2 卡级归因误路由 + A2-4 空 scope 空转（补齐 Cursor 8a6f841 待办）
+
+**完成内容：**
+- **A1-2 修复**（`agentLoop.ts` `isDutBinConcentrationQuestion`，导出供单测）：「BIN35 集中在哪张卡」同时命中 `isBinCardAttributionQuestion` 与 `isDutBinConcentrationQuestion`（含"卡"），而 P-F `tryRunDutBinAggDirectRoute` 在 `PRE_LLM_DIRECT_ROUTES` 排在语义派发之前、又从 mask 概况历史捞到 primary lot → 抢先成单 lot DUT 集中度。改门为**区分 DUT 级（dut/触点/探针）→ P-F** vs **纯卡级归因 → 让给 `bin_card_attribution` 派发（`aggregate_jb_bins(bin,cardId)`）**；P-F 原问句（含 dut）、A1-1（无 history lot 本就 bail）不受影响。
+- **A2-4 修复**（新 `agentJbUnscopedBinRoute.ts` + `agentLoop.ts` 薄包 `tryRunUnscopedBinClarifyDirectRoute`，置 PRE_LLM 链末端）：`ZZZZZ 哪个卡测出bin99 多` 解析不到任何 scope → LLM 空转 250s 超时。仅当「有 BIN + bin 归因/排行问句 + 无 lot + device/mask/tester/platform/时间窗全空 + 句中有无法识别的全大写疑似 token」时确定性澄清。**纯中文无 token（B2-3）与可解析 scope 问句均不拦截**，只把会空转的死路变快速澄清。
+- 未翻任何开关、未 merge main；改动仅路由层（未碰 SQL/Dummy/响应形状）。真库派发/超时复验交 Cursor：[`HANDOFF_CLAUDE_A1-2_A2-4_FIXES_2026-07-02.md`](HANDOFF_CLAUDE_A1-2_A2-4_FIXES_2026-07-02.md)。
+
+**测试：** 465 个测试，0 失败（461 pass / 4 skip，连跑 3 次稳定）；typecheck + build（含 verify-dist-no-undici）✅
+
+---
+
 ## 2026-06-29 — 阶段三完收：决策驱动确定性预 LLM 派发（Tasks 1–5，dark-launch）
 
 **背景：** 真库会话日志 mqygf9mq 复盘显示，turn1 LLM 在高置信意图（`bin_card_attribution` / `lot_yield_ranking` / `card_yield_compare`）下仍会选错工具（如用 `query_jb_bins` 替代 `aggregate_jb_bins`），导致无效往返与无效输出。根治方案：在 LLM 发言前，服务端根据意图决策直接发起正确工具。

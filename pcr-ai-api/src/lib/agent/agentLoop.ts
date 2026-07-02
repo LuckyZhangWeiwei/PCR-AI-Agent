@@ -87,6 +87,10 @@ import {
   maskScopeFilterValuesArgs,
   maskScopeJbQueryArgs,
 } from "./agentJbMaskScopeRoute.js";
+import {
+  buildUnscopedBinClarifyMessage,
+  canRunUnscopedBinClarify,
+} from "./agentJbUnscopedBinRoute.js";
 import { buildScopeLabelFromAggregateArgs, findLastToolCallArgs, inferLotFromHistory } from "./agentQueryScope.js";
 import { deviceBaseMask } from "../deviceMask.js";
 import {
@@ -1587,11 +1591,21 @@ async function tryRunBinLotRankingDirectRoute(
   return true;
 }
 
-/** 用户是否在问 lot 级 DUT×BIN 集中度（含卡号，不要求 dddd-dd 卡号格式）。 */
-function isDutBinConcentrationQuestion(text: string): boolean {
+/**
+ * 用户是否在问 lot 级 DUT×BIN 集中度（DUT/触点/探针 级，非卡级归因）。
+ * - DUT 级意图（dut/触点/探针）→ P-F（query_lot_dut_bin_agg 单 lot DUT 集中度），
+ *   即便同时问"哪张卡"也以 DUT 集中度作答（如 P-F 的
+ *   "哪个卡 哪个dut 测试出的 bin79 最多"）。
+ * - 纯卡级归因（"BINnn 集中在哪张卡"，无 dut）→ 让给 bin_card_attribution 语义派发
+ *   （aggregate_jb_bins groupBy:bin,cardId），勿被 P-F 用 history primary lot 抢成
+ *   单 lot DUT 集中度（A1-2 误路由根因）。
+ */
+export function isDutBinConcentrationQuestion(text: string): boolean {
   const focusBin = extractBinFromUserText(text);
   if (focusBin == null) return false;
-  return /(dut|卡|card|触点|探针)/i.test(text);
+  if (/(dut|触点|探针)/i.test(text)) return true;
+  if (/(卡|card)/i.test(text)) return !isBinCardAttributionQuestion(text);
+  return false;
 }
 
 /**
@@ -2022,6 +2036,28 @@ export async function tryRunSemanticDispatchDirectRoute(
   }
 
   return emitDeterministicJbTablesReply(sessionId, userQuestion, payload, agentConfig, emit);
+}
+
+/**
+ * A2-4 兜底：bin 归因/排行类问句带无法识别的疑似 scope token（如 ZZZZZ），
+ * 且无任何可解析 scope 时，直接澄清而非交 LLM 空转（250s idle 超时）。
+ * 置于 PRE_LLM 直连链末端——前面所有能解析 scope 的路由都没接住时才兜底。
+ */
+async function tryRunUnscopedBinClarifyDirectRoute(
+  sessionId: string,
+  userQuestion: string,
+  _agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void
+): Promise<boolean> {
+  const history = getHistory(sessionId);
+  if (!canRunUnscopedBinClarify(userQuestion, history)) return false;
+
+  const msg = buildUnscopedBinClarifyMessage(userQuestion);
+  emit({ type: "status", message: "未识别数据范围，正在请求澄清…" });
+  emitTextInChunks(msg, emit);
+  appendMessages(sessionId, { role: "assistant", content: msg });
+  emit({ type: "done" });
+  return true;
 }
 
 /** 从 query_lot_dut_bin_agg 结果中提取 DUT 分布，直接 emit bar chart。 */
@@ -3152,6 +3188,7 @@ export async function runAgentLoop(
     tryRunEquipmentDirectRoute,
     tryRunPerSlotBinRankingDirectRoute,
     tryRunSemanticDispatchDirectRoute,
+    tryRunUnscopedBinClarifyDirectRoute,
   ];
 
   const maxRounds = agentConfig.maxRounds;

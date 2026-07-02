@@ -11,6 +11,7 @@
 
 ## 待办
 
+- ✅ **A1-2 卡级归因误路由 + A2-4 空 scope 空转（补齐 Cursor 8a6f841 待办）** — A1-2：改 `isDutBinConcentrationQuestion`（区分 DUT 级/卡级），纯卡级归因「BIN35 集中在哪张卡」让给 `bin_card_attribution` 派发；A2-4：新 `agentJbUnscopedBinRoute.ts` + PRE_LLM 末端 `tryRunUnscopedBinClarifyDirectRoute`，无效 token（ZZZZZ）+ 零 scope → 确定性澄清，免 250s 空转。465 测试/461 pass/0 fail。**真库派发/超时复验待 Cursor**（`verify-step2-dispatch.mjs a1-2/a2-4`，见 [`HANDOFF_CLAUDE_A1-2_A2-4_FIXES_2026-07-02.md`](HANDOFF_CLAUDE_A1-2_A2-4_FIXES_2026-07-02.md)） — 2026-07-02 完成
 - ✅ **五会话日志复盘:JB 聚合/列表 5 缺陷 + B-core 结构收敛** — B1 device 列丢(新 `buildBinDeviceAggregateMarkdown`)、B3 多 lot 未过滤(`restrictLots`+`extractLotsFromUserText`)、B4 多 lot/DUT 单 lot 答非所问(收口 chokepoint + `equipmentRouteDutLevelBail`)、B5 cardId 单 JB lot 丢(主 lot 兜底)、B2 「这个lot」指代(prompt 窄规则)。**B-core**:抽 `renderAggregateJbBinsResult` 单一渲染真相源(消除两站点重复链)+ 多 lot bail 收口。418 测试/eval 37/37 — 2026-06-28 完成。**B2 依赖 LLM 遵守,待真库验证。**
 - ✅ **JB 路由收敛(打地鼠彻底治理)** — `resolveJbRoute` 单一真相源 + 有序 runner 列表 + LLM 兜底(开关 `JB_LLM_INTENT_CLASSIFIER` 默认关) + 安全降级；408 测试/eval 37/37 — 2026-06-28 完成。**待办：阶段3 灰度** — 部署后设 `JB_LLM_INTENT_CLASSIFIER=true` + pm2 reload,`AGENT_EVAL_LIVE=1` 跑 live eval + 真库 curl 比对开/关,确认 403 降级；稳定后默认开启。spec/plan 见 `docs/superpowers/`。
 - ✅ **黄金集闸门（Tasks 5–7）：锁 baseline 零回退 + live 混合对比** — `REGEX_BASELINE_PASS_QUESTIONS`（47 条实际通过问句）+ `scoreHybridOnGolden`（live LLM 对比器）+ 「纯正则 baseline 零回退」CI 测试 + 「混合路由零 mode 回退」live-gated 测试（`AGENT_EVAL_LIVE=1`）；425 测试/422 通过/0 失败；`JB_LLM_INTENT_CLASSIFIER` 默认仍 off — 2026-06-29 完成

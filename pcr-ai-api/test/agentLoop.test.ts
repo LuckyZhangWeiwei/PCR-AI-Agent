@@ -8,6 +8,7 @@ import {
   cachedJbScopeMismatchReason,
   equipmentRouteCrossLotBail,
   equipmentRouteDutLevelBail,
+  isDutBinConcentrationQuestion,
   renderAggregateJbBinsResult,
   tryRunSemanticDispatchDirectRoute,
 } from "../src/lib/agent/agentLoop.js";
@@ -515,4 +516,18 @@ test("tryRunSemanticDispatchDirectRoute: flag 未开时整体短路 return false
   const handled = await tryRunSemanticDispatchDirectRoute(
     sid, "n55z 哪个卡测出bin35 多", {} as any, () => {});
   assert.equal(handled, false);
+});
+
+// A1-2 修复：区分 DUT 级集中度（P-F）vs 卡级归因（bin_card_attribution 语义派发）。
+test("isDutBinConcentrationQuestion: 卡级归因让给 bin_card_attribution，DUT 级仍归 P-F", () => {
+  // 纯卡级归因（无 dut）→ 不走 P-F（交语义派发出 bin×card 表，A1-2 根因）。
+  assert.equal(isDutBinConcentrationQuestion("BIN35 集中在哪张卡"), false);
+  assert.equal(isDutBinConcentrationQuestion("bin99 是哪张卡测出来的"), false);
+  assert.equal(isDutBinConcentrationQuestion("n55z 哪个卡测出bin35 多"), false);
+  // DUT 级意图（含 dut/触点/探针）→ 仍走 P-F（即便同时问"哪个卡"，如 P-F 问句）。
+  assert.equal(isDutBinConcentrationQuestion("哪个卡 哪个dut 测试出的 bin79 最多"), true);
+  assert.equal(isDutBinConcentrationQuestion("bin79 哪个dut最多"), true);
+  assert.equal(isDutBinConcentrationQuestion("bin35 哪个触点集中"), true);
+  // 无 bin 编号 → false。
+  assert.equal(isDutBinConcentrationQuestion("哪张卡良率最低"), false);
 });
