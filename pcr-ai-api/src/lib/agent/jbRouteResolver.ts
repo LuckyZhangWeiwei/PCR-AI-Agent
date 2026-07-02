@@ -4,8 +4,10 @@ import {
   extractBinFromUserText,
   extractSlotFromUserText,
   extractJbIntentFlags,
+  isLotOverviewQuestion,
 } from "./agentJbDeterministicReply.js";
 import { extractLotFromUserText } from "./agentInfWaferMapTool.js";
+import { inferMaskFromText } from "./agentQueryScope.js";
 import { callJbIntentClassifier, type ChatFn } from "./jbIntentClassifier.js";
 import type { AgentConfig } from "./agentConfig.js";
 
@@ -78,9 +80,22 @@ export async function classifyJbIntent(
 ): Promise<JbRouteDecision> {
   const base = resolveJbRoute(q, history, payload);
   if (process.env.JB_LLM_INTENT_CLASSIFIER !== "true") return base;
-  if (base.mode !== "generic" || !isAmbiguous(q)) return base; // 高置信快路
+  // 非 generic 一律纯正则：避免「WC13N55Z 各 lot 良率 top5」等无 lot 锚点问句
+  // 被 LLM 分类器改写成 generic/low，导致 resolveDispatch 派发失败。
+  if (base.mode !== "generic") return base;
+  if (!isAmbiguous(q)) return base;
   const r = await callJbIntentClassifier(q, ctx, agentConfig, deps);
   if (!r) {
+    // LLM 分类失败：若正则已识别 mask/device 级概况，仍走 regex 快路（Pass C invalid key 降级）
+    if (isLotOverviewQuestion(q) && inferMaskFromText(q)) {
+      return {
+        ...base,
+        mode: "lot_overview",
+        source: "regex",
+        confidence: "high",
+        reason: "LLM 分类失败,mask 概况降级纯正则",
+      };
+    }
     return { ...base, source: "default", confidence: "low", reason: "LLM 分类失败,降级 generic" };
   }
   return {

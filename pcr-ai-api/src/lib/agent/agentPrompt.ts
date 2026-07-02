@@ -54,7 +54,7 @@ function buildManifestSection(manifest?: DataManifest): string {
   const yieldTime = manifest.yield.timeMin && manifest.yield.timeMax
     ? `${manifest.yield.timeMin.slice(0, 10)} ~ ${manifest.yield.timeMax.slice(0, 10)}`
     : "（暂无数据）";
-  const yieldDevices = manifest.yield.topDevices.length > 0
+  const yieldDevices = (manifest.yield.topDevices?.length ?? 0) > 0
     ? manifest.yield.topDevices.map((d) => `${d.device} (${d.count})`).join(", ")
     : "（暂无数据）";
   lines.push(`Yield Monitor 数据时间范围：${yieldTime}`);
@@ -63,7 +63,7 @@ function buildManifestSection(manifest?: DataManifest): string {
   const jbTime = manifest.jb.timeMin && manifest.jb.timeMax
     ? `${manifest.jb.timeMin.slice(0, 10)} ~ ${manifest.jb.timeMax.slice(0, 10)}`
     : "（暂无数据）";
-  const jbDevices = manifest.jb.topDevices.length > 0
+  const jbDevices = (manifest.jb.topDevices?.length ?? 0) > 0
     ? manifest.jb.topDevices.map((d) => `${d.device} (${d.count})`).join(", ")
     : "（暂无数据）";
   lines.push(`JB STAR 数据时间范围：${jbTime}`);

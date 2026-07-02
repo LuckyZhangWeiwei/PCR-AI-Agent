@@ -10,13 +10,26 @@ import {
 import {
   buildAggregateJbBinsScopeArgs,
   buildLotListingQueryArgs,
+  inferDeviceFromHistory,
   inferDeviceFromText,
+  inferPlatformFromHistory,
+  inferPlatformFromText,
+  inferTesterFromHistory,
   inferTesterIdFromText,
 } from "./agentQueryScope.js";
 
-export function canRunLotListingDirectRoute(userText: string): boolean {
+export function canRunLotListingDirectRoute(
+  userText: string,
+  history: ChatMessage[] = []
+): boolean {
   if (!isLotListingQuestion(userText)) return false;
-  return Boolean(inferDeviceFromText(userText) || inferTesterIdFromText(userText));
+  const device =
+    inferDeviceFromText(userText) || inferDeviceFromHistory(history);
+  const testerId =
+    inferTesterIdFromText(userText) || inferTesterFromHistory(history);
+  const platform =
+    inferPlatformFromText(userText) || inferPlatformFromHistory(history);
+  return Boolean(device || testerId || platform);
 }
 
 /** 总结轮：已调 get_filter_values / YM 但未 query_jb_bins 时恢复。 */

@@ -1,5 +1,7 @@
 /** Extract device / tester / time scope from user text + recent tool calls. */
 import type { ChatMessage } from "./agentHistory.js";
+import { extractLotFromUserText } from "./agentInfWaferMapTool.js";
+import { extractBinFromUserText } from "./agentJbDeterministicReply.js";
 
 export function tryParseToolCallArgs(raw: string): Record<string, unknown> | null {
   try {
@@ -25,6 +27,8 @@ export function findLastToolCallArgs(
 }
 
 export function inferDeviceFromText(text: string): string | undefined {
+  const full = text.match(DEVICE_FULL_RE);
+  if (full) return full[1]!.toUpperCase();
   const m = text.match(/\b(WA\d{2}P\d{2}[A-Z0-9]+)\b/i);
   return m ? m[1]!.toUpperCase() : undefined;
 }
@@ -123,6 +127,27 @@ export function inferDeviceFromHistory(history: ChatMessage[]): string | undefin
   return undefined;
 }
 
+/** 从用户句 + 近期 history 推断 lot（含单 lot 缓存 payload）。 */
+export function inferLotFromHistory(history: ChatMessage[]): string | undefined {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const msg = history[i]!;
+    if (msg.role === "user") {
+      const lot = extractLotFromUserText(String(msg.content ?? ""));
+      if (lot) return lot;
+    }
+    if (msg.role === "tool" && msg.name === "query_jb_bins") {
+      try {
+        const o = JSON.parse(String(msg.content ?? "")) as Record<string, unknown>;
+        const lot = String(o["lot"] ?? o["primaryLot"] ?? "").trim();
+        if (lot) return lot;
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  return undefined;
+}
+
 export function inferTesterFromHistory(history: ChatMessage[]): string | undefined {
   for (let i = history.length - 1; i >= 0; i--) {
     const msg = history[i]!;
@@ -190,6 +215,17 @@ const ZH_NUM: Record<string, number> = {
  * Name kept for backward compatibility (callers treat {} as "no window").
  */
 export function inferRecentMonthsWindow(text: string): TimeWindow {
+  // ── day(s) ──
+  const dayArabic = text.match(/(?:最近|近|过去|这|本)\s*(\d+)\s*(?:个)?\s*天/);
+  if (dayArabic) {
+    const n = Number(dayArabic[1]);
+    if (n > 0 && n <= 365) return windowFromDays(n);
+  }
+  const dayZh = text.match(/(?:最近|近|过去|这|本)\s*([一两二三四五六七八九十]+)\s*(?:个)?\s*天/);
+  if (dayZh) {
+    const n = ZH_NUM[dayZh[1]!];
+    if (n) return windowFromDays(n);
+  }
   // ── week(s) ──
   if (/最近\s*7\s*天|近\s*7\s*天|过去\s*7\s*天/.test(text)) return windowFromDays(7);
   const wkArabic = text.match(/(?:最近|近|过去|这|本)?\s*(\d+)\s*(?:个)?\s*(?:周|星期|礼拜)/);
@@ -225,6 +261,16 @@ export function inferRecentMonthsWindow(text: string): TimeWindow {
     return windowFromMonths(1);
   }
   return {};
+}
+
+/** 当前句有时间短语则用当前句，否则从 history 继承（避免 `{}` truthy 阻断 fallback）。 */
+export function resolveRecentTimeWindow(
+  text: string,
+  history: ChatMessage[] = []
+): TimeWindow {
+  const fromText = inferRecentMonthsWindow(text);
+  if (fromText.testEndFrom) return fromText;
+  return inferRecentMonthsWindowFromHistory(history);
 }
 
 /** Build query_jb_bins args from YM tool call + user question. */
@@ -311,15 +357,44 @@ export function buildLotListingQueryArgs(
     inferDeviceFromText(userQuestion) || inferDeviceFromHistory(history);
   const testerId =
     inferTesterIdFromText(userQuestion) || inferTesterFromHistory(history);
-  if (!device && !testerId) return null;
+  const tstype =
+    device || testerId
+      ? undefined
+      : inferPlatformFromText(userQuestion) ||
+        inferPlatformFromHistory(history);
+  if (!device && !testerId && !tstype) return null;
 
-  const window = inferRecentMonthsWindow(userQuestion);
+  const window = resolveRecentTimeWindow(userQuestion, history);
   const args: Record<string, unknown> = { limit: 200 };
   if (device) args["device"] = device;
   if (testerId) args["testerId"] = testerId;
+  if (tstype) args["tstype"] = tstype;
   if (window.testEndFrom) args["testEndFrom"] = window.testEndFrom;
   if (window.testEndTo) args["testEndTo"] = window.testEndTo;
   return args;
+}
+
+function inferPlatformFromHistory(history: ChatMessage[]): string | undefined {
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i]?.role !== "user") continue;
+    const p = inferPlatformFromText(String(history[i]!.content ?? ""));
+    if (p) return p;
+  }
+  return undefined;
+}
+
+export { inferPlatformFromHistory };
+
+/** 从近期 user 句继承「最近 N 天/月」时间窗（P-B 第二轮「都测试了什么lot」）。 */
+export function inferRecentMonthsWindowFromHistory(
+  history: ChatMessage[]
+): TimeWindow {
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i]?.role !== "user") continue;
+    const w = inferRecentMonthsWindow(String(history[i]!.content ?? ""));
+    if (w.testEndFrom) return w;
+  }
+  return {};
 }
 
 /** 跨 lot 坏 BIN 排行：device / mask / tester / platform + 时间窗，groupBy bin。 */
@@ -344,13 +419,59 @@ export function buildScopedBadBinAggregateArgs(
     ? undefined
     : inferMaskFromText(userQuestion) || inferMaskFromHistory(history);
   const tstype =
-    device || testerId || mask ? undefined : inferPlatformFromText(userQuestion);
+    device || testerId || mask
+      ? undefined
+      : inferPlatformFromText(userQuestion) || inferPlatformFromHistory(history);
   if (!device && !testerId && !mask && !tstype) return null;
 
-  const window = inferRecentMonthsWindow(userQuestion);
+  const window = resolveRecentTimeWindow(userQuestion, history);
   const args: Record<string, unknown> = {
     groupBy: "bin",
     groupTop: 20,
+  };
+  if (device) args["device"] = device;
+  if (testerId) args["testerId"] = testerId;
+  if (mask) args["mask"] = mask;
+  if (tstype) args["tstype"] = tstype;
+  const testEndFrom = String(jbArgs?.["testEndFrom"] ?? window.testEndFrom ?? "").trim();
+  const testEndTo = String(jbArgs?.["testEndTo"] ?? window.testEndTo ?? "").trim();
+  if (testEndFrom) args["testEndFrom"] = testEndFrom.slice(0, 10);
+  if (testEndTo) args["testEndTo"] = testEndTo.slice(0, 10);
+  return args;
+}
+
+/** 「哪个 lot BINnn 最多」：aggregate_jb_bins(groupBy:"bin,lot") + 按指定 bin 排 lot。 */
+export function buildBinLotRankingAggregateArgs(
+  userQuestion: string,
+  history: ChatMessage[] = []
+): Record<string, unknown> | null {
+  const focusBin = extractBinFromUserText(userQuestion);
+  if (focusBin == null) return null;
+
+  const jbArgs = findLastToolCallArgs(history, "query_jb_bins");
+  const device =
+    inferDeviceFromText(userQuestion) ||
+    inferDeviceFromHistory(history) ||
+    String(jbArgs?.["device"] ?? "").trim() ||
+    undefined;
+  const testerId =
+    inferTesterIdFromText(userQuestion) ||
+    inferTesterFromHistory(history) ||
+    String(jbArgs?.["testerId"] ?? "").trim() ||
+    undefined;
+  const mask = device
+    ? undefined
+    : inferMaskFromText(userQuestion) || inferMaskFromHistory(history);
+  const tstype =
+    device || testerId || mask
+      ? undefined
+      : inferPlatformFromText(userQuestion) || inferPlatformFromHistory(history);
+  if (!device && !testerId && !mask && !tstype) return null;
+
+  const window = resolveRecentTimeWindow(userQuestion, history);
+  const args: Record<string, unknown> = {
+    groupBy: "bin,lot",
+    groupTop: 50,
   };
   if (device) args["device"] = device;
   if (testerId) args["testerId"] = testerId;

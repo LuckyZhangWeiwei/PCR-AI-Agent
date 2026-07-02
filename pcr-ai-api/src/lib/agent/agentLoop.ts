@@ -50,6 +50,7 @@ import {
   isCardTypeLevelOverviewQuestion,
   isLotOverviewQuestion,
   isLotDetailListingQuestion,
+  isLotYieldRankingQuestion,
   buildLotListingContext,
   isPerSlotBadBinRankingQuestion,
   isProbeCardQuestion,
@@ -77,7 +78,16 @@ import {
   scopedBadBinAggregateArgsFromUser,
   scopedBadBinNeedsAggregateRecovery,
 } from "./agentJbScopedBadBinRoute.js";
-import { buildScopeLabelFromAggregateArgs, findLastToolCallArgs } from "./agentQueryScope.js";
+import {
+  binLotRankingAggregateArgsFromUser,
+  canRunBinLotRankingDirectRoute,
+} from "./agentJbBinLotRankingRoute.js";
+import {
+  canRunMaskScopeDirectRoute,
+  maskScopeFilterValuesArgs,
+  maskScopeJbQueryArgs,
+} from "./agentJbMaskScopeRoute.js";
+import { buildScopeLabelFromAggregateArgs, findLastToolCallArgs, inferLotFromHistory } from "./agentQueryScope.js";
 import { deviceBaseMask } from "../deviceMask.js";
 import {
   buildInfDrawArgsAfterJbLookup,
@@ -951,7 +961,11 @@ async function emitDeterministicJbTablesReply(
   const turnLots = collectQueryJbBinsLotsThisTurn(history);
   if (turnLots.length > 1) {
     const lotNamedInQuestion = Boolean(extractLotFromUserText(userQuestion));
-    if (decision.isMultiLotCompare || !lotNamedInQuestion) {
+    // lot_yield_ranking 故意 fan-out 多 lot query_jb_bins 再合并 rank，不能 bail
+    if (
+      decision.mode !== "lot_yield_ranking" &&
+      (decision.isMultiLotCompare || !lotNamedInQuestion)
+    ) {
       console.warn(
         `[jbDeterministic/multiLotBail] 多 lot 场景（${turnLots.length} 个 lot，本句点名 lot=${lotNamedInQuestion}）` +
           `不出单 lot 概况，交回 LLM 用全部 lot 历史作答:「${userQuestion.slice(0, 40)}」`
@@ -1245,6 +1259,101 @@ async function tryRunLotOverviewDirectRoute(
 }
 
 /**
+ * 「P11C 最近的测试情况」等 mask/device 级概况：get_filter_values + query_jb_bins + 服务端表，
+ * 不经过 LLM（Pass C invalid apiKey 降级）。
+ */
+async function tryRunMaskScopeDirectRoute(
+  sessionId: string,
+  userQuestion: string,
+  agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void
+): Promise<boolean> {
+  const history = getHistory(sessionId);
+  if (!canRunMaskScopeDirectRoute(userQuestion, history)) return false;
+
+  const fvArgs = maskScopeFilterValuesArgs(userQuestion);
+  if (fvArgs) {
+    emit({ type: "status", message: "正在查询 mask 对应 device…" });
+    emit({ type: "tool_start", name: "get_filter_values", args: fvArgs });
+    try {
+      const fvResult = await runTool("get_filter_values", fvArgs, {
+        toolResultMaxChars: agentConfig.toolResultMaxChars,
+        history,
+      });
+      const fvRaw =
+        typeof fvResult === "string" ? fvResult : JSON.stringify(fvResult);
+      emit({
+        type: "tool_result",
+        name: "get_filter_values",
+        summary: fvRaw.slice(0, 200),
+      });
+      appendMessages(sessionId, {
+        role: "tool",
+        name: "get_filter_values",
+        tool_call_id: `mask_fv_${Date.now()}`,
+        content: fvRaw.slice(0, agentConfig.toolResultMaxChars ?? 12000),
+      });
+    } catch {
+      // filter 失败不阻断 — 继续 query_jb_bins
+    }
+  }
+
+  const queryArgs = maskScopeJbQueryArgs(userQuestion, history);
+  if (!queryArgs) return false;
+
+  emit({ type: "status", message: "正在查询 JB STAR 数据…" });
+  emit({ type: "tool_start", name: "query_jb_bins", args: queryArgs });
+
+  let payload: Record<string, unknown> | null = null;
+  try {
+    let jbCacheForHistory: string | undefined;
+    const toolResult = await runTool("query_jb_bins", queryArgs, {
+      toolResultMaxChars: agentConfig.toolResultMaxChars,
+      history,
+      onJbBinsWrapped: (wrapped) => {
+        jbCacheForHistory = storeJbQuerySessionCache(sessionId, wrapped);
+      },
+    });
+    const rawContent =
+      typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult);
+    const historyContent = toolResultForHistory(
+      "query_jb_bins",
+      rawContent,
+      agentConfig.toolResultMaxHistoryChars,
+      agentConfig.toolResultMaxChars,
+      jbCacheForHistory
+    );
+    emit({
+      type: "tool_result",
+      name: "query_jb_bins",
+      summary: historyContent.slice(0, 200),
+    });
+    appendMessages(sessionId, {
+      role: "tool",
+      name: "query_jb_bins",
+      tool_call_id: `mask_scope_${Date.now()}`,
+      content: historyContent,
+    });
+    payload =
+      (jbCacheForHistory ? parseJbToolPayload(jbCacheForHistory) : null) ??
+      resolveJbToolPayload(sessionId, historyContent);
+  } catch {
+    return false;
+  }
+
+  if (!payload || jbWrappedIsEmptyQuery(payload)) return false;
+
+  return emitDeterministicJbTablesReply(
+    sessionId,
+    userQuestion,
+    payload,
+    agentConfig,
+    emit,
+    { withCommentaryLlm: false }
+  );
+}
+
+/**
  * 「WA01P14E 在 b3uflex24 近 3 个月所有 lot 列出来」：直连 query_jb_bins + lot 表，
  * 不经过首轮 LLM（避免 get_filter_values 空结果后误判无机台）。
  */
@@ -1254,7 +1363,7 @@ async function tryRunLotListingDirectRoute(
   agentConfig: AgentConfig,
   emit: (event: AgentSseEvent) => void
 ): Promise<boolean> {
-  if (!canRunLotListingDirectRoute(userQuestion)) return false;
+  if (!canRunLotListingDirectRoute(userQuestion, getHistory(sessionId))) return false;
 
   const queryArgs = lotListingQueryArgsFromUser(userQuestion, getHistory(sessionId));
   if (!queryArgs) return false;
@@ -1420,6 +1529,132 @@ async function tryRunScopedBadBinDirectRoute(
   return true;
 }
 
+/**
+ * 「哪个 lot BIN40 最多」：直连 aggregate_jb_bins(groupBy:"bin,lot") + 指定 BIN 的 lot 排行（P-D）。
+ */
+async function tryRunBinLotRankingDirectRoute(
+  sessionId: string,
+  userQuestion: string,
+  agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void
+): Promise<boolean> {
+  const history = getHistory(sessionId);
+  if (!canRunBinLotRankingDirectRoute(userQuestion, history)) return false;
+
+  const aggArgs = binLotRankingAggregateArgsFromUser(userQuestion, history);
+  if (!aggArgs) return false;
+
+  emit({ type: "status", message: "正在聚合 BIN×lot 排行…" });
+  emit({ type: "tool_start", name: "aggregate_jb_bins", args: aggArgs });
+
+  let aggRaw = "";
+  try {
+    const aggResult = await runTool("aggregate_jb_bins", aggArgs, {
+      toolResultMaxChars: agentConfig.toolResultMaxChars,
+      history,
+    });
+    aggRaw = typeof aggResult === "string" ? aggResult : JSON.stringify(aggResult);
+    emit({
+      type: "tool_result",
+      name: "aggregate_jb_bins",
+      summary: aggRaw.slice(0, 200),
+    });
+    appendMessages(sessionId, {
+      role: "tool",
+      name: "aggregate_jb_bins",
+      tool_call_id: `jb_bin_lot_${Date.now()}`,
+      content: aggRaw.slice(0, agentConfig.toolResultMaxChars),
+    });
+  } catch (e) {
+    const msg = `BIN×lot 聚合失败: ${e instanceof Error ? e.message : String(e)}`;
+    emit({ type: "text", delta: msg });
+    appendMessages(sessionId, { role: "assistant", content: msg });
+    emit({ type: "done" });
+    return true;
+  }
+
+  const scopeLabel = buildScopeLabelFromAggregateArgs(aggArgs);
+  const rendered = renderAggregateJbBinsResult(aggRaw, userQuestion, scopeLabel);
+  if (!rendered?.table?.trim()) return false;
+
+  const block =
+    `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${rendered.table}\n\n` +
+    `${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n${rendered.commentaryNote}`;
+  emit({ type: "status", message: rendered.statusMessage || "正在输出 BIN×lot 排行…" });
+  emitTextInChunks(block, emit);
+  appendMessages(sessionId, { role: "assistant", content: block });
+  emit({ type: "done" });
+  return true;
+}
+
+/** 用户是否在问 lot 级 DUT×BIN 集中度（含卡号，不要求 dddd-dd 卡号格式）。 */
+function isDutBinConcentrationQuestion(text: string): boolean {
+  const focusBin = extractBinFromUserText(text);
+  if (focusBin == null) return false;
+  return /(dut|卡|card|触点|探针)/i.test(text);
+}
+
+/**
+ * 「哪个卡/哪个 DUT 测出 BIN79 最多」：首轮直连 query_lot_dut_bin_agg（P-F）。
+ */
+async function tryRunDutBinAggDirectRoute(
+  sessionId: string,
+  userQuestion: string,
+  agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void
+): Promise<boolean> {
+  if (!isDutBinConcentrationQuestion(userQuestion)) return false;
+
+  const focusBin = extractBinFromUserText(userQuestion)!;
+  const history = getHistory(sessionId);
+  const lot =
+    extractLotFromUserText(userQuestion) || inferLotFromHistory(history);
+  if (!lot) return false;
+
+  let device = "";
+  const cached = getCachedJbPayloadForLot(sessionId, lot);
+  if (cached) {
+    device = String(cached["device"] ?? "").trim();
+  }
+  if (!device) {
+    const jbArgs = findLastToolCallArgs(history, "query_jb_bins");
+    device = String(jbArgs?.["device"] ?? "").trim();
+  }
+  if (!device) return false;
+
+  const queryArgs: Record<string, unknown> = { device, lot, passId: 1, focusBin };
+  emit({ type: "status", message: `正在查询 ${lot} DUT×BIN${focusBin} 聚合…` });
+  emit({ type: "tool_start", name: "query_lot_dut_bin_agg", args: queryArgs });
+
+  let rawContent: string;
+  try {
+    const toolResult = await runTool("query_lot_dut_bin_agg", queryArgs, {
+      toolResultMaxChars: agentConfig.toolResultMaxChars,
+      history,
+    });
+    rawContent = typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult);
+  } catch {
+    return false;
+  }
+
+  emit({ type: "tool_result", name: "query_lot_dut_bin_agg", summary: rawContent.slice(0, 200) });
+  appendMessages(sessionId, {
+    role: "tool",
+    name: "query_lot_dut_bin_agg",
+    tool_call_id: `dut_bin_direct_${Date.now()}`,
+    content: rawContent.slice(0, agentConfig.toolResultMaxChars),
+  });
+
+  if (!/坏 die 的 DUT 集中度/.test(rawContent)) return false;
+
+  const tablesBlock = `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${rawContent}`;
+  emitTextInChunks(tablesBlock, emit);
+  tryEmitDutBinBarChart(rawContent, focusBin, emit);
+  appendMessages(sessionId, { role: "assistant", content: tablesBlock });
+  emit({ type: "done" });
+  return true;
+}
+
 /** 用户是否在请求 DUT 良率柱状图/分布图（需 inf_site_stats + generate_chart bar）。 */
 function userWantsDutYieldChart(text: string): boolean {
   if (!/(dut|site)/i.test(text)) return false;
@@ -1534,6 +1769,8 @@ async function tryRunEquipmentDirectRoute(
     return false;
   }
   if (requiresNewDataQuery(userQuestion)) return false;
+  // lot 良率排行需跨 lot 聚合，session 单批 equipment 缓存不能代答（A1-4）。
+  if (isLotYieldRankingQuestion(userQuestion)) return false;
   // "包含机台/增加机台" 是对综合列表的补充修饰词，不是独立的机台查询——
   // 此时用户想要的是 bin fail 全量列表 + 机台号，不能只输出设备表，否则会反复输出同一段短表。
   if (/(增加|加上|包含|含).*机台|机台.*列表|列表.*机台/.test(userQuestion)) return false;
@@ -1598,6 +1835,117 @@ async function tryRunPerSlotBinRankingDirectRoute(
   return emitDeterministicJbTablesReply(sessionId, userQuestion, payload, agentConfig, emit);
 }
 
+type LotYieldRankEntry = {
+  lot: string;
+  device: string;
+  yieldPct: number | null;
+  worstSlot: number | null;
+  worstPassId: number | null;
+  testEnd: string | null;
+};
+
+function lotYieldRankingTopN(userQuestion: string): number {
+  const nMatch = userQuestion.match(/top\s*(\d+)|(\d+)\s*个/i);
+  return nMatch
+    ? Math.min(Math.max(1, Number(nMatch[1] ?? nMatch[2])), 50)
+    : 5;
+}
+
+/** 合并多 lot query_jb_bins 的 lotYieldRankByTestEnd（A1-4 多 lot 良率排行）。 */
+function mergeLotYieldRankingPayloads(
+  payloads: Record<string, unknown>[]
+): Record<string, unknown> {
+  const base = { ...payloads[0]! };
+  const byLot = new Map<string, LotYieldRankEntry>();
+  for (const p of payloads) {
+    const rank = p["lotYieldRankByTestEnd"] as LotYieldRankEntry[] | undefined;
+    for (const e of rank ?? []) {
+      if (!e.lot || e.yieldPct == null) continue;
+      const prev = byLot.get(e.lot);
+      if (!prev || (e.testEnd ?? "") >= (prev.testEnd ?? "")) {
+        byLot.set(e.lot, e);
+      }
+    }
+  }
+  base["lotYieldRankByTestEnd"] = [...byLot.values()].sort((a, b) =>
+    (b.testEnd ?? "").localeCompare(a.testEnd ?? "")
+  );
+  return base;
+}
+
+async function enrichLotYieldRankingPayload(
+  sessionId: string,
+  userQuestion: string,
+  basePayload: Record<string, unknown>,
+  scopeArgs: Record<string, unknown>,
+  agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void
+): Promise<Record<string, unknown>> {
+  const wantN = lotYieldRankingTopN(userQuestion);
+  const rank = basePayload["lotYieldRankByTestEnd"] as LotYieldRankEntry[] | undefined;
+  const recent = basePayload["recentLotsByTestEnd"] as Array<{ lot?: string }> | undefined;
+  const validRank = (rank ?? []).filter((e) => e.yieldPct != null);
+
+  if (!recent || recent.length <= 1) return basePayload;
+  if (validRank.length >= wantN && validRank.length >= 2) return basePayload;
+
+  const lotsToFetch = recent
+    .slice(0, Math.max(wantN + 2, 8))
+    .map((e) => String(e.lot ?? "").trim())
+    .filter(Boolean);
+  const primaryLot = String(basePayload["lot"] ?? "").trim();
+  const mergedPayloads: Record<string, unknown>[] = [basePayload];
+
+  for (const lot of lotsToFetch) {
+    if (lot === primaryLot && validRank.some((r) => r.lot === lot)) continue;
+    const lotArgs: Record<string, unknown> = {
+      lot,
+      limit: 200,
+      testEndFrom: scopeArgs["testEndFrom"] ?? "2020-01-01",
+    };
+    emit({ type: "status", message: `正在查询 ${lot} 良率…` });
+    emit({ type: "tool_start", name: "query_jb_bins", args: lotArgs });
+    try {
+      let lotCache: string | undefined;
+      const result = await runTool("query_jb_bins", lotArgs, {
+        toolResultMaxChars: agentConfig.toolResultMaxChars,
+        history: getHistory(sessionId),
+        onJbBinsWrapped: (wrapped) => {
+          lotCache = storeJbQuerySessionCache(sessionId, wrapped);
+        },
+      });
+      const raw = typeof result === "string" ? result : JSON.stringify(result);
+      const historyContent = toolResultForHistory(
+        "query_jb_bins",
+        raw,
+        agentConfig.toolResultMaxHistoryChars,
+        agentConfig.toolResultMaxChars,
+        lotCache
+      );
+      emit({
+        type: "tool_result",
+        name: "query_jb_bins",
+        summary: historyContent.slice(0, 200),
+      });
+      appendMessages(sessionId, {
+        role: "tool",
+        name: "query_jb_bins",
+        tool_call_id: `yield_rank_${lot}_${Date.now()}`,
+        content: historyContent,
+      });
+      const p =
+        (lotCache ? parseJbToolPayload(lotCache) : null) ??
+        parseJbToolPayload(historyContent);
+      if (p) mergedPayloads.push(p);
+    } catch {
+      /* skip lot */
+    }
+  }
+
+  if (mergedPayloads.length <= 1) return basePayload;
+  return mergeLotYieldRankingPayloads(mergedPayloads);
+}
+
 /**
  * 阶段三：决策驱动确定性派发（dark-launch，flag `JB_DETERMINISTIC_DISPATCH=true` 才生效）。
  * 对 `resolveDispatch` 返回高置信 plan 的跨实体 mode 在 LLM 前服务端直发查询与渲染。
@@ -1657,10 +2005,22 @@ export async function tryRunSemanticDispatchDirectRoute(
   }
 
   // renderKind === "emitTables": 解析 payload → emitDeterministicJbTablesReply
-  const payload =
+  let payload =
     (jbCache ? parseJbToolPayload(jbCache) : null) ??
     resolveJbToolPayload(sessionId, raw);
   if (!payload) return false;
+
+  if (decision.mode === "lot_yield_ranking") {
+    payload = await enrichLotYieldRankingPayload(
+      sessionId,
+      userQuestion,
+      payload,
+      plan.args,
+      agentConfig,
+      emit
+    );
+  }
+
   return emitDeterministicJbTablesReply(sessionId, userQuestion, payload, agentConfig, emit);
 }
 
@@ -2568,13 +2928,12 @@ export function historyAwaitingToolSummary(history: ChatMessage[]): boolean {
   // empty values, don't force summary yet — let the model query another domain.
   if (last.name === "get_filter_values") {
     const parsed = tryParseJsonish(String(last.content ?? ""));
-    if (
-      parsed &&
+    const values = parsed &&
       typeof parsed === "object" &&
-      !Array.isArray(parsed) &&
-      Array.isArray((parsed as Record<string, unknown>)["values"]) &&
-      ((parsed as Record<string, unknown>)["values"] as unknown[]).length === 0
-    ) {
+      !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)["values"]
+      : undefined;
+    if (Array.isArray(values) && values.length === 0) {
       // Look back past the assistant(tool_calls) turn to find the previous tool message.
       // If it was also an empty get_filter_values, both domains came back empty → force summary.
       let prevToolIdx = -1;
@@ -2586,12 +2945,14 @@ export function historyAwaitingToolSummary(history: ChatMessage[]): boolean {
       const prevMsg = history[prevToolIdx];
       if (prevMsg.name !== "get_filter_values") return false; // different tool before → keep going
       const prevParsed = tryParseJsonish(String(prevMsg.content ?? ""));
+      const prevValues = prevParsed &&
+        typeof prevParsed === "object" &&
+        !Array.isArray(prevParsed)
+        ? (prevParsed as Record<string, unknown>)["values"]
+        : undefined;
       if (
-        !prevParsed ||
-        typeof prevParsed !== "object" ||
-        Array.isArray(prevParsed) ||
-        !Array.isArray((prevParsed as Record<string, unknown>)["values"]) ||
-        ((prevParsed as Record<string, unknown>)["values"] as unknown[]).length > 0
+        !Array.isArray(prevValues) ||
+        prevValues.length > 0
       ) return false; // previous result had data → keep going
       return true; // two consecutive empty get_filter_values → force summary
     }
@@ -2782,8 +3143,11 @@ export async function runAgentLoop(
   // 注:不按 detectJbReplyMode 的 mode 建表——mode 与 canRunXxx 门槛非 1:1(mode 更宽),
   // 按 mode 路由会把门槛不满足的问句误路由;有序 runner 列表才是真正等价的声明式形式。
   const PRE_LLM_DIRECT_ROUTES: Array<typeof tryRunLotListingDirectRoute> = [
+    tryRunDutBinAggDirectRoute,
+    tryRunBinLotRankingDirectRoute,
     tryRunLotListingDirectRoute,
     tryRunScopedBadBinDirectRoute,
+    tryRunMaskScopeDirectRoute,
     tryRunLotOverviewDirectRoute,
     tryRunEquipmentDirectRoute,
     tryRunPerSlotBinRankingDirectRoute,

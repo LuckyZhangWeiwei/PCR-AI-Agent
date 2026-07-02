@@ -369,15 +369,19 @@ export function isLotYieldRankingQuestion(text: string): boolean {
   if (/(最差|最低).*(lot|批次)/i.test(t)) return true;
   // "lot良率排行/排名"
   if (/(lot|批次).*(良率|良品率|yield).*(排行|排名|ranking)/i.test(t)) return true;
-  // "各lot良率 / 所有批次良率 / 每个lot良率" — 列出各 lot 良率即跨 lot 排名。
-  // 锚定「各/所有/全部/每」紧邻 lot/批次,避免「前5个lot各自的良率」(多 lot 枚举,lot 在 各 之前)
-  // 与「各片良率」(单 lot 逐片,无 lot/批次 token)被误纳。
-  if (/(各|所有|全部|每个?)\s*(lot|批次)\s*(的)?\s*(良率|良品率|yield)/i.test(t)) return true;
-  // "各lot良率 top5 / 良率前5 / 良率top3" — top/前 N 排名意图紧跟良率(排在良率之后,
-  // 故不匹配「前5个lot各自的良率」)。
-  if (/(良率|良品率|yield)\s*(的)?\s*(top\s*\d+|前\s*\d+\s*(名|个|批)?)/i.test(t)) return true;
-  if (/(lot|批次).*(良率|良品率|yield).*top\s*\d+/i.test(t)) return true;
+  // "各 lot 良率 top5" / "WC13N55Z 各 lot 良率 top5"（A1-4；不含「前5个lot各自的良率」口语对比）
+  if (/各\s*lot.*(良率|yield).*(top\s*\d+|前\s*\d+\s*个?)/i.test(t)) return true;
+  if (/(top\s*\d+|前\s*\d+\s*个?).*各\s*lot.*(良率|yield)/i.test(t)) return true;
   return false;
+}
+
+/** 用户问「哪个 lot 的 BINnn 最多」（须带 lot 维度排行，非纯 bin 总量）。 */
+export function isBinLotRankingQuestion(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (extractBinFromUserText(t) == null) return false;
+  if (extractLotFromUserText(t)) return false;
+  return /哪个\s*lot|哪\s*个\s*批次|lot.*最多|哪个批次|哪批/i.test(t);
 }
 
 /** 用户要看每片 wafer 的坏 bin 排名（每片前 N 名）。 */
@@ -2340,8 +2344,8 @@ export function buildEngineeringContextFromPayload(
         lines.push(
           `测试机台（JB TESTERID${lot ? `，lot ${lot}` : ""}）：${hit.primaryTesterId}`
         );
-        if (hit.testerIds.length > 1) {
-          lines.push(`本批该 lot 还曾出现机台：${hit.testerIds.join(", ")}`);
+        if ((hit.testerIds?.length ?? 0) > 1) {
+          lines.push(`本批该 lot 还曾出现机台：${hit.testerIds!.join(", ")}`);
         }
       }
     } else {

@@ -1,9 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildBinLotRankingAggregateArgs,
   buildJbScopeArgs,
   buildLotListingQueryArgs,
   buildScopedBadBinAggregateArgs,
+  inferDeviceFromText,
   inferMaskFromText,
   inferPlatformFromText,
   inferRecentMonthsWindow,
@@ -116,6 +118,28 @@ describe("agentQueryScope", () => {
     assert.ok(w.testEndTo);
   });
 
+  it("inferRecentMonthsWindow matches 最近三天", () => {
+    const w = inferRecentMonthsWindow("uflex 最近三天");
+    assert.ok(w.testEndFrom);
+    assert.ok(w.testEndTo);
+  });
+
+  it("canRunLotListingDirectRoute with platform+window from history (P-B)", () => {
+    const history = [{ role: "user", content: "uflex 最近三天" }];
+    assert.ok(canRunLotListingDirectRoute("都测试了什么lot", history));
+    const args = buildLotListingQueryArgs("都测试了什么lot", history);
+    assert.equal(args?.["tstype"], "UFLEX");
+    assert.ok(args?.["testEndFrom"]);
+  });
+
+  it("buildBinLotRankingAggregateArgs for bin+lot ranking (P-D)", () => {
+    const history = [{ role: "user", content: "uflex 最近三天的测试情况" }];
+    const args = buildBinLotRankingAggregateArgs("哪个lot bin40最多", history);
+    assert.equal(args?.["groupBy"], "bin,lot");
+    assert.equal(args?.["tstype"], "UFLEX");
+    assert.ok(args?.["testEndFrom"]);
+  });
+
   it("isBadBinRankingQuestion matches failed bin", () => {
     assert.ok(
       isBadBinRankingQuestion(
@@ -203,5 +227,16 @@ describe("agentQueryScope", () => {
     const args = buildScopedBadBinAggregateArgs(q, []);
     assert.equal(args?.["tstype"], "PS16");
     assert.ok(args?.["testEndFrom"]);
+  });
+
+  it("inferDeviceFromText matches WC/WB full device codes (A1-4)", () => {
+    assert.equal(inferDeviceFromText("WC13N55Z 各 lot 良率 top5"), "WC13N55Z");
+    assert.equal(inferDeviceFromText("WA03P02G 测试情况"), "WA03P02G");
+    assert.equal(inferMaskFromText("WC13N55Z 各 lot 良率 top5"), "N55Z");
+  });
+
+  it("buildJbScopeArgs resolves WC13N55Z device for lot listing", () => {
+    const args = buildJbScopeArgs("WC13N55Z 各 lot 良率 top5", [], "query_jb_bins");
+    assert.equal(args?.["device"], "WC13N55Z");
   });
 });

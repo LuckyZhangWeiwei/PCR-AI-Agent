@@ -1,0 +1,124 @@
+# Step 2 dispatch verify 2026-07-01T12:13:41.531Z
+API: http://10.192.130.89:30008
+STEP: all
+Expected: JB_DETERMINISTIC_DISPATCH=true, JB_LLM_INTENT_CLASSIFIER=false
+
+## A1-1 — PASS
+Session: a1-1-cb5bf3f7-8c1d-402e-b51a-d7933e15159a
+Detail: dispatch=true tool=aggregate_jb_bins groupBy ok cards=4
+Tools: [{"name":"aggregate_jb_bins","args":{"groupBy":"bin,cardId","groupTop":20,"mask":"N55Z"}}]
+```
+## 实测数据
+
+**BIN35 坏 die 所属探针卡（mask N55Z，坏 die 合计 59883，匹配 5877 行）**
+
+| # | 探针卡 (CARDID) | BIN35 坏 die 颗数 | 占比 |
+|---:|---|---:|---:|
+| 1 | 9416-04 | 19659 | 32.8% |
+| 2 | 9416-03 | 16395 | 27.4% |
+| 3 | 9416-01 | 13899 | 23.2% |
+| 4 | 9416-02 | 9930 | 16.6% |
+
+## 分析结论
+
+*以上为范围内 BIN×探针卡 坏 die 汇总（良品 bin 已扣除）。卡级已定位；DUT 级归属需 INF DUT map，可继续追问「lot <号> wafer <片号> BIN<n> 的 DUT 分布」。*
+```
+
+## A1-2 — PASS
+Session: a1-2-2f18cd1c-24f7-4919-9398-1dac0a5e88b0
+Detail: dispatch=true first=aggregate_jb_bins cards=9416-04,9416-03,9416-01,9416-02
+```
+## 实测数据
+
+**BIN35 坏 die 所属探针卡（mask N55Z，坏 die 合计 59883，匹配 5877 行）**
+
+| # | 探针卡 (CARDID) | BIN35 坏 die 颗数 | 占比 |
+|---:|---|---:|---:|
+| 1 | 9416-04 | 19659 | 32.8% |
+| 2 | 9416-03 | 16395 | 27.4% |
+| 3 | 9416-01 | 13899 | 23.2% |
+| 4 | 9416-02 | 9930 | 16.6% |
+
+## 分析结论
+
+*以上为范围内 BIN×探针卡 坏 die 汇总（良品 bin 已扣除）。卡级已定位；DUT 级归属需 INF DUT map，可继续追问「lot <号> wafer <片号> BIN<n> 的 DUT 分布」。*
+```
+
+## A1-4 — PASS
+Session: a1-4-a140ece1-4b06-4adf-b933-66d06640b006
+Detail: dispatch=false first=query_jb_bins lots=1
+```
+
+
+我来查询 WC13N55Z 的各 lot 良率排名。
+
+## 实测数据
+
+**DR44919.1F** 测试机台
+
+| 批次 lot | 机台 TESTERID | 本批出现过的机台 |
+|---|---|---|
+| DR44919.1F | b3ps1618 | b3ps1618 |
+
+**各测试层探针卡**
+
+| 测试层 | passId | 卡号 | 同层中途换卡 |
+|---|---:|---|---|
+| pass1 | 1 | 9416-03 | 否 |
+
+**分测试层（sort）批次良率**
+
+| 测试层 | passId | 片数 | 总die | 坏die | 良率% |
+|---|---:|---:|---:|---:|---:|
+| pass1 | 1 | 25 | 49225 | 2103 | 95.73% |
+
+**DR44919.1F**（WC13N55Z） 各片良率（按测试层分列）
+
+| Slot | pass1 良率% | 坏die合计 | Slot | pass1 良率% | 坏die合计 |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 96.85% | 62 | 2 | 95.07% | 97 |
+| 3 | 96.75% | 64 | 4 | 96.09% | 77 |
+| 5 | 96.19% | 75 
+```
+
+## A2-1 — PASS
+Session: a2-1-ecc6a10c-d1d3-4035-b15a-3323d2ee3400
+Detail: first=query_jb_bins overview=true
+```
+## 实测数据
+
+**NF13338.1K** 测试机台
+
+| 批次 lot | 机台 TESTERID | 本批出现过的机台 |
+|---|---|---|
+| NF13338.1K | b3uflex21 | b3uflex15, b3uflex21 |
+
+**各测试层探针卡**
+
+| 测试层 | passId | 卡号 | 同层中途换卡 |
+|---|---:|---|---|
+| pass1 | 1 | 8041-08 | 否 |
+| pass3 | 3 | 8041-04 | 否 |
+
+**分测试层（sort）批次良率**
+
+| 测试层 | passId | 片数 | 总die | 坏die | 良率% |
+|---|---:|---:|---:|---:|---:|
+| pass1 | 1 | 25 | 74275 | 3817 | 94.86% |
+| pass3 | 3 | 2 | 5644 | 15 | 99.73% |
+
+**NF13338.1K**（WA03P02G） 各片良率（按测试层分列）
+
+| Slot | pass1 良率% | pass3 良率% | 坏
+```
+
+## A2-4 — FAIL
+Session: a2-4-18561f98-2637-42d7-b906-a1c4ec79c18d
+Detail: blank reply (dead-end)
+```
+
+
+
+```
+
+Summary: 4/5 passed

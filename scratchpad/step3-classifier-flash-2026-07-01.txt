@@ -1,0 +1,60 @@
+# Step 3 classifier verify 2026-07-01T11:27:25.891Z
+API: http://10.192.130.89:30008
+Expected: JB_DETERMINISTIC_DISPATCH=true, JB_LLM_INTENT_CLASSIFIER=true
+
+## REG-A1-1 — PASS
+Session: reg-a1-1-c6d1d28f-3a52-475e-ad9e-98c916ddd777
+Q: n55z 哪个卡测出bin35 多
+Detail: dispatch=true first=aggregate_jb_bins cards=4
+```
+## 实测数据
+
+**BIN35 坏 die 所属探针卡（mask N55Z，坏 die 合计 59883，匹配 5877 行）**
+
+| # | 探针卡 (CARDID) | BIN35 坏 die 颗数 | 占比 |
+|---:|---|---:|---:|
+| 1 | 9416-04 | 19659 | 32.8% |
+| 2 | 9416-03 | 16395 | 27.4% |
+| 3 | 9416-01 | 13899 | 23.2% |
+| 4 | 9416-02 | 9930 | 16.6% |
+
+## 分析结论
+
+*以上为范围内 BIN×探针卡 坏 die 汇总（良品 bin 已扣除）。卡级已定位；DUT 级归属需 INF DUT map，可继续追问「lot <号> wafer <片号> BIN<n> 的 DUT 分布」。*
+```
+
+## B2-1 — PASS
+Session: b2-1-09f61d89-9d37-4aae-a261-7a02ad3dd8a1
+Q: 各张探针卡 bin8 分布怎么样
+Detail: cards=0 bin8=true clarify=true
+```
+您的问题涉及具体 BIN（BIN8）在各探针卡上的分布情况。请问您想分析哪个产品（device/mask）或批次（lot）的数据？这样我才能准确查询各探针卡上 BIN8 的坏 die 分布。
+```
+
+## B2-2 — PASS
+Session: b2-2-36fc87df-c7ae-41f2-a16f-d9e792d04b23
+Q: 近期哪几批良率掉得厉害
+Detail: lots=0 yieldTalk=true
+```
+您的问题比较宽泛，我需要先确认一下查询范围，才能准确找出良率偏低的那几批。
+
+请问：
+1. **您想查询哪个产品（device / mask）？** 例如 WA03N06N、WB03N60J，或者直接给 mask（如 N06J）。
+2. **“近期”您指的是最近多久？** 例如最近一周、一个月，还是指定起止日期？
+```
+
+## B2-3 — PASS
+Session: b2-3-fd0abf43-bb4a-4d20-9741-dc51f8a7f2b3
+Q: 哪片卡 bin35 出得最多
+Detail: first=aggregate_jb_bins cards=none
+```
+
+
+我来分析 BIN35 的分布情况。我先从两个域分别查一下数据。
+
+首先，我需要确定用户说的 "哪片" 是指哪个范围。让我先查 JB STAR 中 BIN35 的聚合情况。
+
+您好，您问的是“哪片卡 bin35 出得最多”——这里的“片”是指哪张探针卡，还是某片 wafer？另外，您关注的是哪个产品（device）或批次（lot）？请提供具体范围，我立刻帮您定位。
+```
+
+Summary: 4/4 passed

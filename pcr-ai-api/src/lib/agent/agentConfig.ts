@@ -22,7 +22,7 @@ export interface AgentConfig {
 }
 
 const DEFAULT_API_BASE = "https://api.siliconflow.cn/v1";
-const DEFAULT_MODEL = "deepseek-ai/DeepSeek-V4-Pro";
+const DEFAULT_MODEL = "deepseek-ai/DeepSeek-V4-Flash";
 const DEFAULT_SUB_MODEL = "deepseek-ai/DeepSeek-V4-Flash";
 export const DEFAULT_MAX_ROUNDS = 8;
 const MIN_MAX_ROUNDS = 1;
