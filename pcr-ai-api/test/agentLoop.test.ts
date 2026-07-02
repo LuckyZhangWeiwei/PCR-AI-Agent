@@ -23,6 +23,7 @@ import {
 import { runTool } from "../src/lib/agent/agentToolHandlers.js";
 import type { ChatMessage } from "../src/lib/agent/agentHistory.js";
 import { resolveJbRoute } from "../src/lib/agent/jbRouteResolver.js";
+import { tryAppendUnderperformingDutSection } from "../src/lib/agent/agentLoop.js";
 
 const THINK_OPEN = "<" + "think>";
 const THINK_CLOSE = "</" + "think>";
@@ -550,4 +551,11 @@ test("tryEmitUnderperformingDutScatter: 每个有 baseline 的 pass emit 一个 
   tryEmitUnderperformingDutScatter(passes, (e) => events.push(e));
   const charts = events.filter((e) => e.type === "chart");
   assert.equal(charts.length, 1); // pass3 baseline=null 跳过
+});
+
+test("tryAppendUnderperformingDutSection: payload 缺 lot/device 时返回空串、不 emit", async () => {
+  const events: any[] = [];
+  const out = await tryAppendUnderperformingDutSection({}, (e) => events.push(e));
+  assert.equal(out, "");
+  assert.equal(events.length, 0);
 });

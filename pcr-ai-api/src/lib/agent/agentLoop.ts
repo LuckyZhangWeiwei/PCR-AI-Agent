@@ -1022,6 +1022,12 @@ async function emitDeterministicJbTablesReply(
     await tryEmitCardDutBadDieChart(userQuestion, payload, agentConfig, emit);
   }
 
+  // B 路 best-effort：lot 概况末尾补「各 DUT 良率」高亮表 + 散点图（失败/无数据静默跳过）
+  let dutYieldSection = "";
+  if (mode === "generic" || mode === "lot_overview") {
+    dutYieldSection = await tryAppendUnderperformingDutSection(payload, emit);
+  }
+
   if (!withCommentary) {
     // Include ## 分析结论 separator so splitAgentReplyMarkdown always has a clear split point,
     // keeping ### 🔍 警示 / 规律识别 in dataMarkdown (otherwise detachProseAfterMarkdownTables
@@ -1029,7 +1035,7 @@ async function emitDeterministicJbTablesReply(
     const tableOnlyNote =
       `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n` +
       `*以上为服务端实测表。如需某 BIN 逐片趋势或晶圆图，请继续提问。*`;
-    const full = tablesBlock + tableOnlyNote;
+    const full = tablesBlock + dutYieldSection + tableOnlyNote;
     emit({ type: "text", delta: tableOnlyNote });
     appendMessages(sessionId, { role: "assistant", content: full });
     emit({ type: "done" });
@@ -1093,6 +1099,7 @@ async function emitDeterministicJbTablesReply(
 
   const full =
     tablesBlock +
+    dutYieldSection +
     `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n` +
     commentaryOrFallback;
 
@@ -2115,6 +2122,36 @@ async function tryRunUnderperformingDutDirectRoute(
   appendMessages(sessionId, { role: "assistant", content: block });
   emit({ type: "done" });
   return true;
+}
+
+/**
+ * B 路：JB lot 概况末尾 best-effort 补「各 DUT 良率」高亮表 + 散点图。
+ * payload 缺 lot/device 或 INF 失败 → 返回 "" 静默跳过（不阻塞主概况）。
+ * 返回追加的 markdown（供调用方并入持久化的 assistant 内容）。
+ */
+export async function tryAppendUnderperformingDutSection(
+  payload: Record<string, unknown>,
+  emit: (event: AgentSseEvent) => void
+): Promise<string> {
+  const lot = String(payload["lot"] ?? "").trim();
+  const device = String(payload["device"] ?? "").trim();
+  if (!lot || !device) return "";
+
+  emit({ type: "status", message: "正在补充各 DUT 良率分析（较慢）…" });
+  let resp;
+  try {
+    resp = await runLotUnderperformingDuts({ lot, device });
+  } catch {
+    return ""; // best-effort：失败静默跳过
+  }
+  const passes = resp.passes ?? [];
+  const md = formatAllDutsHighlightMarkdown(passes, resp.lot, resp.device);
+  if (!md.trim()) return "";
+
+  const section = `\n\n### 🔬 各 DUT 良率（低于阈值 🔴）\n\n${md}`;
+  emit({ type: "text", delta: section });
+  tryEmitUnderperformingDutScatter(passes, emit);
+  return section;
 }
 
 /** 从 query_lot_dut_bin_agg 结果中提取 DUT 分布，直接 emit bar chart。 */
