@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatAllDutsHighlightMarkdown } from "../src/lib/agent/agentUnderperformingDutView.js";
+import {
+  formatAllDutsHighlightMarkdown,
+  buildUnderperformingDutScatterOptions,
+} from "../src/lib/agent/agentUnderperformingDutView.js";
 import type { PassUnderperformingDutsResult } from "../src/lib/lotUnderperformingDuts.js";
 
 function pass(overrides: Partial<PassUnderperformingDutsResult> = {}): PassUnderperformingDutsResult {
@@ -43,4 +46,23 @@ test("formatAllDutsHighlightMarkdown: 恰等于阈值不高亮（严格小于）
 test("formatAllDutsHighlightMarkdown: baseline=null 或空 DUT 跳过；全空返回空串", () => {
   const p = pass({ baseline: null, allDuts: [] });
   assert.equal(formatAllDutsHighlightMarkdown([p], "L", "D"), "");
+});
+
+test("buildUnderperformingDutScatterOptions: 三色带 + 平均/阈值 markLine", () => {
+  const opts = buildUnderperformingDutScatterOptions([pass()]);
+  assert.equal(opts.length, 1);
+  const series = (opts[0].option as any).series[0];
+  const colors = series.data.map((p: any) => p.itemStyle.color);
+  // DUT3=98.05(≥96.38 绿) DUT8=73.53(72.29~96.38 黄) DUT12=61.27(<72.29 红)
+  // data 按 dut 升序：3,8,12
+  assert.equal(colors[0], "#4caf50");
+  assert.equal(colors[1], "#f0a020");
+  assert.equal(colors[2], "#e15b64");
+  const markYs = series.markLine.data.map((m: any) => m.yAxis).sort((a: number, b: number) => a - b);
+  assert.deepEqual(markYs, [72.29, 96.38]);
+});
+
+test("buildUnderperformingDutScatterOptions: baseline=null / 空 DUT 跳过", () => {
+  const p = pass({ baseline: null, allDuts: [] });
+  assert.equal(buildUnderperformingDutScatterOptions([p]).length, 0);
 });
