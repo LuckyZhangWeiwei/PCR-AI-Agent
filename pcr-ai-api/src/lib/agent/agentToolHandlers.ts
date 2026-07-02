@@ -75,6 +75,7 @@ import {
 } from "./agentConfig.js";
 import { buildInfPath } from "../buildInfPath.js";
 import { runLotUnderperformingDuts } from "../lotUnderperformingDutsResolve.js";
+import { formatAllDutsHighlightMarkdown } from "./agentUnderperformingDutView.js";
 import {
   runOutputSiteBinByLot,
   runOutputSiteBinByLotForLot,
@@ -105,6 +106,8 @@ export type RunToolOptions = {
   onJbBinsWrapped?: (wrapped: Record<string, unknown>) => void;
   /** 用户原始问题文本，供 DUT 集中度触发判断使用。 */
   userText?: string;
+  /** query_lot_underperforming_duts：算出 passes 后回传，供直连出散点图。 */
+  onUnderperformingDuts?: (passes: import("../lotUnderperformingDuts.js").PassUnderperformingDutsResult[]) => void;
 };
 
 const TOOL_LIST_LIMIT = 50;
@@ -721,7 +724,8 @@ async function toolQueryLotDutBinAgg(
 
 async function toolQueryLotUnderperformingDuts(
   args: Record<string, unknown>,
-  maxChars: number
+  maxChars: number,
+  options?: RunToolOptions
 ): Promise<string> {
   const lot = typeof args["lot"] === "string" ? args["lot"].trim() : "";
   if (!lot) return "query_lot_underperforming_duts 参数错误: lot 不能为空";
@@ -749,7 +753,11 @@ async function toolQueryLotUnderperformingDuts(
       thresholdRatio,
       includeMarkdown: true,
     });
-    const md = result.underperformingDutsMarkdown ?? "";
+    options?.onUnderperformingDuts?.(result.passes ?? []);
+    // 内部工具结果串：用全 DUT 高亮表（非 REST 字段，不违反非破坏约束）
+    const md =
+      formatAllDutsHighlightMarkdown(result.passes ?? [], result.lot, result.device) ||
+      (result.underperformingDutsMarkdown ?? "");
     const { underperformingDutsMarkdown: _md, ...payload } = result;
     void _md;
     const body = truncateResult(payload, maxChars);
@@ -876,7 +884,7 @@ export async function runTool(
     case "query_lot_dut_bin_agg":
       return toolQueryLotDutBinAgg(args, maxChars);
     case "query_lot_underperforming_duts":
-      return toolQueryLotUnderperformingDuts(args, maxChars);
+      return toolQueryLotUnderperformingDuts(args, maxChars, options);
     case "query_inf_site_bin_by_dut":
       return toolQueryInfSiteBinByDut(args, maxChars);
     default: {

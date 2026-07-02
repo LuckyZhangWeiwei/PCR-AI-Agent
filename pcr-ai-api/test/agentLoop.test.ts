@@ -11,6 +11,7 @@ import {
   isDutBinConcentrationQuestion,
   renderAggregateJbBinsResult,
   tryRunSemanticDispatchDirectRoute,
+  tryEmitUnderperformingDutScatter,
 } from "../src/lib/agent/agentLoop.js";
 import {
   buildDutShareChartData,
@@ -530,4 +531,23 @@ test("isDutBinConcentrationQuestion: 卡级归因让给 bin_card_attribution，D
   assert.equal(isDutBinConcentrationQuestion("bin35 哪个触点集中"), true);
   // 无 bin 编号 → false。
   assert.equal(isDutBinConcentrationQuestion("哪张卡良率最低"), false);
+});
+
+test("tryEmitUnderperformingDutScatter: 每个有 baseline 的 pass emit 一个 chart 事件", () => {
+  const events: any[] = [];
+  const passes: any[] = [
+    {
+      passId: 1, sortLabel: "常温 sort1", dutCount: 1, lotGoodDie: 1, lotTotalDie: 1,
+      baseline: { method: "lotOverall", yieldPct: 90, thresholdPct: 67.5, thresholdRatio: 0.75 },
+      allDuts: [{ dut: 1, goodDie: 5, totalDie: 10, yieldPct: 50 }],
+      underperformingDuts: [{ dut: 1, goodDie: 5, totalDie: 10, yieldPct: 50, gapToThresholdPct: -17.5 }],
+    },
+    {
+      passId: 3, sortLabel: "高温 sort3", dutCount: 0, lotGoodDie: 0, lotTotalDie: 0,
+      baseline: null, allDuts: [], underperformingDuts: [],
+    },
+  ];
+  tryEmitUnderperformingDutScatter(passes, (e) => events.push(e));
+  const charts = events.filter((e) => e.type === "chart");
+  assert.equal(charts.length, 1); // pass3 baseline=null 跳过
 });

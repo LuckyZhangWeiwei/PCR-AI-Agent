@@ -91,6 +91,16 @@ import {
   buildUnscopedBinClarifyMessage,
   canRunUnscopedBinClarify,
 } from "./agentJbUnscopedBinRoute.js";
+import {
+  canRunUnderperformingDutDirectRoute,
+  underperformingDutArgsFromText,
+} from "./agentUnderperformingDutRoute.js";
+import {
+  buildUnderperformingDutScatterOptions,
+  formatAllDutsHighlightMarkdown,
+} from "./agentUnderperformingDutView.js";
+import type { PassUnderperformingDutsResult } from "../lotUnderperformingDuts.js";
+import { runLotUnderperformingDuts } from "../lotUnderperformingDutsResolve.js";
 import { buildScopeLabelFromAggregateArgs, findLastToolCallArgs, inferLotFromHistory } from "./agentQueryScope.js";
 import { deviceBaseMask } from "../deviceMask.js";
 import {
@@ -2060,6 +2070,53 @@ async function tryRunUnscopedBinClarifyDirectRoute(
   return true;
 }
 
+/** 每个有 baseline 的 pass emit 一张 DUT 良率散点图（供直连路由与 LLM 工具路径复用）。 */
+export function tryEmitUnderperformingDutScatter(
+  passes: PassUnderperformingDutsResult[],
+  emit: (event: AgentSseEvent) => void
+): void {
+  for (const s of buildUnderperformingDutScatterOptions(passes)) {
+    emit({ type: "chart", option: s.option });
+  }
+}
+
+/**
+ * A 路：用户问「lot 内哪些 DUT 良率偏低」→ 直接 runLotUnderperformingDuts，
+ * 确定性出全 DUT 高亮表 + 每 pass 散点图，跳过 LLM。失败落回 LLM（return false）。
+ */
+async function tryRunUnderperformingDutDirectRoute(
+  sessionId: string,
+  userQuestion: string,
+  _agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void
+): Promise<boolean> {
+  const history = getHistory(sessionId);
+  if (!canRunUnderperformingDutDirectRoute(userQuestion, history)) return false;
+  const args = underperformingDutArgsFromText(userQuestion, history);
+  if (!args) return false;
+
+  emit({ type: "status", message: "正在分析各 DUT 良率（含 INF 取数，稍慢）…" });
+  emit({ type: "tool_start", name: "query_lot_underperforming_duts", args });
+
+  let resp;
+  try {
+    resp = await runLotUnderperformingDuts({ lot: args.lot, device: args.device });
+  } catch {
+    return false; // INF 失败 → 落回 LLM，不 dead-end
+  }
+  const passes = resp.passes ?? [];
+  const md = formatAllDutsHighlightMarkdown(passes, resp.lot, resp.device);
+  if (!md.trim()) return false;
+
+  emit({ type: "tool_result", name: "query_lot_underperforming_duts", summary: md.slice(0, 200) });
+  const block = `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${md}`;
+  emitTextInChunks(block, emit);
+  tryEmitUnderperformingDutScatter(passes, emit);
+  appendMessages(sessionId, { role: "assistant", content: block });
+  emit({ type: "done" });
+  return true;
+}
+
 /** 从 query_lot_dut_bin_agg 结果中提取 DUT 分布，直接 emit bar chart。 */
 function tryEmitDutBinBarChart(
   rawContent: string,
@@ -3179,6 +3236,7 @@ export async function runAgentLoop(
   // 注:不按 detectJbReplyMode 的 mode 建表——mode 与 canRunXxx 门槛非 1:1(mode 更宽),
   // 按 mode 路由会把门槛不满足的问句误路由;有序 runner 列表才是真正等价的声明式形式。
   const PRE_LLM_DIRECT_ROUTES: Array<typeof tryRunLotListingDirectRoute> = [
+    tryRunUnderperformingDutDirectRoute,
     tryRunDutBinAggDirectRoute,
     tryRunBinLotRankingDirectRoute,
     tryRunLotListingDirectRoute,
@@ -3786,6 +3844,9 @@ export async function runAgentLoop(
               history: getHistory(sessionId),
               onJbBinsWrapped: (wrapped) => {
                 jbCacheForHistory = storeJbQuerySessionCache(sessionId, wrapped);
+              },
+              onUnderperformingDuts: (passes) => {
+                tryEmitUnderperformingDutScatter(passes, emit);
               },
             });
             if (
