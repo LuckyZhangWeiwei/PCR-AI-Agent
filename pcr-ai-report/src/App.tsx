@@ -9,6 +9,7 @@ import { AiAgentReport } from "./reports/AiAgentReport";
 import { InfcontrolReport } from "./reports/InfcontrolReport";
 import { OverviewReport } from "./reports/OverviewReport";
 import { YieldMonitorReport } from "./reports/YieldMonitorReport";
+import { ThemeProvider, useThemeContext } from "./theme/ThemeContext";
 import "./index.css";
 
 const D = SERVER_CONFIG_DEFAULTS;
@@ -16,6 +17,15 @@ const D = SERVER_CONFIG_DEFAULTS;
 type Tab = "yield" | "infcontrol" | "ai" | "settings";
 
 export default function App() {
+  return (
+    <ThemeProvider>
+      <AppShell />
+    </ThemeProvider>
+  );
+}
+
+function AppShell() {
+  const { theme, toggleTheme } = useThemeContext();
   const [apiBase, setApiBase, resetApiBase] = usePersistedApiBase();
   const [apiBaseInput, setApiBaseInput] = useState(apiBase);
   const [serverConfig, updateServerConfig, fetchServerConfig] = useServerConfig(apiBase);
@@ -108,6 +118,15 @@ export default function App() {
   return (
     <div className="app-shell">
       <header className="app-header">
+        <button
+          type="button"
+          className="theme-toggle-btn"
+          onClick={toggleTheme}
+          title="切换主题"
+          aria-label="切换主题"
+        >
+          {theme === "light" ? "☀️" : "🌙"}
+        </button>
         <div className="app-title-block">
           <div className="app-brand-row">
             <span className="app-brand-badge">NXP</span>
