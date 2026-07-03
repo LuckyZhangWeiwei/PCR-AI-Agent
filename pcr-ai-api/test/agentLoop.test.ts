@@ -12,6 +12,7 @@ import {
   renderAggregateJbBinsResult,
   tryRunSemanticDispatchDirectRoute,
   tryEmitUnderperformingDutScatter,
+  tryAppendUnderperformingDutSection,
 } from "../src/lib/agent/agentLoop.js";
 import {
   buildDutShareChartData,
@@ -23,7 +24,6 @@ import {
 import { runTool } from "../src/lib/agent/agentToolHandlers.js";
 import type { ChatMessage } from "../src/lib/agent/agentHistory.js";
 import { resolveJbRoute } from "../src/lib/agent/jbRouteResolver.js";
-import { tryAppendUnderperformingDutSection } from "../src/lib/agent/agentLoop.js";
 
 const THINK_OPEN = "<" + "think>";
 const THINK_CLOSE = "</" + "think>";

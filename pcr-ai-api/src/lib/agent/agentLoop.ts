@@ -2106,14 +2106,15 @@ async function tryRunUnderperformingDutDirectRoute(
   emit({ type: "tool_start", name: "query_lot_underperforming_duts", args });
 
   let resp;
+  let md: string;
   try {
     resp = await runLotUnderperformingDuts({ lot: args.lot, device: args.device });
+    md = formatAllDutsHighlightMarkdown(resp.passes ?? [], resp.lot, resp.device);
   } catch {
-    return false; // INF 失败 → 落回 LLM，不 dead-end
+    return false; // INF 取数或格式化失败 → 落回 LLM，不 dead-end
   }
-  const passes = resp.passes ?? [];
-  const md = formatAllDutsHighlightMarkdown(passes, resp.lot, resp.device);
   if (!md.trim()) return false;
+  const passes = resp.passes ?? [];
 
   emit({ type: "tool_result", name: "query_lot_underperforming_duts", summary: md.slice(0, 200) });
   const block = `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${md}`;
@@ -2135,23 +2136,26 @@ export async function tryAppendUnderperformingDutSection(
 ): Promise<string> {
   const lot = String(payload["lot"] ?? "").trim();
   const device = String(payload["device"] ?? "").trim();
-  if (!lot || !device) return "";
+  // device 可能是确定性层的占位符 "—"（见 agentJbDeterministicReply）→ 视为无 device，
+  // 避免拿占位符去跑一次注定失败的慢 INF 取数。
+  if (!lot || !device || device === "—") return "";
 
   emit({ type: "status", message: "正在补充各 DUT 良率分析（较慢）…" });
-  let resp;
+  // best-effort 整节：取数 + 格式化 + emit 全包在 try 内，任何异常都静默跳过、返回 ""，
+  // 绝不打断已流出的主概况（本函数在 emitDeterministicJbTablesReply 主表之后调用）。
   try {
-    resp = await runLotUnderperformingDuts({ lot, device });
+    const resp = await runLotUnderperformingDuts({ lot, device });
+    const passes = resp.passes ?? [];
+    const md = formatAllDutsHighlightMarkdown(passes, resp.lot, resp.device);
+    if (!md.trim()) return "";
+
+    const section = `\n\n### 🔬 各 DUT 良率（低于阈值 🔴）\n\n${md}`;
+    emit({ type: "text", delta: section });
+    tryEmitUnderperformingDutScatter(passes, emit);
+    return section;
   } catch {
     return ""; // best-effort：失败静默跳过
   }
-  const passes = resp.passes ?? [];
-  const md = formatAllDutsHighlightMarkdown(passes, resp.lot, resp.device);
-  if (!md.trim()) return "";
-
-  const section = `\n\n### 🔬 各 DUT 良率（低于阈值 🔴）\n\n${md}`;
-  emit({ type: "text", delta: section });
-  tryEmitUnderperformingDutScatter(passes, emit);
-  return section;
 }
 
 /** 从 query_lot_dut_bin_agg 结果中提取 DUT 分布，直接 emit bar chart。 */

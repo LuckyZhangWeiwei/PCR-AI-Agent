@@ -1,7 +1,7 @@
 /**
  * 低良率 DUT 展示层（纯函数，无副作用）：给 Agent 回复生成
  * ① 全 DUT 良率高亮表（低于 lot平均×阈值比 的 DUT 用 🔴+加粗标注）
- * ② 每 pass 一张散点 option（见同文件 buildUnderperformingDutScatterOptions，Task 2）。
+ * ② 每 pass 一张散点 option（见同文件 buildUnderperformingDutScatterOptions）。
  * 数据来自昨天的 computeUnderperformingDutsForPass；本模块不取数、不碰 SQL/Dummy/REST。
  */
 
