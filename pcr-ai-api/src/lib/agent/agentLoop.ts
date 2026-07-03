@@ -42,6 +42,7 @@ import {
   buildBinFocusedLotRankingMarkdown,
   DETERMINISTIC_DATA_SECTION_TITLE,
   DETERMINISTIC_COMMENTARY_SECTION_TITLE,
+  stampFirstTestNote,
   extractBinFromUserText,
   extractSlotFromUserText,
   extractYmLotsFromHistory,
@@ -1011,7 +1012,7 @@ async function emitDeterministicJbTablesReply(
     options?.withCommentaryLlm ??
     !jbReplySkipsCommentaryLlm(mode);
 
-  const tablesBlock = `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${tables}`;
+  const tablesBlock = stampFirstTestNote(`${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${tables}`);
   emit({ type: "status", message: "正在输出服务端预计算表…" });
   emitTextInChunks(tablesBlock, emit);
 
@@ -1539,10 +1540,11 @@ async function tryRunScopedBadBinDirectRoute(
     return true;
   }
 
-  const msg =
+  const msg = stampFirstTestNote(
     `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${table}\n\n` +
-    `${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n` +
-    `*以上为 ${scopeLabel} 范围内坏 BIN 按 dieCount 降序汇总。如需某 lot 逐片趋势，请指定批次号。*`;
+      `${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n` +
+      `*以上为 ${scopeLabel} 范围内坏 BIN 按 dieCount 降序汇总。如需某 lot 逐片趋势，请指定批次号。*`
+  );
   emit({ type: "status", message: "正在输出坏 BIN 排行表…" });
   emitTextInChunks(msg, emit);
   appendMessages(sessionId, { role: "assistant", content: msg });
@@ -1598,9 +1600,10 @@ async function tryRunBinLotRankingDirectRoute(
   const rendered = renderAggregateJbBinsResult(aggRaw, userQuestion, scopeLabel);
   if (!rendered?.table?.trim()) return false;
 
-  const block =
+  const block = stampFirstTestNote(
     `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${rendered.table}\n\n` +
-    `${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n${rendered.commentaryNote}`;
+      `${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n${rendered.commentaryNote}`
+  );
   emit({ type: "status", message: rendered.statusMessage || "正在输出 BIN×lot 排行…" });
   emitTextInChunks(block, emit);
   appendMessages(sessionId, { role: "assistant", content: block });
@@ -1678,7 +1681,7 @@ async function tryRunDutBinAggDirectRoute(
 
   if (!/坏 die 的 DUT 集中度/.test(rawContent)) return false;
 
-  const tablesBlock = `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${rawContent}`;
+  const tablesBlock = stampFirstTestNote(`${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${rawContent}`);
   emitTextInChunks(tablesBlock, emit);
   tryEmitDutBinBarChart(rawContent, focusBin, emit);
   appendMessages(sessionId, { role: "assistant", content: tablesBlock });
@@ -2023,12 +2026,13 @@ export async function tryRunSemanticDispatchDirectRoute(
     const scopeLabel = buildScopeLabelFromAggregateArgs(plan.args);
     const rendered = renderAggregateJbBinsResult(raw, userQuestion, scopeLabel);
     if (!rendered?.table?.trim()) return false; // 渲染空 → 落回 LLM
-    const block =
+    const block = stampFirstTestNote(
       (rendered.withDataTitle ? `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n` : "") +
-      rendered.table +
-      (rendered.commentaryNote
-        ? `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n${rendered.commentaryNote}`
-        : "");
+        rendered.table +
+        (rendered.commentaryNote
+          ? `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n${rendered.commentaryNote}`
+          : "")
+    );
     emitTextInChunks(block, emit);
     appendMessages(sessionId, { role: "assistant", content: block });
     emit({ type: "done" });
@@ -2117,7 +2121,7 @@ async function tryRunUnderperformingDutDirectRoute(
   const passes = resp.passes ?? [];
 
   emit({ type: "tool_result", name: "query_lot_underperforming_duts", summary: md.slice(0, 200) });
-  const block = `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${md}`;
+  const block = stampFirstTestNote(`${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${md}`);
   emitTextInChunks(block, emit);
   tryEmitUnderperformingDutScatter(passes, emit);
   appendMessages(sessionId, { role: "assistant", content: block });
@@ -2544,7 +2548,7 @@ async function tryRunDutBinAggAutoRoute(
   const tableMd = buildDutBinAggMarkdown(rawContent, focusBin, lot, device);
   if (!tableMd.trim()) return false;
 
-  const tablesBlock = `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${tableMd}`;
+  const tablesBlock = stampFirstTestNote(`${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${tableMd}`);
   emitTextInChunks(tablesBlock, emit);
   // DUT 分布数据点 ≥3 时自动生成 bar chart，直观展示哪个 DUT 集中出 BIN
   tryEmitDutBinBarChart(rawContent, focusBin, emit);
@@ -2809,11 +2813,13 @@ async function tryRunDeterministicJbSummary(
       const dataBlock = rendered.withDataTitle
         ? `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${rendered.table}`
         : rendered.table;
-      const msg = !rendered.commentaryNote
-        ? dataBlock
-        : rendered.withDataTitle
-          ? `${dataBlock}\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n${rendered.commentaryNote}`
-          : `${dataBlock}\n\n${rendered.commentaryNote}`;
+      const msg = stampFirstTestNote(
+        !rendered.commentaryNote
+          ? dataBlock
+          : rendered.withDataTitle
+            ? `${dataBlock}\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n${rendered.commentaryNote}`
+            : `${dataBlock}\n\n${rendered.commentaryNote}`
+      );
       if (rendered.statusMessage) {
         emit({ type: "status", message: rendered.statusMessage });
       }
@@ -2993,10 +2999,11 @@ function finishWithJbServerTablesFallback(
   emit: (event: AgentSseEvent) => void
 ): boolean {
   const lastTool = lastToolMessage(getHistory(sessionId));
-  const fallback = lastTool
+  const rawFallback = lastTool
     ? jbBinsYieldFallbackMessage(lastTool, userQuestion, sessionId)
     : null;
-  if (!fallback?.trim()) return false;
+  if (!rawFallback?.trim()) return false;
+  const fallback = stampFirstTestNote(rawFallback);
   emit({ type: "status", message: "模型未生成文字，正在输出服务端预计算表…" });
   emitTextInChunks(fallback, emit);
   appendMessages(sessionId, { role: "assistant", content: fallback });

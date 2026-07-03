@@ -26,6 +26,8 @@ import {
   isSingleWaferDieClusterQuestion,
   isCardTypeLevelOverviewQuestion,
   resolveJbToolPayload,
+  stampFirstTestNote,
+  FIRST_TEST_ONLY_NOTE,
 } from "../src/lib/agent/agentJbDeterministicReply.js";
 import {
   compactJbCacheForHistory,
@@ -799,5 +801,23 @@ describe("agentJbDeterministicReply", () => {
     // override 成 bad_bin_ranking,即使问句像 lot_overview
     const md = buildDeterministicJbTables("NF13322.1J 整体测试情况", payload as any, undefined, "bad_bin_ranking");
     assert.ok(md && md.length > 0);
+  });
+});
+
+describe("stampFirstTestNote", () => {
+  it("在数据块末尾追加 first-test 脚注", () => {
+    const out = stampFirstTestNote("## 实测数据\n\n| a |\n|---|");
+    assert.ok(out.endsWith(FIRST_TEST_ONLY_NOTE));
+    assert.match(out, /只包含 first test/);
+    assert.match(out, /不包含 Auto retest/);
+  });
+  it("幂等：已含脚注不重复追加", () => {
+    const once = stampFirstTestNote("## 实测数据\n\nx");
+    const twice = stampFirstTestNote(once);
+    assert.equal(twice, once);
+    assert.equal((twice.match(/Auto retest/g) ?? []).length, 1);
+  });
+  it("空串原样返回，不加脚注", () => {
+    assert.equal(stampFirstTestNote(""), "");
   });
 });

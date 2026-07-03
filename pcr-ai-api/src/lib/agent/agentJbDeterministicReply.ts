@@ -2263,6 +2263,22 @@ export const DETERMINISTIC_TABLES_HEADER =
 export const DETERMINISTIC_DATA_SECTION_TITLE = "## 实测数据";
 export const DETERMINISTIC_COMMENTARY_SECTION_TITLE = "## 分析结论";
 
+/**
+ * lot / wafer / yield 数据来源说明脚注：所有服务端确定性数据表均基于首测（first test），
+ * 不含 Auto retest（重测）。追加在数据块下方，随数据进消息内容（导出历史时一并保留）。
+ */
+export const FIRST_TEST_ONLY_NOTE =
+  "> *所有数据只包含 first test，不包含 Auto retest*";
+
+/**
+ * 在确定性数据块末尾追加 {@link FIRST_TEST_ONLY_NOTE}。**幂等**：已含该脚注或空串则原样返回，
+ * 故可在数据块构造点安全调用，即使同一内容被多处包裹也不会重复追加。
+ */
+export function stampFirstTestNote(dataBlock: string): string {
+  if (!dataBlock || dataBlock.includes(FIRST_TEST_ONLY_NOTE)) return dataBlock;
+  return `${dataBlock}\n\n${FIRST_TEST_ONLY_NOTE}`;
+}
+
 export const BRIEF_COMMENTARY_SYSTEM =
   "你是资深晶圆测试（Wafer Test）与探针卡（Probe Card）可靠性工程师，熟悉 JB STAR、Yield Monitor、INF map 与 DUT 维护。" +
   "术语：JB 字段 slot = waferId（第几片 wafer，对用户写 waferId）；INF 字段 dut = 探针卡触点（对用户写 DUT，勿写 site）。" +
