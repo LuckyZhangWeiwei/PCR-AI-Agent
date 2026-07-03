@@ -23,7 +23,14 @@
   color: #ccc;
 }
 
-.ai-agent-btn-new {
+.ai-agent-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-agent-btn-new,
+.ai-agent-btn-save {
   padding: 4px 12px;
   font-size: 12px;
   background: #2a2a3a;
@@ -33,9 +40,15 @@
   cursor: pointer;
 }
 
-.ai-agent-btn-new:hover {
+.ai-agent-btn-new:hover,
+.ai-agent-btn-save:hover:not(:disabled) {
   background: #333;
   color: #fff;
+}
+
+.ai-agent-btn-save:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .ai-agent-messages {

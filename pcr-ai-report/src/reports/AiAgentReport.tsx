@@ -9,6 +9,10 @@ import remarkGfm from "remark-gfm";
 import { buildUrl } from "../api/client.js";
 import { sanitizeAgentMarkdownForDisplay } from "../utils/sanitizeAgentMarkdown.js";
 import { splitAgentReplyMarkdown } from "../utils/splitAgentReplyMarkdown.js";
+import {
+  buildSessionMarkdown,
+  sessionHasExportableContent,
+} from "../utils/exportSession.js";
 function downloadMarkdown(text: string, title: string): void {
   const safe = title.slice(0, 50).replace(/[^\w一-龥.\-]/g, "_").trim() || "answer";
   const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
@@ -754,9 +758,25 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
         {feedbackHint ? (
           <span className="ai-feedback-hint" role="status">{feedbackHint}</span>
         ) : null}
-        <button type="button" className="ai-agent-btn-new" onClick={newSession}>
-          ＋ New Chat
-        </button>
+        <div className="ai-agent-toolbar-actions">
+          <button
+            type="button"
+            className="ai-agent-btn-save"
+            disabled={!sessionHasExportableContent(messages)}
+            onClick={() =>
+              downloadMarkdown(
+                buildSessionMarkdown(messages, "AI Agent 会话"),
+                "AI Agent 会话"
+              )
+            }
+            title="保存整个会话为 Markdown（仅问答，不含工具/内部信息）"
+          >
+            ⤓ 保存
+          </button>
+          <button type="button" className="ai-agent-btn-new" onClick={newSession}>
+            ＋ New Chat
+          </button>
+        </div>
       </div>
 
       <div className="ai-agent-messages" ref={messagesRef} onScroll={handleMessagesScroll}>
