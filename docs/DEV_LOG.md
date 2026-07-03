@@ -2,6 +2,17 @@
 
 ---
 
+## 2026-07-02 — first-test 数据脚注 + 会话保存按钮
+
+**完成内容：**
+- **需求1（first-test 脚注，后端）**：服务端确定性数据表末尾统一追加 `> *所有数据只包含 first test，不包含 Auto retest*`。新增 `FIRST_TEST_ONLY_NOTE` + **幂等** `stampFirstTestNote`（`agentJbDeterministicReply.ts`），在各数据块构造点（`emitDeterministicJbTablesReply` 主表 / 坏 bin 排行 / BIN×lot / DUT×BIN / 低良率 DUT / per-slot / summary 聚合 / server-tables fallback）stamp；lot 概况/列表/mask 路由经 `emitDeterministicJbTablesReply` 自动覆盖。随数据进消息内容 → 导出会话时一并保留。commit ea70373。
+- **需求2（会话保存，前端）**：`AiAgentReport` 工具栏（New Chat 旁）加「⤓ 保存」按钮，下载整个会话为 `.md`。新增纯函数 `utils/exportSession.ts`（`buildSessionMarkdown` / `sessionHasExportableContent`）——仅含用户提问 + Agent 回答文本（`## 问：` / `**答：**`），排除工具 JSON / 图表 / 错误 / 澄清 / 流式未完成 / 欢迎语；无问答时按钮禁用。复用已有 `downloadMarkdown`。commit b0fc23a。
+- 执行方式：用户选「直接内联实现」，未走 spec/plan/SDD 流水线。
+
+**测试：** 后端 478 个测试，0 失败（474 pass / 4 skip；含 stampFirstTestNote 幂等单测 3 项）；typecheck 通过。前端 `npm run build` 通过、未新增 lint 问题（前端无测试框架，`buildSessionMarkdown` 经 tsx 手工验证问答提取/内部信息排除/空会话禁用）。
+
+---
+
 ## 2026-07-02 — 低良率 DUT 高亮 + 散点图（问 lot 时醒目标出偏低 DUT）
 
 **完成内容：**
