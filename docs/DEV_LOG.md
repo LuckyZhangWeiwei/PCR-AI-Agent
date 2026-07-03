@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-07-02 — 低良率 DUT 高亮 + 散点图（问 lot 时醒目标出偏低 DUT）
+
+**完成内容：**
+- **视图纯函数模块** `src/lib/agent/agentUnderperformingDutView.ts`：`formatAllDutsHighlightMarkdown(passResults, lot, device)` 列出各 pass 全部 DUT 良率，低于 `lot 整体良率 × thresholdRatio`（默认 0.75，**严格小于**）的 DUT 行 🔴+加粗；`buildUnderperformingDutScatterOptions` 每 pass 一个 ECharts 散点 option，三色带（🟢≥平均 / 🟡平均~阈值 / 🔴<阈值）+ lot 平均线 / 阈值线两条 markLine。（Task 1 88c7f4a、Task 2 48ee8bb）
+- **路由谓词模块** `src/lib/agent/agentUnderperformingDutRoute.ts`：`isLotUnderperformingDutQuestion`（两门 AND：DUT/探针/触点/site 级 + 低良率意图，排除卡级「哪张卡良率最低」）+ `canRunUnderperformingDutDirectRoute` + `underperformingDutArgsFromText`。（Task 3 675564d）
+- **A 路（`agentLoop.ts`）**：新增 PRE_LLM 确定性直连路由 `tryRunUnderperformingDutDirectRoute`（注册首位），命中「lot 内哪些 DUT 偏低」即 `runLotUnderperformingDuts` 直出全 DUT 高亮表 + 每 pass 散点，跳过 LLM；INF 失败 `return false` 落回 LLM。LLM 工具路径经 `RunToolOptions.onUnderperformingDuts` 回调也出散点；`agentToolHandlers.ts` 内部工具结果串换高亮表。（Task 4 9fbfb7f）
+- **B 路（`agentLoop.ts`）**：`emitDeterministicJbTablesReply` 在 `generic`/`lot_overview` 概况末尾 best-effort 调 `tryAppendUnderperformingDutSection`，追加独立 `### 🔬 各 DUT 良率` 子节 + 散点；失败 / 缺 lot·device 静默跳过（`return ""`，不 emit error），返回 markdown 并入两处持久化 `const full`（UI 与 history 一致）。（Task 5 ac03371）
+- **非破坏**：复用昨天 89c77b3 的 `computeUnderperformingDutsForPass` 已算数据，不碰 SQL/Dummy；`lotUnderperformingDuts.ts` 的 `formatUnderperformingDutsMarkdown`、REST 字段 `underperformingDutsMarkdown`、报表面板 `LotUnderperformingDutsPanel.tsx` 均未动。真库/真 INF 端到端复验交 Cursor（[`HANDOFF_UNDERPERFORMING_DUT_HIGHLIGHT_2026-07-02.md`](HANDOFF_UNDERPERFORMING_DUT_HIGHLIGHT_2026-07-02.md)）。spec/plan 见 `docs/superpowers/`。
+
+**测试：** 475 个测试，0 失败（471 pass / 4 skip）；typecheck + build（含 verify-dist-no-undici）通过。逐 Task TDD + 独立审查（Spec ✅ / Approved）。
+
+---
+
 ## 2026-07-02 — A1-2 卡级归因误路由 + A2-4 空 scope 空转（补齐 Cursor 8a6f841 待办）
 
 **完成内容：**
