@@ -16,7 +16,8 @@ import {
 import { useThemeContext } from "../theme/ThemeContext.js";
 function downloadMarkdown(text: string, title: string): void {
   const safe = title.slice(0, 50).replace(/[^\w一-龥.\-]/g, "_").trim() || "answer";
-  const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
+  // 加 UTF-8 BOM，避免编辑器（尤其 Windows）误按 GBK 打开导致中文乱码。
+  const blob = new Blob(["﻿", text], { type: "text/markdown;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
