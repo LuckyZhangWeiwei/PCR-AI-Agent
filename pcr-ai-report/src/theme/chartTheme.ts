@@ -84,6 +84,38 @@ export function selectionTierColors(theme: ChartTheme = "dark", hue: SelectionHu
   return SELECTION_TIERS[theme][hue];
 }
 
+/** Funnel drill-down level dimension keys (mirrors index.css --dim-* custom properties). */
+export type FunnelLevelKey = "mask" | "device" | "lot" | "passId" | "slot" | "cardId";
+
+/**
+ * Literal hex mirror of index.css's --dim-mask/--dim-device/--dim-lot/--dim-pass/--dim-slot/--dim-card.
+ * Needed because canvas 2D (ECharts itemStyle.color) cannot resolve var(...) strings — fillStyle
+ * assignments that aren't valid CSS colors are silently ignored. Keep in sync with index.css.
+ */
+const FUNNEL_LEVEL_HEX: Record<ChartTheme, Record<FunnelLevelKey, string>> = {
+  dark: {
+    mask: "#79c0ff",
+    device: "#d2a8ff",
+    lot: "#3fb950",
+    passId: "#ff7b72",
+    slot: "#e6b450",
+    cardId: "#58a6ff",
+  },
+  light: {
+    mask: "#0969da",
+    device: "#8250df",
+    lot: "#1a7f37",
+    passId: "#cf222e",
+    slot: "#9a6700",
+    cardId: "#0969da",
+  },
+};
+
+/** Literal hex value for a funnel level's dimension color, for use in canvas contexts (ECharts itemStyle). */
+export function funnelLevelHex(theme: ChartTheme, key: FunnelLevelKey): string {
+  return FUNNEL_LEVEL_HEX[theme][key];
+}
+
 export function baseChartOption(theme: ChartTheme = "dark"): Record<string, unknown> {
   const p = getChartPalette(theme);
   return {

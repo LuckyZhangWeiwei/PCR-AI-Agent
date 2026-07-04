@@ -26,6 +26,7 @@ import { LotUnderperformingDutsPanel } from "../components/LotUnderperformingDut
 import { KpiCard } from "../components/KpiCard";
 import { TreeTable } from "../components/TreeTable";
 import {
+  funnelLevelHex,
   getChartPalette,
   getStatusTierColors,
   selectionTierColors,
@@ -35,6 +36,7 @@ import {
   JB_SLOT_TREND_CHART_HEIGHT,
   rankBarChartHeight,
   verticalBarChartGrid,
+  type FunnelLevelKey,
 } from "../theme/chartTheme";
 import { useThemeContext } from "../theme/ThemeContext";
 import { datetimeLocalToIso, formatDatetimeChinaTime } from "../utils/datetimeLocal";
@@ -677,7 +679,7 @@ function FunnelDrillSection({
 
   const { chartOption, displayItems } = useMemo((): { chartOption: EChartsOption; displayItems: FunnelBarItem[] } => {
     if (!levelDef || !bars.length) return { chartOption: {}, displayItems: [] };
-    const color = levelDef.color;
+    const color = funnelLevelHex(theme, levelDef.key as FunnelLevelKey);
 
     if (levelDef.key === "slot") {
       const sorted = [...bars].sort((a, b) => Number(a.value) - Number(b.value));
