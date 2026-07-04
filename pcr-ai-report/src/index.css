@@ -600,6 +600,15 @@ button.chip:hover {
   border-color: rgba(var(--accent-2-rgb),0.45);
   background: rgba(var(--accent-2-rgb),0.06);
 }
+button.chip.chip--active {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+button.chip.chip--active:hover {
+  color: var(--bg);
+  background: var(--accent);
+}
 
 /* ── Report panel ────────────────────────────────────────────────────── */
 .report-panel { display: flex; flex-direction: column; gap: 16px; }
