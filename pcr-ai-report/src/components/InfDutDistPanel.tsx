@@ -73,7 +73,7 @@ function formatDutDistTooltipHtml(
       const isHovered =
         hoveredSeriesIndex != null && row.seriesIndex === hoveredSeriesIndex;
       const extraStyle = isHovered
-        ? "background:rgba(var(--accent-rgb),0.32);border-radius:4px;padding:2px 7px;margin:-2px -7px;font-weight:700;color:#fff;box-shadow:0 0 0 1px rgba(var(--accent-rgb),0.45);"
+        ? "background:rgba(var(--accent-rgb),0.32);border-radius:4px;padding:2px 7px;margin:-2px -7px;font-weight:700;color:var(--text);box-shadow:0 0 0 1px rgba(var(--accent-rgb),0.45);"
         : "";
       const cls = isHovered ? "dut-tip-row dut-tip-row--hovered" : "dut-tip-row";
       return `<div class="${cls}" data-series-index="${row.seriesIndex}" style="white-space:nowrap;line-height:1.7;font-size:12px;display:flex;align-items:center;gap:7px;${extraStyle}">${row.html}</div>`;

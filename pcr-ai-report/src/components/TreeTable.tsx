@@ -10,7 +10,7 @@ type TreeTableProps = {
 };
 
 const INDENT_PX = 16;
-const DEPTH_COLORS = ["#58a6ff", "#a371f7", "#3fb950", "#d29922"];
+const DEPTH_COLORS = ["var(--dim-card)", "var(--dim-device)", "var(--dim-lot)", "var(--dim-slot)"];
 
 function depthColor(depth: number): string {
   return DEPTH_COLORS[depth % DEPTH_COLORS.length];
@@ -45,7 +45,7 @@ function NodeRow({
             color,
             fontWeight: depth === 0 ? 600 : 400,
             fontSize: 13,
-            borderBottom: "1px solid rgba(240,246,252,0.06)",
+            borderBottom: "1px solid rgba(var(--fg-rgb),0.06)",
             whiteSpace: "nowrap",
           }}
         >
@@ -54,7 +54,7 @@ function NodeRow({
               {expanded ? "▼" : "▶"}
             </span>
           )}
-          <span style={{ fontSize: 10, color: "#6e7681", marginRight: 4 }}>
+          <span style={{ fontSize: 10, color: "var(--dimmed)", marginRight: 4 }}>
             {node.dimKey}:
           </span>
           {node.dimValue}
@@ -66,8 +66,8 @@ function NodeRow({
             paddingTop: 5,
             paddingBottom: 5,
             fontSize: 13,
-            color: "#e6edf3",
-            borderBottom: "1px solid rgba(240,246,252,0.06)",
+            color: "var(--text)",
+            borderBottom: "1px solid rgba(var(--fg-rgb),0.06)",
           }}
         >
           {node.total.toLocaleString()}
@@ -77,7 +77,7 @@ function NodeRow({
             style={{
               paddingTop: 5,
               paddingBottom: 5,
-              borderBottom: "1px solid rgba(240,246,252,0.06)",
+              borderBottom: "1px solid rgba(var(--fg-rgb),0.06)",
               fontSize: 12,
             }}
           >
@@ -102,7 +102,7 @@ function NodeRow({
 export function TreeTable({ roots, totalHeader = "Count", renderExtra }: TreeTableProps) {
   if (roots.length === 0) {
     return (
-      <div style={{ color: "#8b949e", fontSize: 13, padding: "12px 0" }}>
+      <div style={{ color: "var(--muted)", fontSize: 13, padding: "12px 0" }}>
         暂无数据
       </div>
     );
@@ -123,10 +123,10 @@ export function TreeTable({ roots, totalHeader = "Count", renderExtra }: TreeTab
                 textAlign: "left",
                 padding: "6px 8px",
                 fontSize: 11,
-                color: "#8b949e",
+                color: "var(--muted)",
                 textTransform: "uppercase",
                 letterSpacing: "0.05em",
-                borderBottom: "1px solid rgba(240,246,252,0.12)",
+                borderBottom: "1px solid rgba(var(--fg-rgb),0.12)",
               }}
             >
               维度
@@ -137,10 +137,10 @@ export function TreeTable({ roots, totalHeader = "Count", renderExtra }: TreeTab
                 paddingRight: 16,
                 padding: "6px 16px 6px 8px",
                 fontSize: 11,
-                color: "#8b949e",
+                color: "var(--muted)",
                 textTransform: "uppercase",
                 letterSpacing: "0.05em",
-                borderBottom: "1px solid rgba(240,246,252,0.12)",
+                borderBottom: "1px solid rgba(var(--fg-rgb),0.12)",
               }}
             >
               {totalHeader}
@@ -150,10 +150,10 @@ export function TreeTable({ roots, totalHeader = "Count", renderExtra }: TreeTab
                 style={{
                   padding: "6px 8px",
                   fontSize: 11,
-                  color: "#8b949e",
+                  color: "var(--muted)",
                   textTransform: "uppercase",
                   letterSpacing: "0.05em",
-                  borderBottom: "1px solid rgba(240,246,252,0.12)",
+                  borderBottom: "1px solid rgba(var(--fg-rgb),0.12)",
                 }}
               >
                 附加

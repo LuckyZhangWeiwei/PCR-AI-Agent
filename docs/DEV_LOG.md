@@ -2,6 +2,17 @@
 
 ---
 
+## 2026-07-04 — light/dark 主题：终审收尾（TreeTable 主题化 + tooltip 对比度 + 防闪屏）
+
+**完成内容：**
+- **Finding 1（重要）**：`pcr-ai-report/src/components/TreeTable.tsx` 此前未随 light/dark 主题切换分支改造，仍是硬编码 hex/rgba。全部替换为 CSS 变量：`DEPTH_COLORS` 改用 `--dim-card/--dim-device/--dim-lot/--dim-slot`（复用 `index.css` 已有的按维度配色 token）；边框 `rgba(240,246,252,x)` → `rgba(var(--fg-rgb),x)`；文字色 `#6e7681/#e6edf3/#8b949e` → `var(--dimmed)/var(--text)/var(--muted)`。
+- **Finding 2（次要）**：`InfDutDistPanel.tsx` tooltip 高亮行背景已是 `rgba(var(--accent-rgb),0.32)`（light 下为浅蓝），但文字仍写死 `color:#fff`，light 模式下白字不可读；改为 `color:var(--text)`。
+- **Finding 3（次要）**：`useTheme.ts` 的 `data-theme` 只在 React mount 后才写入，首帧沿用 `:root` 深色默认值，导致每次刷新闪一下深色再切换。在 `index.html` `<head>` 内 `<meta charset>` 之后、任何样式/脚本之前加同步 IIFE，直接读 `localStorage["pcr-ai-report.theme.v1"]` 并写 `document.documentElement.dataset.theme`（key 与 `useTheme.ts` `STORAGE_KEY` 完全一致，默认值逻辑与 `readStoredTheme` 对齐：非 `"dark"` 一律 `"light"`）。
+
+**测试：** `pcr-ai-report` `npm run build` 通过（0 错误）；`grep -nE "#[0-9a-fA-F]{3,6}|rgba\(2[0-9]{2}," TreeTable.tsx` 无匹配，确认无残留硬编码颜色。前端无单测框架，未跑用例。
+
+---
+
 ## 2026-07-02 — first-test 数据脚注 + 会话保存按钮
 
 **完成内容：**
