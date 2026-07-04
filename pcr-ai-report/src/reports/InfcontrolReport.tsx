@@ -28,10 +28,8 @@ import { TreeTable } from "../components/TreeTable";
 import {
   funnelLevelHex,
   getChartPalette,
-  getStatusTierColors,
   selectionTierColors,
   horizontalBarCategoryAxisLabel,
-  horizontalBarCategoryAxisLabelFull,
   horizontalBarChartBase,
   JB_SLOT_TREND_CHART_HEIGHT,
   rankBarChartHeight,
@@ -175,7 +173,6 @@ const JB_REPORT_SECTION_ORDER = [
   "kpi",
   "funnel",
   "device",
-  "lotYield",
   "underperformingDuts",
   "pcType",
   "tree",
@@ -205,14 +202,6 @@ const DRILL_FROM_CARD: { label: string; value: string }[] = [
   { label: "Bin",    value: "bin"    },
   { label: "Device", value: "device" },
   { label: "Lot",    value: "lot"    },
-];
-
-
-const DRILL_FROM_LOT: { label: string; value: string }[] = [
-  { label: "CardId",  value: "cardId"  },
-  { label: "Slot",    value: "slot"    },
-  { label: "Bin",     value: "bin"     },
-  { label: "PassId",  value: "passId"  },
 ];
 
 
@@ -353,34 +342,6 @@ function drillFromJbListRows(
     .slice(0, 50);
 }
 
-function lotYields(
-  rows: InfcontrolLayerBinV3Row[]
-): Array<{ lot: string; passId: string; slot: string; device: string; label: string; yieldPct: number }> {
-  const byKey = new Map<string, InfcontrolLayerBinV3Row[]>();
-  for (const r of rows) {
-    const lot    = r.LOT    ?? "—";
-    const passId = r.PASSID !== undefined && r.PASSID !== null ? String(r.PASSID) : "";
-    const slot   = r.SLOT   !== undefined && r.SLOT   !== null ? String(r.SLOT)   : "";
-    const key    = `${lot}__P${passId}__S${slot}`;
-    if (!byKey.has(key)) byKey.set(key, []);
-    byKey.get(key)!.push(r);
-  }
-  const result: Array<{ lot: string; passId: string; slot: string; device: string; label: string; yieldPct: number }> = [];
-  for (const [key, keyRows] of byKey.entries()) {
-    const yp = computeYieldPct(keyRows);
-    if (yp === null) continue;
-    const r0     = keyRows[0];
-    const lot    = r0.LOT    ?? "—";
-    const device = r0.DEVICE ?? "";
-    const passId = r0.PASSID !== undefined && r0.PASSID !== null ? String(r0.PASSID) : "";
-    const slot   = r0.SLOT   !== undefined && r0.SLOT   !== null ? String(r0.SLOT)   : "";
-    const label  = `${lot}__P${passId}__S${slot}`;
-    result.push({ lot, passId, slot, device, label, yieldPct: yp });
-    void key;
-  }
-  return result.sort((a, b) => a.yieldPct - b.yieldPct);
-}
-
 function topBadBinForLot(
   groups: AggregateGroup[] | undefined,
   lotValue: string,
@@ -454,8 +415,6 @@ type InfCtx = InfDutSelectionCtx | null;
 
 function infDutAnchorForParentDimKey(parentDimKey: string): InfDutAnchor | null {
   switch (parentDimKey) {
-    case "lot":
-      return { source: "lotYield" };
     case "device":
       return { source: "chartsGrid", block: "jbDevice" };
     case "bin":
@@ -926,7 +885,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
   const drillCacheRef = useRef<Record<string, { val: string; tabs: Record<string, AggregateGroup[]> }>>({});
   const [showTree,   setShowTree]   = useState(false);
   const [showDetail, setShowDetail] = useState(false);
-  const [selectedLotLabel, setSelectedLotLabel] = useState<string | null>(null);
   const [selectedCardType, setSelectedCardType] = useState<string | null>(null);
   const [selectedDevice,   setSelectedDevice]   = useState<string | null>(null);
   const [infCtx, setInfCtx] = useState<InfCtx>(null);
@@ -972,7 +930,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     setAggDevice(null);
     setDrills({});
     drillCacheRef.current = {};
-    setSelectedLotLabel(null);
     setSelectedCardType(null);
     setSelectedDevice(null);
     setInfCtx(null);
@@ -1200,7 +1157,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     setErrorAgg(null);
     setDrills({});
     drillCacheRef.current = {};
-    setSelectedLotLabel(null);
     setSelectedCardType(null);
     setList(null);
     setAggBin(null);
@@ -1297,85 +1253,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
   }, [aggTree]);
 
   // ── Chart options ────────────────────────────────────────────────────────
-
-  const lotYieldData = useMemo(() => {
-    if (!list?.rows?.length) return [];
-    return lotYields(list.rows as InfcontrolLayerBinV3Row[]);
-  }, [list]);
-
-  const lotYieldOption = useMemo((): EChartsOption => {
-    // reverse: lowest yield ends up at top → reads low-to-high from top to bottom
-    const data = lotYieldData.slice(0, 10).reverse();
-    return {
-      ...horizontalBarChartBase(theme),
-      tooltip: {
-        trigger: "axis",
-        axisPointer: { type: "shadow" },
-        backgroundColor: "var(--surface-1)",
-        borderColor: "var(--border)",
-        textStyle: { color: "var(--text)", fontSize: 12 },
-        formatter: (params: unknown) => {
-          const p = (params as Array<{ dataIndex: number }>)[0];
-          const d = data[p.dataIndex];
-          if (!d) return "";
-          return [
-            `LOT: <b>${d.lot}</b>`,
-            d.device ? `Device: ${d.device}` : null,
-            `Pass: P${d.passId}`,
-            d.slot ? `Wafer ID: 1-${d.slot}` : null,
-            `Yield: <b style="color:${yieldColor(d.yieldPct)}">${d.yieldPct.toFixed(1)}%</b>`,
-          ].filter(Boolean).join("<br/>");
-        },
-      },
-      xAxis: {
-        type: "value",
-        max: 100,
-        axisLabel: { color: chartPalette.axisColor, formatter: "{value}%" },
-        splitLine: { lineStyle: { color: chartPalette.splitLine } },
-      },
-      grid: {
-        left: 8,
-        right: 52,
-        top: 8,
-        bottom: 8,
-        containLabel: true,
-      },
-      yAxis: {
-        type: "category",
-        data: data.map((d) => d.lot),
-        axisLabel: { ...horizontalBarCategoryAxisLabelFull, interval: 0, color: chartPalette.axisColor },
-      },
-      series: [
-        {
-          type: "bar",
-          data: data.map((d) => {
-            const tiers = getStatusTierColors(theme);
-            const tier = d.yieldPct >= 95 ? tiers.green : d.yieldPct >= 80 ? tiers.yellow : tiers.red;
-            const base = tier.border;
-            const bright = tier.bright;
-            const dim = tier.glow;
-            const isSel  = selectedLotLabel === d.label;
-            return {
-              value: Number(d.yieldPct.toFixed(2)),
-              itemStyle: {
-                color: isSel ? bright : selectedLotLabel !== null ? dim : base,
-                borderRadius: [0, 4, 4, 0] as unknown as number,
-              },
-            };
-          }),
-          label: {
-            show: true,
-            position: "right",
-            color: chartPalette.axisColor,
-            fontSize: 10,
-            formatter: "{c}%",
-          },
-          animationDuration: 600,
-        },
-      ],
-    };
-  }, [lotYieldData, selectedLotLabel, theme]);
-
 
   // ProbeCard Type — sum bad-die per type (aggregate over bin dimension)
   const cardTypeOption = useMemo((): EChartsOption => {
@@ -1707,72 +1584,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       />
     );
 
-    const lotYieldSection =
-      lotYieldData.length > 0 ? (
-        <>
-          <div className="report-chart-panel">
-            <ChartDrillSplit
-            hint={
-              <>
-                <span>绿≥95% · 黄80–95% · 红&lt;80%</span>
-                <span style={{ marginLeft: 8, fontSize: 11, color: "var(--dimmed)" }}>
-                  点击条形钻取
-                </span>
-              </>
-            }
-            chart={
-              <ReactECharts
-                option={lotYieldOption}
-                style={{
-                  height: rankBarChartHeight(lotYieldData.length, 10, "medium"),
-                  width: "100%",
-                }}
-                opts={{ renderer: "canvas" }}
-                notMerge
-                lazyUpdate
-                onEvents={{
-                  click: (params: { dataIndex: number }) => {
-                    const entry = lotYieldData.slice(0, 10).reverse()[params.dataIndex];
-                    if (!entry) return;
-                    setSelectedLotLabel(entry.label);
-                    fetchDrill("lot", entry.lot, "cardId", form);
-                  },
-                }}
-              />
-            }
-            drill={
-              drills["lot"] != null ? (
-                <DrillDownPanel
-                  chartSize="medium"
-                  layout="side"
-                  title={`LOT: ${drills["lot"]!.parentDimVal} · 下钻：按 ${drills["lot"]!.subDim}`}
-                  groups={drills["lot"]!.groups}
-                  loading={drills["lot"]!.loading}
-                  error={drills["lot"]!.error}
-                  activeSubDim={drills["lot"]!.subDim}
-                  subDimOptions={DRILL_FROM_LOT}
-                  onSubDimChange={(d) =>
-                    fetchDrill("lot", drills["lot"]!.parentDimVal, d, form)
-                  }
-                  multiSelect={drills["lot"]!.subDim === "slot"}
-                  selectedKeys={drillBarSelectedKeys["lot"]}
-                  onBarToggle={(key) => toggleDrillBarKey("lot", drills["lot"]!, key)}
-                  interactive={drills["lot"]!.subDim === "slot"}
-                  onClose={() => closeDrillPanel("lot", () => setSelectedLotLabel(null))}
-                />
-              ) : null
-            }
-          />
-          </div>
-          <InfDutAnchorRow
-            infCtx={infCtx}
-            match={(a) => a.source === "lotYield"}
-            apiBase={apiBase}
-            onClose={closeInfDut}
-          />
-        </>
-      ) : null;
-
     const pcTypeSection = (
       <>
         <div className="report-chart-panel">
@@ -2091,7 +1902,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       kpi: kpiSection,
       funnel: funnelSection,
       device: deviceSection,
-      lotYield: lotYieldSection,
       underperformingDuts: underperformingDutsSection,
       pcType: pcTypeSection,
       tree: treeSection,
@@ -2104,8 +1914,6 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     worstCardType,
     topBin,
     worstCardId,
-    lotYieldData,
-    lotYieldOption,
     drills,
     form,
     fetchDrill,
