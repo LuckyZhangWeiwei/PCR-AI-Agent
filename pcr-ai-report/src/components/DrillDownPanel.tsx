@@ -3,13 +3,14 @@ import type { ReactNode } from "react";
 import { DarkChart } from "./DarkChart";
 import { formatChartDayLabel } from "../utils/datetimeLocal";
 import {
-  chartAccent,
-  chartAxisColor,
   drillBarChartHeight,
   horizontalBarCategoryAxisLabel,
   horizontalBarChartBase,
+  getChartPalette,
+  selectionTierColors,
   type BarChartHeightVariant,
 } from "../theme/chartTheme";
+import { useThemeContext } from "../theme/ThemeContext";
 import type { AggregateGroup } from "../api/types";
 
 type SubDimOption = { label: string; value: string };
@@ -45,10 +46,6 @@ type Props = {
   /** When true, clicking the chart is a real drill action — suppresses the prohibition cursor */
   interactive?: boolean;
 };
-
-const COL_PANEL = chartAccent;
-const COL_PANEL_B = "#2080ff";
-const COL_PANEL_D = "rgba(88,166,255,0.3)";
 
 /** Convert a parts map into a human-readable label, e.g. "Type 7744 · Bin 2" */
 export function formatGroupLabel(parts: Record<string, string>): string {
@@ -93,6 +90,9 @@ export function DrillDownPanel({
   chartSize = "default",
   interactive = false,
 }: Props) {
+  const { theme } = useThemeContext();
+  const chartPalette = getChartPalette(theme);
+  const { base: COL_PANEL, bright: COL_PANEL_B, dim: COL_PANEL_D } = selectionTierColors(theme, "blue-deep");
   const barHeightVariant: BarChartHeightVariant = compact ? "compact" : chartSize;
   const sorted = [...groups].sort((a, b) => a.count - b.count).slice(-10);
 
@@ -102,16 +102,16 @@ export function DrillDownPanel({
   });
 
   const option: EChartsOption = {
-    ...horizontalBarChartBase(),
+    ...horizontalBarChartBase(theme),
     xAxis: {
       type: "value",
-      axisLabel: { color: chartAxisColor, fontSize: 11 },
-      splitLine: { lineStyle: { color: "rgba(240,246,252,0.06)" } },
+      axisLabel: { color: chartPalette.axisColor, fontSize: 11 },
+      splitLine: { lineStyle: { color: chartPalette.splitLine } },
     },
     yAxis: {
       type: "category",
       data: labels,
-      axisLabel: { ...horizontalBarCategoryAxisLabel, interval: 0 },
+      axisLabel: { ...horizontalBarCategoryAxisLabel, interval: 0, color: chartPalette.axisColor },
     },
     series: [
       {
@@ -138,7 +138,7 @@ export function DrillDownPanel({
         label: {
           show: true,
           position: "right",
-          color: chartAxisColor,
+          color: chartPalette.axisColor,
           fontSize: 10,
         },
       },
@@ -149,9 +149,9 @@ export function DrillDownPanel({
     <div
       className={layout === "side" ? "chart-drill-panel chart-drill-panel--side" : undefined}
       style={{
-        border: "1px solid #388bfd",
+        border: "1px solid rgba(var(--accent-rgb),0.45)",
         borderRadius: 8,
-        background: "#0d1929",
+        background: "var(--surface-2)",
         padding: layout === "side" ? 8 : 12,
         marginTop: layout === "side" ? 0 : 8,
         minWidth: 0,
@@ -170,10 +170,10 @@ export function DrillDownPanel({
           flexWrap: "wrap",
         }}
       >
-        <span style={{ fontSize: 12, color: "#58a6ff", fontWeight: 600 }}>
+        <span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 600 }}>
           ↳ {title}
           {multiSelect && (selectedKeys?.size ?? 0) > 0 ? (
-            <span style={{ marginLeft: 8, color: "#8b949e", fontWeight: 400 }}>
+            <span style={{ marginLeft: 8, color: "var(--muted)", fontWeight: 400 }}>
               已选 {selectedKeys!.size} 项
             </span>
           ) : null}
@@ -187,9 +187,9 @@ export function DrillDownPanel({
               style={
                 opt.value === activeSubDim
                   ? {
-                      background: "rgba(56,139,253,0.2)",
-                      borderColor: "#388bfd",
-                      color: "#58a6ff",
+                      background: "rgba(var(--accent-rgb),0.2)",
+                      borderColor: "var(--accent)",
+                      color: "var(--accent)",
                     }
                   : undefined
               }
@@ -201,7 +201,7 @@ export function DrillDownPanel({
           <button
             type="button"
             className="chip"
-            style={{ color: "#ff7b72", borderColor: "rgba(248,81,73,0.3)" }}
+            style={{ color: "var(--red-text)", borderColor: "rgba(var(--red-rgb),0.3)" }}
             onClick={onClose}
           >
             ✕ 关闭
@@ -210,7 +210,7 @@ export function DrillDownPanel({
       </div>
 
       {!loading && error && (
-        <div style={{ color: "#ff7b72", fontSize: 12, padding: "8px 0" }}>
+        <div style={{ color: "var(--red-text)", fontSize: 12, padding: "8px 0" }}>
           {error}
         </div>
       )}
@@ -222,16 +222,16 @@ export function DrillDownPanel({
             justifyContent: "center",
             height:
               barHeightVariant === "compact" ? 96 : barHeightVariant === "medium" ? 108 : 120,
-            color: "#8b949e",
+            color: "var(--muted)",
             fontSize: 12,
-            background: "rgba(240,246,252,0.03)",
+            background: "rgba(var(--fg-rgb),0.03)",
             borderRadius: 4,
           }}
         >
           加载中…
         </div>
       ) : !error && groups.length === 0 ? (
-        <div style={{ color: "#8b949e", fontSize: 12, padding: "8px 0" }}>
+        <div style={{ color: "var(--muted)", fontSize: 12, padding: "8px 0" }}>
           暂无数据
         </div>
       ) : !error && groups.length > 0 ? (

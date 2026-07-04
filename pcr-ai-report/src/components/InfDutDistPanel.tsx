@@ -11,8 +11,10 @@ import { mergeSiteBinPasses } from "../utils/mergeSiteBinPasses";
 import type { InfDutWaferSpec } from "../utils/infDutSelection";
 import {
   baseChartOption,
-  chartAxisColor,
+  getChartPalette,
+  type ChartTheme,
 } from "../theme/chartTheme";
+import { useThemeContext } from "../theme/ThemeContext";
 
 type Props = {
   wafers: InfDutWaferSpec[];
@@ -71,7 +73,7 @@ function formatDutDistTooltipHtml(
       const isHovered =
         hoveredSeriesIndex != null && row.seriesIndex === hoveredSeriesIndex;
       const extraStyle = isHovered
-        ? "background:rgba(88,166,255,0.32);border-radius:4px;padding:2px 7px;margin:-2px -7px;font-weight:700;color:#fff;box-shadow:0 0 0 1px rgba(88,166,255,0.45);"
+        ? "background:rgba(var(--accent-rgb),0.32);border-radius:4px;padding:2px 7px;margin:-2px -7px;font-weight:700;color:#fff;box-shadow:0 0 0 1px rgba(var(--accent-rgb),0.45);"
         : "";
       const cls = isHovered ? "dut-tip-row dut-tip-row--hovered" : "dut-tip-row";
       return `<div class="${cls}" data-series-index="${row.seriesIndex}" style="white-space:nowrap;line-height:1.7;font-size:12px;display:flex;align-items:center;gap:7px;${extraStyle}">${row.html}</div>`;
@@ -100,9 +102,10 @@ function enlargeDutTooltipMarker(marker: string | undefined): string {
 
 /** 悬浮层挂到 body 并限制在视口内，避免被报表区域 overflow 裁切 */
 function dutDistTooltip(
+  theme: ChartTheme,
   hoveredSeriesRef?: { current: number | null }
 ): EChartsOption["tooltip"] {
-  const base = baseChartOption().tooltip as Record<string, unknown> | undefined;
+  const base = baseChartOption(theme).tooltip as Record<string, unknown> | undefined;
   return {
     ...base,
     trigger: "axis",
@@ -256,15 +259,19 @@ function DutDistHtmlLegend({
   );
 }
 
-const DUT_SERIES_EMPHASIS = {
-  focus: "series" as const,
-  itemStyle: {
-    borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.85)",
-    shadowBlur: 10,
-    shadowColor: "rgba(255,255,255,0.28)",
-  },
-};
+/** Halo/glow border+shadow must be recomputed per theme — a module-level static white rgba
+ * constant would never update on theme toggle (same bug class as the removed COL_PANEL constants). */
+function dutSeriesEmphasis(chartPalette: { haloRgb: string }) {
+  return {
+    focus: "series" as const,
+    itemStyle: {
+      borderWidth: 1.5,
+      borderColor: `rgba(${chartPalette.haloRgb},0.85)`,
+      shadowBlur: 10,
+      shadowColor: `rgba(${chartPalette.haloRgb},0.28)`,
+    },
+  };
+}
 
 const DUT_SERIES_BLUR = {
   itemStyle: { opacity: 0.16 },
@@ -294,11 +301,13 @@ function DutDistPassChart({
   focusBin,
   goodBinNumbers,
   chartHeight,
+  theme,
 }: {
   pass: SiteBinPass;
   focusBin?: string;
   goodBinNumbers?: ReadonlySet<number>;
   chartHeight: number;
+  theme: ChartTheme;
 }) {
   const chartRef = useRef<ECharts | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -370,10 +379,11 @@ function DutDistPassChart({
         goodBinNumbers,
         activeBinIndices,
         legendHoveredDut,
+        theme,
         hoveredSeriesIndexRef
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [pass, focusBin, goodBinNumbers, activeBinIndices, legendHoveredDut]
+    [pass, focusBin, goodBinNumbers, activeBinIndices, legendHoveredDut, theme]
   );
 
   // ── ECharts highlight helpers ─────────────────────────────────────────────
@@ -507,8 +517,10 @@ function buildDutChartOption(
   goodBinNumbers: ReadonlySet<number> | undefined,
   activeBinIndices: Set<number> | null,
   hoveredSeriesIndex: number | null,
+  theme: ChartTheme,
   hoveredSeriesRef?: { current: number | null }
 ): EChartsOption {
+  const chartPalette = getChartPalette(theme);
   const good = normalizeGoodBinSet(goodBinNumbers);
   const badBinEntries = pass.bins.filter((b) => !isGoodBinLabel(b.bin, good));
   const bins = badBinEntries.map((b) => b.bin);
@@ -552,8 +564,8 @@ function buildDutChartOption(
           itemStyle: {
             opacity: 1,
             shadowBlur: 14,
-            shadowColor: "rgba(255,255,255,0.55)",
-            borderColor: "rgba(255,255,255,0.75)",
+            shadowColor: `rgba(${chartPalette.haloRgb},0.55)`,
+            borderColor: `rgba(${chartPalette.haloRgb},0.75)`,
             borderWidth: 1.5,
           },
         };
@@ -570,12 +582,12 @@ function buildDutChartOption(
         itemStyle: opacity !== undefined ? { opacity } : undefined,
       };
     }),
-    emphasis: useCustomOpacity ? undefined : DUT_SERIES_EMPHASIS,
+    emphasis: useCustomOpacity ? undefined : dutSeriesEmphasis(chartPalette),
     blur: useCustomOpacity ? undefined : DUT_SERIES_BLUR,
   }));
 
   return {
-    ...baseChartOption(),
+    ...baseChartOption(theme),
     color: DUT_DIST_PALETTE,
     stateAnimation: { duration: 200, easing: "cubicOut" },
     grid: {
@@ -588,24 +600,24 @@ function buildDutChartOption(
     xAxis: {
       type: "category",
       data: bins,
-      axisLabel: { color: chartAxisColor, rotate: bins.length > 8 ? 30 : 0, fontSize: 11 },
+      axisLabel: { color: chartPalette.axisColor, rotate: bins.length > 8 ? 30 : 0, fontSize: 11 },
     },
     yAxis: {
       type: "value",
       name: "die count",
       nameLocation: "end",
       nameGap: 10,
-      nameTextStyle: { color: chartAxisColor, fontSize: 9, align: "left" },
+      nameTextStyle: { color: chartPalette.axisColor, fontSize: 9, align: "left" },
       axisLabel: {
-        color: chartAxisColor,
+        color: chartPalette.axisColor,
         fontSize: 9,
         margin: 10,
         hideOverlap: false,
       },
-      splitLine: { lineStyle: { color: "rgba(240,246,252,0.06)" } },
+      splitLine: { lineStyle: { color: chartPalette.splitLine } },
     },
     legend: { show: false },
-    tooltip: dutDistTooltip(hoveredSeriesRef),
+    tooltip: dutDistTooltip(theme, hoveredSeriesRef),
     series,
   };
 }
@@ -629,6 +641,7 @@ export function InfDutDistPanel({
   apiBase,
   onClose,
 }: Props) {
+  const { theme } = useThemeContext();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mergedPasses, setMergedPasses] = useState<SiteBinPass[] | null>(null);
@@ -707,12 +720,12 @@ export function InfDutDistPanel({
         <div
           style={{
             height: 100,
-            background: "rgba(240,246,252,0.04)",
+            background: "rgba(var(--fg-rgb),0.04)",
             borderRadius: 4,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            color: "#6e7681",
+            color: "var(--dimmed)",
             fontSize: 13,
           }}
         >
@@ -721,10 +734,10 @@ export function InfDutDistPanel({
       )}
 
       {!loading && error && (
-        <div style={{ color: "#f85149", fontSize: 13 }}>
+        <div style={{ color: "var(--red-text)", fontSize: 13 }}>
           <div>读取失败：{error}</div>
           {fetchPaths.length > 0 && (
-            <div style={{ marginTop: 4, fontSize: 11, color: "#6e7681" }}>
+            <div style={{ marginTop: 4, fontSize: 11, color: "var(--dimmed)" }}>
               {fetchPaths.map((p) => (
                 <div key={p}>{p}</div>
               ))}
@@ -736,7 +749,7 @@ export function InfDutDistPanel({
       {!loading && !error && mergedPasses && (
         <div>
           {mergedPasses.length === 0 && (
-            <div style={{ color: "#8b949e", fontSize: 13 }}>
+            <div style={{ color: "var(--muted)", fontSize: 13 }}>
               未找到匹配的 pass 数据
             </div>
           )}
@@ -745,12 +758,12 @@ export function InfDutDistPanel({
             return (
             <div key={pass.passId} style={{ marginBottom: 10 }}>
               <div
-                style={{ fontSize: 11, color: "#8b949e", marginBottom: 4 }}
+                style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}
               >
                 {passLabel(pass.passId)}
               </div>
               {passBad.bins.length === 0 ? (
-                <div style={{ color: "#6e7681", fontSize: 12 }}>
+                <div style={{ color: "var(--dimmed)", fontSize: 12 }}>
                   此 pass 无不良 bin 数据（良品 bin 已隐藏）
                 </div>
               ) : (
@@ -758,6 +771,7 @@ export function InfDutDistPanel({
                   pass={passBad}
                   focusBin={focusBin}
                   goodBinNumbers={goodBinNumbers}
+                  theme={theme}
                   chartHeight={(() => {
                     const xLbl = passBad.bins.length > 8 ? 34 : 20;
                     return dutDistChartHeight(passBad.bins.length, xLbl);
