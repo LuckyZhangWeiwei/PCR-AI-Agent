@@ -1494,6 +1494,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
           LOT:           r.LOT ?? "",
           SLOT:          r.SLOT ?? "",
           CARDID:        r.CARDID ?? "",
+          hostname:      r.TESTERID ?? "",
           PASSID:        r.PASSID ?? "",
           "Yield%":      yp !== null ? `${yp.toFixed(1)}%` : "—",
         },
@@ -1670,7 +1671,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         }}
         sections={{
           jbDevice: (
-            <KpiCard label="Device" value={deviceSummary} color="blue" subtext="匹配设备" showLabel={false} />
+            <KpiCard label="Device" value={deviceSummary} color="blue" subtext="匹配产品" showLabel={false} />
           ),
           jbLot: (
             <KpiCard label="Lot" value={lotSummary} color="green" subtext="匹配批次" showLabel={false} />
@@ -1955,6 +1956,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                 "LOT",
                 "SLOT",
                 "CARDID",
+                "hostname",
                 "PASSID",
                 "Yield%",
               ]}
