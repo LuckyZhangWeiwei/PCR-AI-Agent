@@ -12,6 +12,8 @@ import { listApisForceOracleNoDummy } from "./listDummyRuntime.js";
 import { probeCardTypeLeadingSegment } from "./probeCardTypeLeadingSegment.js";
 import { deviceBaseMask, deviceMatchesMask } from "./deviceMask.js";
 import { filterRowsByAppliedPlatform } from "./testerPlatform.js";
+import { parseBinFromTriggerLabel } from "./yieldTriggerLabelBin.js";
+import { parseDutNumberFromTriggerLabel } from "./yieldTriggerLabelDut.js";
 
 /** 与 Oracle 返回列一致（YMWEB_YIELDMONITORTRIGGER） */
 export type YieldMonitorTriggerDummyRow = {
@@ -277,6 +279,12 @@ function valueForYieldV3Dimension(
       const v = row.PROBECARDTYPE;
       if (v !== undefined && v !== null && v !== "") return String(v);
       return probeCardTypeLeadingSegment(row.PROBECARD) ?? "";
+    }
+    case "bin":
+      return parseBinFromTriggerLabel(row.TRIGGER_LABEL) ?? "";
+    case "dutNumber": {
+      const n = parseDutNumberFromTriggerLabel(row.TRIGGER_LABEL);
+      return n === null ? "" : String(n);
     }
     case "pass":
       return String(row.PASS);

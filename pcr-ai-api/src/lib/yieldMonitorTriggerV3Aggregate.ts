@@ -25,7 +25,11 @@ export type YieldMonitorV3AggDim =
   | "pass"
   | "triggerLabel"
   | "timeDay"
-  | "timeHour";
+  | "timeHour"
+  /** 从 **`TRIGGER_LABEL`** 中 **`Bin#`** 片段派生（数字原样；`goodbin` 归一化为小写），空为 **''** */
+  | "bin"
+  /** 从 **`TRIGGER_LABEL`** 中 **`on dut#`** 片段派生（与列表 **`dutNumber`** 同源正则），空为 **''** */
+  | "dutNumber";
 
 type ParseFail = { ok: false; error: string };
 type ParseOk = {
@@ -69,6 +73,8 @@ function parseDimToken(raw: string): YieldMonitorV3AggDim | undefined {
     triggerlabel: "triggerLabel",
     timeday: "timeDay",
     timehour: "timeHour",
+    bin: "bin",
+    dutnumber: "dutNumber",
   };
   return map[t];
 }
@@ -111,6 +117,20 @@ function dimSql(d: YieldMonitorV3AggDim): {
         grpKeyFrag:
           "NVL(REGEXP_SUBSTR(TRIM(t.PROBECARD), '^[^-]+', 1, 1), '')",
       };
+    case "bin":
+      return {
+        groupByExpr:
+          "NVL(LOWER(REGEXP_SUBSTR(t.TRIGGER_LABEL, 'Bin#\\s*([0-9]+|goodbin)', 1, 1, 'i', 1)), '')",
+        grpKeyFrag:
+          "NVL(LOWER(REGEXP_SUBSTR(t.TRIGGER_LABEL, 'Bin#\\s*([0-9]+|goodbin)', 1, 1, 'i', 1)), '')",
+      };
+    case "dutNumber":
+      return {
+        groupByExpr:
+          "NVL(REGEXP_SUBSTR(t.TRIGGER_LABEL, 'on\\s+dut#\\s*([0-9]+)', 1, 1, 'i', 1), '')",
+        grpKeyFrag:
+          "NVL(REGEXP_SUBSTR(t.TRIGGER_LABEL, 'on\\s+dut#\\s*([0-9]+)', 1, 1, 'i', 1), '')",
+      };
     case "pass":
       return {
         groupByExpr: "t.PASS",
@@ -148,7 +168,7 @@ const GRP_SEP = "|";
  * **Dummy**：Excel 样本在 Node 内按维度 **COUNT**（**`aggregateYieldMonitorV3DummyRows`**）。
  *
  * **必填**：**`dimensions`**（逗号分隔，至少 1 项，至多 5 项），取值：
- * `device`, `hostname`, `lotId`, `wafer`, `probeCard`, `probeCardType`, `pass`, `triggerLabel`, `timeDay`, `timeHour`。
+ * `device`, `hostname`, `lotId`, `wafer`, `probeCard`, `probeCardType`, `pass`, `triggerLabel`, `timeDay`, `timeHour`, `bin`, `dutNumber`。
  * **`timeDay`** 与 **`timeHour`** 不可同时出现。
  */
 export function parseYieldMonitorTriggerV3AggregateQuery(
@@ -159,7 +179,7 @@ export function parseYieldMonitorTriggerV3AggregateQuery(
     return {
       ok: false,
       error:
-        'Missing required "dimensions" (comma-separated: device, hostname, lotId, wafer, probeCard, probeCardType, pass, triggerLabel, timeDay, timeHour)',
+        'Missing required "dimensions" (comma-separated: device, hostname, lotId, wafer, probeCard, probeCardType, pass, triggerLabel, timeDay, timeHour, bin, dutNumber)',
     };
   }
 
