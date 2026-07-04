@@ -3,7 +3,7 @@
 > **执行者：** Cursor Agent（有真库 / 真 INF 盘访问）
 > **被测分支：** `feat/jb-route-resolver`（已推送 origin，未并 main），当前 HEAD `4643f77`
 > **背景：** 本文档合并两块待真库验证的内容——(A) 此前诊断 `NF12499.1N` 低良率 DUT 表「全 0 / 阈值 0%」时留下的 3 个口径问题；(B) 刚做完的 JB Star 明细表多选放宽（新增「同 Device + 同探针卡类型」跨 LOT 分组）。**Claude Code 沙箱无真库/无 INF 盘，以下问题必须由 Cursor 用真实数据回答，不能靠代码推断。**
-> **结论先行（给 Claude Code 回填）：** 见文末「回传格式」。把关键 SQL/curl 输出、截图描述或 UI 行为贴回 `scratchpad/realdb-dut-yield-multiselect-<日期>.txt` 或直接贴回对话。
+> **结论先行（给 Claude Code 回填）：** ✅ **已完成** — 见 [`HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-07-04_DUT_YIELD_MULTISELECT.md`](HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-07-04_DUT_YIELD_MULTISELECT.md) 与 [`scratchpad/realdb-dut-yield-multiselect-2026-07-04.txt`](../scratchpad/realdb-dut-yield-multiselect-2026-07-04.txt)。
 
 ---
 

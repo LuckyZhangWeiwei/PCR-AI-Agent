@@ -28,6 +28,8 @@
 
 ## 4. 待 Cursor 真库验证（Claude 沙箱无 INF 盘/真库，未改取数逻辑）
 
+> ✅ **Cursor 已完成（2026-07-04）：** [`HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-07-04_DUT_YIELD_MULTISELECT.md`](HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-07-04_DUT_YIELD_MULTISELECT.md) — pass1 良品为 **BIN55**（`PASSBIN=1-55`）；仅 `{BIN1}` 复现全 0；**建议取数改 JB PASSBIN 优先**。
+
 1. **`NF12499.1N` 的 `PASS_ID=1` 层到底是什么？** 是常温预测/bump 探针（非完整 TEST），还是完整测试但良品 bin ≠ BIN1？直接看 INF `r_1-17` 的 `iBinCodeLast`。
 2. **良品 bin 判定是否该改。** 单片/小样本场景下 `avg die per DUT > 100` 启发式失效。是否应改为「读 JB `goodBinIndicesForJbRow`（BIN1 + PASSBIN 段 + isGoodBin）作为良品 bin 来源」，而非 INF 侧启发式？——这会改动取数口径，**需 dummy-parity 双路径同步 + 真库回归**，故留给 Cursor 决策，Claude 未动。
 3. **pass 选择。** 默认 `passId=[1,3,5]` 会把没有良品数据的层也拉进来。是否应只分析「JB 有该 lot 良率数据」的 pass（如本例只 pass3）？同样改取数，留 Cursor。
