@@ -26,8 +26,9 @@ import { LotUnderperformingDutsPanel } from "../components/LotUnderperformingDut
 import { KpiCard } from "../components/KpiCard";
 import { TreeTable } from "../components/TreeTable";
 import {
-  chartAxisColor,
-  chartSplitLine,
+  getChartPalette,
+  getStatusTierColors,
+  selectionTierColors,
   horizontalBarCategoryAxisLabel,
   horizontalBarCategoryAxisLabelFull,
   horizontalBarChartBase,
@@ -35,6 +36,7 @@ import {
   rankBarChartHeight,
   verticalBarChartGrid,
 } from "../theme/chartTheme";
+import { useThemeContext } from "../theme/ThemeContext";
 import { datetimeLocalToIso, formatDatetimeChinaTime } from "../utils/datetimeLocal";
 import { drillFromTree, storeDrillTab } from "../utils/drillAggregate";
 import {
@@ -438,7 +440,7 @@ function infcontrolTreeYieldExtra(
         );
       })}
       {topBin && (
-        <span style={{ color: "#e0824a", opacity: 0.85 }}>
+        <span style={{ color: "var(--yellow)", opacity: 0.85 }}>
           · 主坏{topBin.bin}({topBin.pct}%)
         </span>
       )}
@@ -551,12 +553,12 @@ function reAggByUserDims(groups: AggregateGroup[], userDims: string[]): Aggregat
 type FunnelChainStep = { level: string; value: string };
 
 const FUNNEL_LEVEL_DEFS: ReadonlyArray<{ key: string; label: string; color: string }> = [
-  { key: "mask",   label: "Mask",      color: "#79c0ff" },
-  { key: "device", label: "Device",    color: "#d2a8ff" },
-  { key: "lot",    label: "Lot",       color: "#3fb950" },
-  { key: "passId", label: "Pass",      color: "#ff7b72" },
-  { key: "slot",   label: "Wafer ID",  color: "#e6b450" },
-  { key: "cardId", label: "ProbeCard", color: "#58a6ff" },
+  { key: "mask",   label: "Mask",      color: "var(--dim-mask)" },
+  { key: "device", label: "Device",    color: "var(--dim-device)" },
+  { key: "lot",    label: "Lot",       color: "var(--dim-lot)" },
+  { key: "passId", label: "Pass",      color: "var(--dim-pass)" },
+  { key: "slot",   label: "Wafer ID",  color: "var(--dim-slot)" },
+  { key: "cardId", label: "ProbeCard", color: "var(--dim-card)" },
 ];
 
 function funnelBadDie(row: InfcontrolLayerBinV3Row): number {
@@ -648,6 +650,8 @@ function FunnelDrillSection({
   lotLoading: boolean;
   lotError: string | null;
 }) {
+  const { theme } = useThemeContext();
+  const chartPalette = getChartPalette(theme);
   const isDut = chain.length >= FUNNEL_LEVEL_DEFS.length;
   const levelDef = isDut ? undefined : FUNNEL_LEVEL_DEFS[chain.length];
 
@@ -680,13 +684,13 @@ function FunnelDrillSection({
       return {
         displayItems: sorted,
         chartOption: {
-          ...horizontalBarChartBase(),
+          ...horizontalBarChartBase(theme),
           grid: verticalBarChartGrid,
           tooltip: {
             trigger: "axis",
-            backgroundColor: "#161b22",
-            borderColor: "#30363d",
-            textStyle: { color: "#e6edf3", fontSize: 12 },
+            backgroundColor: "var(--surface-1)",
+            borderColor: "var(--border)",
+            textStyle: { color: "var(--text)", fontSize: 12 },
             formatter: (p: unknown) => {
               const d = sorted[(p as Array<{ dataIndex: number }>)[0].dataIndex];
               return d ? `Wafer ID: <b>${d.value}</b><br/>Bad die: <b>${d.badDie}</b><br/>Yield: ${d.extraLabel}` : "";
@@ -695,12 +699,12 @@ function FunnelDrillSection({
           xAxis: {
             type: "category",
             data: sorted.map(d => d.value),
-            axisLabel: { color: chartAxisColor, fontSize: 10, rotate: 30 },
+            axisLabel: { color: chartPalette.axisColor, fontSize: 10, rotate: 30 },
           },
           yAxis: {
             type: "value",
-            axisLabel: { color: chartAxisColor },
-            splitLine: { lineStyle: { color: chartSplitLine } },
+            axisLabel: { color: chartPalette.axisColor },
+            splitLine: { lineStyle: { color: chartPalette.splitLine } },
           },
           series: [{
             type: "bar",
@@ -719,12 +723,12 @@ function FunnelDrillSection({
     return {
       displayItems: sorted,
       chartOption: {
-        ...horizontalBarChartBase(),
+        ...horizontalBarChartBase(theme),
         tooltip: {
           trigger: "axis",
-          backgroundColor: "#161b22",
-          borderColor: "#30363d",
-          textStyle: { color: "#e6edf3", fontSize: 12 },
+          backgroundColor: "var(--surface-1)",
+          borderColor: "var(--border)",
+          textStyle: { color: "var(--text)", fontSize: 12 },
           formatter: (p: unknown) => {
             const d = sorted[(p as Array<{ dataIndex: number }>)[0].dataIndex];
             if (!d) return "";
@@ -739,23 +743,23 @@ function FunnelDrillSection({
         },
         xAxis: {
           type: "value",
-          axisLabel: { color: chartAxisColor },
-          splitLine: { lineStyle: { color: chartSplitLine } },
+          axisLabel: { color: chartPalette.axisColor },
+          splitLine: { lineStyle: { color: chartPalette.splitLine } },
         },
         yAxis: {
           type: "category",
           data: sorted.map(d => d.value),
-          axisLabel: { ...horizontalBarCategoryAxisLabel, interval: 0 },
+          axisLabel: { ...horizontalBarCategoryAxisLabel, interval: 0, color: chartPalette.axisColor },
         },
         series: [{
           type: "bar",
           data: sorted.map(d => ({ value: d.badDie, itemStyle: { color, borderRadius: [0, 4, 4, 0] as unknown as number } })),
-          label: { show: true, position: "right", color: chartAxisColor, fontSize: 10 },
+          label: { show: true, position: "right", color: chartPalette.axisColor, fontSize: 10 },
           animationDuration: 600,
         }],
       },
     };
-  }, [bars, levelDef]);
+  }, [bars, levelDef, theme]);
 
   const handleBarClick = useCallback(
     (params: { dataIndex: number }) => {
@@ -858,7 +862,7 @@ function FunnelDrillSection({
         chain.length >= FUNNEL_DB_FETCH_FROM && lotLoading ? (
           <p className="muted small" style={{ margin: "12px 0" }}>正在从数据库加载批次所有 Wafer…</p>
         ) : chain.length >= FUNNEL_DB_FETCH_FROM && !!lotError ? (
-          <p style={{ color: "#ff7b72", fontSize: 12, margin: "12px 0" }}>{lotError}</p>
+          <p style={{ color: "var(--red-text)", fontSize: 12, margin: "12px 0" }}>{lotError}</p>
         ) : displayItems.length > 0 ? (
           <div className="report-chart-panel">
             <ReactECharts
@@ -899,6 +903,8 @@ function FunnelDrillSection({
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function InfcontrolReport({ apiBase, listLimits }: Props) {
+  const { theme } = useThemeContext();
+  const chartPalette = getChartPalette(theme);
   const [form, setForm] = useState<FormState>(initialForm);
   const [list,        setList]        = useState<InfcontrolLayerBinsV3Response | null>(null);
   const [aggBin,      setAggBin]      = useState<InfcontrolAggregateBlock | null>(null);
@@ -1299,13 +1305,13 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     // reverse: lowest yield ends up at top → reads low-to-high from top to bottom
     const data = lotYieldData.slice(0, 10).reverse();
     return {
-      ...horizontalBarChartBase(),
+      ...horizontalBarChartBase(theme),
       tooltip: {
         trigger: "axis",
         axisPointer: { type: "shadow" },
-        backgroundColor: "#161b22",
-        borderColor: "#30363d",
-        textStyle: { color: "#e6edf3", fontSize: 12 },
+        backgroundColor: "var(--surface-1)",
+        borderColor: "var(--border)",
+        textStyle: { color: "var(--text)", fontSize: 12 },
         formatter: (params: unknown) => {
           const p = (params as Array<{ dataIndex: number }>)[0];
           const d = data[p.dataIndex];
@@ -1322,8 +1328,8 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       xAxis: {
         type: "value",
         max: 100,
-        axisLabel: { color: chartAxisColor, formatter: "{value}%" },
-        splitLine: { lineStyle: { color: chartSplitLine } },
+        axisLabel: { color: chartPalette.axisColor, formatter: "{value}%" },
+        splitLine: { lineStyle: { color: chartPalette.splitLine } },
       },
       grid: {
         left: 8,
@@ -1335,15 +1341,17 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       yAxis: {
         type: "category",
         data: data.map((d) => d.lot),
-        axisLabel: { ...horizontalBarCategoryAxisLabelFull, interval: 0 },
+        axisLabel: { ...horizontalBarCategoryAxisLabelFull, interval: 0, color: chartPalette.axisColor },
       },
       series: [
         {
           type: "bar",
           data: data.map((d) => {
-            const base   = d.yieldPct >= 95 ? "#238636" : d.yieldPct >= 80 ? "#9e6a03" : "#da3633";
-            const bright = d.yieldPct >= 95 ? "#3fb950" : d.yieldPct >= 80 ? "#d29922" : "#f85149";
-            const dim    = d.yieldPct >= 95 ? "rgba(35,134,54,0.3)" : d.yieldPct >= 80 ? "rgba(158,106,3,0.3)" : "rgba(218,54,51,0.3)";
+            const tiers = getStatusTierColors(theme);
+            const tier = d.yieldPct >= 95 ? tiers.green : d.yieldPct >= 80 ? tiers.yellow : tiers.red;
+            const base = tier.border;
+            const bright = tier.bright;
+            const dim = tier.glow;
             const isSel  = selectedLotLabel === d.label;
             return {
               value: Number(d.yieldPct.toFixed(2)),
@@ -1356,7 +1364,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
           label: {
             show: true,
             position: "right",
-            color: chartAxisColor,
+            color: chartPalette.axisColor,
             fontSize: 10,
             formatter: "{c}%",
           },
@@ -1364,7 +1372,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         },
       ],
     };
-  }, [lotYieldData, selectedLotLabel]);
+  }, [lotYieldData, selectedLotLabel, theme]);
 
 
   // ProbeCard Type — sum bad-die per type (aggregate over bin dimension)
@@ -1375,18 +1383,18 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       typeBad.set(t, (typeBad.get(t) ?? 0) + g.count);
     }
     const sorted = [...typeBad.entries()].sort((a, b) => a[1] - b[1]).slice(-10);
-    const COL = "#e6b450", COL_B = "#ffd070", COL_D = "rgba(230,180,80,0.3)";
+    const { base: COL, bright: COL_B, dim: COL_D } = selectionTierColors(theme, "gold");
     return {
-      ...horizontalBarChartBase(),
+      ...horizontalBarChartBase(theme),
       xAxis: {
         type: "value",
-        axisLabel: { color: chartAxisColor },
-        splitLine: { lineStyle: { color: chartSplitLine } },
+        axisLabel: { color: chartPalette.axisColor },
+        splitLine: { lineStyle: { color: chartPalette.splitLine } },
       },
       yAxis: {
         type: "category",
         data: sorted.map(([t]) => t),
-        axisLabel: { ...horizontalBarCategoryAxisLabel, interval: 0 },
+        axisLabel: { ...horizontalBarCategoryAxisLabel, interval: 0, color: chartPalette.axisColor },
       },
       series: [
         {
@@ -1404,14 +1412,14 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
           label: {
             show: true,
             position: "right",
-            color: chartAxisColor,
+            color: chartPalette.axisColor,
             fontSize: 10,
           },
           animationDuration: 600,
         },
       ],
     };
-  }, [aggCardType, selectedCardType]);
+  }, [aggCardType, selectedCardType, theme]);
 
 
   const deviceOption = useMemo((): EChartsOption => {
@@ -1421,18 +1429,18 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       devBad.set(d, (devBad.get(d) ?? 0) + g.count);
     }
     const sorted = [...devBad.entries()].sort((a, b) => a[1] - b[1]).slice(-10);
-    const COL = "#79c0ff", COL_B = "#58a6ff", COL_D = "rgba(121,192,255,0.2)";
+    const { base: COL, bright: COL_B, dim: COL_D } = selectionTierColors(theme, "blue-light");
     return {
-      ...horizontalBarChartBase(),
+      ...horizontalBarChartBase(theme),
       xAxis: {
         type: "value",
-        axisLabel: { color: chartAxisColor },
-        splitLine: { lineStyle: { color: chartSplitLine } },
+        axisLabel: { color: chartPalette.axisColor },
+        splitLine: { lineStyle: { color: chartPalette.splitLine } },
       },
       yAxis: {
         type: "category",
         data: sorted.map(([d]) => d),
-        axisLabel: { ...horizontalBarCategoryAxisLabel, interval: 0 },
+        axisLabel: { ...horizontalBarCategoryAxisLabel, interval: 0, color: chartPalette.axisColor },
       },
       series: [
         {
@@ -1450,14 +1458,14 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
           label: {
             show: true,
             position: "right",
-            color: chartAxisColor,
+            color: chartPalette.axisColor,
             fontSize: 10,
           },
           animationDuration: 600,
         },
       ],
     };
-  }, [aggDevice, selectedDevice]);
+  }, [aggDevice, selectedDevice, theme]);
 
 
   // ── Tree: Mask → Device → LOT → ProbeCard Type → CardId ─────────────────
@@ -1704,7 +1712,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
             hint={
               <>
                 <span>绿≥95% · 黄80–95% · 红&lt;80%</span>
-                <span style={{ marginLeft: 8, fontSize: 11, color: "#6e7681" }}>
+                <span style={{ marginLeft: 8, fontSize: 11, color: "var(--dimmed)" }}>
                   点击条形钻取
                 </span>
               </>
@@ -1854,8 +1862,8 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       treeRoots.length > 0 ? (
         <div
           style={{
-            background: "#0d1117",
-            border: "1px solid rgba(240,246,252,0.1)",
+            background: "var(--bg)",
+            border: "1px solid var(--border)",
             borderRadius: 8,
             padding: 16,
           }}
@@ -1863,7 +1871,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
           <div
             style={{
               fontSize: 12,
-              color: "#8b949e",
+              color: "var(--muted)",
               marginBottom: showTree ? 10 : 0,
               cursor: "pointer",
               display: "flex",
@@ -1875,7 +1883,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
           >
             <span style={{ fontSize: 10, opacity: 0.6 }}>{showTree ? "▼" : "▶"}</span>
             Mask → Device → LOT → ProbeCard Type → CardId
-            <span style={{ fontSize: 11, color: "#6e7681", fontWeight: 400 }}>
+            <span style={{ fontSize: 11, color: "var(--dimmed)", fontWeight: 400 }}>
               {showTree ? "" : `— ${treeRoots.length} 组，点击展开`}
             </span>
           </div>
@@ -1896,8 +1904,8 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         <>
         <div
           style={{
-            background: "#0d1117",
-            border: "1px solid rgba(240,246,252,0.1)",
+            background: "var(--bg)",
+            border: "1px solid var(--border)",
             borderRadius: 8,
             padding: 16,
           }}
@@ -1905,7 +1913,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
           <div
             style={{
               fontSize: 12,
-              color: "#8b949e",
+              color: "var(--muted)",
               marginBottom: showDetail ? 8 : 0,
               cursor: "pointer",
               display: "flex",
@@ -1918,13 +1926,13 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
             <span style={{ fontSize: 10, opacity: 0.6 }}>{showDetail ? "▼" : "▶"}</span>
             共 {list?.count ?? 0} 条（含 PROBECARDTYPE / Yield%）· 勾选多行叠加 DUT 分布（须同一 Device + LOT）
             {detailSelectedListIndices.size > 0 ? (
-              <span style={{ marginLeft: 8, color: "#58a6ff" }}>
+              <span style={{ marginLeft: 8, color: "var(--accent)" }}>
                 已选 {detailSelectedListIndices.size} 行
               </span>
             ) : null}
           </div>
           {selectionHint ? (
-            <p className="field-hint" style={{ color: "#f85149", margin: "0 0 8px" }}>
+            <p className="field-hint" style={{ color: "var(--red-text)", margin: "0 0 8px" }}>
               {selectionHint}
             </p>
           ) : null}
@@ -2157,7 +2165,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                 onChange={(e) => setField("testEndFrom", e.target.value)}
                 style={{ flex: 1 }}
               />
-              <span style={{ color: "#8b949e", fontSize: 12 }}>→</span>
+              <span style={{ color: "var(--muted)", fontSize: 12 }}>→</span>
               <input
                 type="datetime-local"
                 value={form.testEndTo}
@@ -2286,9 +2294,9 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       {(errorList || errorAgg) && (
         <div
           style={{
-            color: "#ff7b72",
+            color: "var(--red-text)",
             fontSize: 13,
-            background: "rgba(248,81,73,0.08)",
+            background: "rgba(var(--red-rgb),0.08)",
             padding: "8px 12px",
             borderRadius: 6,
           }}
