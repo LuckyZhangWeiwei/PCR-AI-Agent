@@ -1939,6 +1939,37 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
               {selectionHint}
             </p>
           ) : null}
+          {detailSelectedListIndices.size > 0 && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+              {Array.from(detailSelectedListIndices).sort().map((idx) => {
+                const row = detailRows[idx];
+                if (!row) return null;
+                const label = `${row.LOT} / slot ${row.SLOT} / ${row.CARDID}`;
+                return (
+                  <div
+                    key={idx}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                      fontSize: 12,
+                      padding: "2px 8px",
+                      background: "rgba(var(--accent-rgb), 0.12)",
+                      border: "1px solid rgba(var(--accent-rgb), 0.25)",
+                      borderRadius: 4,
+                      cursor: "pointer",
+                      transition: "background 0.2s",
+                    }}
+                    onClick={() => toggleDetailListKey(idx)}
+                    title="点击删除"
+                  >
+                    {label}
+                    <span style={{ color: "var(--muted)", marginLeft: 4 }}>×</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           {showDetail && (
             <DataTable
               rows={detailRows}
