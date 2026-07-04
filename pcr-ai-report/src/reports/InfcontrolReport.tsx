@@ -1494,7 +1494,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
           LOT:           r.LOT ?? "",
           SLOT:          r.SLOT ?? "",
           CARDID:        r.CARDID ?? "",
-          hostname:      r.TESTERID ?? "",
+          HOSTNAME:      r.TESTERID ?? "",
           PASSID:        r.PASSID ?? "",
           "Yield%":      yp !== null ? `${yp.toFixed(1)}%` : "—",
         },
@@ -1987,7 +1987,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                 "LOT",
                 "SLOT",
                 "CARDID",
-                "hostname",
+                "HOSTNAME",
                 "PASSID",
                 "Yield%",
               ]}
