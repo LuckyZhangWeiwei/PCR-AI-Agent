@@ -49,8 +49,8 @@ import {
 import {
   buildInfDutCtxFromDetailListIndices,
   buildInfDutCtxFromDrillBarKeys,
+  canJoinDutSelectionGroup,
   normalizeBinToken,
-  sameDeviceLot,
   waferSpecFromJbRow,
   type InfDutAnchor,
   type InfDutSelectionCtx,
@@ -1401,8 +1401,8 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
             const firstIdx = [...next][0]!;
             const firstRow = listRowsForInf?.[firstIdx];
             const firstSpec = firstRow ? waferSpecFromJbRow(firstRow) : null;
-            if (firstSpec && !sameDeviceLot(firstSpec, spec)) {
-              setSelectionHint("仅可选同一 Device + LOT 的行");
+            if (firstSpec && !canJoinDutSelectionGroup(firstSpec, spec)) {
+              setSelectionHint("仅可选同一 Device + LOT，或同一 Device + 相同探针卡类型 的行");
               return prev;
             }
           }
@@ -1433,6 +1433,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       const next = new Set<number>();
       let device = "";
       let lot = "";
+      let probeCardType = "";
       for (const idx of indices) {
         const row = listRowsForInf[idx];
         if (!row) continue;
@@ -1441,8 +1442,9 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         if (!device) {
           device = spec.device;
           lot = spec.lot;
-        } else if (!sameDeviceLot({ device, lot }, spec)) {
-          setSelectionHint("仅可选同一 Device + LOT 的行");
+          probeCardType = spec.probeCardType;
+        } else if (!canJoinDutSelectionGroup({ device, lot, probeCardType }, spec)) {
+          setSelectionHint("仅可选同一 Device + LOT，或同一 Device + 相同探针卡类型 的行");
           return;
         }
         next.add(idx);
@@ -1738,7 +1740,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
             onClick={() => setShowDetail((s) => !s)}
           >
             <span style={{ fontSize: 10, opacity: 0.6 }}>{showDetail ? "▼" : "▶"}</span>
-            共 {list?.count ?? 0} 条（含 PROBECARDTYPE / Yield%）· 勾选多行叠加 DUT 分布（须同一 Device + LOT）
+            共 {list?.count ?? 0} 条（含 PROBECARDTYPE / Yield%）· 勾选多行叠加 DUT 分布（须同一 Device + LOT，或同一 Device + 相同探针卡类型）
             {detailSelectedListIndices.size > 0 ? (
               <span style={{ marginLeft: 8, color: "var(--accent)" }}>
                 已选 {detailSelectedListIndices.size} 行
