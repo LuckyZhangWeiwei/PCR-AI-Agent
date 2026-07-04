@@ -9,6 +9,7 @@ import {
   equipmentRouteCrossLotBail,
   equipmentRouteDutLevelBail,
   isDutBinConcentrationQuestion,
+  questionHasIdentifiableToolScope,
   renderAggregateJbBinsResult,
   tryRunSemanticDispatchDirectRoute,
   tryEmitUnderperformingDutScatter,
@@ -532,6 +533,16 @@ test("isDutBinConcentrationQuestion: 卡级归因让给 bin_card_attribution，D
   assert.equal(isDutBinConcentrationQuestion("bin35 哪个触点集中"), true);
   // 无 bin 编号 → false。
   assert.equal(isDutBinConcentrationQuestion("哪张卡良率最低"), false);
+});
+
+// 「模型只承诺查询、未真正调用工具」的代码兜底重试——用于判断问题是否含明确实体
+// （device/lot/cardId），若含且未调工具，视为违反 agentPrompt.ts 硬规则，应重试。
+test("questionHasIdentifiableToolScope: 探针卡/lot/device 均可识别，寒暄类问题不识别", () => {
+  assert.equal(questionHasIdentifiableToolScope("7772-01 的测试情况"), true); // cardId
+  assert.equal(questionHasIdentifiableToolScope("DR43782.1A 概况"), true); // lot
+  assert.equal(questionHasIdentifiableToolScope("WA03P02G 最近的测试情况"), true); // 完整 device 代码
+  assert.equal(questionHasIdentifiableToolScope("hello"), false);
+  assert.equal(questionHasIdentifiableToolScope("你好"), false);
 });
 
 test("tryEmitUnderperformingDutScatter: 每个有 baseline 的 pass emit 一个 chart 事件", () => {

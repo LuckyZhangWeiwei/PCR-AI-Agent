@@ -102,7 +102,7 @@ import {
 } from "./agentUnderperformingDutView.js";
 import type { PassUnderperformingDutsResult } from "../lotUnderperformingDuts.js";
 import { runLotUnderperformingDuts } from "../lotUnderperformingDutsResolve.js";
-import { buildScopeLabelFromAggregateArgs, findLastToolCallArgs, inferLotFromHistory } from "./agentQueryScope.js";
+import { buildScopeLabelFromAggregateArgs, findLastToolCallArgs, inferDeviceFromText, inferLotFromHistory } from "./agentQueryScope.js";
 import { deviceBaseMask } from "../deviceMask.js";
 import {
   buildInfDrawArgsAfterJbLookup,
@@ -1709,6 +1709,27 @@ const DUT_YIELD_CHART_NUDGE =
   "**禁止调用 `inf_draw_wafer_map`**（那是 die 坐标空间图，无法展示每 DUT 良率统计柱状）。";
 
 /**
+ * 首轮（非 awaitingSummary）用户问题里能否识别出 device / lot / cardId 之一。
+ * 用于事后检测「模型只说了要查、却没真正调用工具」——若问题里有明确实体，
+ * 正常应该立即触发工具调用（见 agentPrompt.ts 硬规则），没调用大概率是模型违反了该规则。
+ */
+export function questionHasIdentifiableToolScope(userQuestion: string): boolean {
+  return (
+    Boolean(extractLotFromUserText(userQuestion)) ||
+    Boolean(inferDeviceFromText(userQuestion)) ||
+    isCardProbeTestQuestion(userQuestion)
+  );
+}
+
+/**
+ * 模型在首轮只承诺"马上查"却没有真正调用任何工具时的纠正提示（一轮内最多用一次）。
+ * 与 agentPrompt.ts:208/259 的硬规则同义，用代码兜底——避免完全依赖模型遵守文字规则。
+ */
+const ANNOUNCEMENT_WITHOUT_ACTION_NUDGE =
+  "你上一条回复只说明了要查询（如「马上查」「现在查询」之类），但没有真正调用任何工具。" +
+  "现在必须**立即调用工具**取数，禁止再输出任何计划性/确认性文字。";
+
+/**
  * 判断用户是否在询问 BIN 对应的测试项（BIN→test item 映射）。
  * 该信息存储在测试程序（test program）中，不在 JB STAR / Yield Monitor 数据库里。
  * 必须同时满足：提到 BIN 编号 AND 问的是测试项/测试内容。
@@ -3298,6 +3319,8 @@ export async function runAgentLoop(
   ];
 
   const maxRounds = agentConfig.maxRounds;
+  // 首轮"只承诺查询、未真正调用工具"时的一次性纠正重试标记(跨 round 迭代持久)。
+  let announcementNudgeUsed = false;
   for (let round = 0; round < maxRounds; round++) {
     const history = getHistory(sessionId);
     const summary = getSummary(sessionId);
@@ -3601,9 +3624,13 @@ export async function runAgentLoop(
       summaryCtx === "dual_source" ? DUAL_SOURCE_SYNTHESIS_NUDGE
       : summaryCtx === "generic" ? GENERIC_STRUCTURED_SYNTHESIS_NUDGE
       : "";
+    const announcementNudge =
+      !awaitingSummary && announcementNudgeUsed
+        ? `\n\n${ANNOUNCEMENT_WITHOUT_ACTION_NUDGE}`
+        : "";
     const systemContent = awaitingSummary
       ? `${basePrompt}\n\n${SUMMARIZE_NUDGE}${summarySuffix}`
-      : `${basePrompt}${waferJbNudge}${dutBinNudge}${dutYieldChartNudge}${lotOverviewNudge}`;
+      : `${basePrompt}${waferJbNudge}${dutBinNudge}${dutYieldChartNudge}${lotOverviewNudge}${announcementNudge}`;
 
     const messages: ChatMessage[] = [
       { role: "system", content: systemContent },
@@ -3785,6 +3812,19 @@ export async function runAgentLoop(
     }
 
     if (finishReason !== "tool_calls" || toolCalls.length === 0) {
+      // 首轮模型只承诺"马上查"却未真正调用工具(见 agentPrompt.ts 硬规则)——
+      // 代码兜底重试一次:不落盘这条未完成的文字,加强系统提示后重新请求,而不是把
+      // "确认性文字"当成最终答案直接结束整轮对话。
+      if (
+        !awaitingSummary &&
+        !announcementNudgeUsed &&
+        round < maxRounds - 1 &&
+        questionHasIdentifiableToolScope(userQuestion)
+      ) {
+        announcementNudgeUsed = true;
+        emit({ type: "status", message: "检测到尚未真正查询，正在重新调用工具…" });
+        continue;
+      }
       if (awaitingSummary && !textBuffer.trim()) {
         const lastTool = lastToolMessage(getHistory(sessionId));
         if (lastTool?.name === "generate_chart") {
