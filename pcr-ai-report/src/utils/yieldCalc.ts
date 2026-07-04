@@ -303,3 +303,35 @@ export function dateShortcutThisMonth(): [string, string] {
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
   return [toDatetimeLocal(start), toDatetimeLocal(now)];
 }
+
+// ── Period window (周/月报警统计) ────────────────────────────────────────
+
+export type PeriodKey = "week" | "month";
+
+/**
+ * 当前周期窗口 + 等长的紧邻前一周期窗口（用于环比）。
+ * 本周 = 最近 7 天；本月 = 自然月 1 日至今。
+ * 环比窗口取与当前窗口等长的紧邻前段，使"本月至今 N 天" vs "上月同样 N 天"公平对比。
+ */
+export function periodWindow(
+  period: PeriodKey,
+  now: Date = new Date()
+): { start: Date; end: Date; prevStart: Date; prevEnd: Date } {
+  const end = now;
+  const start =
+    period === "week"
+      ? new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+      : new Date(now.getFullYear(), now.getMonth(), 1);
+  const durationMs = end.getTime() - start.getTime();
+  const prevEnd = start;
+  const prevStart = new Date(start.getTime() - durationMs);
+  return { start, end, prevStart, prevEnd };
+}
+
+/** 派生聚合维度 `bin` 的展示格式：数字 → `BIN n`；`goodbin` → `GOODBIN`；空 → `(未知)`。 */
+export function formatBinLabel(bin: string): string {
+  const v = bin.trim();
+  if (v === "") return "(未知)";
+  if (v.toLowerCase() === "goodbin") return "GOODBIN";
+  return `BIN ${v}`;
+}
