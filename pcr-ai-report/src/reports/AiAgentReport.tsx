@@ -769,12 +769,32 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
             type="button"
             className="ai-agent-btn-save"
             disabled={!sessionHasExportableContent(messages)}
-            onClick={() =>
+            onClick={() => {
+              const bg = theme === "light" ? "#ffffff" : "#141414";
+              // chart 消息附上其 ECharts 实例的 PNG（按消息下标取实例），一并写入 Markdown。
+              const exportable = messages.map((m, i) => {
+                if (m.kind === "chart") {
+                  let imageDataUrl: string | undefined;
+                  try {
+                    imageDataUrl = chartInstancesRef.current
+                      .get(i)
+                      ?.getDataURL({ type: "png", pixelRatio: 2, backgroundColor: bg });
+                  } catch {
+                    imageDataUrl = undefined;
+                  }
+                  return { kind: m.kind, imageDataUrl };
+                }
+                return {
+                  kind: m.kind,
+                  text: (m as { text?: string }).text,
+                  streaming: (m as { streaming?: boolean }).streaming,
+                };
+              });
               downloadMarkdown(
-                buildSessionMarkdown(messages, "AI Agent 会话"),
+                buildSessionMarkdown(exportable, "AI Agent 会话"),
                 "AI Agent 会话"
-              )
-            }
+              );
+            }}
             title="保存整个会话为 Markdown（仅问答，不含工具/内部信息）"
           >
             ⤓ 保存
