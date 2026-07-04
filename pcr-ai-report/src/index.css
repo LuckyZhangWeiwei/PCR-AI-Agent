@@ -563,7 +563,7 @@ code {
 .btn:active:not(:disabled) { transform: translateY(1px); }
 
 .btn.primary {
-  color: var(--bg);
+  color: #0d1117;
   background: linear-gradient(135deg, #79c0ff 0%, #a371f7 100%);
   box-shadow: 0 4px 16px rgba(var(--accent-rgb),0.2);
 }
@@ -1146,7 +1146,7 @@ button.chip:hover {
   min-width: 0;
   max-width: 100%;
   border: 1px solid rgba(var(--fg-rgb),0.16);
-  background: rgba(22, 27, 34, 0.45);
+  background: rgba(var(--fg-rgb),0.06);
   box-sizing: border-box;
   position: relative;
   z-index: 0;
@@ -1292,14 +1292,14 @@ button.chip:hover {
   padding: 6px;
   border-radius: var(--radius-sm);
   border: 1px dashed rgba(var(--accent-rgb),0.32);
-  background: rgba(13, 17, 23, 0.55);
+  background: var(--surface-2);
   box-sizing: border-box;
 }
 
 .report-reorder-group--kpis .report-reorder-item,
 .report-reorder-group--chartgrid .report-reorder-item {
   border-color: rgba(var(--fg-rgb),0.1);
-  background: rgba(13, 17, 23, 0.35);
+  background: rgba(var(--fg-rgb),0.04);
   padding: 6px;
 }
 
