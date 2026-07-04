@@ -1799,14 +1799,12 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         </div>
       )}
 
-      {hasData && (
-        <DraggableReportSections
-            storageKey="pcr-ai-report:yield-monitor-modules"
-            defaultOrder={YIELD_REPORT_SECTION_ORDER}
-            sections={yieldReportSections}
-            layoutEpoch={layoutEpoch}
-          />
-      )}
+      <DraggableReportSections
+          storageKey="pcr-ai-report:yield-monitor-modules"
+          defaultOrder={YIELD_REPORT_SECTION_ORDER}
+          sections={yieldReportSections}
+          layoutEpoch={layoutEpoch}
+        />
     </div>
   );
 }
