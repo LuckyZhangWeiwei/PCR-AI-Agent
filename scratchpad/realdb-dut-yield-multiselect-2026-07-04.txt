@@ -1,0 +1,58 @@
+环境：分支 commit = 0f13cee，API = http://10.192.130.89:30008（真 Oracle + INF），验证时间 = 2026-07-04T09:01+08:00
+说明：Part B 浏览器 UI（tag/提示文案）未在本机点开 JB Star 页，API 层与 canJoinDutSelectionGroup 逻辑已核；Agent 测试 model = deepseek-ai/DeepSeek-V4-Flash
+
+Part A（DUT 低良率阈值口径）
+
+  A1 NF12499.1N PASS_ID=1：
+    lot 级 REST（25 片聚合）：pass1 baseline=95.1% threshold=71.32% 24 DUT 无 underperformer；pass3 baseline=99.69%；pass5 无数据
+    单片 slot17 INF pass1（r_1-17，curl site-bin-bylot passId=1）：
+      - bin 分布：bin55 die=2856（24 DUT），bin4/6/7/8 等为坏 bin；pass1 层 **无任何 die 落入 BIN1**
+      - pass3 slot17：bin1 die=2855 → 良率 99.79%（与 JB 头部一致）
+    JB slot17 pass1：PASSTYPE=TEST（完整测试层），PASSBIN=1-55，CARDID=8041-01
+    良品 bin 口径实验（slot17 pass1 手工复算）：
+      - goodBins={1} only → lotOverall=0%，24/24 DUT good=0（复现 handoff「全 0」根因）
+      - goodBins={1,55} → lotOverall=96.13%，与 JB 逐片表 slot17 pass1 96.13% 一致
+    结论：PASS_ID=1 **是**可信完整 TEST 层，但 **良品 bin 不是 BIN1**，主良品为 **BIN55**（JB PASSBIN 亦写 1-55）。此前「全 0 / 阈值 0%」是取数只用 BIN1（启发式在更小样本或未识别 bin55 时退化）导致，不是 pass 映射错误。
+
+  A2 良品bin口径对比（3 个 lot）：
+    lot=NF12499.1N pass1: INF启发式=[1,55] vs JB PASSBIN行=[1]（JB 行未展开 PASSBIN 段时仅 BIN1；PASSBIN 字段实际 1-55 → 应为 [1,55]）→ 若 JB 用 goodBinIndicesForJbRow 读 PASSBIN 则与 INF 启发式在 lot 级一致；单片 slot17 在仅 {1} 时灾难性不一致
+    lot=NF13537.1F: INF=[1,250] vs JB=[1,55,250] → JB 多 55
+    lot=TR24421.1H: INF=[1] vs JB=[1] → 一致
+    建议：**应改** — 有 JB 行时优先 `goodBinIndicesForJbRow`（PASSBIN + isGoodBin），INF 启发式仅兜底；需 dummy-parity + 产品确认后再动代码
+
+  A3 passId范围抽样（10 lot，11 pass 检查）：空 baseline / 无数据比例 = 0.0%（0/11）
+    样例 lot 含 NF12499.1N、NF13537.1F、TR24421.1H 等；NF12499.1N pass5 仍无 pass 块（非 baseline=0 而是缺失）
+    建议：**维持**默认 passId=[1,3,5]；pass5 缺失比例低，可文档说明「无 JB/INF 数据的 pass 跳过」即可，不必窄化默认
+
+Part B（JB Star 跨LOT多选）
+
+  B1 真实"同device+同探针卡类型+不同LOT"组合：
+    device=WA12N36S probeCardType=6052
+    lotA=NF13473.1X slot20 CARDID=6052-04
+    lotB=NF13507.1K slot15 CARDID=6052-05
+
+  B2 UI/API 验证：
+    - 跨LOT勾选（canJoinDutSelectionGroup）：device 相同 + probeCardType=6052 相同 → **应允许**（逻辑 PASS）
+    - Network：site-bin-bylot **2 次**，infPath 分别为：
+      1) /data/INF/WA12N36S/NF13473.1X/r_1-20&passId=1
+      2) /data/INF/WA12N36S/NF13507.1K/r_1-15&passId=1
+      两次均 HTTP 200，各 1 pass
+    - DUT×Bin 抽查：BIN2 DUT0 waferA=4 die、waferB=1 die（独立 INF，合并图应显示 5）→ **吻合**
+    - selectionSummary 预期文案（代码）：「2 片 · 2 个 LOT · Slot 20, 15」— **未在浏览器实测 tag/文案**
+    - 浏览器 UI tag / 拒绝提示：**未测**（需 JB Star 页人工点选）
+
+  B3 回归（同LOT不同 waferId）：
+    lot=NF13473.1X slot20 + slot15 各调 site-bin-bylot → 均 200，totalDie 7052，**API 正常**
+
+  B4 拒绝场景：
+    代码逻辑：不同 device → false；同 device 但不同 LOT 且 probeCardType 不同 → false
+    提示文案（InfcontrolReport）：「仅可选同一 Device + LOT，或同一 Device + 相同探针卡类型 的行」— **未在浏览器实测**
+
+Agent 补充（DeepSeek-V4-Flash，真库）
+  - 问「NF12499.1N 各 DUT 良率 / 75% 阈值」→ 仅调 query_jb_bins，**未调** query_lot_underperforming_duts；回复称「无 INF DUT map」——与 REST 已有低良率 API 不一致
+  - 明确要求「请用 query_lot_underperforming_duts」→ 仍走 lot_listing / query_jb_bins，**未执行**该工具
+  - 结论：Agent 路由/工具选择待修（非本次 Part A/B 口径验证 blocker）
+
+总判：
+  Part A：**需要改代码**（取数良品 bin 应跟 JB PASSBIN/goodBinIndicesForJbRow；展示层 0% 退化守卫已够用）
+  Part B：**API 层无 bug**；跨 LOT 双 infPath 正确；**UI 点选/tag/拒绝提示需人工补验**（或下轮带浏览器）
