@@ -87,7 +87,7 @@
 
 .data-table-check-col input[type="checkbox"] {
   cursor: pointer;
-  accent-color: #58a6ff;
+  accent-color: var(--accent);
 }
 
 /* ── Column filter row ───────────────────────────────────────────────── */
@@ -103,10 +103,10 @@
 .data-table-filter-input {
   width: 100%;
   box-sizing: border-box;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(var(--fg-rgb), 0.06);
+  border: 1px solid rgba(var(--fg-rgb), 0.12);
   border-radius: 4px;
-  color: #e6edf3;
+  color: var(--text);
   font-size: 11px;
   padding: 3px 7px;
   outline: none;
@@ -114,7 +114,7 @@
 }
 
 .data-table-filter-input::placeholder {
-  color: rgba(255, 255, 255, 0.28);
+  color: rgba(var(--fg-rgb), 0.28);
 }
 
 .data-table-filter-input:focus {

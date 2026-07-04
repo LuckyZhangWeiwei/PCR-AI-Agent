@@ -1,7 +1,7 @@
 .query-inspector {
   border-radius: 12px;
   border: 1px solid var(--border);
-  background: rgba(240, 246, 252, 0.03);
+  background: rgba(var(--fg-rgb), 0.03);
   padding: 4px 12px 12px;
 }
 
