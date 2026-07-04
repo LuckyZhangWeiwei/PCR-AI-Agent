@@ -6,11 +6,11 @@ const COLOR_MAP: Record<
   KpiColor,
   { border: string; glow: string; text: string }
 > = {
-  blue:   { border: "#388bfd", glow: "rgba(56,139,253,0.3)",   text: "#58a6ff" },
-  green:  { border: "#238636", glow: "rgba(63,185,80,0.25)",   text: "#3fb950" },
-  red:    { border: "#da3633", glow: "rgba(248,81,73,0.3)",    text: "#ff7b72" },
-  yellow: { border: "#9e6a03", glow: "rgba(210,153,34,0.3)",   text: "#d29922" },
-  white:  { border: "rgba(240,246,252,0.1)", glow: "transparent", text: "#e6edf3" },
+  blue:   { border: "rgba(var(--accent-rgb),0.55)", glow: "rgba(var(--accent-rgb),0.3)", text: "var(--accent)" },
+  green:  { border: "rgba(var(--green-rgb),0.55)",  glow: "rgba(var(--green-rgb),0.25)", text: "var(--green)" },
+  red:    { border: "rgba(var(--red-rgb),0.55)",    glow: "rgba(var(--red-rgb),0.3)",    text: "var(--red-text)" },
+  yellow: { border: "rgba(var(--yellow-rgb),0.55)", glow: "rgba(var(--yellow-rgb),0.3)", text: "var(--yellow)" },
+  white:  { border: "var(--border)", glow: "transparent", text: "var(--text)" },
 };
 
 type Props = {
@@ -40,7 +40,7 @@ export function KpiCard({
     <div
       className={showLabel ? "kpi-card" : "kpi-card kpi-card--in-strip"}
       style={{
-        background: "#0d1117",
+        background: "var(--bg)",
         border: `1px solid ${c.border}`,
         borderRadius: 8,
         padding: "12px 16px",
@@ -49,7 +49,7 @@ export function KpiCard({
       }}
     >
       {showLabel && (
-        <div style={{ fontSize: 11, color: "#8b949e", marginBottom: 4 }}>
+        <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>
           {label}
         </div>
       )}
@@ -64,8 +64,8 @@ export function KpiCard({
           : value}
       </div>
       {(subtext || !showLabel) && (
-        <div className="kpi-card-subtext" style={{ fontSize: 11, color: "#8b949e", marginTop: 2 }}>
-          {subtext ?? "\u00a0"}
+        <div className="kpi-card-subtext" style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+          {subtext ?? " "}
         </div>
       )}
     </div>

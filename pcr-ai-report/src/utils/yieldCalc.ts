@@ -173,10 +173,10 @@ export function computeYieldPct(rows: JbYieldRow[]): number | null {
 
 /** Color based on yield%: ≥95 green, 80-95 yellow/orange, <80 red. */
 export function yieldColor(pct: number | null): string {
-  if (pct === null) return "#8b949e";
-  if (pct >= 95) return "#3fb950";
-  if (pct >= 80) return "#d29922";
-  return "#ff7b72";
+  if (pct === null) return "var(--muted)";
+  if (pct >= 95) return "var(--green)";
+  if (pct >= 80) return "var(--yellow)";
+  return "var(--red-text)";
 }
 
 // ── DUT parsing ────────────────────────────────────────────────────────────

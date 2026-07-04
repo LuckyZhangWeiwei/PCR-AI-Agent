@@ -95,19 +95,19 @@ export function LotUnderperformingDutsPanel({
     <div
       className="report-chart-panel"
       style={{
-        background: "#0d1117",
-        border: "1px solid rgba(240,246,252,0.1)",
+        background: "var(--bg)",
+        border: "1px solid var(--border)",
         borderRadius: 8,
         padding: 16,
       }}
     >
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: "#e6edf3" }}>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: "var(--text)" }}>
         低良率 DUT（DUT 良率 &lt; lot 整体 × {thresholdRatio}）
       </div>
       {loading ? (
         <p className="muted small">正在加载 INF DUT 良率…</p>
       ) : error ? (
-        <p style={{ color: "#f85149", fontSize: 12 }}>{error}</p>
+        <p style={{ color: "var(--red-text)", fontSize: 12 }}>{error}</p>
       ) : data ? (
         <>
           <p className="muted small" style={{ margin: "0 0 12px" }}>
@@ -116,7 +116,7 @@ export function LotUnderperformingDutsPanel({
           </p>
           {data.passes.map((pass) => (
             <div key={pass.passId} style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 6 }}>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>
                 {pass.sortLabel}
                 {pass.baseline
                   ? ` — lot 整体 ${pass.baseline.yieldPct}% · 阈值 ${pass.baseline.thresholdPct}%`
