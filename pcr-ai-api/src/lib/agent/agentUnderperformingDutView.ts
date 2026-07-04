@@ -5,9 +5,22 @@
  * 数据来自昨天的 computeUnderperformingDutsForPass；本模块不取数、不碰 SQL/Dummy/REST。
  */
 
-import type { PassUnderperformingDutsResult } from "../lotUnderperformingDuts.js";
+import type {
+  DutYieldEntry,
+  PassUnderperformingDutsResult,
+} from "../lotUnderperformingDuts.js";
 
 const RED_DOT = "🔴";
+
+/** 每行并排显示的 DUT 组数（多列，缩短长列表行数）。 */
+const DUTS_PER_ROW = 3;
+
+/** 一个 DUT 的三列单元（DUT | 良率% | good/total）；低于阈值时 🔴+加粗。 */
+function dutCellTriple(d: DutYieldEntry, flag: boolean): string {
+  return flag
+    ? `${RED_DOT} **DUT${d.dut}** | **${d.yieldPct}** | **${d.goodDie}/${d.totalDie}**`
+    : `DUT${d.dut} | ${d.yieldPct} | ${d.goodDie}/${d.totalDie}`;
+}
 
 export function formatAllDutsHighlightMarkdown(
   passResults: PassUnderperformingDutsResult[],
@@ -23,23 +36,25 @@ export function formatAllDutsHighlightMarkdown(
       (a, b) => a.yieldPct - b.yieldPct || a.dut - b.dut
     );
 
-    // Check if there are any underperforming DUTs
-    const hasUnderperforming = rows.some(d => d.yieldPct < threshold);
+    // 退化情形：整体良率 0%（无良品 die 落入良品 bin）→ 相对阈值恒为 0，
+    // 严格小于永不成立，勿显示误导性的「全部达标」，改为异常提示。
+    const degenerate = avg <= 0;
+    const hasUnderperforming = !degenerate && rows.some((d) => d.yieldPct < threshold);
 
-    const lines = [
-      `### ${pass.sortLabel} — lot 整体 ${avg}% · 阈值 ${threshold}%（${hasUnderperforming ? `低于阈值 ${RED_DOT} 标注` : "全部达标"})`,
-      "",
-      "| DUT | 良率% | good/total | 状态 |",
-      "|:--|---:|---:|:--|",
-    ];
-    for (const d of rows) {
-      if (d.yieldPct < threshold) {
-        lines.push(
-          `| ${RED_DOT} **DUT${d.dut}** | **${d.yieldPct}** | **${d.goodDie}/${d.totalDie}** | **低于阈值** |`
-        );
-      } else {
-        lines.push(`| DUT${d.dut} | ${d.yieldPct} | ${d.goodDie}/${d.totalDie} |  |`);
-      }
+    const header = degenerate
+      ? `### ${pass.sortLabel} — ⚠️ 整体良率 0%（无良品 die 落入良品 bin），无法按相对阈值判别；疑该测试层非完整 TEST 层或良品 bin 非 BIN1，请核对 pass/bin 口径`
+      : `### ${pass.sortLabel} — lot 整体 ${avg}% · 阈值 ${threshold}%（${hasUnderperforming ? `低于阈值 ${RED_DOT} 标注` : "全部达标"}）`;
+
+    // 多列表格：每行并排 DUTS_PER_ROW 个 DUT，每个 DUT 占「DUT | 良率% | good/total」三列。
+    const headerCells = Array.from({ length: DUTS_PER_ROW }, () => "DUT | 良率% | good/total").join(" | ");
+    const sepCells = Array.from({ length: DUTS_PER_ROW }, () => ":--|---:|---:").join("|");
+    const lines = [header, "", `| ${headerCells} |`, `|${sepCells}|`];
+
+    for (let i = 0; i < rows.length; i += DUTS_PER_ROW) {
+      const group = rows.slice(i, i + DUTS_PER_ROW);
+      const cells = group.map((d) => dutCellTriple(d, !degenerate && d.yieldPct < threshold));
+      while (cells.length < DUTS_PER_ROW) cells.push("  |  |  "); // 末行补空的三列
+      lines.push(`| ${cells.join(" | ")} |`);
     }
     blocks.push(lines.join("\n"));
   }
