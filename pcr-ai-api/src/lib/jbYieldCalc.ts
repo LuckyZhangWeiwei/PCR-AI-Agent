@@ -67,6 +67,28 @@ export function goodBinIndicesForJbRow(row: Record<string, unknown>): Set<number
   return good;
 }
 
+/**
+ * 该行是否提供了「BIN1 硬编码良品」之外的良品 bin 信号（PASSBIN 段可解析出至少一个下标，
+ * 或 bins[] 中某非 BIN1 列被标记 isGoodBin）。
+ *
+ * 用途：区分「JB 已确认良品 bin」与「JB 无信息、只是硬编码 BIN1 兜底」——
+ * 后者不应被当作权威结果使用（否则 PASSBIN 为空/未取到时，会把「无信息」误判为
+ * 「良品 bin 只有 BIN1」，导致真实良品 bin 非 BIN1 的 lot 整体良率恒为 0%）。
+ */
+export function jbRowHasExtraGoodBinSignal(row: Record<string, unknown>): boolean {
+  const passBin =
+    row.PASSBIN ?? row.passbin ?? row.PassBin ?? row.PASS_BIN;
+  if (parsePassBinHyphenGoodBins(passBin).size > 0) return true;
+
+  for (const cell of binsArrayFromJbRow(row)) {
+    const c = cell as BinCell;
+    const n = Number(c.n ?? (c as { bin?: number }).bin);
+    if (n === JB_HARD_GOOD_BIN) continue;
+    if (c.isGoodBin === true || c.isGood === true) return true;
+  }
+  return false;
+}
+
 /** 单行坏 die 合计（仅非良品 bin 列）。 */
 export function badDieFromJbRow(row: Record<string, unknown>): number {
   const good = goodBinIndicesForJbRow(row);

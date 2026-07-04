@@ -7,7 +7,7 @@ import {
   parseUnderperformingThresholdRatio,
   type PassUnderperformingDutsResult,
 } from "./lotUnderperformingDuts.js";
-import { goodBinIndicesForJbRow } from "./jbYieldCalc.js";
+import { goodBinIndicesForJbRow, jbRowHasExtraGoodBinSignal } from "./jbYieldCalc.js";
 import {
   getInfcontrolLayerBinDummyRows,
   infcontrolLayerBinsUseDummy,
@@ -88,11 +88,23 @@ function jbTestRowsForLot(device: string, lot: string, passIds: number[]) {
   });
 }
 
-/** 合并 lot 内各 wafer JB 行的良品 bin（PASSBIN 段 + isGoodBin），按 passId 分组。 */
+/**
+ * 合并 lot 内各 wafer JB 行的良品 bin（PASSBIN 段 + isGoodBin），按 passId 分组。
+ *
+ * 仅当某 passId 至少一行提供了「BIN1 之外」的良品 bin 信号（见
+ * `jbRowHasExtraGoodBinSignal`）时，才把该 passId 计入返回结果；否则不计入，
+ * 交由 `resolveGoodBinsForPass` 回退 INF 启发式。
+ *
+ * 原因：`goodBinIndicesForJbRow` 恒会硬编码加入 BIN1，若直接按「结果集合非空」判定
+ * 「JB 已给出良品 bin」，会把「PASSBIN 为空/未取到（无信息）」误判为「JB 确认良品 bin
+ * 只有 BIN1」——当该 lot 真实良品 bin 并非 BIN1 时（如 PASSBIN 字段为 null），会导致
+ * 整 pass 良率恒为 0% 且不再尝试 INF 启发式。
+ */
 export function buildGoodBinsByPassFromJbRows(
   rows: ReadonlyArray<Record<string, unknown>>
 ): Map<number, Set<number>> {
   const byPass = new Map<number, Set<number>>();
+  const hasSignalByPass = new Set<number>();
   for (const row of rows) {
     const passId = Number(row.PASSID ?? row.passId);
     if (!Number.isInteger(passId)) continue;
@@ -103,6 +115,10 @@ export function buildGoodBinsByPassFromJbRows(
       byPass.set(passId, set);
     }
     for (const n of good) set.add(n);
+    if (jbRowHasExtraGoodBinSignal(row)) hasSignalByPass.add(passId);
+  }
+  for (const passId of [...byPass.keys()]) {
+    if (!hasSignalByPass.has(passId)) byPass.delete(passId);
   }
   return byPass;
 }

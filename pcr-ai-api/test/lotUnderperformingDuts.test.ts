@@ -141,6 +141,19 @@ describe("buildGoodBinsByPassFromJbRows", () => {
     assert.deepEqual([...map.get(1)!].sort((a, b) => a - b), [1, 55]);
     assert.deepEqual([...map.get(3)!].sort((a, b) => a - b), [1]);
   });
+
+  // 回归：PASSBIN 为空/未取到（无信息）时不应把 passId 计入 map（否则会被
+  // resolveGoodBinsForPass 当成「JB 确认良品 bin 只有 BIN1」，跳过 INF 启发式回退，
+  // 导致真实良品 bin 非 BIN1 的 lot 整体良率恒为 0%——NF12595.1A 类问题的根因）。
+  test("passId with no PASSBIN signal on any row is omitted (caller falls back to INF heuristic)", () => {
+    const map = buildGoodBinsByPassFromJbRows([
+      { PASSID: 1, PASSBIN: null },
+      { PASSID: 1, PASSBIN: "" },
+      { PASSID: 3, PASSBIN: "1-55" },
+    ]);
+    assert.equal(map.has(1), false);
+    assert.deepEqual([...map.get(3)!].sort((a, b) => a - b), [1, 55]);
+  });
 });
 
 describe("GET /inf-analysis/lot-underperforming-duts route", () => {
