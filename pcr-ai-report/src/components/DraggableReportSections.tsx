@@ -231,6 +231,7 @@ function usePersistedBlockLayout(
   );
 
   const activeSet = useMemo(() => new Set(activeIds), [activeIds]);
+  const canonicalSet = useMemo(() => new Set(defaultOrder), [defaultOrder]);
 
   const loadOrder = useCallback(
     () => normalizeOrder(readJsonStringArray(storageKey), defaultOrder),
@@ -238,8 +239,8 @@ function usePersistedBlockLayout(
   );
 
   const loadHidden = useCallback(
-    () => normalizeHidden(readJsonStringArray(hiddenStorageKey(storageKey)), activeSet),
-    [storageKey, activeSet],
+    () => normalizeHidden(readJsonStringArray(hiddenStorageKey(storageKey)), canonicalSet),
+    [storageKey, canonicalSet],
   );
 
   const [order, setOrder] = useState<string[]>(loadOrder);
