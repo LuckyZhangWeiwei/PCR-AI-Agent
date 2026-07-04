@@ -54,7 +54,7 @@
 }
 
 .data-table tr:hover td {
-  background: rgba(88, 166, 255, 0.06);
+  background: rgba(var(--accent-rgb), 0.06);
 }
 
 .data-table tr.clickable {
@@ -62,12 +62,12 @@
 }
 
 .data-table tr.clickable.selected td {
-  background: rgba(88, 166, 255, 0.1);
+  background: rgba(var(--accent-rgb), 0.1);
   color: var(--text, #e6edf3);
 }
 
 .data-table tr.clickable.selected:hover td {
-  background: rgba(88, 166, 255, 0.14);
+  background: rgba(var(--accent-rgb), 0.14);
 }
 
 .data-table-empty {
@@ -118,8 +118,8 @@
 }
 
 .data-table-filter-input:focus {
-  border-color: rgba(88, 166, 255, 0.55);
-  background: rgba(88, 166, 255, 0.06);
+  border-color: rgba(var(--accent-rgb), 0.55);
+  background: rgba(var(--accent-rgb), 0.06);
 }
 
 .data-table-filter-empty {
