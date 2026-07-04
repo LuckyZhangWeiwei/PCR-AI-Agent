@@ -1227,8 +1227,8 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       treeRoots.length > 0 ? (
         <div
           style={{
-            background: "#0d1117",
-            border: "1px solid rgba(240,246,252,0.1)",
+            background: "var(--bg)",
+            border: "1px solid var(--border)",
             borderRadius: 8,
             padding: 16,
           }}
@@ -1236,7 +1236,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
           <div
             style={{
               fontSize: 12,
-              color: "#8b949e",
+              color: "var(--muted)",
               marginBottom: showTree ? 10 : 0,
               cursor: "pointer",
               display: "flex",
@@ -1248,7 +1248,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
           >
             <span style={{ fontSize: 10, opacity: 0.6 }}>{showTree ? "▼" : "▶"}</span>
             Device → LOT → ProbeCard Type → ProbeCard ID
-            <span style={{ fontSize: 11, color: "#6e7681", fontWeight: 400 }}>
+            <span style={{ fontSize: 11, color: "var(--dimmed)", fontWeight: 400 }}>
               {showTree ? "" : `— ${treeRoots.length} 组，点击展开`}
             </span>
           </div>
@@ -1260,8 +1260,8 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       detailRows.length > 0 ? (
         <div
           style={{
-            background: "#0d1117",
-            border: "1px solid rgba(240,246,252,0.1)",
+            background: "var(--bg)",
+            border: "1px solid var(--border)",
             borderRadius: 8,
             padding: 16,
           }}
@@ -1269,7 +1269,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
           <div
             style={{
               fontSize: 12,
-              color: "#8b949e",
+              color: "var(--muted)",
               marginBottom: showDetail ? 8 : 0,
               cursor: "pointer",
               display: "flex",
@@ -1387,7 +1387,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
               onChange={(e) => setField("timestampFrom", e.target.value)}
               style={{ flex: 1 }}
             />
-            <span style={{ color: "#8b949e", fontSize: 12 }}>→</span>
+            <span style={{ color: "var(--muted)", fontSize: 12 }}>→</span>
             <input
               type="datetime-local"
               value={form.timestampTo}
@@ -1461,9 +1461,9 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       {(errorList || errorAgg) && (
         <div
           style={{
-            color: "#ff7b72",
+            color: "var(--red-text)",
             fontSize: 13,
-            background: "rgba(248,81,73,0.08)",
+            background: "rgba(var(--red-rgb),0.08)",
             padding: "8px 12px",
             borderRadius: 6,
           }}
