@@ -23,17 +23,15 @@ import { KpiCard } from "../components/KpiCard";
 import { TreeTable } from "../components/TreeTable";
 import {
   baseChartOption,
-  chartAccent,
-  chartAccent2,
-  chartAccent3,
-  chartAxisColor,
-  chartSplitLine,
+  getChartPalette,
+  selectionTierColors,
   horizontalBarCategoryAxisLabel,
   horizontalBarChartBase,
   rankBarChartHeight,
   YIELD_TREND_CHART_HEIGHT,
   yieldTrendChartGrid,
 } from "../theme/chartTheme";
+import { useThemeContext } from "../theme/ThemeContext";
 import {
   allSettledWithConcurrency,
   REPORT_ORACLE_FANOUT_CONCURRENCY,
@@ -320,6 +318,8 @@ function filterYieldDrillGroupsForProbeCardType(
 }
 
 export function YieldMonitorReport({ apiBase, listLimits }: Props) {
+  const { theme } = useThemeContext();
+  const chartPalette = getChartPalette(theme);
   const [form, setForm] = useState<FormState>(initialForm);
   const [list, setList] = useState<YieldMonitorV3Response | null>(null);
   const [aggTime, setAggTime] = useState<YieldMonitorV3AggregateResponse | null>(null);
@@ -708,17 +708,17 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     );
     const counts = groups.map((g) => g.count);
     return {
-      ...baseChartOption(),
+      ...baseChartOption(theme),
       grid: yieldTrendChartGrid,
       xAxis: {
         type: "category",
         data: dates,
-        axisLabel: { color: chartAxisColor, fontSize: 10, rotate: 30 },
+        axisLabel: { color: chartPalette.axisColor, fontSize: 10, rotate: 30 },
       },
       yAxis: {
         type: "value",
-        axisLabel: { color: chartAxisColor },
-        splitLine: { lineStyle: { color: chartSplitLine } },
+        axisLabel: { color: chartPalette.axisColor },
+        splitLine: { lineStyle: { color: chartPalette.splitLine } },
       },
       series: [
         {
@@ -730,37 +730,37 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
               type: "linear",
               x: 0, y: 0, x2: 0, y2: 1,
               colorStops: [
-                { offset: 0, color: "rgba(88,166,255,0.3)" },
-                { offset: 1, color: "rgba(88,166,255,0.02)" },
+                { offset: 0, color: `rgba(${theme === "light" ? "9,105,218" : "88,166,255"},0.3)` },
+                { offset: 1, color: `rgba(${theme === "light" ? "9,105,218" : "88,166,255"},0.02)` },
               ],
             },
           },
-          lineStyle: { color: chartAccent, width: 2 },
-          itemStyle: { color: chartAccent },
+          lineStyle: { color: chartPalette.accent, width: 2 },
+          itemStyle: { color: chartPalette.accent },
           animationDuration: 600,
         },
       ],
       tooltip: { trigger: "axis" },
     };
-  }, [aggTime]);
+  }, [aggTime, theme]);
 
   // ProbeCard Type ranking bar chart
   const cardTypeOption = useMemo((): EChartsOption => {
     const sorted = [...(aggCardType?.groups ?? [])]
       .sort((a, b) => a.count - b.count)
       .slice(-10);
-    const COL = chartAccent2, COL_B = "#bf8dff", COL_D = "rgba(163,113,247,0.3)";
+    const { base: COL, bright: COL_B, dim: COL_D } = selectionTierColors(theme, "purple");
     return {
-      ...horizontalBarChartBase(),
+      ...horizontalBarChartBase(theme),
       xAxis: {
         type: "value",
-        axisLabel: { color: chartAxisColor },
-        splitLine: { lineStyle: { color: chartSplitLine } },
+        axisLabel: { color: chartPalette.axisColor },
+        splitLine: { lineStyle: { color: chartPalette.splitLine } },
       },
       yAxis: {
         type: "category",
         data: sorted.map((g) => g.parts.probeCardType ?? g.key),
-        axisLabel: horizontalBarCategoryAxisLabel,
+        axisLabel: { ...horizontalBarCategoryAxisLabel, color: chartPalette.axisColor },
       },
       series: [
         {
@@ -779,14 +779,14 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
           label: {
             show: true,
             position: "right",
-            color: chartAxisColor,
+            color: chartPalette.axisColor,
             fontSize: 10,
           },
           animationDuration: 600,
         },
       ],
     };
-  }, [aggCardType, selectedCardTypeName]);
+  }, [aggCardType, selectedCardTypeName, theme]);
 
   // DUT distribution — rows from dutList (probeCard filter); keyed by dutProbeCardTarget
   const dutRows = useMemo(() => {
@@ -808,34 +808,34 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
   const dutOption = useMemo((): EChartsOption => {
     const sorted = [...dutTally].sort((a, b) => a.count - b.count);
     return {
-      ...horizontalBarChartBase(),
+      ...horizontalBarChartBase(theme),
       xAxis: {
         type: "value",
-        axisLabel: { color: chartAxisColor },
-        splitLine: { lineStyle: { color: chartSplitLine } },
+        axisLabel: { color: chartPalette.axisColor },
+        splitLine: { lineStyle: { color: chartPalette.splitLine } },
       },
       yAxis: {
         type: "category",
         data: sorted.map((e) => `dut#${e.dut}`),
-        axisLabel: horizontalBarCategoryAxisLabel,
+        axisLabel: { ...horizontalBarCategoryAxisLabel, color: chartPalette.axisColor },
       },
       series: [
         {
           type: "bar",
           cursor: "default",
           data: sorted.map((e) => e.count),
-          itemStyle: { color: chartAccent3, borderRadius: [0, 4, 4, 0] as unknown as number },
+          itemStyle: { color: chartPalette.accent3, borderRadius: [0, 4, 4, 0] as unknown as number },
           label: {
             show: true,
             position: "right",
-            color: chartAxisColor,
+            color: chartPalette.axisColor,
             fontSize: 10,
           },
           animationDuration: 600,
         },
       ],
     };
-  }, [dutTally]);
+  }, [dutTally, theme]);
 
   const dutDistributionFooter = useCallback(
     (
@@ -854,14 +854,14 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
             flexWrap: "wrap",
           }}
         >
-          <span style={{ fontSize: 12, color: "#58a6ff", fontWeight: 600 }}>
+          <span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 600 }}>
             {onClose ? `↳ DUT# 分布 · ${cardId}` : `DUT# 分布 · ${cardId}`}
           </span>
           {onClose ? (
             <button
               type="button"
               className="chip"
-              style={{ color: "#ff7b72", borderColor: "rgba(248,81,73,0.3)" }}
+              style={{ color: "var(--red-text)", borderColor: "rgba(var(--red-rgb),0.3)" }}
               onClick={onClose}
             >
               ✕ 关闭
@@ -869,15 +869,15 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
           ) : null}
         </div>
         {loadingDut ? (
-          <div style={{ color: "#8b949e", fontSize: 12, padding: "8px 0" }}>
+          <div style={{ color: "var(--muted)", fontSize: 12, padding: "8px 0" }}>
             加载中…
           </div>
         ) : dutRows === null ? null : dutRows.length === 0 ? (
-          <div style={{ color: "#8b949e", fontSize: 12, padding: "4px 0" }}>
+          <div style={{ color: "var(--muted)", fontSize: 12, padding: "4px 0" }}>
             该探针卡暂无触发记录
           </div>
         ) : dutTally.length === 0 ? (
-          <div style={{ color: "#8b949e", fontSize: 12, padding: "4px 0" }}>
+          <div style={{ color: "var(--muted)", fontSize: 12, padding: "4px 0" }}>
             有触发记录，但 TRIGGER_LABEL 中未解析到 dut#
           </div>
         ) : (
@@ -903,18 +903,18 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     const sorted = [...(aggLot?.groups ?? [])]
       .sort((a, b) => a.count - b.count)
       .slice(-10);
-    const COL = "#f0883e", COL_B = "#ff9f60", COL_D = "rgba(240,136,62,0.3)";
+    const { base: COL, bright: COL_B, dim: COL_D } = selectionTierColors(theme, "orange");
     return {
-      ...horizontalBarChartBase(),
+      ...horizontalBarChartBase(theme),
       xAxis: {
         type: "value",
-        axisLabel: { color: chartAxisColor },
-        splitLine: { lineStyle: { color: chartSplitLine } },
+        axisLabel: { color: chartPalette.axisColor },
+        splitLine: { lineStyle: { color: chartPalette.splitLine } },
       },
       yAxis: {
         type: "category",
         data: sorted.map((g) => g.parts.lotId ?? g.key),
-        axisLabel: horizontalBarCategoryAxisLabel,
+        axisLabel: { ...horizontalBarCategoryAxisLabel, color: chartPalette.axisColor },
       },
       series: [
         {
@@ -933,31 +933,31 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
           label: {
             show: true,
             position: "right",
-            color: chartAxisColor,
+            color: chartPalette.axisColor,
             fontSize: 10,
           },
           animationDuration: 600,
         },
       ],
     };
-  }, [aggLot, selectedLotId]);
+  }, [aggLot, selectedLotId, theme]);
 
   const deviceOption = useMemo((): EChartsOption => {
     const sorted = [...(aggDevice?.groups ?? [])]
       .sort((a, b) => a.count - b.count)
       .slice(-20);
-    const COL = "#79c0ff", COL_B = "#58a6ff", COL_D = "rgba(88,166,255,0.2)";
+    const { base: COL, bright: COL_B, dim: COL_D } = selectionTierColors(theme, "blue-light");
     return {
-      ...horizontalBarChartBase(),
+      ...horizontalBarChartBase(theme),
       xAxis: {
         type: "value",
-        axisLabel: { color: chartAxisColor },
-        splitLine: { lineStyle: { color: chartSplitLine } },
+        axisLabel: { color: chartPalette.axisColor },
+        splitLine: { lineStyle: { color: chartPalette.splitLine } },
       },
       yAxis: {
         type: "category",
         data: sorted.map((g) => g.parts.device ?? g.key),
-        axisLabel: horizontalBarCategoryAxisLabel,
+        axisLabel: { ...horizontalBarCategoryAxisLabel, color: chartPalette.axisColor },
       },
       series: [
         {
@@ -973,12 +973,12 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
               },
             };
           }),
-          label: { show: true, position: "right", color: chartAxisColor, fontSize: 10 },
+          label: { show: true, position: "right", color: chartPalette.axisColor, fontSize: 10 },
           animationDuration: 600,
         },
       ],
     };
-  }, [aggDevice, selectedDevice]);
+  }, [aggDevice, selectedDevice, theme]);
 
   // ── Tree ─────────────────────────────────────────────────────────────────
 
