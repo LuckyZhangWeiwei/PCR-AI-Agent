@@ -13,6 +13,7 @@ import {
   buildSessionMarkdown,
   sessionHasExportableContent,
 } from "../utils/exportSession.js";
+import { useThemeContext } from "../theme/ThemeContext.js";
 function downloadMarkdown(text: string, title: string): void {
   const safe = title.slice(0, 50).replace(/[^\w一-龥.\-]/g, "_").trim() || "answer";
   const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
@@ -26,9 +27,13 @@ function downloadMarkdown(text: string, title: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 100);
 }
 
-function downloadChartPng(instance: ECharts, title: string): void {
+function downloadChartPng(instance: ECharts, title: string, backgroundColor: string): void {
   const safe = title.slice(0, 40).replace(/[^\w一-龥.\-]/g, "_").trim() || "chart";
-  const dataUrl = instance.getDataURL({ type: "png", pixelRatio: 2, backgroundColor: "#141414" });
+  const dataUrl = instance.getDataURL({
+    type: "png",
+    pixelRatio: 2,
+    backgroundColor,
+  });
   const a = document.createElement("a");
   a.href = dataUrl;
   a.download = `${safe}.png`;
@@ -316,6 +321,7 @@ function genId(): string {
 }
 
 export function AiAgentReport({ apiBase, agentConfig }: Props) {
+  const { theme } = useThemeContext();
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME]);
   const chartInstancesRef = useRef<Map<number, ECharts>>(new Map());
   const [input, setInput] = useState("");
@@ -972,7 +978,7 @@ export function AiAgentReport({ apiBase, agentConfig }: Props) {
                       title="下载图表 PNG"
                       onClick={() => {
                         const inst = chartInstancesRef.current.get(chartIdx);
-                        if (inst) downloadChartPng(inst, chartTitle);
+                        if (inst) downloadChartPng(inst, chartTitle, theme === "light" ? "#ffffff" : "#141414");
                       }}
                     >
                       ⬇
