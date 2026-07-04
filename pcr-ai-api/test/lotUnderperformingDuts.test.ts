@@ -12,6 +12,7 @@ import type { SiteBinPass } from "../src/lib/outputSiteBinByLot.js";
 import {
   resolveDeviceForLot,
   resolveProbeCardTypeForLot,
+  buildGoodBinsByPassFromJbRows,
 } from "../src/lib/lotUnderperformingDutsResolve.js";
 
 function pass(passId: number, bins: SiteBinPass["bins"]): SiteBinPass {
@@ -88,6 +89,20 @@ describe("lotUnderperformingDuts compute", () => {
     assert.equal(out[0]!.passId, 1);
     assert.equal(out[1]!.passId, 3);
   });
+
+  test("goodBinsByPassId: BIN55 good die counts when BIN1 empty (NF12499-style pass1)", () => {
+    const p = pass(1, [
+      { bin: "bin55", duts: [{ dut: 1, dieCount: 100 }, { dut: 2, dieCount: 100 }] },
+      { bin: "bin11", duts: [{ dut: 1, dieCount: 10 }, { dut: 2, dieCount: 10 }] },
+    ]);
+    const onlyBin1 = computeUnderperformingDutsForPass(p, { goodBins: new Set([1]) });
+    assert.equal(onlyBin1.baseline!.yieldPct, 0);
+
+    const with55 = computeUnderperformingDutsForPass(p, {
+      goodBinsByPassId: new Map([[1, new Set([1, 55])]]),
+    });
+    assert.equal(with55.baseline!.yieldPct, 90.91);
+  });
 });
 
 describe("lotUnderperformingDuts parse", () => {
@@ -114,6 +129,17 @@ describe("resolveProbeCardTypeForLot dummy", () => {
     process.env.NODE_ENV = "test";
     const pct = await resolveProbeCardTypeForLot("WA10P29E", "DR43782.1A", [1, 3, 5]);
     assert.ok(typeof pct === "string" && pct.length > 0);
+  });
+});
+
+describe("buildGoodBinsByPassFromJbRows", () => {
+  test("merges PASSBIN segments per passId", () => {
+    const map = buildGoodBinsByPassFromJbRows([
+      { PASSID: 1, PASSBIN: "1-55" },
+      { PASSID: 3, PASSBIN: "1" },
+    ]);
+    assert.deepEqual([...map.get(1)!].sort((a, b) => a - b), [1, 55]);
+    assert.deepEqual([...map.get(3)!].sort((a, b) => a - b), [1]);
   });
 });
 

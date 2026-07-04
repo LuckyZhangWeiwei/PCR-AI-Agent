@@ -7,6 +7,7 @@ import {
   parseUnderperformingThresholdRatio,
   type PassUnderperformingDutsResult,
 } from "./lotUnderperformingDuts.js";
+import { goodBinIndicesForJbRow } from "./jbYieldCalc.js";
 import {
   getInfcontrolLayerBinDummyRows,
   infcontrolLayerBinsUseDummy,
@@ -84,6 +85,61 @@ function jbTestRowsForLot(device: string, lot: string, passIds: number[]) {
     const passId = Number(row.PASSID);
     if (!Number.isInteger(passId) || !passSet.has(passId)) return false;
     return true;
+  });
+}
+
+/** 合并 lot 内各 wafer JB 行的良品 bin（PASSBIN 段 + isGoodBin），按 passId 分组。 */
+export function buildGoodBinsByPassFromJbRows(
+  rows: ReadonlyArray<Record<string, unknown>>
+): Map<number, Set<number>> {
+  const byPass = new Map<number, Set<number>>();
+  for (const row of rows) {
+    const passId = Number(row.PASSID ?? row.passId);
+    if (!Number.isInteger(passId)) continue;
+    const good = goodBinIndicesForJbRow(row);
+    let set = byPass.get(passId);
+    if (!set) {
+      set = new Set<number>();
+      byPass.set(passId, set);
+    }
+    for (const n of good) set.add(n);
+  }
+  return byPass;
+}
+
+async function fetchJbTestRowsForLot(
+  device: string,
+  lot: string,
+  passIds: number[]
+): Promise<Record<string, unknown>[]> {
+  if (infcontrolLayerBinsUseDummy()) {
+    return jbTestRowsForLot(device, lot, passIds) as Record<string, unknown>[];
+  }
+
+  const passBinds: Record<string, number> = {};
+  const passPlaceholders = passIds.map((id, i) => {
+    const key = `p${i}`;
+    passBinds[key] = id;
+    return `:${key}`;
+  });
+
+  return withConnection(async (conn) => {
+    const result = await conn.execute<{
+      PASSID: number;
+      PASSBIN: string | null;
+    }>(
+      `SELECT lb.PASSID AS PASSID, lb.PASSBIN AS PASSBIN
+       FROM INFCONTROL t1
+       INNER JOIN INFLAYERBINLIST lb ON t1.KEYNUMBER = lb.KEYNUMBER
+       WHERE UPPER(TRIM(t1.DEVICE)) = UPPER(TRIM(:device))
+         AND UPPER(TRIM(t1.LOT)) = UPPER(TRIM(:lot))
+         AND NOT REGEXP_LIKE(t1.LOT, '^(kk|gg|c)', 'i')
+         AND UPPER(TRIM(lb.PASSTYPE)) = 'TEST'
+         AND lb.PASSID IN (${passPlaceholders.join(", ")})`,
+      { device, lot, ...passBinds },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+    return (result.rows ?? []) as Record<string, unknown>[];
   });
 }
 
@@ -316,8 +372,12 @@ export async function runLotUnderperformingDuts(params: {
     testEndWindow: params.testEndWindow,
   });
 
+  const jbRows = await fetchJbTestRowsForLot(device, lot, passIds);
+  const goodBinsByPassId = buildGoodBinsByPassFromJbRows(jbRows);
+
   const passResults = computeUnderperformingDutsForPasses(fetched.passes, {
     thresholdRatio,
+    goodBinsByPassId,
   });
 
   const response: LotUnderperformingDutsResponse = {

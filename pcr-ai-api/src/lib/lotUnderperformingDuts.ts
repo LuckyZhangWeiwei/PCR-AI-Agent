@@ -38,7 +38,10 @@ export type PassUnderperformingDutsResult = {
 
 export type LotUnderperformingDutsOptions = {
   thresholdRatio?: number;
+  /** 所有 pass 共用（测试 / 显式覆盖）。 */
   goodBins?: Set<number>;
+  /** JB PASSBIN + isGoodBin 按 pass 合并；缺省 pass 回退 INF 启发式 + BIN1。 */
+  goodBinsByPassId?: Map<number, Set<number>>;
 };
 
 function parseBinNumber(bin: string): number | null {
@@ -55,11 +58,20 @@ function yieldPctFromDie(good: number, total: number): number | null {
   return roundYieldPct((good / total) * 100);
 }
 
-function buildGoodBins(passes: SiteBinPass[], override?: Set<number>): Set<number> {
-  if (override) return override;
+function buildGoodBinsFromInfHeuristic(passes: SiteBinPass[]): Set<number> {
   const good = goodBinNumbersFromSiteBinPasses(passes);
   good.add(HARD_GOOD_BIN);
   return good;
+}
+
+function resolveGoodBinsForPass(
+  pass: SiteBinPass,
+  opts: LotUnderperformingDutsOptions
+): Set<number> {
+  if (opts.goodBins) return opts.goodBins;
+  const fromJb = opts.goodBinsByPassId?.get(pass.passId);
+  if (fromJb && fromJb.size > 0) return fromJb;
+  return buildGoodBinsFromInfHeuristic([pass]);
 }
 
 function dutYieldMapForPass(
@@ -89,7 +101,7 @@ export function computeUnderperformingDutsForPass(
   opts: LotUnderperformingDutsOptions = {}
 ): PassUnderperformingDutsResult {
   const thresholdRatio = opts.thresholdRatio ?? DEFAULT_UNDERPERFORMING_THRESHOLD_RATIO;
-  const goodBins = buildGoodBins([pass], opts.goodBins);
+  const goodBins = resolveGoodBinsForPass(pass, opts);
 
   const dutMap = dutYieldMapForPass(pass, goodBins);
   let lotGoodDie = 0;
@@ -151,10 +163,7 @@ export function computeUnderperformingDutsForPasses(
   passes: SiteBinPass[],
   opts: LotUnderperformingDutsOptions = {}
 ): PassUnderperformingDutsResult[] {
-  const goodBins = buildGoodBins(passes, opts.goodBins);
-  return passes.map((pass) =>
-    computeUnderperformingDutsForPass(pass, { ...opts, goodBins })
-  );
+  return passes.map((pass) => computeUnderperformingDutsForPass(pass, opts));
 }
 
 export function parseUnderperformingThresholdRatio(raw: unknown): number {
