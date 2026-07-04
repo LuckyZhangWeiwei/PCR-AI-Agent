@@ -448,6 +448,46 @@ describe(
       }
     });
 
+    test("GET /api/v3/yield-monitor-triggers/v3/aggregate dimensions=bin（dummy，从 TRIGGER_LABEL 解析）", async () => {
+      const qs = new URLSearchParams(yExampleQs);
+      qs.set("dimensions", "bin");
+      qs.set("groupTop", "50");
+      const { status, body } = await getJson(
+        `${API}/yield-monitor-triggers/v3/aggregate?${qs.toString()}`
+      );
+      assertOkJson(status, body);
+      const b = body as {
+        totalRowsMatching?: number;
+        groups?: { count: number; parts?: Record<string, string> }[];
+      };
+      assert.ok(Array.isArray(b.groups));
+      assert.ok(b.groups!.length > 0, "delta_diff 样本行应能解析出 bin");
+      const sum = b.groups!.reduce((acc, g) => acc + g.count, 0);
+      assert.equal(sum, b.totalRowsMatching);
+      for (const g of b.groups!) {
+        assert.ok("bin" in (g.parts ?? {}));
+        assert.notEqual(g.parts!.bin, "");
+      }
+    });
+
+    test("GET /api/v3/yield-monitor-triggers/v3/aggregate dimensions=dutNumber（dummy）", async () => {
+      const qs = new URLSearchParams(yExampleQs);
+      qs.set("dimensions", "dutNumber");
+      qs.set("groupTop", "50");
+      const { status, body } = await getJson(
+        `${API}/yield-monitor-triggers/v3/aggregate?${qs.toString()}`
+      );
+      assertOkJson(status, body);
+      const b = body as {
+        totalRowsMatching?: number;
+        groups?: { count: number; parts?: Record<string, string> }[];
+      };
+      assert.ok(Array.isArray(b.groups));
+      if (b.groups!.length > 0) {
+        assert.ok("dutNumber" in (b.groups![0].parts ?? {}));
+      }
+    });
+
     test("GET /api/v3/db/ping（Oracle，可选）", async () => {
       if (process.env.PCR_AI_RUN_ORACLE_TESTS !== "1") {
         test.skip("设置 PCR_AI_RUN_ORACLE_TESTS=1 且配置可达 Oracle 时再跑");
@@ -511,6 +551,22 @@ describe(
       const qs = new URLSearchParams(yExampleQs);
       qs.set("dimensions", "device,hostname");
       qs.set("groupTop", "15");
+      const [v3r, v4r] = await Promise.all([
+        getJson(`${API}/yield-monitor-triggers/v3/aggregate?${qs.toString()}`),
+        getJson(`/api/v4/yield-monitor-triggers/v4/aggregate?${qs.toString()}`),
+      ]);
+      assertOkJson(v3r.status, v3r.body);
+      assertOkJson(v4r.status, v4r.body);
+      const v3b = v3r.body as { totalRowsMatching?: number; groups?: unknown[] };
+      const v4b = v4r.body as { totalRowsMatching?: number; groups?: unknown[] };
+      assert.equal(v3b.totalRowsMatching, v4b.totalRowsMatching);
+      assert.deepEqual(v3b.groups, v4b.groups);
+    });
+
+    test("GET /api/v4/yield-monitor-triggers/v4/aggregate dimensions=bin,dutNumber 与 v3 聚合一致", async () => {
+      const qs = new URLSearchParams(yExampleQs);
+      qs.set("dimensions", "bin,dutNumber");
+      qs.set("groupTop", "50");
       const [v3r, v4r] = await Promise.all([
         getJson(`${API}/yield-monitor-triggers/v3/aggregate?${qs.toString()}`),
         getJson(`/api/v4/yield-monitor-triggers/v4/aggregate?${qs.toString()}`),

@@ -19,7 +19,7 @@ import {
   resetReportLayoutStorage,
 } from "../components/DraggableReportSections";
 import { DrillDownPanel } from "../components/DrillDownPanel";
-import { KpiCard } from "../components/KpiCard";
+import { KpiCard, type KpiColor } from "../components/KpiCard";
 import { TreeTable } from "../components/TreeTable";
 import {
   baseChartOption,
@@ -43,8 +43,11 @@ import {
   dateShortcutLast7Days,
   dateShortcutThisMonth,
   dateShortcutToday,
+  formatBinLabel,
   parseDutNumber,
+  periodWindow,
   tallyDutNumbers,
+  type PeriodKey,
 } from "../utils/yieldCalc";
 import { TESTER_PLATFORM_OPTIONS } from "../utils/testerPlatform";
 import type { ReportListLimits } from "../hooks/usePersistedReportLimits";
@@ -136,6 +139,7 @@ function activeChips(
 const YIELD_REPORT_SECTION_ORDER = [
   "kpi",
   "timeTrend",
+  "periodAlarm",
   "chartsGrid",
   "tree",
   "detail",
@@ -149,6 +153,15 @@ const YIELD_KPI_BLOCK_ORDER = [
 ] as const;
 
 const YIELD_CHART_BLOCK_ORDER = ["chPcType", "chDevice", "chLot"] as const;
+
+const YIELD_ALARM_KPI_BLOCK_ORDER = ["kpiAlarmTotal", "kpiAlarmRatio"] as const;
+
+const YIELD_ALARM_CHART_BLOCK_ORDER = [
+  "chAlarmTester",
+  "chAlarmCard",
+  "chAlarmBin",
+  "chAlarmDut",
+] as const;
 
 // Sub-dimension options for drill-down panels
 const DRILL_FROM_DEVICE: { label: string; value: string }[] = [
@@ -317,6 +330,40 @@ function filterYieldDrillGroupsForProbeCardType(
   });
 }
 
+/** 周期报警统计 4 图共用的横向 Top10 条形图 option 构建（DRY，避免 4 份近乎重复的 useMemo）。 */
+function buildRankBarOption(
+  theme: "light" | "dark",
+  groups: AggregateGroup[],
+  dimKey: string,
+  color: string,
+  formatLabel: (raw: string) => string = (v) => v
+): EChartsOption {
+  const palette = getChartPalette(theme);
+  const sorted = [...groups].sort((a, b) => a.count - b.count).slice(-10);
+  return {
+    ...horizontalBarChartBase(theme),
+    xAxis: {
+      type: "value",
+      axisLabel: { color: palette.axisColor },
+      splitLine: { lineStyle: { color: palette.splitLine } },
+    },
+    yAxis: {
+      type: "category",
+      data: sorted.map((g) => formatLabel(g.parts[dimKey] ?? g.key)),
+      axisLabel: { ...horizontalBarCategoryAxisLabel, color: palette.axisColor },
+    },
+    series: [
+      {
+        type: "bar",
+        data: sorted.map((g) => g.count),
+        itemStyle: { color, borderRadius: [0, 4, 4, 0] as unknown as number },
+        label: { show: true, position: "right", color: palette.axisColor, fontSize: 10 },
+        animationDuration: 600,
+      },
+    ],
+  };
+}
+
 export function YieldMonitorReport({ apiBase, listLimits }: Props) {
   const { theme } = useThemeContext();
   const chartPalette = getChartPalette(theme);
@@ -349,6 +396,18 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
   const [selectedLotId,       setSelectedLotId]       = useState<string | null>(null);
   const [selectedDevice,      setSelectedDevice]      = useState<string | null>(null);
   const [layoutEpoch, setLayoutEpoch] = useState(0);
+  const [period, setPeriod] = useState<PeriodKey>("week");
+  const [appliedCoreParams, setAppliedCoreParams] = useState<
+    Record<string, string | number | undefined>
+  >(() => buildCoreParams(initialForm));
+  const [periodTotal, setPeriodTotal] = useState<number | null>(null);
+  const [periodPrevTotal, setPeriodPrevTotal] = useState<number | null>(null);
+  const [periodByTester, setPeriodByTester] = useState<YieldMonitorV3AggregateResponse | null>(null);
+  const [periodByCard, setPeriodByCard] = useState<YieldMonitorV3AggregateResponse | null>(null);
+  const [periodByBin, setPeriodByBin] = useState<YieldMonitorV3AggregateResponse | null>(null);
+  const [periodByDut, setPeriodByDut] = useState<YieldMonitorV3AggregateResponse | null>(null);
+  const [loadingPeriod, setLoadingPeriod] = useState(false);
+  const [errorPeriod, setErrorPeriod] = useState<string | null>(null);
 
   const resetReportLayout = useCallback(() => {
     resetReportLayoutStorage(YIELD_MONITOR_LAYOUT_STORAGE_KEYS);
@@ -558,6 +617,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     setSelectedDevice(null);
     setAggDevice(null);
     const core = buildCoreParams(form);
+    setAppliedCoreParams(core);
 
     const settled = await allSettledWithConcurrency(
       [
@@ -678,6 +738,91 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       cancelled = true;
     };
   }, [dutProbeCardTarget, apiBase, form, listLimits, list]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const { start, end, prevStart, prevEnd } = periodWindow(period);
+    const periodParams = {
+      ...appliedCoreParams,
+      timeStampFrom: start.toISOString(),
+      timeStampTo: end.toISOString(),
+    };
+    const prevParams = {
+      ...appliedCoreParams,
+      timeStampFrom: prevStart.toISOString(),
+      timeStampTo: prevEnd.toISOString(),
+    };
+    setLoadingPeriod(true);
+    setErrorPeriod(null);
+
+    (async () => {
+      const settled = await allSettledWithConcurrency(
+        [
+          () =>
+            apiGetJson<YieldMonitorV3AggregateResponse>(apiBase, YIELD_AGGREGATE_PATH, {
+              ...periodParams,
+              dimensions: "hostname",
+              groupTop: 10,
+            }),
+          () =>
+            apiGetJson<YieldMonitorV3AggregateResponse>(apiBase, YIELD_AGGREGATE_PATH, {
+              ...periodParams,
+              dimensions: "probeCard",
+              groupTop: 10,
+            }),
+          () =>
+            apiGetJson<YieldMonitorV3AggregateResponse>(apiBase, YIELD_AGGREGATE_PATH, {
+              ...periodParams,
+              dimensions: "bin",
+              groupTop: 10,
+            }),
+          () =>
+            apiGetJson<YieldMonitorV3AggregateResponse>(apiBase, YIELD_AGGREGATE_PATH, {
+              ...periodParams,
+              dimensions: "dutNumber",
+              groupTop: 10,
+            }),
+          () =>
+            apiGetJson<YieldMonitorV3AggregateResponse>(apiBase, YIELD_AGGREGATE_PATH, {
+              ...prevParams,
+              dimensions: "hostname",
+              groupTop: 1,
+            }),
+        ],
+        REPORT_ORACLE_FANOUT_CONCURRENCY
+      );
+      if (cancelled) return;
+      const [testerRes, cardRes, binRes, dutRes, prevRes] = settled as [
+        PromiseSettledResult<YieldMonitorV3AggregateResponse>,
+        PromiseSettledResult<YieldMonitorV3AggregateResponse>,
+        PromiseSettledResult<YieldMonitorV3AggregateResponse>,
+        PromiseSettledResult<YieldMonitorV3AggregateResponse>,
+        PromiseSettledResult<YieldMonitorV3AggregateResponse>,
+      ];
+      setLoadingPeriod(false);
+
+      if (testerRes.status === "fulfilled") {
+        setPeriodByTester(testerRes.value);
+        setPeriodTotal(testerRes.value.totalRowsMatching ?? null);
+      } else {
+        setErrorPeriod(
+          testerRes.reason instanceof Error
+            ? testerRes.reason.message
+            : String(testerRes.reason)
+        );
+      }
+      if (cardRes.status === "fulfilled") setPeriodByCard(cardRes.value);
+      if (binRes.status === "fulfilled") setPeriodByBin(binRes.value);
+      if (dutRes.status === "fulfilled") setPeriodByDut(dutRes.value);
+      if (prevRes.status === "fulfilled") {
+        setPeriodPrevTotal(prevRes.value.totalRowsMatching ?? null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiBase, appliedCoreParams, period]);
 
   // ── KPI derivations ──────────────────────────────────────────────────────
 
@@ -836,6 +981,50 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       ],
     };
   }, [dutTally, theme]);
+
+  const periodTesterOption = useMemo(
+    () => buildRankBarOption(theme, periodByTester?.groups ?? [], "hostname", chartPalette.accent),
+    [periodByTester, theme, chartPalette.accent]
+  );
+  const periodCardOption = useMemo(
+    () => buildRankBarOption(theme, periodByCard?.groups ?? [], "probeCard", chartPalette.accent2),
+    [periodByCard, theme, chartPalette.accent2]
+  );
+  const periodBinOption = useMemo(
+    () =>
+      buildRankBarOption(theme, periodByBin?.groups ?? [], "bin", chartPalette.accent3, formatBinLabel),
+    [periodByBin, theme, chartPalette.accent3]
+  );
+  const periodDutOption = useMemo(
+    () =>
+      buildRankBarOption(
+        theme,
+        periodByDut?.groups ?? [],
+        "dutNumber",
+        selectionTierColors(theme, "orange").base,
+        (v) => `dut#${v}`
+      ),
+    [periodByDut, theme]
+  );
+
+  const periodRatioPct = useMemo(() => {
+    if (periodTotal === null || periodPrevTotal === null) return null;
+    if (periodPrevTotal === 0) return periodTotal > 0 ? Infinity : 0;
+    return ((periodTotal - periodPrevTotal) / periodPrevTotal) * 100;
+  }, [periodTotal, periodPrevTotal]);
+
+  const periodRatioLabel = useMemo(() => {
+    if (periodRatioPct === null) return "—";
+    if (periodRatioPct === Infinity) return "新增";
+    if (periodRatioPct === 0) return "0%";
+    const sign = periodRatioPct > 0 ? "↑" : "↓";
+    return `${sign}${Math.abs(periodRatioPct).toFixed(1)}%`;
+  }, [periodRatioPct]);
+
+  const periodRatioColor: KpiColor = useMemo(() => {
+    if (periodRatioPct === null || periodRatioPct === 0) return "white";
+    return periodRatioPct === Infinity || periodRatioPct > 0 ? "red" : "green";
+  }, [periodRatioPct]);
 
   const dutDistributionFooter = useCallback(
     (
@@ -1008,7 +1197,129 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
   const hasData = !!(list || aggTime || aggCardType);
 
   const yieldReportSections = useMemo(() => {
-    if (!hasData) return {};
+    const periodAlarmSection = (
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className="preset-chips">
+          {(["week", "month"] as const).map((p) => (
+            <button
+              key={p}
+              type="button"
+              className={`chip${period === p ? " chip--active" : ""}`}
+              onClick={() => setPeriod(p)}
+            >
+              {p === "week" ? "本周" : "本月"}
+            </button>
+          ))}
+        </div>
+        <DraggableReportBlocks
+          storageKey="pcr-ai-report:yield-monitor-alarm-kpi-blocks"
+          defaultOrder={YIELD_ALARM_KPI_BLOCK_ORDER}
+          layoutEpoch={layoutEpoch}
+          axis="x"
+          groupClassName="report-reorder-group--kpis"
+          labels={{
+            kpiAlarmTotal: "总触发次数",
+            kpiAlarmRatio: "环比变化率",
+          }}
+          sections={{
+            kpiAlarmTotal: (
+              <KpiCard
+                label="总触发次数"
+                value={periodTotal}
+                color="blue"
+                subtext={periodPrevTotal !== null ? `上一周期 ${periodPrevTotal} 次` : undefined}
+                showLabel={false}
+              />
+            ),
+            kpiAlarmRatio: (
+              <KpiCard
+                label="环比变化率"
+                value={periodRatioLabel}
+                color={periodRatioColor}
+                subtext="vs 上一周期"
+                showLabel={false}
+              />
+            ),
+          }}
+        />
+        {errorPeriod && (
+          <div style={{ color: "var(--red-text)", fontSize: 12 }}>{errorPeriod}</div>
+        )}
+        <DraggableReportBlocks
+          storageKey="pcr-ai-report:yield-monitor-alarm-chart-blocks"
+          defaultOrder={YIELD_ALARM_CHART_BLOCK_ORDER}
+          layoutEpoch={layoutEpoch}
+          axis="grid"
+          groupClassName="report-reorder-group--chartgrid"
+          labels={{
+            chAlarmTester: "Tester 分布",
+            chAlarmCard: "Probe Card 分布",
+            chAlarmBin: "Bin 分布",
+            chAlarmDut: "DUT 分布",
+          }}
+          sections={{
+            chAlarmTester: (
+              <div className="report-chart-panel chart-no-drill">
+                {loadingPeriod ? (
+                  <div style={{ color: "var(--muted)", fontSize: 12, padding: "8px 0" }}>加载中…</div>
+                ) : (periodByTester?.groups.length ?? 0) === 0 ? (
+                  <div style={{ color: "var(--muted)", fontSize: 12, padding: "8px 0" }}>该周期无触发记录</div>
+                ) : (
+                  <DarkChart
+                    option={periodTesterOption}
+                    height={rankBarChartHeight(periodByTester?.groups.length ?? 0, 10)}
+                  />
+                )}
+              </div>
+            ),
+            chAlarmCard: (
+              <div className="report-chart-panel chart-no-drill">
+                {loadingPeriod ? (
+                  <div style={{ color: "var(--muted)", fontSize: 12, padding: "8px 0" }}>加载中…</div>
+                ) : (periodByCard?.groups.length ?? 0) === 0 ? (
+                  <div style={{ color: "var(--muted)", fontSize: 12, padding: "8px 0" }}>该周期无触发记录</div>
+                ) : (
+                  <DarkChart
+                    option={periodCardOption}
+                    height={rankBarChartHeight(periodByCard?.groups.length ?? 0, 10)}
+                  />
+                )}
+              </div>
+            ),
+            chAlarmBin: (
+              <div className="report-chart-panel chart-no-drill">
+                {loadingPeriod ? (
+                  <div style={{ color: "var(--muted)", fontSize: 12, padding: "8px 0" }}>加载中…</div>
+                ) : (periodByBin?.groups.length ?? 0) === 0 ? (
+                  <div style={{ color: "var(--muted)", fontSize: 12, padding: "8px 0" }}>该周期无触发记录</div>
+                ) : (
+                  <DarkChart
+                    option={periodBinOption}
+                    height={rankBarChartHeight(periodByBin?.groups.length ?? 0, 10)}
+                  />
+                )}
+              </div>
+            ),
+            chAlarmDut: (
+              <div className="report-chart-panel chart-no-drill">
+                {loadingPeriod ? (
+                  <div style={{ color: "var(--muted)", fontSize: 12, padding: "8px 0" }}>加载中…</div>
+                ) : (periodByDut?.groups.length ?? 0) === 0 ? (
+                  <div style={{ color: "var(--muted)", fontSize: 12, padding: "8px 0" }}>该周期无触发记录</div>
+                ) : (
+                  <DarkChart
+                    option={periodDutOption}
+                    height={rankBarChartHeight(periodByDut?.groups.length ?? 0, 10)}
+                  />
+                )}
+              </div>
+            ),
+          }}
+        />
+      </div>
+    );
+
+    if (!hasData) return { periodAlarm: periodAlarmSection };
 
     const kpiSection = (
       <DraggableReportBlocks
@@ -1289,6 +1600,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     return {
       kpi: kpiSection,
       timeTrend: timeTrendSection,
+      periodAlarm: periodAlarmSection,
       chartsGrid: chartsGridSection,
       tree: treeSection,
       detail: detailSection,
@@ -1320,6 +1632,21 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     list,
     showDetail,
     layoutEpoch,
+    period,
+    periodTotal,
+    periodPrevTotal,
+    periodRatioLabel,
+    periodRatioColor,
+    periodByTester,
+    periodByCard,
+    periodByBin,
+    periodByDut,
+    periodTesterOption,
+    periodCardOption,
+    periodBinOption,
+    periodDutOption,
+    loadingPeriod,
+    errorPeriod,
   ]);
 
   return (
@@ -1472,14 +1799,12 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         </div>
       )}
 
-      {hasData && (
-        <DraggableReportSections
-            storageKey="pcr-ai-report:yield-monitor-modules"
-            defaultOrder={YIELD_REPORT_SECTION_ORDER}
-            sections={yieldReportSections}
-            layoutEpoch={layoutEpoch}
-          />
-      )}
+      <DraggableReportSections
+          storageKey="pcr-ai-report:yield-monitor-modules"
+          defaultOrder={YIELD_REPORT_SECTION_ORDER}
+          sections={yieldReportSections}
+          layoutEpoch={layoutEpoch}
+        />
     </div>
   );
 }

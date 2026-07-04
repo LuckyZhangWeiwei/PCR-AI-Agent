@@ -231,6 +231,7 @@ function usePersistedBlockLayout(
   );
 
   const activeSet = useMemo(() => new Set(activeIds), [activeIds]);
+  const canonicalSet = useMemo(() => new Set(defaultOrder), [defaultOrder]);
 
   const loadOrder = useCallback(
     () => normalizeOrder(readJsonStringArray(storageKey), defaultOrder),
@@ -238,8 +239,8 @@ function usePersistedBlockLayout(
   );
 
   const loadHidden = useCallback(
-    () => normalizeHidden(readJsonStringArray(hiddenStorageKey(storageKey)), activeSet),
-    [storageKey, activeSet],
+    () => normalizeHidden(readJsonStringArray(hiddenStorageKey(storageKey)), canonicalSet),
+    [storageKey, canonicalSet],
   );
 
   const [order, setOrder] = useState<string[]>(loadOrder);
@@ -502,6 +503,7 @@ const TOP_SECTION_LABELS: Record<string, string> = {
   device: "Device 不良分析",
   pcType: "ProbeCard Type 不良对比",
   timeTrend: "每日触发量趋势",
+  periodAlarm: "周期报警统计",
   underperformingDuts: "低良率 DUT",
   chartsGrid: "图表矩阵",
   tree: "分组汇总",
