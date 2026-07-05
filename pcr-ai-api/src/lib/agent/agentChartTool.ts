@@ -304,9 +304,11 @@ export function buildChartOption(
   });
 
   return {
-    title: { text: title },
+    title: { text: title, left: 24 },
     tooltip: { trigger: "axis" },
     legend: { data: data.series.map((s) => s.name) },
+    // 小边距让绘图区尽量贴左铺满，避免在超宽容器里两侧留白显得居中。
+    grid: { left: "1%", right: "3%", top: 60, bottom: 80, containLabel: true },
     xAxis,
     yAxis: { type: "value" },
     series,
