@@ -1,115 +1,58 @@
-# Task 1 报告：DUT 集中度检测器
+# Task 1 Report: `buildGoodBinsByPassFromJbRows` 移除信号门槛 + 导出 `fetchJbTestRowsForLot`
 
-## 完成情况
+## Status: DONE
 
-成功按 TDD 流程实现 DUT 集中度检测器，判别坏 die 集中在少数 DUT（探针卡问题）vs 分散（工艺问题）。
+## Commit
+`c625466` — fix(api): 单lot良品bin判定不再要求PASSBIN额外信号，导出fetchJbTestRowsForLot
 
-## 实现文件
+(Base commit before this task: `c14ac9c`, branch `worktree-jb-goodbin-fix`.)
 
-- **源文件**: `pcr-ai-api/src/lib/agent/agentDutConcentration.ts` (135 行)
-- **测试文件**: `pcr-ai-api/test/agentDutConcentration.test.ts` (43 行)
+## Files changed
 
-## 核心逻辑
+1. `pcr-ai-api/src/lib/lotUnderperformingDutsResolve.ts`
+   - Removed the now-unused import `jbRowHasExtraGoodBinSignal` from `./jbYieldCalc.js` (kept `goodBinIndicesForJbRow`).
+   - `buildGoodBinsByPassFromJbRows`: removed the `hasSignalByPass` gating logic that deleted a `passId` entry from the result map unless at least one row had an "extra" (beyond BIN1) good-bin signal. The function now unconditionally keeps every `passId` encountered in the input rows, merging `goodBinIndicesForJbRow(row)` output (which always includes BIN1) into the map for that passId. Updated the JSDoc comment to document the intentional tradeoff verbatim per the brief (2026-07-05 dated rationale referencing NF12595.1A history and the WA01N39W/DR41803.1Y single-lot small-die-count bug being fixed).
+   - `fetchJbTestRowsForLot`: added `export` keyword (no other change) so Task 3 can reuse it.
 
-### 函数签名
-```typescript
-export function buildDutConcentrationInsights(
-  passes: SiteBinPass[],
-  cardByPassId: CardByPassIdEntry[] = [],
-  opts: DutConcentrationOptions = {}
-): DutConcentrationInsight[]
-```
+2. `pcr-ai-api/test/lotUnderperformingDuts.test.ts`
+   - Rewrote the test formerly named `"passId with no PASSBIN signal on any row is omitted (caller falls back to INF heuristic)"` → renamed to `"passId is always included once it has JB rows, even with no signal beyond BIN1"`. Same input rows (`PASSID 1` with `PASSBIN: null` and `PASSBIN: ""`, `PASSID 3` with `PASSBIN: "1-55"`), but now asserts `map.get(1)` deep-equals `[1]` instead of asserting `map.has(1) === false`. Comment above rewritten to explain the intentional tradeoff verbatim per the brief.
+   - Added new regression test `"single-lot small-die-count scenario: PASSBIN gives only BIN1, goodBins is {1} not empty"` reproducing the WA01N39W/DR41803.1Y bug scenario: rows with only `PASSBIN: "1"` (no extra signal) must still produce `map.get(1)` = `[1]` rather than being omitted (which previously forced a fallback to the INF heuristic that returns an empty set under low die counts, yielding 0% yield).
 
-### 判别规则
-
-1. **数据过滤**
-   - 按 `focusBins` 限制分析的 bin 编号
-   - 按 `minTotalDie`（默认 8）过滤低统计量 bin（< 8 颗坏 die 则跳过）
-   - 只统计数值型 DUT（过滤 `"single"` 类型）
-
-2. **集中度判别**
-   - **probe_card** (探针卡问题): 前 3 大 DUT 的坏 die 占比 ≥ `topShareThreshold`（默认 70%）
-   - **process** (工艺问题): 前 3 大 DUT 坏 die 占比 < 70% 且 DUT ≥ 3 个
-   - **inconclusive** (样本不足): DUT < 3 个，无法判别
-
-3. **输出字段**
-   - `bin`: 解析后的 bin 数字（从 `bin11` → 11）
-   - `passId`: 测试 pass ID
-   - `sortLabel`: pass 的易读标签（`pass1` / `pass3` / `pass5`）
-   - `cardId`: 该 pass 使用的探针卡 ID（无则 `null`）
-   - `totalDie`: 该 bin 的坏 die 总颗数
-   - `topDuts`: 前 3 大 DUT 的详细数据（dut, dieCount, share %）
-   - `topShare`: 前 3 大 DUT 的集中度（0-1）
-   - `verdict`: 判别结果
-   - `detail`: 自然语言解读（包含具体数据和建议）
-
-4. **排序**: 按 `totalDie` 降序返回（坏 die 最多的 bin 优先）
-
-## 测试命令与结果
-
-```bash
-cd D:\AI\PCR-AI-Agent\pcr-ai-api
-npx tsx --test test/agentDutConcentration.test.ts
-```
-
-### 测试覆盖（5 个用例，全部通过）
-
-| # | 测试用例 | 说明 |
-|----|--------|------|
-| 1 | concentrated bad die on few DUTs => probe_card | 集中在 2 个 DUT（45+40=85/100），判别为探针卡问题 |
-| 2 | uniform spread across many DUTs => process | 均匀分散到 10 个 DUT（各 10 颗），判别为工艺问题 |
-| 3 | total below minTotalDie => no insight | 总颗数 5 < minTotalDie(8)，无输出 |
-| 4 | fewer than 3 DUTs => inconclusive | 仅 2 个 DUT，判别为样本不足 |
-| 5 | focusBins limits which bins are analyzed | 仅分析 `focusBins: [11]`，过滤其他 bin |
-
-**测试结果**: ✅ 5/5 pass，0 fail
+## Test command and output
 
 ```
-ok 1 - concentrated bad die on few DUTs => probe_card
-ok 2 - uniform spread across many DUTs => process
-ok 3 - total below minTotalDie => no insight
-ok 4 - fewer than 3 DUTs => inconclusive
-ok 5 - focusBins limits which bins are analyzed
+cd pcr-ai-api && npx tsx --test test/lotUnderperformingDuts.test.ts
 ```
 
-## 自审与处理
+**Before the fix** (verified by temporarily `git stash`-ing only the source file change and re-running, per TDD instructions): 12 pass, 1 fail — the rewritten test `"passId is always included once it has JB rows, even with no signal beyond BIN1"` failed with `map.get is not a function or its return value is not iterable` (i.e. `map.get(1)` was `undefined` under old gating logic, exactly as expected).
 
-### 代码质量检查
-
-1. **ESM 兼容性** ✅
-   - 所有相对 import 带 `.js` 后缀（`outputSiteBinByLot.js`, `agentJbBinFormat.js`, `jbYieldCalc.js`）
-   - 无外部依赖，纯类型与函数
-
-2. **类型复用** ✅
-   - `SiteBinPass`（含 `SiteBinEntry` 和 `SiteBinDutEntry`）来自 `outputSiteBinByLot.ts`
-   - `CardByPassIdEntry` 来自 `agentJbBinFormat.ts`
-   - `passIdSortLabel` 来自 `jbYieldCalc.ts`
-   - 无新增类型定义
-
-3. **边界处理** ✅
-   - bin 号解析失败时跳过（`parseBinNumber` 返回 `null`）
-   - 空 cardByPassId 时 cardId 为 `null`
-   - 多张卡时用逗号分隔字符串
-
-4. **输出排序** ✅
-   - 按 `totalDie` 降序（最严重的 bin 优先）
-
-### 潜在扩展点
-
-- `topShareThreshold`: 默认 70% 可根据制程经验调整
-- `minTotalDie`: 默认 8 可按统计置信度调整
-- `focusBins`: 支持只关注特定 bin 的场景
-
-## Commit 信息
+**After the fix** (source restored via `git stash pop`):
 
 ```
-b6fd016 feat(agent): DUT 集中度检测器（卡 vs 工艺判别）
+# tests 13
+# suites 6
+# pass 13
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 739.924
 ```
 
-- 2 files changed, 135 insertions(+)
-- `src/lib/agent/agentDutConcentration.ts` (新建)
-- `test/agentDutConcentration.test.ts` (新建)
+All 13 tests pass, including the 3 tests in the `buildGoodBinsByPassFromJbRows` suite (1 pre-existing unchanged + 2 from this task) and all other pre-existing tests in the file (compute, parse, resolveDeviceForLot, resolveProbeCardTypeForLot, and the REST route tests).
 
-## 状态
+Also ran `npx tsc --noEmit` (project-wide typecheck) — no errors.
 
-✅ **DONE** — 实现完整，测试全过，无遗留问题。
+## Diff scope verification
+
+`git diff --stat` before commit confirmed only the two intended files were modified:
+```
+ pcr-ai-api/src/lib/lotUnderperformingDutsResolve.ts | 28 +++++++++++-----------
+ pcr-ai-api/test/lotUnderperformingDuts.test.ts       | 26 ++++++++++++++++----
+```
+
+No other files were touched. A pre-existing unrelated change to `.claude/settings.local.json` (present before this task started) was left untouched and unstaged.
+
+## Concerns
+
+None beyond the tradeoff already negotiated with the user and documented verbatim in both the source comment and the test comment: if `PASSBIN` is empty/null AND the true good bin for a lot is not BIN1, this will still misclassify yield as 0% (the NF12595.1A-class failure mode). This is an accepted, explicit risk per the brief — not something introduced by this change beyond what was already scoped and approved. No other risk identified; `jbRowHasExtraGoodBinSignal` in `jbYieldCalc.ts` itself was left untouched (still exported, may be used elsewhere) — only its import/usage in this one file was removed, per the brief's exact scope.
