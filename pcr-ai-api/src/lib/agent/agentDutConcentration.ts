@@ -25,23 +25,6 @@ export type DutConcentrationOptions = {
   goodBins?: Set<number>;
 };
 
-/** Same heuristic as compactSiteBinPasses (avg die per DUT > 100 ≈ good bin). */
-export function goodBinNumbersFromSiteBinPasses(passes: SiteBinPass[]): Set<number> {
-  const good = new Set<number>();
-  for (const pass of passes) {
-    for (const entry of pass.bins) {
-      const total = entry.duts.reduce((s, d) => s + d.dieCount, 0);
-      if (total === 0) continue;
-      const dutCount = entry.duts.length;
-      const avg = dutCount > 0 ? total / dutCount : 0;
-      if (avg <= 100) continue;
-      const bin = parseBinNumber(entry.bin);
-      if (bin !== null) good.add(bin);
-    }
-  }
-  return good;
-}
-
 function parseBinNumber(bin: string): number | null {
   const m = /(\d+)/.exec(bin);
   return m ? Number(m[1]) : null;

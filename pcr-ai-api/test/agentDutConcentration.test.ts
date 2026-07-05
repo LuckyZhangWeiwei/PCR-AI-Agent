@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildDutConcentrationInsights, goodBinNumbersFromSiteBinPasses } from "../src/lib/agent/agentDutConcentration.js";
+import { buildDutConcentrationInsights } from "../src/lib/agent/agentDutConcentration.js";
 import type { SiteBinPass } from "../src/lib/outputSiteBinByLot.js";
 
 function pass(passId: number, bin: string, duts: Array<[number, number]>): SiteBinPass {
@@ -43,8 +43,7 @@ test("goodBins excludes passing bins from concentration table", () => {
       ],
     },
   ];
-  const goodBins = goodBinNumbersFromSiteBinPasses(passes);
-  assert.ok(goodBins.has(1));
+  const goodBins = new Set([1]);
   const out = buildDutConcentrationInsights(passes, [], { goodBins, focusBins: [79] });
   assert.equal(out.length, 1);
   assert.equal(out[0]?.bin, 79);
