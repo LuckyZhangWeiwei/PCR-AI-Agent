@@ -268,6 +268,14 @@ src/
 1. **Settings → 工具结果最大字符数**：**`usePersistedAgentConfig.ts`** 新增 **`toolResultMaxChars`**（默认 **12000**，6000–30000）；**`App.tsx`** 数字输入；随 **`agentConfig`** 下发，**无需重启 API**。
 2. **后端**：**`agentJbBinFormat.ts`** **`slotBadBinsCompact`** / **`binBySlot`**；详见 **`../docs/HANDOFF_AGENT_JB_BIN_AND_TOOL_RESULT.md`**、**`../pcr-ai-api/CLAUDE.md` §11 条目 15**。
 
+## 21. 近期变更纪要（2026-07-05，AI Agent API Key + JB 灰度开关服务器端共享）
+
+1. **API Key 不再是 per-browser 设置**：`usePersistedApiKey`（`localStorage` 键 `pcr-ai-report.agent.apikey.v1`）已删除。`serverConfig.agentApiKey` 现在和 `agentApiBase` / `agentModel` 等字段一样，走 `useServerConfig` 的 `GET/PATCH /api/v4/admin/config`——任一客户端在 Settings 页改动 API Key，其他所有客户端立即生效，无需重启 API。
+2. **一次性迁移**：`App.tsx` 里 `migratedApiKeyRef` 守卫的 `useEffect`，在 `useServerConfig` 首次确认拉取完成（新增的 `loaded` 返回值）且服务器尚无 key 时，读取旧 `localStorage` 键并 `updateServerConfig({ agentApiKey })` 一次，随后清掉该 `localStorage` 项。之后即使用户主动清空 key，也不会被旧值复活。
+3. **`useServerConfig` 签名变化**：返回值从 3 元组变为 4 元组 `[config, updateConfig, fetchConfig, loaded]`，新增的 `loaded: boolean` 在首次 `fetchConfig()`（成功或失败）完成后置 `true`。改动此 hook 的调用方需同步更新解构。
+4. **JB 灰度开关也纳入共享配置**：`serverConfig.jbDeterministicDispatch` / `jbLlmIntentClassifier` 对应后端 `JB_DETERMINISTIC_DISPATCH` / `JB_LLM_INTENT_CLASSIFIER`（见 `../pcr-ai-api/CLAUDE.md` 同日条目）。Settings 页「JB 路由（内部灰度开关）」分组新增两个 toggle，样式与既有 `agentEnabled` toggle 一致；这两个是内部路由行为开关，未纳入「↺ 恢复默认」按钮。
+5. **未变**：`GET /api/v4/admin/config` 仍无鉴权、字段仍明文直返——与其它字段安全等级一致，未额外加固。`YIELD_MONITOR_TRIGGERS_DUMMY` / `INFCONTROL_LAYER_BINS_DUMMY` 未纳入共享配置（生产环境下这两个 flag 被 `listDummyRuntime.ts` 强制忽略，纳入也不起作用）。
+
 ---
 
 ## 12. 与 API 联调速查

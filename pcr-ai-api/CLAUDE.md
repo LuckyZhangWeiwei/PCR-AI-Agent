@@ -290,6 +290,14 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
    - **现象**：用户要「所有 lot / fail bin / 嫌疑 DUT 列表」时 Agent 只查 YM 或只输出单 lot 概况表；`UFLEX 24` 机台 search 空。
    - **改后**：**`lot_listing`** 模式 + **`buildRecentLotsListingMarkdown`**；**`detectPendingQuery`** YM→**`query_jb_bins`**、明细→**`aggregate_jb_bins(lot,bin)`**；**`agentQueryScope.ts`** 推断 device/tester/时间窗；**`get_filter_values`** search fallback。
    - **交接全文**：[`../docs/HANDOFF_AGENT_JB_LOT_LISTING.md`](../docs/HANDOFF_AGENT_JB_LOT_LISTING.md)。回归 **`test/agentJbDeterministicReply.test.ts`**、**`test/agentQueryScope.test.ts`**。
+22. **AI Agent API Key + JB 灰度开关服务器端共享（2026-07-05）**：
+   - **`src/lib/runtimeConfig.ts`**：`RuntimeConfig` 新增 **`agentApiKey`**（解析顺序与 **`agentApiBase`** 一致：文件值 → **`AGENT_API_KEY`** env → **`SILICONFLOW_API_KEY`** env → **空串**）、**`jbDeterministicDispatch`** / **`jbLlmIntentClassifier`**（文件值 → 对应 env 变量 `=== "true"` → **`false`**）。新增 **`RUNTIME_CONFIG_PATH`** env override，供测试指向隔离临时文件，避免污染被 git 追踪的真实 `runtime-config.json`。**`admin.ts`** 无需改动（通用透传）。
+   - **JB flag 调用点改读共享配置**：**`agentLoop.ts`** 的 **`tryRunSemanticDispatchDirectRoute`**、**`jbRouteResolver.ts`** 的 **`classifyJbIntent`**，原先直接读 **`process.env.JB_DETERMINISTIC_DISPATCH`** / **`process.env.JB_LLM_INTENT_CLASSIFIER`**，现改读 **`getConfig().jbDeterministicDispatch`** / **`getConfig().jbLlmIntentClassifier`**——这是让这两个 flag 真正**无需重启**即可切换的关键（仅在 `runtimeConfig.ts` 加字段不会让它们生效，必须同步改调用点）。**`test/jbRouteResolver.test.ts`**、**`test/agentLoop.test.ts`** 无需改动：这两个测试文件不设置 **`RUNTIME_CONFIG_PATH`**，`getConfig()` 读到的真实 `runtime-config.json` 没有这两个键，照样落回它们直接设置的 **`process.env`**。
+   - **前端**：`pcr-ai-report` 的 API Key 输入从 `localStorage`（`usePersistedApiKey`）迁移到 **`serverConfig.agentApiKey`**（`useServerConfig`）；JB 两个 flag 在 Settings 页新增可见 toggle。任一客户端修改后所有客户端立即生效，无需重启；详见 **`../pcr-ai-report/CLAUDE.md` §21**。
+   - **`resolveAgentConfig()`（`agentConfig.ts`）无需改动**：前端仍在每次 `/agent/chat` 请求体的 `agentConfig.apiKey` 里带上（现在是服务器共享值），沿用既有的 override 优先解析链。
+   - **未纳入**：`YIELD_MONITOR_TRIGGERS_DUMMY` / `INFCONTROL_LAYER_BINS_DUMMY`——`listDummyRuntime.ts` 在 `dist`/生产下强制忽略这两个 env var，纳入共享配置在生产环境不会有任何效果，仅本地 dev 有意义（本地改 `.env` 已经很轻量）。
+   - **安全边界未变**：**`GET/PATCH /api/v4/admin/config`** 依旧无鉴权，`agentApiKey` 和其它字段一样明文直返——本次改动刻意未加掩码或鉴权（用户明确决定），部署时仍需靠内网/防火墙隔离。
+   - 回归 **`test/runtimeConfig.test.ts`**（新增）、**`test/jbRouteResolver.test.ts`**、**`test/agentLoop.test.ts`**（无改动，确认未回归）。
 
 ---
 
