@@ -107,8 +107,9 @@ export function buildUnderperformingDutScatterOptions(
     const option = {
       title: { text: `${pass.sortLabel} 各 DUT 良率分布`, left: 24, top: 6 },
       tooltip: { trigger: "item" },
-      // 右侧留白给 markLine 的「lot平均/阈值」标签；顶部留白避免与左对齐后的标题重叠。
-      grid: { top: 70, left: 60, right: 120, bottom: 60, containLabel: true },
+      // 右侧留白给 markLine 的「lot平均/阈值」标签；顶部留白避免与左对齐后的标题重叠；
+      // left 与 title.left 对齐（containLabel 会在此基础上自动为 y 轴刻度让出空间）。
+      grid: { top: 70, left: 24, right: 120, bottom: 60, containLabel: true },
       xAxis: { type: "category", data: duts.map((d) => `DUT${d.dut}`), name: "DUT" },
       yAxis: { type: "value", name: "良率%", min: 0, max: 100 },
       series: [

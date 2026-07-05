@@ -307,8 +307,9 @@ export function buildChartOption(
     title: { text: title, left: 24 },
     tooltip: { trigger: "axis" },
     legend: { data: data.series.map((s) => s.name) },
-    // 小边距让绘图区尽量贴左铺满，避免在超宽容器里两侧留白显得居中。
-    grid: { left: "1%", right: "3%", top: 60, bottom: 80, containLabel: true },
+    // left 与 title.left 对齐（containLabel 会自动为轴刻度让出空间）；
+    // right 留小边距让绘图区尽量贴左铺满，避免超宽容器里两侧留白显得居中。
+    grid: { left: 24, right: "3%", top: 60, bottom: 80, containLabel: true },
     xAxis,
     yAxis: { type: "value" },
     series,

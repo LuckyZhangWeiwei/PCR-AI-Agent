@@ -308,6 +308,7 @@
 
 .ai-msg--tool {
   flex-direction: column;
+  align-items: flex-start;
   max-width: 90%;
 }
 
