@@ -13,6 +13,8 @@ export interface RuntimeConfig {
   jbDeterministicDispatch: boolean;
   /** JB 路由 LLM 意图分类器 dark-launch 开关（见 jbRouteResolver.ts）。 */
   jbLlmIntentClassifier: boolean;
+  /** Agent 数据脱敏（device/NXP 令牌化）开关；见 agentDataMasking.ts / agentStream.ts。 */
+  dataMaskingEnabled: boolean;
   maxRounds: number;
   streamTimeoutSec: number;
   clientTimeoutSec: number;
@@ -30,6 +32,7 @@ export const RUNTIME_CONFIG_DEFAULTS: RuntimeConfig = {
   agentApiKey: "",
   jbDeterministicDispatch: false,
   jbLlmIntentClassifier: false,
+  dataMaskingEnabled: false,
   maxRounds: 5,
   streamTimeoutSec: 150,
   clientTimeoutSec: 180,
@@ -89,6 +92,10 @@ export function getConfig(): RuntimeConfig {
       typeof f.jbLlmIntentClassifier === "boolean"
         ? f.jbLlmIntentClassifier
         : process.env.JB_LLM_INTENT_CLASSIFIER === "true",
+    dataMaskingEnabled:
+      typeof f.dataMaskingEnabled === "boolean"
+        ? f.dataMaskingEnabled
+        : D.dataMaskingEnabled,
     maxRounds: num(
       f.maxRounds,
       process.env.AGENT_MAX_ROUNDS ? Number(process.env.AGENT_MAX_ROUNDS) : D.maxRounds

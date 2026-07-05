@@ -116,4 +116,12 @@ describe("runtimeConfig", () => {
       else process.env.JB_LLM_INTENT_CLASSIFIER = saved;
     }
   });
+
+  it("dataMaskingEnabled defaults to false and can be persisted", async () => {
+    const { getConfig, patchConfig } = await import("../src/lib/runtimeConfig.js");
+    assert.equal(getConfig().dataMaskingEnabled, false);
+    const updated = patchConfig({ dataMaskingEnabled: true });
+    assert.equal(updated.dataMaskingEnabled, true);
+    assert.equal(getConfig().dataMaskingEnabled, true);
+  });
 });
