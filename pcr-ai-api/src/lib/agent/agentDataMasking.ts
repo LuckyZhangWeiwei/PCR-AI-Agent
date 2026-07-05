@@ -28,6 +28,10 @@ export interface MaskingDictionary {
 
 interface DictionaryState {
   builtAt: number;
+  /** false when the underlying build failed (e.g. Oracle error) — such a
+   * result must never be cached, so the next call retries instead of
+   * silently serving an empty dictionary for a full TTL window. */
+  ok: boolean;
   realToToken: Map<string, string>;
   tokenToReal: Map<string, string>;
   matchRegex: RegExp | null; // matches any known real device value (longest-first)
@@ -114,6 +118,7 @@ function fetchDistinctDevicesDummy(): string[] {
 
 async function buildDictionary(): Promise<DictionaryState> {
   let realValues: string[];
+  let ok = true;
   try {
     realValues =
       yieldMonitorTriggersUseDummy() || infcontrolLayerBinsUseDummy()
@@ -122,10 +127,12 @@ async function buildDictionary(): Promise<DictionaryState> {
   } catch (err) {
     console.error("[agentDataMasking] failed to build device dictionary:", err);
     realValues = [];
+    ok = false;
   }
   const { realToToken, tokenToReal } = assignTokens(realValues);
   return {
     builtAt: Date.now(),
+    ok,
     realToToken,
     tokenToReal,
     matchRegex: buildAlternationRegex(realValues),
@@ -137,7 +144,9 @@ async function getDictionaryState(): Promise<DictionaryState> {
   if (cached && Date.now() - cached.builtAt < DICTIONARY_TTL_MS) return cached;
   if (buildingPromise) return buildingPromise;
   buildingPromise = buildDictionary().then((d) => {
-    cached = d;
+    if (d.ok) {
+      cached = d;
+    }
     buildingPromise = undefined;
     return d;
   });
