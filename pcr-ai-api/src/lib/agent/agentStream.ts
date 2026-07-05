@@ -1,6 +1,13 @@
 // pcr-ai-api/src/lib/agent/agentStream.ts
 import https from "node:https";
 import type { AgentConfig } from "./agentConfig.js";
+import { getConfig } from "../runtimeConfig.js";
+import {
+  loadMaskingDictionary,
+  createStreamUnmasker,
+  type MaskingDictionary,
+  type StreamUnmasker,
+} from "./agentDataMasking.js";
 
 export type StreamChunk =
   | { type: "delta"; text: string }
@@ -57,15 +64,60 @@ export interface LlmRequest {
   max_tokens?: number;
 }
 
-export function streamSiliconFlow(
+interface MaskableMessage {
+  role?: string;
+  content?: string | null;
+  tool_calls?: { function?: { arguments?: string } }[];
+  [key: string]: unknown;
+}
+
+/**
+ * Replace real device values / "NXP" in every message's content and tool_calls
+ * arguments with stable tokens. Never mutates the original message objects —
+ * they may be the same references stored in server-side session history
+ * (agentHistory.ts), which must stay unmasked at rest.
+ */
+export function maskRequestMessages(
+  messages: unknown[],
+  dict: MaskingDictionary
+): unknown[] {
+  return messages.map((raw) => {
+    const m = raw as MaskableMessage;
+    const next: MaskableMessage = { ...m };
+    if (typeof m.content === "string") {
+      next.content = dict.mask(m.content);
+    }
+    if (Array.isArray(m.tool_calls)) {
+      next.tool_calls = m.tool_calls.map((tc) => {
+        if (!tc?.function?.arguments) return tc;
+        return {
+          ...tc,
+          function: { ...tc.function, arguments: dict.mask(tc.function.arguments) },
+        };
+      });
+    }
+    return next;
+  });
+}
+
+export async function streamSiliconFlow(
   request: LlmRequest,
   config: AgentConfig,
   onChunk: (chunk: StreamChunk) => void
 ): Promise<void> {
+  const maskingEnabled = getConfig().dataMaskingEnabled;
+  const dict: MaskingDictionary | null = maskingEnabled
+    ? await loadMaskingDictionary()
+    : null;
+  const outboundMessages = dict
+    ? maskRequestMessages(request.messages, dict)
+    : request.messages;
+
   return new Promise((resolve, reject) => {
     const timeoutMs = getStreamTimeoutMs(config);
     const body = JSON.stringify({
       ...request,
+      messages: outboundMessages,
       stream: true,
       stream_options: { include_usage: true },
     });
@@ -93,6 +145,13 @@ export function streamSiliconFlow(
 
     let settled = false;
     let timeoutId: NodeJS.Timeout | undefined;
+    const unmasker: StreamUnmasker | null = dict ? createStreamUnmasker(dict) : null;
+
+    const flushUnmaskTail = () => {
+      if (!unmasker) return;
+      const tail = unmasker.finalize();
+      if (tail) onChunk({ type: "delta", text: tail });
+    };
 
     const clearRequestTimeout = () => {
       if (timeoutId) {
@@ -106,6 +165,7 @@ export function streamSiliconFlow(
       if (settled) return;
       settled = true;
       clearRequestTimeout();
+      flushUnmaskTail();
       onChunk({ type: "error", message: timeoutMessage });
       req.destroy(new Error(timeoutMessage));
       resolve();
@@ -174,7 +234,8 @@ export function streamSiliconFlow(
 
           // Reasoning belongs in reasoning_content; never forward to UI text stream.
           if (typeof delta?.content === "string" && delta.content.length > 0) {
-            onChunk({ type: "delta", text: delta.content });
+            const text = unmasker ? unmasker.push(delta.content) : delta.content;
+            if (text) onChunk({ type: "delta", text });
           }
 
           const toolCallDeltas = choice.delta?.tool_calls;
@@ -192,8 +253,12 @@ export function streamSiliconFlow(
         if (settled) return;
         settled = true;
         clearRequestTimeout();
+        flushUnmaskTail();
         if (collected.length > 0) {
-          onChunk({ type: "tool_calls", calls: collected.filter(Boolean) });
+          const calls = collected
+            .filter(Boolean)
+            .map((c) => (dict ? { ...c, args: dict.unmask(c.args) } : c));
+          onChunk({ type: "tool_calls", calls });
         }
         onChunk({ type: "finish", reason: finishReason });
         resolve();
@@ -202,6 +267,7 @@ export function streamSiliconFlow(
       res.on("error", (err) => {
         if (settled) return;
         settled = true;
+        flushUnmaskTail();
         onChunk({ type: "error", message: err.message });
         resolve();
       });
