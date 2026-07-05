@@ -12,6 +12,8 @@ export interface ServerConfig {
   jbDeterministicDispatch: boolean;
   /** JB 路由 LLM 意图分类器 dark-launch 开关。 */
   jbLlmIntentClassifier: boolean;
+  /** Agent 数据脱敏（device/NXP 令牌化）开关，跨客户端同步。 */
+  dataMaskingEnabled: boolean;
   maxRounds: number;
   streamTimeoutSec: number;
   clientTimeoutSec: number;
@@ -29,6 +31,7 @@ export const SERVER_CONFIG_DEFAULTS: ServerConfig = {
   agentApiKey: "",
   jbDeterministicDispatch: false,
   jbLlmIntentClassifier: false,
+  dataMaskingEnabled: false,
   maxRounds: 8,
   streamTimeoutSec: 150,
   clientTimeoutSec: 240,

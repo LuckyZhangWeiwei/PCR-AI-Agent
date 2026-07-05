@@ -398,6 +398,29 @@ function AppShell() {
 
               <hr className="settings-divider" />
 
+              {/* ── 数据安全 ── */}
+              <p className="settings-group-title">数据安全</p>
+              <div className="setting-toggle-row">
+                <label className="toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={serverConfig.dataMaskingEnabled}
+                    onChange={(e) =>
+                      updateServerConfig({ dataMaskingEnabled: e.target.checked })
+                    }
+                  />
+                  <span className="toggle-track" />
+                  <span className="toggle-label-text">是否数据脱敏</span>
+                </label>
+                <p className="field-hint">
+                  打开后，发给第三方 LLM 的内容中 device 编号与 "NXP"
+                  会替换为不可逆推的令牌，返回结果在展示 / 执行查询前自动还原为真实值。
+                  影响<strong>所有用户</strong>，立即生效无需重启。默认关闭。
+                </p>
+              </div>
+
+              <hr className="settings-divider" />
+
               {/* ── 推理行为 ── */}
               <p className="settings-group-title">推理行为</p>
               <label>
