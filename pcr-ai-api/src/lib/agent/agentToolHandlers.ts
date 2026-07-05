@@ -74,7 +74,11 @@ import {
   DEFAULT_TOOL_RESULT_MAX_CHARS,
 } from "./agentConfig.js";
 import { buildInfPath } from "../buildInfPath.js";
-import { runLotUnderperformingDuts } from "../lotUnderperformingDutsResolve.js";
+import {
+  runLotUnderperformingDuts,
+  fetchJbTestRowsForLot,
+  buildGoodBinsByPassFromJbRows,
+} from "../lotUnderperformingDutsResolve.js";
 import { formatAllDutsHighlightMarkdown } from "./agentUnderperformingDutView.js";
 import {
   runOutputSiteBinByLot,
@@ -92,7 +96,6 @@ import { parseSiteBinByLotTestEndWindow } from "../siteBinByLotTestEndWindow.js"
 import {
   buildDutConcentrationInsights,
   formatDutConcentrationMarkdown,
-  goodBinNumbersFromSiteBinPasses,
 } from "./agentDutConcentration.js";
 import { shouldRunDutAnalysis } from "./agentDutInsightTrigger.js";
 
@@ -542,13 +545,27 @@ function extractFocusBinDuts(passes: unknown[], focusBinKey: string): unknown[] 
   return result;
 }
 
-function lotDutConcentrationOpts(
-  rawPasses: SiteBinPass[],
+/**
+ * 单 lot DUT 集中度分析的良品 bin 判定：直接查该 lot/device/passIds 的 JB PASSBIN
+ * 字段（与 lotUnderperformingDutsResolve.ts 的 runLotUnderperformingDuts 同一套逻辑），
+ * 不再用 die 体积启发式（该启发式在单 lot 小 die 量场景下必然失效，见
+ * docs/superpowers/specs/2026-07-05-lot-underperforming-duts-goodbin-fix-design.md）。
+ * goodBins 是跨所有 passId 的单一 flat Set（buildDutConcentrationInsights 的既有接口
+ * 形状，不区分 passId），故这里把各 passId 的良品 bin 取并集。
+ */
+async function lotDutConcentrationOpts(
+  device: string,
+  lot: string,
+  passIds: number[],
   focusBinNum: number
-): Parameters<typeof buildDutConcentrationInsights>[2] {
-  const opts: Parameters<typeof buildDutConcentrationInsights>[2] = {
-    goodBins: goodBinNumbersFromSiteBinPasses(rawPasses),
-  };
+): Promise<Parameters<typeof buildDutConcentrationInsights>[2]> {
+  const jbRows = await fetchJbTestRowsForLot(device, lot, passIds);
+  const goodBinsByPassId = buildGoodBinsByPassFromJbRows(jbRows);
+  const goodBins = new Set<number>();
+  for (const set of goodBinsByPassId.values()) {
+    for (const n of set) goodBins.add(n);
+  }
+  const opts: Parameters<typeof buildDutConcentrationInsights>[2] = { goodBins };
   if (Number.isFinite(focusBinNum)) opts.focusBins = [focusBinNum];
   return opts;
 }
@@ -638,7 +655,11 @@ async function toolQueryLotDutBinAgg(
       if (dummy !== null) {
         const rawPasses = dummy.passes;
         const dutMd = formatDutConcentrationMarkdown(
-          buildDutConcentrationInsights(rawPasses, [], lotDutConcentrationOpts(rawPasses, focusBinNum))
+          buildDutConcentrationInsights(
+            rawPasses,
+            [],
+            await lotDutConcentrationOpts(device, lot, passIds, focusBinNum)
+          )
         );
         const passes = compactSiteBinPasses(rawPasses);
         const focusBinDuts = focusBinKey ? extractFocusBinDuts(passes, focusBinKey) : undefined;
@@ -658,7 +679,11 @@ async function toolQueryLotDutBinAgg(
       );
       const rawPasses = res.data.passes;
       const dutMd = formatDutConcentrationMarkdown(
-        buildDutConcentrationInsights(rawPasses, [], lotDutConcentrationOpts(rawPasses, focusBinNum))
+        buildDutConcentrationInsights(
+          rawPasses,
+          [],
+          await lotDutConcentrationOpts(device, lot, passIds, focusBinNum)
+        )
       );
       const passes = compactSiteBinPasses(rawPasses);
       const focusBinDuts = focusBinKey ? extractFocusBinDuts(passes, focusBinKey) : undefined;
@@ -678,7 +703,11 @@ async function toolQueryLotDutBinAgg(
       if (dummy !== null) {
         const rawPasses = dummy.passes;
         const dutMd = formatDutConcentrationMarkdown(
-          buildDutConcentrationInsights(rawPasses, [], lotDutConcentrationOpts(rawPasses, focusBinNum))
+          buildDutConcentrationInsights(
+            rawPasses,
+            [],
+            await lotDutConcentrationOpts(device, lot, passIds, focusBinNum)
+          )
         );
         const passes = compactSiteBinPasses(rawPasses);
         const focusBinDuts = focusBinKey ? extractFocusBinDuts(passes, focusBinKey) : undefined;
@@ -696,7 +725,11 @@ async function toolQueryLotDutBinAgg(
       const res = await runOutputSiteBinByLotForLotByDirectory(device, lot, passIds);
       const rawPasses = res.data.passes;
       const dutMd = formatDutConcentrationMarkdown(
-        buildDutConcentrationInsights(rawPasses, [], lotDutConcentrationOpts(rawPasses, focusBinNum))
+        buildDutConcentrationInsights(
+          rawPasses,
+          [],
+          await lotDutConcentrationOpts(device, lot, passIds, focusBinNum)
+        )
       );
       const passes = compactSiteBinPasses(rawPasses);
       const focusBinDuts = focusBinKey ? extractFocusBinDuts(passes, focusBinKey) : undefined;
