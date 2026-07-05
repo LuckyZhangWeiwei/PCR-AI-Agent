@@ -298,6 +298,12 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
    - **未纳入**：`YIELD_MONITOR_TRIGGERS_DUMMY` / `INFCONTROL_LAYER_BINS_DUMMY`——`listDummyRuntime.ts` 在 `dist`/生产下强制忽略这两个 env var，纳入共享配置在生产环境不会有任何效果，仅本地 dev 有意义（本地改 `.env` 已经很轻量）。
    - **安全边界未变**：**`GET/PATCH /api/v4/admin/config`** 依旧无鉴权，`agentApiKey` 和其它字段一样明文直返——本次改动刻意未加掩码或鉴权（用户明确决定），部署时仍需靠内网/防火墙隔离。
    - 回归 **`test/runtimeConfig.test.ts`**（新增）、**`test/jbRouteResolver.test.ts`**、**`test/agentLoop.test.ts`**（无改动，确认未回归）。
+23. **Agent device/NXP 数据脱敏（2026-07-05）**：
+   - **`src/lib/runtimeConfig.ts`**：`RuntimeConfig` 新增 **`dataMaskingEnabled`**（文件值 → `false`，无 env 兜底，纯新功能）。
+   - **`src/lib/agent/agentDataMasking.ts`**（新）：全量 distinct device 字典（Oracle：`YMWEB_YIELDMONITORTRIGGER` + `INFCONTROL` 各一条 `SELECT DISTINCT DEVICE`；Dummy：直接取内存行 distinct，遵守双路径同步）+ 24 小时内存缓存 + 哈希令牌（`DEV_` + 真实值 SHA-256 前 10 位十六进制，冲突自动加长）+ NXP 固定映射（`/nxp/gi` ↔ `COMPANY_X`）+ `mask()`/`unmask()` + 带前瞻缓冲的 `createStreamUnmasker()`（避免令牌被流式分片截断）。
+   - **`src/lib/agent/agentStream.ts`**：`streamSiliconFlow()` 是全仓库唯一的 SiliconFlow 出口（主循环、历史摘要、JB 表解读小模型调用均经过它），因此脱敏/还原**只改这一个文件**：请求体组装前对 `messages[].content` 与历史 `tool_calls[].function.arguments` 做 `mask()`；流式 `delta` 文本经 `StreamUnmasker` 逐步 `unmask()`；`tool_calls` 参数在流结束时整体 `unmask()` 后再交给 `agentLoop.ts` 派发给 `runTool()`——保证工具执行时用的是真实 device 值，能正常查库。仅当 **`getConfig().dataMaskingEnabled === true`** 时生效，默认关闭时零开销直通。
+   - **前端**：Settings → AI Agent 配置 →「数据安全」分组新增「是否数据脱敏」开关，样式与既有 toggle 一致；详见 **`../pcr-ai-report/CLAUDE.md` §22**。
+   - **未纳入**：系统提示词里固定的规则/说明文字不脱敏（只脱敏动态数据，含 `agentPrompt.ts` 里动态拼接的数据库快照 top device 列表）。
 
 ---
 

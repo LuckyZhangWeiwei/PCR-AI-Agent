@@ -278,6 +278,14 @@ src/
 
 ---
 
+## 22. 近期变更纪要（2026-07-05，Agent Device/NXP 数据脱敏）
+
+1. **`useServerConfig.ts`**：`ServerConfig` 新增 **`dataMaskingEnabled: boolean`**（默认 `false`），走既有 `GET/PATCH /api/v4/admin/config` 共享配置机制。
+2. **`App.tsx`**：Settings → AI Agent 配置，「接入配置」分组之后新增「数据安全」分组，一个 toggle「是否数据脱敏」，样式复用 `.setting-toggle-row` / `toggle-switch`（与 `jbDeterministicDispatch` 等一致）；未纳入「↺ 恢复默认」按钮（与 API Key / JB 灰度开关同等对待）。
+3. **后端实现**：详见 **`../pcr-ai-api/CLAUDE.md`** 同日条目 23（`agentDataMasking.ts` + `agentStream.ts` 单点拦截）。
+
+---
+
 ## 12. 与 API 联调速查
 
 ```
