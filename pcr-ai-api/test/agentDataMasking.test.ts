@@ -1,5 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+
+process.env["YIELD_MONITOR_TRIGGERS_DUMMY"] = "true";
+process.env["INFCONTROL_LAYER_BINS_DUMMY"] = "true";
+
 import {
   loadMaskingDictionary,
   createStreamUnmasker,
@@ -55,13 +59,13 @@ describe("agentDataMasking", () => {
 
   it("StreamUnmasker correctly restores a token split across streamed chunks", () => {
     const fakeDict: MaskingDictionary = {
-      mask: (t: string) => t.replace(/FOO/g, "TOKEN_abcdefghij"),
-      unmask: (t: string) => t.replace(/TOKEN_abcdefghij/g, "FOO"),
+      mask: (t: string) => t.replace(/FOO/g, "DEV_0123456789ab"),
+      unmask: (t: string) => t.replace(/DEV_0123456789ab/g, "FOO"),
     };
     const unmasker = createStreamUnmasker(fakeDict);
 
     const padding = "x".repeat(50);
-    const full = `${padding} before TOKEN_abcdefghij after ${padding}`;
+    const full = `${padding} before DEV_0123456789ab after ${padding}`;
     // Simulate network chunking: small pieces guarantee the 16-char token
     // straddles a chunk boundary at least once, and total length exceeds
     // any reasonable lookahead buffer so incremental flushing is exercised.
@@ -73,6 +77,33 @@ describe("agentDataMasking", () => {
     out += unmasker.finalize();
 
     assert.equal(out, `${padding} before FOO after ${padding}`);
-    assert.ok(!out.includes("abcdefghij"), "no partial or full raw token fragment must leak");
+    assert.ok(!out.includes("0123456789ab"), "no partial or full raw token fragment must leak");
+  });
+
+  it("StreamUnmasker never leaks a partial device token when fed in tiny chunks smaller than the token", async () => {
+    resetMaskingDictionaryCacheForTest();
+    const rows = getYieldMonitorTriggerDummyRows();
+    const realDevice = String(rows[0]?.DEVICE ?? "").trim();
+    const dict = await loadMaskingDictionary();
+    const maskedDevice = dict.mask(realDevice);
+    assert.notEqual(maskedDevice, realDevice, "sanity check: masking must actually change the text");
+
+    const unmasker = createStreamUnmasker(dict);
+    // Long leading padding so the buffer has already grown well past any
+    // fixed-size lookahead window by the time the token itself streams in;
+    // a 3-char chunk size (much smaller than the token) guarantees the old
+    // buggy fixed-window-slice algorithm would have split the token across
+    // several separate dict.unmask() calls, leaking raw fragments.
+    const padding = "y".repeat(200);
+    const full = `${padding} before ${maskedDevice} after`;
+    const chunkSize = 3;
+    let out = "";
+    for (let i = 0; i < full.length; i += chunkSize) {
+      out += unmasker.push(full.slice(i, i + chunkSize));
+    }
+    out += unmasker.finalize();
+
+    assert.equal(out, `${padding} before ${realDevice} after`);
+    assert.ok(!out.includes(maskedDevice), "raw device token must not leak in fragments");
   });
 });

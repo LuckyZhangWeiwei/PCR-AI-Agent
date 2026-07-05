@@ -18,9 +18,6 @@ const DEVICE_TOKEN_PREFIX = "DEV_";
 const DICTIONARY_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 const MAX_HASH_HEX_LEN = 64; // full SHA-256 hex length — collision-safe upper bound
 const INITIAL_HASH_HEX_LEN = 10;
-// Max possible token length (DEV_ + 64 hex) with generous safety margin, so the
-// streaming lookahead buffer can never flush a partially-received token.
-const UNMASK_LOOKAHEAD = DEVICE_TOKEN_PREFIX.length + MAX_HASH_HEX_LEN + 16;
 
 export interface MaskingDictionary {
   /** Replace real device values / NXP with tokens in outbound text. */
@@ -185,13 +182,45 @@ export interface StreamUnmasker {
   finalize(): string;
 }
 
+/**
+ * Length of a trailing suffix of `text` that might still be a growing,
+ * not-yet-complete token: either a `DEV_` + hex run that hasn't hit the
+ * maximum possible length yet, or a strict prefix of the fixed NXP
+ * placeholder. That suffix must not be flushed/unmasked yet — more incoming
+ * text could still complete it into (or rule it out as) a real token.
+ * Returns 0 when nothing at the tail looks like a still-growing token.
+ *
+ * Must also treat a *partial* `DEV_` prefix (e.g. trailing "D", "DE", "DEV")
+ * as unsafe, not just an already-complete "DEV_" followed by hex digits:
+ * with streaming deltas smaller than `DEVICE_TOKEN_PREFIX.length` (4 chars),
+ * a chunk boundary can split "DEV_" itself. If only the already-complete
+ * "DEV_<hex>" shape were checked, the leading "D"/"DE"/"DEV" fragment would
+ * get flushed (and unmasked as plain text, i.e. leaked) in one push() call
+ * before the rest of the token ever arrives in a later call — this was
+ * caught by a chunkSize=3 regression test against a real generated token.
+ */
+function trailingUnsafeLength(text: string): number {
+  const devMatch = /DEV_[0-9a-f]{0,64}$/.exec(text);
+  if (devMatch && devMatch[0].length < DEVICE_TOKEN_PREFIX.length + MAX_HASH_HEX_LEN) {
+    return devMatch[0].length;
+  }
+  for (let len = Math.min(DEVICE_TOKEN_PREFIX.length - 1, text.length); len >= 1; len--) {
+    if (DEVICE_TOKEN_PREFIX.startsWith(text.slice(text.length - len))) return len;
+  }
+  for (let len = Math.min(NXP_TOKEN.length - 1, text.length); len >= 1; len--) {
+    if (NXP_TOKEN.startsWith(text.slice(text.length - len))) return len;
+  }
+  return 0;
+}
+
 export function createStreamUnmasker(dict: MaskingDictionary): StreamUnmasker {
   let pending = "";
   return {
     push(delta: string): string {
       pending += delta;
-      const safeLen = Math.max(0, pending.length - UNMASK_LOOKAHEAD);
-      if (safeLen === 0) return "";
+      const unsafeLen = trailingUnsafeLength(pending);
+      const safeLen = pending.length - unsafeLen;
+      if (safeLen <= 0) return "";
       const safe = pending.slice(0, safeLen);
       pending = pending.slice(safeLen);
       return dict.unmask(safe);
