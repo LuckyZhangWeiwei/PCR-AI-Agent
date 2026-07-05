@@ -1,4 +1,3 @@
-import { goodBinNumbersFromSiteBinPasses } from "./agent/agentDutConcentration.js";
 import { passIdSortLabel } from "./jbYieldCalc.js";
 import {
   OutputSiteBinByLotValidationError,
@@ -58,12 +57,16 @@ function yieldPctFromDie(good: number, total: number): number | null {
   return roundYieldPct((good / total) * 100);
 }
 
-function buildGoodBinsFromInfHeuristic(passes: SiteBinPass[]): Set<number> {
-  const good = goodBinNumbersFromSiteBinPasses(passes);
-  good.add(HARD_GOOD_BIN);
-  return good;
-}
-
+/**
+ * 有意的取舍（2026-07-05）：这里曾经在 opts.goodBinsByPassId 未覆盖当前 passId 时，
+ * 回退到 buildGoodBinsFromInfHeuristic（跨 lot 聚合场景设计的 die 体积启发式，
+ * avg die/DUT > 100 才算良品 bin）。该启发式已被证实在单 lot 场景（本模块的唯一使用
+ * 场景，每 DUT 通常仅几十颗 die）下必然失效——任何 BIN 都不可能超过 100 的绝对阈值，
+ * 导致良品 bin 恒判定为空集合、良率恒为 0%（WA01N39W/DR41803.1Y 场景的根因）。
+ * 现直接兜底为 {HARD_GOOD_BIN}（=1），与 goodBinIndicesForJbRow 的硬编码假设一致。
+ * 若真实良品 bin 非 BIN1 且 JB 数据完全没覆盖该 passId，仍会误判——该残余风险已与
+ * 用户确认并接受，不在本次修复范围内。
+ */
 function resolveGoodBinsForPass(
   pass: SiteBinPass,
   opts: LotUnderperformingDutsOptions
@@ -71,7 +74,7 @@ function resolveGoodBinsForPass(
   if (opts.goodBins) return opts.goodBins;
   const fromJb = opts.goodBinsByPassId?.get(pass.passId);
   if (fromJb && fromJb.size > 0) return fromJb;
-  return buildGoodBinsFromInfHeuristic([pass]);
+  return new Set([HARD_GOOD_BIN]);
 }
 
 function dutYieldMapForPass(

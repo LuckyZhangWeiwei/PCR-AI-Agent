@@ -103,6 +103,22 @@ describe("lotUnderperformingDuts compute", () => {
     });
     assert.equal(with55.baseline!.yieldPct, 90.91);
   });
+
+  test("resolveGoodBinsForPass falls back to {BIN1} when goodBinsByPassId lacks this passId entirely", () => {
+    // 边界情况：goodBinsByPassId 这个 Map 本身存在，但完全没有当前 passId 的 key
+    // （例如 JB 行查询没覆盖到这个 pass）。修复前会退回 INF 启发式（goodBinNumbersFromSiteBinPasses，
+    // >100 avg/DUT 绝对阈值），单 lot 小 die 量场景下必然返回空集合、良率恒为 0%。
+    // 修复后应直接兜底为 {HARD_GOOD_BIN}（=1），不再依赖已被证实有缺陷的启发式。
+    const p = pass(1, [
+      { bin: "bin1", duts: [{ dut: 1, dieCount: 20 }, { dut: 2, dieCount: 20 }] },
+      { bin: "bin11", duts: [{ dut: 1, dieCount: 5 }, { dut: 2, dieCount: 5 }] },
+    ]);
+    const result = computeUnderperformingDutsForPass(p, {
+      goodBinsByPassId: new Map(), // passId 1 不在其中
+    });
+    assert.ok(result.baseline, "baseline must not be null — BIN1 must be recognized as good");
+    assert.equal(result.baseline!.yieldPct, 80);
+  });
 });
 
 describe("lotUnderperformingDuts parse", () => {
