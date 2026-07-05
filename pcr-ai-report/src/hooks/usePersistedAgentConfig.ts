@@ -1,7 +1,5 @@
 // pcr-ai-report/src/hooks/usePersistedAgentConfig.ts
-// All settings except apiKey are now stored server-side (useServerConfig).
-
-import { useState, useEffect } from "react";
+// All settings including apiKey are now stored server-side (useServerConfig).
 
 /** Shape sent in every POST /api/v4/agent/chat request body */
 export interface AgentConfig {
@@ -17,24 +15,19 @@ export interface AgentConfig {
   toolResultMaxHistoryChars: number;
 }
 
-const STORAGE_KEY = "pcr-ai-report.agent.apikey.v1";
+const LEGACY_API_KEY_STORAGE_KEY = "pcr-ai-report.agent.apikey.v1";
 
-export function usePersistedApiKey(): [string, (key: string) => void] {
-  const [apiKey, setApiKeyState] = useState<string>(() => {
-    try {
-      return localStorage.getItem(STORAGE_KEY) ?? "";
-    } catch {
-      return "";
-    }
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, apiKey);
-    } catch {
-      /* ignore */
-    }
-  }, [apiKey]);
-
-  return [apiKey, setApiKeyState];
+/**
+ * One-time migration helper: reads the pre-server-config API key (if any)
+ * left over from before apiKey moved to shared server config, and removes
+ * it from localStorage so it is only ever consumed once.
+ */
+export function takeLegacyApiKey(): string {
+  try {
+    const v = localStorage.getItem(LEGACY_API_KEY_STORAGE_KEY) ?? "";
+    if (v) localStorage.removeItem(LEGACY_API_KEY_STORAGE_KEY);
+    return v;
+  } catch {
+    return "";
+  }
 }

@@ -6,6 +6,12 @@ export interface ServerConfig {
   agentModel: string;
   /** 子任务模型（历史压缩 + 表解读）。默认 DeepSeek-V4-Flash。 */
   agentSubModel: string;
+  /** OpenAI 兼容接口密钥，服务器端共享，跨客户端同步。 */
+  agentApiKey: string;
+  /** JB 决策驱动确定性派发 dark-launch 开关。 */
+  jbDeterministicDispatch: boolean;
+  /** JB 路由 LLM 意图分类器 dark-launch 开关。 */
+  jbLlmIntentClassifier: boolean;
   maxRounds: number;
   streamTimeoutSec: number;
   clientTimeoutSec: number;
@@ -20,6 +26,9 @@ export const SERVER_CONFIG_DEFAULTS: ServerConfig = {
   agentApiBase: "https://api.siliconflow.cn/v1",
   agentModel: "deepseek-ai/DeepSeek-V4-Pro",
   agentSubModel: "deepseek-ai/DeepSeek-V4-Flash",
+  agentApiKey: "",
+  jbDeterministicDispatch: false,
+  jbLlmIntentClassifier: false,
   maxRounds: 8,
   streamTimeoutSec: 150,
   clientTimeoutSec: 240,
@@ -37,8 +46,10 @@ export function useServerConfig(apiBase: string): [
   ServerConfig,
   (patch: Partial<ServerConfig>) => Promise<void>,
   () => Promise<void>,
+  boolean,
 ] {
   const [config, setConfig] = useState<ServerConfig>(SERVER_CONFIG_DEFAULTS);
+  const [loaded, setLoaded] = useState(false);
 
   const fetchConfig = useCallback(async () => {
     try {
@@ -51,6 +62,8 @@ export function useServerConfig(apiBase: string): [
       }
     } catch {
       // keep current state
+    } finally {
+      setLoaded(true);
     }
   }, [apiBase]);
 
@@ -83,5 +96,5 @@ export function useServerConfig(apiBase: string): [
     [apiBase, fetchConfig]
   );
 
-  return [config, updateConfig, fetchConfig];
+  return [config, updateConfig, fetchConfig, loaded];
 }
