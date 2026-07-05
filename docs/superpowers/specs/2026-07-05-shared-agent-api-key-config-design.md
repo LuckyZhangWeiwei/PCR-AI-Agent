@@ -124,18 +124,19 @@ resolution chain behaves correctly with zero changes here.
 
 ### New: `pcr-ai-api/test/runtimeConfig.test.ts`
 
-Because `runtimeConfig.ts` reads/writes the real
-`pcr-ai-api/runtime-config.json` (no path injection today, and it's a
-git-tracked file with real settings), the test suite must not leave it
-mutated:
-
-```ts
-before(() => { backup = existsSync(CONFIG_PATH) ? readFileSync(CONFIG_PATH, "utf-8") : null; });
-after(() => {
-  if (backup !== null) writeFileSync(CONFIG_PATH, backup);
-  else if (existsSync(CONFIG_PATH)) unlinkSync(CONFIG_PATH);
-});
-```
+`runtimeConfig.ts` reads/writes `pcr-ai-api/runtime-config.json` by
+default — a git-tracked file with real settings. Rather than
+backing up/restoring that file around the test, `runtimeConfig.ts` gains
+a `RUNTIME_CONFIG_PATH` env override (read once at module load time) so
+the test can point it at an isolated temp file instead. This also sidesteps
+a real hazard introduced by the JB-flags addendum below: once `agentLoop.ts`
+/ `jbRouteResolver.ts` read `getConfig()` too, those tests run concurrently
+with this one (Node's test runner runs test files in parallel), so any
+approach that touches the real shared file risks cross-file races. The test
+sets `process.env.RUNTIME_CONFIG_PATH` to an `os.tmpdir()` path before
+dynamically importing `runtimeConfig.ts` (static imports are hoisted above
+the assignment in ESM, so this needs the same "dynamic import after env
+manipulation" pattern `test/agentConfig.test.ts` already uses).
 
 Cases:
 - `patchConfig({ agentApiKey: "sk-test" })` then `getConfig().agentApiKey === "sk-test"`.
@@ -164,3 +165,62 @@ Cases:
 - No change to how `apiBase`(报表自身服务器地址, `usePersistedApiBase`) is
   stored — that one must stay per-client since it's how each browser finds
   the API in the first place.
+
+## Addendum (added mid-plan, before any task was dispatched): JB dark-launch flags
+
+While reviewing the design, the user pointed out two more settings that
+today require an `.env` edit + process restart to change:
+`JB_DETERMINISTIC_DISPATCH` and `JB_LLM_INTENT_CLASSIFIER` (both read via
+`process.env.X` inline, at call time, in `agentLoop.ts` /
+`jbRouteResolver.ts` — never hoisted to module scope, so they resolve the
+same way `AGENT_API_KEY` etc. already do). Two related flags,
+`YIELD_MONITOR_TRIGGERS_DUMMY` / `INFCONTROL_LAYER_BINS_DUMMY`, were
+considered and explicitly rejected for this change: `listDummyRuntime.ts`
+forces Dummy off in `dist`/production regardless of these env vars, so
+adding them to shared runtime config would have no effect where it matters
+and would only add confusing controls for local dev (where an `.env` edit
+is already cheap).
+
+**Decisions (confirmed with user):**
+- Only `JB_DETERMINISTIC_DISPATCH` and `JB_LLM_INTENT_CLASSIFIER` are added.
+- Both get visible toggle switches on the Settings page (not just a
+  backend-only field reachable via PATCH) — same `toggle-switch` pattern
+  already used for `agentEnabled`.
+
+### Backend: `pcr-ai-api/src/lib/runtimeConfig.ts`
+
+Add two more booleans, resolved the same way `agentEnabled` already is
+(file value, else env var truthy-string check, else default `false`):
+
+- `jbDeterministicDispatch: boolean` — file → `process.env.JB_DETERMINISTIC_DISPATCH === "true"` → `false`.
+- `jbLlmIntentClassifier: boolean` — file → `process.env.JB_LLM_INTENT_CLASSIFIER === "true"` → `false`.
+
+### Backend: call sites read from shared config instead of `process.env` directly
+
+- `pcr-ai-api/src/lib/agent/agentLoop.ts:2015` — `tryRunSemanticDispatchDirectRoute` currently does
+  `if (process.env.JB_DETERMINISTIC_DISPATCH !== "true") return false;`. Change to read
+  `getConfig().jbDeterministicDispatch` (import `getConfig` from `../runtimeConfig.js`) and
+  `if (!getConfig().jbDeterministicDispatch) return false;` — this is what makes the flag
+  toggle live without a restart; leaving the `process.env` read in place would keep requiring one.
+- `pcr-ai-api/src/lib/agent/jbRouteResolver.ts:82` — `classifyJbIntent` currently does
+  `if (process.env.JB_LLM_INTENT_CLASSIFIER !== "true") return base;`. Change to
+  `if (!getConfig().jbLlmIntentClassifier) return base;` (same import).
+
+### Frontend
+
+- `useServerConfig.ts`: add `jbDeterministicDispatch: boolean` and
+  `jbLlmIntentClassifier: boolean` to `ServerConfig`, default `false` in
+  `SERVER_CONFIG_DEFAULTS`.
+- `App.tsx`: add two more `setting-toggle-row` blocks in the AI Agent
+  settings section (same markup pattern as the existing `agentEnabled`
+  toggle), each calling `updateServerConfig({ jbDeterministicDispatch: next })`
+  / `updateServerConfig({ jbLlmIntentClassifier: next })` directly on
+  change (booleans need no local input-buffer/blur pattern, same as
+  `agentEnabled`). Label copy makes clear these are internal routing
+  behavior switches, not everyday settings.
+
+### Testing
+
+`runtimeConfig.test.ts` (Task 1) gains two more cases per flag (file value,
+env fallback, default) alongside the `agentApiKey` cases — same
+`RUNTIME_CONFIG_PATH`-isolated test file, no new test file needed.
