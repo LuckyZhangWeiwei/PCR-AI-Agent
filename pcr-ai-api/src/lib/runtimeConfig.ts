@@ -7,6 +7,12 @@ export interface RuntimeConfig {
   agentModel: string;
   /** 子任务模型：用于历史压缩 + 确定性表解读（不涉及工具选择/最终回答）。空字符串 = 与 agentModel 相同。 */
   agentSubModel: string;
+  /** OpenAI 兼容接口密钥，服务器端共享——任一客户端修改后所有客户端立即生效，无需重启。 */
+  agentApiKey: string;
+  /** JB 决策驱动确定性派发 dark-launch 开关（见 agentLoop.ts）。 */
+  jbDeterministicDispatch: boolean;
+  /** JB 路由 LLM 意图分类器 dark-launch 开关（见 jbRouteResolver.ts）。 */
+  jbLlmIntentClassifier: boolean;
   maxRounds: number;
   streamTimeoutSec: number;
   clientTimeoutSec: number;
@@ -21,6 +27,9 @@ export const RUNTIME_CONFIG_DEFAULTS: RuntimeConfig = {
   agentApiBase: "https://api.siliconflow.cn/v1",
   agentModel: "deepseek-ai/DeepSeek-V3",
   agentSubModel: "",
+  agentApiKey: "",
+  jbDeterministicDispatch: false,
+  jbLlmIntentClassifier: false,
   maxRounds: 5,
   streamTimeoutSec: 150,
   clientTimeoutSec: 180,
@@ -30,7 +39,10 @@ export const RUNTIME_CONFIG_DEFAULTS: RuntimeConfig = {
   listMaxLimit: 1000,
 };
 
-const CONFIG_PATH = resolve(process.cwd(), "runtime-config.json");
+const CONFIG_PATH = resolve(
+  process.cwd(),
+  process.env.RUNTIME_CONFIG_PATH?.trim() || "runtime-config.json"
+);
 
 function readFile(): Partial<RuntimeConfig> {
   try {
@@ -64,6 +76,19 @@ export function getConfig(): RuntimeConfig {
       (typeof f.agentSubModel === "string" ? f.agentSubModel : undefined) ??
       process.env.AGENT_SUB_MODEL?.trim() ??
       D.agentSubModel,
+    agentApiKey:
+      (typeof f.agentApiKey === "string" && f.agentApiKey) ||
+      process.env.AGENT_API_KEY?.trim() ||
+      process.env.SILICONFLOW_API_KEY?.trim() ||
+      D.agentApiKey,
+    jbDeterministicDispatch:
+      typeof f.jbDeterministicDispatch === "boolean"
+        ? f.jbDeterministicDispatch
+        : process.env.JB_DETERMINISTIC_DISPATCH === "true",
+    jbLlmIntentClassifier:
+      typeof f.jbLlmIntentClassifier === "boolean"
+        ? f.jbLlmIntentClassifier
+        : process.env.JB_LLM_INTENT_CLASSIFIER === "true",
     maxRounds: num(
       f.maxRounds,
       process.env.AGENT_MAX_ROUNDS ? Number(process.env.AGENT_MAX_ROUNDS) : D.maxRounds
