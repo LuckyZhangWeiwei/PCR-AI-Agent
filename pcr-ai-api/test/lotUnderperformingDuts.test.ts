@@ -142,17 +142,33 @@ describe("buildGoodBinsByPassFromJbRows", () => {
     assert.deepEqual([...map.get(3)!].sort((a, b) => a - b), [1]);
   });
 
-  // 回归：PASSBIN 为空/未取到（无信息）时不应把 passId 计入 map（否则会被
-  // resolveGoodBinsForPass 当成「JB 确认良品 bin 只有 BIN1」，跳过 INF 启发式回退，
-  // 导致真实良品 bin 非 BIN1 的 lot 整体良率恒为 0%——NF12595.1A 类问题的根因）。
-  test("passId with no PASSBIN signal on any row is omitted (caller falls back to INF heuristic)", () => {
+  // 有意的取舍（2026-07-05）：曾经这道门槛专门防 NF12595.1A 那次历史 bug（PASSBIN 为空、
+  // 真实良品 bin 非 BIN1 时误判）。现已移除——单 lot 场景下 INF 启发式回退本身被证实
+  // 在小 die 量场景下必然失效（>100 avg/DUT 绝对阈值不适用于单 lot 每 DUT 仅几十颗 die
+  // 的情况），与其保留"防旧 bug 但制造新 bug"的门槛，不如直接信任 JB 权威字段 PASSBIN。
+  // 该取舍已与用户确认；若 PASSBIN 为空且真实良品 bin 非 BIN1，仍会误判为 0% 良率，
+  // 需要另外的信号源解决，不在此次修复范围内。
+  test("passId is always included once it has JB rows, even with no signal beyond BIN1", () => {
     const map = buildGoodBinsByPassFromJbRows([
       { PASSID: 1, PASSBIN: null },
       { PASSID: 1, PASSBIN: "" },
       { PASSID: 3, PASSBIN: "1-55" },
     ]);
-    assert.equal(map.has(1), false);
+    assert.deepEqual([...map.get(1)!].sort((a, b) => a - b), [1]);
     assert.deepEqual([...map.get(3)!].sort((a, b) => a - b), [1, 55]);
+  });
+
+  test("single-lot small-die-count scenario: PASSBIN gives only BIN1, goodBins is {1} not empty", () => {
+    // 复现 WA01N39W/DR41803.1Y 场景：每 DUT total die 数远低于 100（旧 INF 启发式的
+    // 绝对阈值），PASSBIN 只解析出 BIN1（无「额外」信号）。修复前 map 会缺失该 passId，
+    // resolveGoodBinsForPass 退回 INF 启发式，>100 绝对阈值在此规模下必然返回空集合，
+    // 导致良品 bin 判定为空、良率恒为 0%。
+    const map = buildGoodBinsByPassFromJbRows([
+      { PASSID: 1, PASSBIN: "1" },
+      { PASSID: 1, PASSBIN: "1" },
+    ]);
+    assert.ok(map.has(1), "passId 1 must be present even though PASSBIN only ever said BIN1");
+    assert.deepEqual([...map.get(1)!], [1]);
   });
 });
 

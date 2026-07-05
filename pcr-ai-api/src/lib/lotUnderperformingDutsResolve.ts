@@ -7,7 +7,7 @@ import {
   parseUnderperformingThresholdRatio,
   type PassUnderperformingDutsResult,
 } from "./lotUnderperformingDuts.js";
-import { goodBinIndicesForJbRow, jbRowHasExtraGoodBinSignal } from "./jbYieldCalc.js";
+import { goodBinIndicesForJbRow } from "./jbYieldCalc.js";
 import {
   getInfcontrolLayerBinDummyRows,
   infcontrolLayerBinsUseDummy,
@@ -90,21 +90,25 @@ function jbTestRowsForLot(device: string, lot: string, passIds: number[]) {
 
 /**
  * 合并 lot 内各 wafer JB 行的良品 bin（PASSBIN 段 + isGoodBin），按 passId 分组。
+ * `goodBinIndicesForJbRow` 恒含 BIN1 硬编码，外加 PASSBIN 按 `-` 切分出的每个数字。
  *
- * 仅当某 passId 至少一行提供了「BIN1 之外」的良品 bin 信号（见
- * `jbRowHasExtraGoodBinSignal`）时，才把该 passId 计入返回结果；否则不计入，
- * 交由 `resolveGoodBinsForPass` 回退 INF 启发式。
+ * 有意的取舍（2026-07-05）：曾经这里有道门槛——只有某 passId 至少一行给出「BIN1 之外」
+ * 的额外良品 bin 信号才采信 PASSBIN，否则交由 resolveGoodBinsForPass 回退 INF 启发式
+ * （`goodBinNumbersFromSiteBinPasses`，avg die/DUT > 100 才算良品 bin）。该门槛是专门为
+ * NF12595.1A 那次历史 bug 加的：PASSBIN 为空时，若直接信任「无信息 = 良品 bin 只有
+ * BIN1」，真实良品 bin 非 BIN1 的 lot 良率会恒为 0%。
  *
- * 原因：`goodBinIndicesForJbRow` 恒会硬编码加入 BIN1，若直接按「结果集合非空」判定
- * 「JB 已给出良品 bin」，会把「PASSBIN 为空/未取到（无信息）」误判为「JB 确认良品 bin
- * 只有 BIN1」——当该 lot 真实良品 bin 并非 BIN1 时（如 PASSBIN 字段为 null），会导致
- * 整 pass 良率恒为 0% 且不再尝试 INF 启发式。
+ * 现已移除该门槛：单 lot 场景（本模块的唯一使用场景）下，INF 启发式回退本身被证实必然
+ * 失效——它的 >100 绝对阈值是为跨 lot 聚合场景（每 DUT 数千颗 die）设计的，单 lot 每
+ * DUT 通常仅几十颗，任何 BIN 都不可能超过该阈值，导致良品 bin 恒被判定为空集合、良率
+ * 恒为 0%（WA01N39W/DR41803.1Y 场景）。与其保留「防旧 bug 但制造新 bug」的门槛，不如
+ * 直接信任 JB 权威字段 PASSBIN。若未来某设备 PASSBIN 恰好为空且真实良品 bin 非 BIN1，
+ * 仍会重现 NF12595.1A 那类问题——该风险已与用户明确沟通并接受，需要时另外处理。
  */
 export function buildGoodBinsByPassFromJbRows(
   rows: ReadonlyArray<Record<string, unknown>>
 ): Map<number, Set<number>> {
   const byPass = new Map<number, Set<number>>();
-  const hasSignalByPass = new Set<number>();
   for (const row of rows) {
     const passId = Number(row.PASSID ?? row.passId);
     if (!Number.isInteger(passId)) continue;
@@ -115,15 +119,11 @@ export function buildGoodBinsByPassFromJbRows(
       byPass.set(passId, set);
     }
     for (const n of good) set.add(n);
-    if (jbRowHasExtraGoodBinSignal(row)) hasSignalByPass.add(passId);
-  }
-  for (const passId of [...byPass.keys()]) {
-    if (!hasSignalByPass.has(passId)) byPass.delete(passId);
   }
   return byPass;
 }
 
-async function fetchJbTestRowsForLot(
+export async function fetchJbTestRowsForLot(
   device: string,
   lot: string,
   passIds: number[]
