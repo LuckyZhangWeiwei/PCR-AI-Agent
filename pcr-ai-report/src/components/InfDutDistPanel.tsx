@@ -726,7 +726,7 @@ export function InfDutDistPanel({
             alignItems: "center",
             justifyContent: "center",
             color: "var(--dimmed)",
-            fontSize: 13,
+            fontSize: 14,
           }}
         >
           加载中…
@@ -737,7 +737,7 @@ export function InfDutDistPanel({
         <div style={{ color: "var(--red-text)", fontSize: 13 }}>
           <div>读取失败：{error}</div>
           {fetchPaths.length > 0 && (
-            <div style={{ marginTop: 4, fontSize: 11, color: "var(--dimmed)" }}>
+            <div style={{ marginTop: 4, fontSize: 12, color: "var(--dimmed)" }}>
               {fetchPaths.map((p) => (
                 <div key={p}>{p}</div>
               ))}
@@ -749,7 +749,7 @@ export function InfDutDistPanel({
       {!loading && !error && mergedPasses && (
         <div>
           {mergedPasses.length === 0 && (
-            <div style={{ color: "var(--muted)", fontSize: 13 }}>
+            <div style={{ color: "var(--muted)", fontSize: 14 }}>
               未找到匹配的 pass 数据
             </div>
           )}
@@ -758,12 +758,12 @@ export function InfDutDistPanel({
             return (
             <div key={pass.passId} style={{ marginBottom: 10 }}>
               <div
-                style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}
+                style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}
               >
                 {passLabel(pass.passId)}
               </div>
               {passBad.bins.length === 0 ? (
-                <div style={{ color: "var(--dimmed)", fontSize: 12 }}>
+                <div style={{ color: "var(--dimmed)", fontSize: 13 }}>
                   此 pass 无不良 bin 数据（良品 bin 已隐藏）
                 </div>
               ) : (

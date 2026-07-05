@@ -223,7 +223,7 @@ export function DrillDownPanel({
             height:
               barHeightVariant === "compact" ? 96 : barHeightVariant === "medium" ? 108 : 120,
             color: "var(--muted)",
-            fontSize: 12,
+            fontSize: 13,
             background: "rgba(var(--fg-rgb),0.03)",
             borderRadius: 4,
           }}
@@ -231,7 +231,7 @@ export function DrillDownPanel({
           加载中…
         </div>
       ) : !error && groups.length === 0 ? (
-        <div style={{ color: "var(--muted)", fontSize: 12, padding: "8px 0" }}>
+        <div style={{ color: "var(--muted)", fontSize: 13, padding: "8px 0" }}>
           暂无数据
         </div>
       ) : !error && groups.length > 0 ? (

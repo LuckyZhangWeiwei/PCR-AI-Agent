@@ -49,7 +49,7 @@ export function KpiCard({
       }}
     >
       {showLabel && (
-        <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>
           {label}
         </div>
       )}
@@ -64,7 +64,7 @@ export function KpiCard({
           : value}
       </div>
       {(subtext || !showLabel) && (
-        <div className="kpi-card-subtext" style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+        <div className="kpi-card-subtext" style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
           {subtext ?? " "}
         </div>
       )}

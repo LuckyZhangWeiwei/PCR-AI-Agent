@@ -32,7 +32,7 @@
 .ai-agent-btn-new,
 .ai-agent-btn-save {
   padding: 4px 12px;
-  font-size: 12px;
+  font-size: 13px;
   background: var(--surface-2);
   border: 1px solid var(--border);
   color: var(--muted);
@@ -247,7 +247,7 @@
 .ai-msg-bubble--md h3 {
   color: var(--muted);
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.28;
 }
 .ai-msg-bubble--md blockquote {
@@ -322,7 +322,7 @@
 }
 
 .ai-tool-chips-label {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   font-style: italic;
   white-space: nowrap;
@@ -365,7 +365,7 @@
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 4px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   font-family: monospace;
   white-space: pre-wrap;

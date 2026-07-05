@@ -1686,7 +1686,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         >
           <div
             style={{
-              fontSize: 12,
+              fontSize: 13,
               color: "var(--muted)",
               marginBottom: showTree ? 10 : 0,
               cursor: "pointer",
@@ -1699,7 +1699,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
           >
             <span style={{ fontSize: 10, opacity: 0.6 }}>{showTree ? "▼" : "▶"}</span>
             Mask → Device → LOT → ProbeCard Type → CardId
-            <span style={{ fontSize: 11, color: "var(--dimmed)", fontWeight: 400 }}>
+            <span style={{ fontSize: 12, color: "var(--dimmed)", fontWeight: 400 }}>
               {showTree ? "" : `— ${treeRoots.length} 组，点击展开`}
             </span>
           </div>
@@ -1728,7 +1728,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         >
           <div
             style={{
-              fontSize: 12,
+              fontSize: 13,
               color: "var(--muted)",
               marginBottom: showDetail ? 8 : 0,
               cursor: "pointer",
@@ -2010,7 +2010,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
                 onChange={(e) => setField("testEndFrom", e.target.value)}
                 style={{ flex: 1 }}
               />
-              <span style={{ color: "var(--muted)", fontSize: 12 }}>→</span>
+              <span style={{ color: "var(--muted)", fontSize: 13 }}>→</span>
               <input
                 type="datetime-local"
                 value={form.testEndTo}

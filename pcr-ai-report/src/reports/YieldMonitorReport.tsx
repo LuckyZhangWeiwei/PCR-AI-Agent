@@ -1058,15 +1058,15 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
           ) : null}
         </div>
         {loadingDut ? (
-          <div style={{ color: "var(--muted)", fontSize: 12, padding: "8px 0" }}>
+          <div style={{ color: "var(--muted)", fontSize: 13, padding: "8px 0" }}>
             加载中…
           </div>
         ) : dutRows === null ? null : dutRows.length === 0 ? (
-          <div style={{ color: "var(--muted)", fontSize: 12, padding: "4px 0" }}>
+          <div style={{ color: "var(--muted)", fontSize: 13, padding: "4px 0" }}>
             该探针卡暂无触发记录
           </div>
         ) : dutTally.length === 0 ? (
-          <div style={{ color: "var(--muted)", fontSize: 12, padding: "4px 0" }}>
+          <div style={{ color: "var(--muted)", fontSize: 13, padding: "4px 0" }}>
             有触发记录，但 TRIGGER_LABEL 中未解析到 dut#
           </div>
         ) : (
@@ -1261,9 +1261,9 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
             chAlarmTester: (
               <div className="report-chart-panel chart-no-drill">
                 {loadingPeriod ? (
-                  <div style={{ color: "var(--muted)", fontSize: 12, padding: "8px 0" }}>加载中…</div>
+                  <div style={{ color: "var(--muted)", fontSize: 13, padding: "8px 0" }}>加载中…</div>
                 ) : (periodByTester?.groups.length ?? 0) === 0 ? (
-                  <div style={{ color: "var(--muted)", fontSize: 12, padding: "8px 0" }}>该周期无触发记录</div>
+                  <div style={{ color: "var(--muted)", fontSize: 13, padding: "8px 0" }}>该周期无触发记录</div>
                 ) : (
                   <DarkChart
                     option={periodTesterOption}
@@ -1275,9 +1275,9 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
             chAlarmCard: (
               <div className="report-chart-panel chart-no-drill">
                 {loadingPeriod ? (
-                  <div style={{ color: "var(--muted)", fontSize: 12, padding: "8px 0" }}>加载中…</div>
+                  <div style={{ color: "var(--muted)", fontSize: 13, padding: "8px 0" }}>加载中…</div>
                 ) : (periodByCard?.groups.length ?? 0) === 0 ? (
-                  <div style={{ color: "var(--muted)", fontSize: 12, padding: "8px 0" }}>该周期无触发记录</div>
+                  <div style={{ color: "var(--muted)", fontSize: 13, padding: "8px 0" }}>该周期无触发记录</div>
                 ) : (
                   <DarkChart
                     option={periodCardOption}
@@ -1289,9 +1289,9 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
             chAlarmBin: (
               <div className="report-chart-panel chart-no-drill">
                 {loadingPeriod ? (
-                  <div style={{ color: "var(--muted)", fontSize: 12, padding: "8px 0" }}>加载中…</div>
+                  <div style={{ color: "var(--muted)", fontSize: 13, padding: "8px 0" }}>加载中…</div>
                 ) : (periodByBin?.groups.length ?? 0) === 0 ? (
-                  <div style={{ color: "var(--muted)", fontSize: 12, padding: "8px 0" }}>该周期无触发记录</div>
+                  <div style={{ color: "var(--muted)", fontSize: 13, padding: "8px 0" }}>该周期无触发记录</div>
                 ) : (
                   <DarkChart
                     option={periodBinOption}
@@ -1303,9 +1303,9 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
             chAlarmDut: (
               <div className="report-chart-panel chart-no-drill">
                 {loadingPeriod ? (
-                  <div style={{ color: "var(--muted)", fontSize: 12, padding: "8px 0" }}>加载中…</div>
+                  <div style={{ color: "var(--muted)", fontSize: 13, padding: "8px 0" }}>加载中…</div>
                 ) : (periodByDut?.groups.length ?? 0) === 0 ? (
-                  <div style={{ color: "var(--muted)", fontSize: 12, padding: "8px 0" }}>该周期无触发记录</div>
+                  <div style={{ color: "var(--muted)", fontSize: 13, padding: "8px 0" }}>该周期无触发记录</div>
                 ) : (
                   <DarkChart
                     option={periodDutOption}
@@ -1546,7 +1546,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         >
           <div
             style={{
-              fontSize: 12,
+              fontSize: 13,
               color: "var(--muted)",
               marginBottom: showTree ? 10 : 0,
               cursor: "pointer",
@@ -1559,7 +1559,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
           >
             <span style={{ fontSize: 10, opacity: 0.6 }}>{showTree ? "▼" : "▶"}</span>
             Device → LOT → ProbeCard Type → ProbeCard ID
-            <span style={{ fontSize: 11, color: "var(--dimmed)", fontWeight: 400 }}>
+            <span style={{ fontSize: 12, color: "var(--dimmed)", fontWeight: 400 }}>
               {showTree ? "" : `— ${treeRoots.length} 组，点击展开`}
             </span>
           </div>
@@ -1579,7 +1579,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         >
           <div
             style={{
-              fontSize: 12,
+              fontSize: 13,
               color: "var(--muted)",
               marginBottom: showDetail ? 8 : 0,
               cursor: "pointer",
@@ -1714,7 +1714,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
               onChange={(e) => setField("timestampFrom", e.target.value)}
               style={{ flex: 1 }}
             />
-            <span style={{ color: "var(--muted)", fontSize: 12 }}>→</span>
+            <span style={{ color: "var(--muted)", fontSize: 13 }}>→</span>
             <input
               type="datetime-local"
               value={form.timestampTo}

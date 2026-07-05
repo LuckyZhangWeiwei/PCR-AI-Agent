@@ -15,7 +15,7 @@ type ChartPalette = {
 
 const CHART_PALETTES: Record<ChartTheme, ChartPalette> = {
   dark: {
-    axisColor: "#8b949e",
+    axisColor: "#9aa4ae",
     textColor: "#e6edf3",
     splitLine: "rgba(240, 246, 252, 0.06)",
     accent: "#58a6ff",
@@ -24,7 +24,7 @@ const CHART_PALETTES: Record<ChartTheme, ChartPalette> = {
     haloRgb: "255,255,255",
   },
   light: {
-    axisColor: "#57606a",
+    axisColor: "#454e57",
     textColor: "#1f2328",
     splitLine: "rgba(31, 35, 40, 0.08)",
     accent: "#0969da",

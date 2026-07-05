@@ -10,8 +10,8 @@
   --border-hi: rgba(88, 166, 255, 0.35);
 
   --text:    #e6edf3;
-  --muted:   #8b949e;
-  --dimmed:  #6e7681;
+  --muted:   #9aa4ae;
+  --dimmed:  #7d8591;
 
   --accent:   #58a6ff;
   --accent-2: #a371f7;
@@ -65,8 +65,8 @@
   --border-hi: rgba(9, 105, 218, 0.4);
 
   --text:    #1f2328;
-  --muted:   #57606a;
-  --dimmed:  #6e7781;
+  --muted:   #454e57;
+  --dimmed:  #5c646e;
 
   --accent:   #0969da;
   --accent-2: #8250df;
@@ -252,7 +252,7 @@ code {
   width: 100%;
   display: block;
   margin-top: 4px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--dimmed);
   letter-spacing: 0.01em;
 }
@@ -273,7 +273,7 @@ code {
 
 .api-panel label span {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--dimmed);
@@ -359,7 +359,7 @@ code {
 
 .field-hint {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--dimmed);
   line-height: 1.4;
 }
@@ -504,7 +504,7 @@ code {
   gap: 5px;
   padding: 4px 10px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 12px;
   border: 1px solid var(--border);
   background: rgba(var(--fg-rgb),0.03);
   color: var(--muted);
@@ -531,7 +531,7 @@ code {
   background: transparent;
   color: var(--muted);
   padding: 14px 18px 13px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
   transition: color 0.15s;
@@ -588,7 +588,7 @@ button.chip {
   cursor: pointer;
   padding: 4px 11px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   border: 1px solid var(--border);
   background: rgba(var(--fg-rgb),0.04);
@@ -655,7 +655,7 @@ button.chip.chip--active:hover {
 .report-desc {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.65;
 }
 
@@ -687,7 +687,7 @@ button.chip.chip--active:hover {
 }
 
 .section-card-label {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   margin-bottom: 10px;
   display: flex;
@@ -696,7 +696,7 @@ button.chip.chip--active:hover {
 }
 
 .section-card-label .hint {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--dimmed);
 }
 
@@ -744,7 +744,7 @@ button.chip.chip--active:hover {
 .query-panel-toggle-chevron {
   display: inline-block;
   width: 1em;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--dimmed);
 }
 
@@ -812,7 +812,7 @@ button.chip.chip--active:hover {
 }
 
 .query-panel-chips-label {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--dimmed);
 }
 
@@ -847,7 +847,7 @@ button.chip.chip--active:hover {
 
 .filter-grid label > span:first-of-type {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--dimmed);
   margin-bottom: 5px;
   text-transform: uppercase;
@@ -973,7 +973,7 @@ button.chip.chip--active:hover {
 
 /* ── Preset chips ────────────────────────────────────────────────────── */
 .preset-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; }
-.preset-chips-label { font-size: 11px; color: var(--muted); width: 100%; }
+.preset-chips-label { font-size: 12px; color: var(--muted); width: 100%; }
 
 /* ── Alert ───────────────────────────────────────────────────────────── */
 .alert {
@@ -991,7 +991,7 @@ button.chip.chip--active:hover {
 .muted  { color: var(--muted); }
 .dimmed { color: var(--dimmed); }
 .small  { font-size: 12px; }
-.report-meta { display: flex; flex-wrap: wrap; gap: 10px 20px; font-size: 13px; color: var(--muted); }
+.report-meta { display: flex; flex-wrap: wrap; gap: 10px 20px; font-size: 14px; color: var(--muted); }
 .report-meta strong { color: var(--text); }
 
 /* ── Card & chart grid ───────────────────────────────────────────────── */
@@ -1026,13 +1026,13 @@ button.chip.chip--active:hover {
 }
 .chart-card { padding: 12px 8px 8px; overflow: visible; }
 .chart-placeholder { padding: 28px 20px; text-align: center; }
-.chart-placeholder.subtle { color: var(--muted); font-size: 13px; }
+.chart-placeholder.subtle { color: var(--muted); font-size: 14px; }
 
 /* ── Overview / manifest ─────────────────────────────────────────────── */
 .endpoint-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
 .endpoint-card { padding: 14px 16px; }
 .endpoint-card-path    { margin: 0 0 6px; font-size: 13px; word-break: break-all; }
-.endpoint-card-purpose { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.45; }
+.endpoint-card-purpose { margin: 0; font-size: 14px; color: var(--muted); line-height: 1.45; }
 .overview-meta p       { margin: 0 0 8px; }
 .overview-meta p:last-child { margin-bottom: 0; }
 
@@ -1061,7 +1061,7 @@ button.chip.chip--active:hover {
 @media (max-width: 800px) { .ai-agent-layout { grid-template-columns: 1fr; } }
 
 .ai-agent-col        { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
-.ai-agent-col > h3   { margin: 0; font-size: 11px; font-weight: 700; color: var(--dimmed); text-transform: uppercase; letter-spacing: 0.07em; }
+.ai-agent-col > h3   { margin: 0; font-size: 12px; font-weight: 700; color: var(--dimmed); text-transform: uppercase; letter-spacing: 0.07em; }
 
 .ai-agent-textarea {
   width: 100%;
@@ -1084,7 +1084,7 @@ button.chip.chip--active:hover {
   box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.1);
 }
 
-.ai-agent-meta        { margin: 0; font-size: 12px; color: var(--muted); }
+.ai-agent-meta        { margin: 0; font-size: 13px; color: var(--muted); }
 .ai-agent-placeholder {
   margin: 0;
   flex: 1;
@@ -1094,7 +1094,7 @@ button.chip.chip--active:hover {
   background: var(--surface-2);
   border: 1px dashed var(--border);
   color: var(--dimmed);
-  font-size: 13px;
+  font-size: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1115,7 +1115,7 @@ button.chip.chip--active:hover {
   overflow: auto;
   max-height: min(480px, 65vh);
 }
-.ai-agent-reasoning         { font-size: 13px; color: var(--muted); }
+.ai-agent-reasoning         { font-size: 14px; color: var(--muted); }
 .ai-agent-reasoning summary { cursor: pointer; -webkit-user-select: none; user-select: none; color: var(--accent); }
 .ai-agent-reasoning-pre {
   margin: 8px 0 0;
@@ -1239,7 +1239,7 @@ button.chip.chip--active:hover {
 .report-reorder-drag-title {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--dimmed);
   letter-spacing: 0.03em;
@@ -1498,7 +1498,7 @@ button.chip.chip--active:hover {
 }
 
 .funnel-step-name {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--dimmed);
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -1518,7 +1518,7 @@ button.chip.chip--active:hover {
   color: var(--step-color, var(--muted));
 }
 .funnel-step-selecting {
-  font-size: 9px;
+  font-size: 10px;
   color: var(--step-color, var(--muted));
   opacity: 0.75;
   line-height: 1;
@@ -1532,7 +1532,7 @@ button.chip.chip--active:hover {
   flex-wrap: wrap;
 }
 .funnel-chart-title {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
 }
 .funnel-back-btn {
@@ -1540,7 +1540,7 @@ button.chip.chip--active:hover {
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   padding: 5px 12px;
   cursor: pointer;
   white-space: nowrap;
@@ -1647,7 +1647,7 @@ button.chip.chip--active:hover {
 }
 
 .chart-drill-hint {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--dimmed);
   margin-bottom: 4px;
 }

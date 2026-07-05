@@ -2,6 +2,17 @@
 
 ---
 
+## 2026-07-05 — 灰色小字对比度 + 字号微调（全局可读性）
+
+**完成内容：**
+- **对比度**：`index.css` 的 `--muted`/`--dimmed` 设计 token（dark/light 两套）与 `chartTheme.ts` 的 `axisColor`（图表坐标轴文字，需与 `--muted` 保持同步）一并调整——dark 主题调亮、light 主题调深，提高与背景的对比度。覆盖所有引用这两个 token 的说明文字、字段提示、图表轴标签、下钻提示等。
+- **字号**：所有使用 `color: var(--muted)` / `var(--dimmed)` 的灰色小字统一 +1px（如 11px→12px、12px→13px、13px→14px），覆盖 `index.css`、`AiAgentReport.css`、`QueryInspector.css`、`DataTable.css` 及 `KpiCard`/`TreeTable`/`DrillDownPanel`/`InfDutDistPanel`/`LotUnderperformingDutsPanel`/`YieldMonitorReport`/`InfcontrolReport` 内联样式；未触碰非灰色文字（按钮、输入框等）字号。
+- 用批量脚本执行 +1px 替换时曾误跑两次导致部分字号翻倍（+2px），已通过 `git checkout` 恢复原文件后重新单次执行修正。
+
+**测试：** `pcr-ai-report` `npx tsc -b --noEmit` 通过（0 错误）；前端无测试框架，未跑用例；改动为纯样式，未做浏览器实测（已提示用户 `npm run dev` 自行核对）。
+
+---
+
 ## 2026-07-04 — light/dark 主题：终审收尾（TreeTable 主题化 + tooltip 对比度 + 防闪屏）
 
 **完成内容：**

@@ -116,7 +116,7 @@ export function LotUnderperformingDutsPanel({
           </p>
           {data.passes.map((pass) => (
             <div key={pass.passId} style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>
+              <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 6 }}>
                 {pass.sortLabel}
                 {pass.baseline
                   ? ` — lot 整体 ${pass.baseline.yieldPct}% · 阈值 ${pass.baseline.thresholdPct}%`

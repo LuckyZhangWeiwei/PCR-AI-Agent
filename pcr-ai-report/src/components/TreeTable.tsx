@@ -54,7 +54,7 @@ function NodeRow({
               {expanded ? "▼" : "▶"}
             </span>
           )}
-          <span style={{ fontSize: 10, color: "var(--dimmed)", marginRight: 4 }}>
+          <span style={{ fontSize: 11, color: "var(--dimmed)", marginRight: 4 }}>
             {node.dimKey}:
           </span>
           {node.dimValue}
@@ -102,7 +102,7 @@ function NodeRow({
 export function TreeTable({ roots, totalHeader = "Count", renderExtra }: TreeTableProps) {
   if (roots.length === 0) {
     return (
-      <div style={{ color: "var(--muted)", fontSize: 13, padding: "12px 0" }}>
+      <div style={{ color: "var(--muted)", fontSize: 14, padding: "12px 0" }}>
         暂无数据
       </div>
     );
@@ -122,7 +122,7 @@ export function TreeTable({ roots, totalHeader = "Count", renderExtra }: TreeTab
               style={{
                 textAlign: "left",
                 padding: "6px 8px",
-                fontSize: 11,
+                fontSize: 12,
                 color: "var(--muted)",
                 textTransform: "uppercase",
                 letterSpacing: "0.05em",
@@ -136,7 +136,7 @@ export function TreeTable({ roots, totalHeader = "Count", renderExtra }: TreeTab
                 textAlign: "right",
                 paddingRight: 16,
                 padding: "6px 16px 6px 8px",
-                fontSize: 11,
+                fontSize: 12,
                 color: "var(--muted)",
                 textTransform: "uppercase",
                 letterSpacing: "0.05em",
@@ -149,7 +149,7 @@ export function TreeTable({ roots, totalHeader = "Count", renderExtra }: TreeTab
               <th
                 style={{
                   padding: "6px 8px",
-                  fontSize: 11,
+                  fontSize: 12,
                   color: "var(--muted)",
                   textTransform: "uppercase",
                   letterSpacing: "0.05em",
