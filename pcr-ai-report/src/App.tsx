@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { apiGetJson } from "./api/client";
 import { API_PREFIX } from "./api/paths";
 import { ReportListLimitsSettings } from "./components/ReportListLimitsSettings";
 import { usePersistedApiBase } from "./hooks/usePersistedApiBase";
-import { type AgentConfig, usePersistedApiKey } from "./hooks/usePersistedAgentConfig.js";
+import { type AgentConfig, takeLegacyApiKey } from "./hooks/usePersistedAgentConfig.js";
 import { useServerConfig, SERVER_CONFIG_DEFAULTS } from "./hooks/useServerConfig.js";
 import { AiAgentReport } from "./reports/AiAgentReport";
 import { InfcontrolReport } from "./reports/InfcontrolReport";
@@ -28,12 +28,11 @@ function AppShell() {
   const { theme, toggleTheme } = useThemeContext();
   const [apiBase, setApiBase, resetApiBase] = usePersistedApiBase();
   const [apiBaseInput, setApiBaseInput] = useState(apiBase);
-  const [serverConfig, updateServerConfig, fetchServerConfig] = useServerConfig(apiBase);
-  const [apiKey, setApiKey] = usePersistedApiKey();
+  const [serverConfig, updateServerConfig, fetchServerConfig, serverConfigLoaded] = useServerConfig(apiBase);
   const [agentApiKeyVisible, setAgentApiKeyVisible] = useState(false);
 
   const agentConfig: AgentConfig = {
-    apiKey,
+    apiKey: serverConfig.agentApiKey,
     apiBase: serverConfig.agentApiBase,
     model: serverConfig.agentModel,
     subAgentModel: serverConfig.agentSubModel,
@@ -55,11 +54,25 @@ function AppShell() {
   const [agentApiBaseInput, setAgentApiBaseInput] = useState(serverConfig.agentApiBase);
   const [agentModelInput, setAgentModelInput] = useState(serverConfig.agentModel);
   const [agentSubModelInput, setAgentSubModelInput] = useState(serverConfig.agentSubModel);
+  const [agentApiKeyInput, setAgentApiKeyInput] = useState(serverConfig.agentApiKey);
 
   // Sync text buffers when server config loads/resets
   useEffect(() => { setAgentApiBaseInput(serverConfig.agentApiBase); }, [serverConfig.agentApiBase]);
   useEffect(() => { setAgentModelInput(serverConfig.agentModel); }, [serverConfig.agentModel]);
   useEffect(() => { setAgentSubModelInput(serverConfig.agentSubModel); }, [serverConfig.agentSubModel]);
+  useEffect(() => { setAgentApiKeyInput(serverConfig.agentApiKey); }, [serverConfig.agentApiKey]);
+
+  // One-time migration: lift a pre-existing localStorage API key up to the
+  // shared server config, the first time we've confirmed the server has none.
+  const migratedApiKeyRef = useRef(false);
+  useEffect(() => {
+    if (!serverConfigLoaded || migratedApiKeyRef.current) return;
+    migratedApiKeyRef.current = true;
+    if (!serverConfig.agentApiKey) {
+      const legacy = takeLegacyApiKey();
+      if (legacy) updateServerConfig({ agentApiKey: legacy });
+    }
+  }, [serverConfigLoaded, serverConfig.agentApiKey, updateServerConfig]);
 
   // Sync input when apiBase changes externally (resetApiBase)
   useEffect(() => { setApiBaseInput(apiBase); }, [apiBase]);
@@ -319,9 +332,10 @@ function AppShell() {
                 <div className="api-panel-key-row">
                   <input
                     type={agentApiKeyVisible ? "text" : "password"}
-                    value={apiKey}
+                    value={agentApiKeyInput}
                     placeholder="sk-..."
-                    onChange={(e) => setApiKey(e.target.value)}
+                    onChange={(e) => setAgentApiKeyInput(e.target.value)}
+                    onBlur={(e) => updateServerConfig({ agentApiKey: e.target.value.trim() })}
                     autoComplete="off"
                   />
                   <button
@@ -335,7 +349,7 @@ function AppShell() {
                 </div>
               </label>
               <p className="field-hint">
-                SiliconFlow / OpenAI 兼容接口的密钥。留空时后端读取服务器环境变量
+                SiliconFlow / OpenAI 兼容接口的密钥。<strong>服务器端共享配置</strong>——任一客户端修改后，其他所有客户端立即生效，无需重启。留空时后端读取服务器环境变量
                 <code>AGENT_API_KEY</code>；若两处均无则返回 400。
               </p>
               <label>
@@ -484,6 +498,43 @@ function AppShell() {
                 浏览器端整次 fetch 请求的最长等待。应比 LLM 响应超时多 30s 以上，让后端有机会完成流并关闭连接。
                 超时后显示「↻ 重试」按钮，可从同一 session 续跑。
               </p>
+
+              <hr className="settings-divider" />
+
+              {/* ── JB 路由（内部灰度开关） ── */}
+              <p className="settings-group-title">JB 路由（内部灰度开关）</p>
+              <div className="setting-toggle-row">
+                <label className="toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={serverConfig.jbDeterministicDispatch}
+                    onChange={(e) =>
+                      updateServerConfig({ jbDeterministicDispatch: e.target.checked })
+                    }
+                  />
+                  <span className="toggle-track" />
+                  <span className="toggle-label-text">决策驱动确定性派发（dark-launch）</span>
+                </label>
+                <p className="field-hint">
+                  内部路由灰度开关，非日常设置。影响<strong>所有用户</strong>，立即生效无需重启。
+                </p>
+              </div>
+              <div className="setting-toggle-row">
+                <label className="toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={serverConfig.jbLlmIntentClassifier}
+                    onChange={(e) =>
+                      updateServerConfig({ jbLlmIntentClassifier: e.target.checked })
+                    }
+                  />
+                  <span className="toggle-track" />
+                  <span className="toggle-label-text">JB 路由 LLM 意图分类器（dark-launch）</span>
+                </label>
+                <p className="field-hint">
+                  内部路由灰度开关，非日常设置。影响<strong>所有用户</strong>，立即生效无需重启。
+                </p>
+              </div>
 
               <div className="api-panel-actions">
                 <button
