@@ -1,5 +1,6 @@
 // pcr-ai-api/src/lib/agent/agentLoop.ts
 import type { AgentConfig } from "./agentConfig.js";
+import { getConfig } from "../runtimeConfig.js";
 import {
   getHistory,
   appendMessages,
@@ -2012,7 +2013,7 @@ export async function tryRunSemanticDispatchDirectRoute(
   agentConfig: AgentConfig,
   emit: (event: AgentSseEvent) => void
 ): Promise<boolean> {
-  if (process.env.JB_DETERMINISTIC_DISPATCH !== "true") return false; // dark-launch
+  if (!getConfig().jbDeterministicDispatch) return false; // dark-launch
 
   const history = getHistory(sessionId);
   const lastToolName = lastToolMessage(history)?.name;

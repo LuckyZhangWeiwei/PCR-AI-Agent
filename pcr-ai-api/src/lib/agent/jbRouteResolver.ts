@@ -10,6 +10,7 @@ import { extractLotFromUserText } from "./agentInfWaferMapTool.js";
 import { inferMaskFromText } from "./agentQueryScope.js";
 import { callJbIntentClassifier, type ChatFn } from "./jbIntentClassifier.js";
 import type { AgentConfig } from "./agentConfig.js";
+import { getConfig } from "../runtimeConfig.js";
 
 export interface JbRouteParams {
   focusBin?: number;
@@ -79,7 +80,7 @@ export async function classifyJbIntent(
   payload?: Record<string, unknown>
 ): Promise<JbRouteDecision> {
   const base = resolveJbRoute(q, history, payload);
-  if (process.env.JB_LLM_INTENT_CLASSIFIER !== "true") return base;
+  if (!getConfig().jbLlmIntentClassifier) return base;
   // 非 generic 一律纯正则：避免「WC13N55Z 各 lot 良率 top5」等无 lot 锚点问句
   // 被 LLM 分类器改写成 generic/low，导致 resolveDispatch 派发失败。
   if (base.mode !== "generic") return base;
