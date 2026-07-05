@@ -95,7 +95,7 @@ export type WaferMapPass = {
  * @param passes       One entry per pass tab
  * @param possibleDies Testable positions from tyControl (rendered as grey if untested)
  * @param dieAspect    dieWidth / dieHeight (controls rectangle shape)
- * @param _notchAngle  INF notch angle (reserved; notch marker not drawn in HTML)
+ * @param notchAngle   Degrees (0=right, 90=bottom, 180=left, 270=top); INF default 270
  * @param goodBins     Set of good bin numbers (for legend / summary)
  * @param highlight    "" | "edge" | "bin:N" | "bin:N,M,..."
  */
@@ -104,7 +104,7 @@ export function generateWaferMapHtml(
   passes: WaferMapPass[],
   possibleDies: Array<{ x: number; y: number }>,
   dieAspect: number,
-  _notchAngle: number,
+  notchAngle: number,
   goodBins: Set<number>,
   highlight = ""
 ): string {
@@ -244,6 +244,9 @@ export function generateWaferMapHtml(
       );
     }
 
+    // Notch
+    appendNotch(lines, cx, cy, r, notchAngle);
+
     lines.push("    </svg>");
     lines.push("  </div>"); // wafer-wrap
 
@@ -289,6 +292,26 @@ export function generateWaferMapHtml(
   return lines.join("\n");
 }
 
+// ── Notch triangle ────────────────────────────────────────────────────────
+
+function appendNotch(lines: string[], cx: number, cy: number, r: number, notchAngle: number): void {
+  const rad = (notchAngle * Math.PI) / 180;
+  const perpRad = rad + Math.PI / 2;
+  const notchSz = r * 0.028;
+
+  const bx1 = cx + r * Math.cos(rad) + notchSz * Math.cos(perpRad);
+  const by1 = cy + r * Math.sin(rad) + notchSz * Math.sin(perpRad);
+  const bx2 = cx + r * Math.cos(rad) - notchSz * Math.cos(perpRad);
+  const by2 = cy + r * Math.sin(rad) - notchSz * Math.sin(perpRad);
+  const tipR = r - notchSz * 1.8;
+  const nx = cx + tipR * Math.cos(rad);
+  const ny = cy + tipR * Math.sin(rad);
+
+  lines.push(
+    `      <polygon class="notch" points="${f(bx1)},${f(by1)} ${f(bx2)},${f(by2)} ${f(nx)},${f(ny)}" fill="#90a4ae"/>`
+  );
+}
+
 // ── Lot heatmap HTML ──────────────────────────────────────────────────────
 
 export type LotHeatmapPass = {
@@ -307,7 +330,7 @@ export function generateLotHeatmapHtml(
   passes: LotHeatmapPass[],
   allCoords: Set<string>,   // "x,y" strings of all tested positions
   dieAspect: number,
-  _notchAngle: number,
+  notchAngle: number,
   possibleDies: Array<{ x: number; y: number }>
 ): string {
   const multiPass = passes.length > 1;
@@ -390,6 +413,7 @@ export function generateLotHeatmapHtml(
       );
     }
 
+    appendNotch(lines, cx, cy, r, notchAngle);
     lines.push("    </svg>");
     lines.push("  </div>"); // wafer-wrap
 
@@ -551,7 +575,7 @@ export function generateDutBinMapHtml(
   targetDut: number,
   targetBin: number,
   dieAspect: number,
-  _notchAngle: number,
+  notchAngle: number,
   passLabel: string
 ): string {
   const xs = dies.map((d) => d.x);
@@ -665,6 +689,7 @@ export function generateDutBinMapHtml(
     }
   }
 
+  appendNotch(lines, cx, cy, r, notchAngle);
   lines.push("    </svg>");
   lines.push("  </div>"); // wafer-wrap
 
