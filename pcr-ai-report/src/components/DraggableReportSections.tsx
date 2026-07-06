@@ -54,6 +54,9 @@ export const YIELD_MONITOR_LAYOUT_STORAGE_KEYS = [
   "pcr-ai-report:yield-monitor-modules",
   "pcr-ai-report:yield-monitor-kpi-blocks",
   "pcr-ai-report:yield-monitor-chart-blocks",
+  "pcr-ai-report:yield-monitor-alarm-kpi-blocks",
+  "pcr-ai-report:yield-monitor-alarm-chart-blocks",
+  "pcr-ai-report:yield-monitor-alarm-trend-chart-blocks",
 ] as const;
 
 export const JB_START_LAYOUT_STORAGE_KEYS = [
