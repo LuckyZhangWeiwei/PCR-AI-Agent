@@ -328,6 +328,49 @@ export function periodWindow(
   return { start, end, prevStart, prevEnd };
 }
 
+export type PeriodBucket = { start: Date; end: Date; label: string };
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+function formatMonthDay(d: Date): string {
+  return `${pad2(d.getMonth() + 1)}/${pad2(d.getDate())}`;
+}
+
+function formatYearMonth(d: Date): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+}
+
+/**
+ * 近 `count` 个周期窗口，按时间从旧到新排列，供趋势柱图 x 轴使用。
+ * week：`count` 个连续、不重叠的滚动 7 天窗口，最新一个是 `[now-7d, now]`。
+ * month：`count` 个自然月窗口，最新一个是「本月 1 日至 now」（可能是不完整月份），
+ * 其余为完整自然月。
+ */
+export function recentPeriodBuckets(
+  period: PeriodKey,
+  count: number,
+  now: Date = new Date()
+): PeriodBucket[] {
+  const buckets: PeriodBucket[] = [];
+  if (period === "week") {
+    const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+    for (let i = 0; i < count; i++) {
+      const end = new Date(now.getTime() - i * WEEK_MS);
+      const start = new Date(end.getTime() - WEEK_MS);
+      buckets.push({ start, end, label: `${formatMonthDay(start)}-${formatMonthDay(end)}` });
+    }
+  } else {
+    for (let i = 0; i < count; i++) {
+      const start = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const end = i === 0 ? now : new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+      buckets.push({ start, end, label: formatYearMonth(start) });
+    }
+  }
+  return buckets.reverse();
+}
+
 /** 派生聚合维度 `bin` 的展示格式：数字 → `BIN n`；`goodbin` → `GOODBIN`；空 → `(未知)`。 */
 export function formatBinLabel(bin: string): string {
   const v = bin.trim();
