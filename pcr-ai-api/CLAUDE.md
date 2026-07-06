@@ -28,6 +28,7 @@
 | 1e2 | [`../docs/HANDOFF_AGENT_JB_PROBE_CARD_CHANGE.md`](../docs/HANDOFF_AGENT_JB_PROBE_CARD_CHANGE.md) | **Agent JB 中途换卡**：仅同 **(slot, passId)** 多 CARDID；`cardByPassId`（pass1≠pass3 用不同卡为正常） |
 | 1f | [`../docs/HANDOFF_AGENT_GENERATE_CHART.md`](../docs/HANDOFF_AGENT_GENERATE_CHART.md) | **Agent generate_chart**：GLM `<tool_call>` 解析、空参合并、`inferGenerateChartArgsFromHistory`（DUT 占比 pie） |
 | 1g | [`../docs/HANDOFF_INF_WAFER_MAP_AND_AGENT_TABLE_UX.md`](../docs/HANDOFF_INF_WAFER_MAP_AND_AGENT_TABLE_UX.md) | **INF + Agent 三路由**：wafermap / lot 概况 / DUT×BIN 图；`inf_draw` vs `inf_draw_dut_bin_map`；超时与 HTML 性能 |
+| 1g1 | [`../docs/HANDOFF_CURSOR_FIX_WAFERMAP_NOTCH_ANGLE_2026-07-06.md`](../docs/HANDOFF_CURSOR_FIX_WAFERMAP_NOTCH_ANGLE_2026-07-06.md) | **Wafermap notch 角度**：INF `dNotchAngle`（0=上）→ SVG（0=右）；`infNotchAngleToSvg`；NF13305.1N slot7 三角应在底部 |
 | 2 | [`docs/API_V3.md`](docs/API_V3.md) | **v3 列表**完整 SQL（由 `npm run docs:api-v3` 从 `dist` 再生） |
 | 3 | [`.env.example`](.env.example) | 环境变量与 Dummy 开关说明 |
 | 4 | [`.cursor/rules/dummy-parity.mdc`](.cursor/rules/dummy-parity.mdc) | **Oracle 与 Dummy 双路径必须同步**（改筛选/WHERE/响应形状时必读） |

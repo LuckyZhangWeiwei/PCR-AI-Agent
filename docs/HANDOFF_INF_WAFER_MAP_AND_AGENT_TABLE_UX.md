@@ -46,7 +46,7 @@ awaitingSummary（上轮工具结束）
 | 整体测试情况只有 YM 文字、无 JB 表 | 模型只调 `query_yield_triggers` | `agentJbOverviewRoute` + `buildLotOverviewTablesMarkdown` |
 | 「BIN15 和 DUT 关系」图不对 | 误走 `inf_draw_wafer_map` 高亮 | `agentDutBinMapRoute` → `inf_draw_dut_bin_map` |
 | 竖线（其他 DUT 的 BIN）不明显 | 图案对比度低 | `infWaferMapHtml` 青色双竖线 + 粗描边 |
-| 晶圆图右侧 notch 三角（2026-06-03 曾移除，2026-07-05 恢复） | `appendNotch` | 按 INF `dNotchAngle` 真实角度绘制（0=右/90=下/180=左/270=上，顺时针，与 die 网格同坐标系），非固定位置 |
+| 晶圆图 notch 三角（2026-06-03 曾移除，2026-07-05 恢复；2026-07-06 角度修正） | `infNotchAngleToSvg` + `appendNotch` | INF `dNotchAngle`（0=上/90=右/180=下/270=左）经 `readDieGeometry` 转为 SVG 角度（0=右/90=下/180=左/270=上）再绘制；详见 [`HANDOFF_CURSOR_FIX_WAFERMAP_NOTCH_ANGLE_2026-07-06.md`](HANDOFF_CURSOR_FIX_WAFERMAP_NOTCH_ANGLE_2026-07-06.md) |
 
 ---
 

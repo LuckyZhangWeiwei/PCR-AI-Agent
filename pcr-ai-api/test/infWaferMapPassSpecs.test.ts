@@ -13,6 +13,8 @@ import {
   findPsbn,
   findSegmentedPassLayers,
   getDiesForWaferMapSpec,
+  infNotchAngleToSvg,
+  readDieGeometry,
 } from "../src/lib/infWaferMap.js";
 import { findAllSmWaferPasses } from "../src/lib/infWaferMap.js";
 
@@ -117,4 +119,17 @@ test("buildWaferMapPassSpecs single passId: all block dies are non-empty", async
       assert.ok(dies.length > 0, `no dies for passId=${passId} spec ${spec.dieKey} (${spec.label})`);
     }
   }
+});
+
+test("infNotchAngleToSvg maps INF dNotchAngle to SVG canvas degrees", () => {
+  assert.equal(infNotchAngleToSvg(180), 90); // bottom
+  assert.equal(infNotchAngleToSvg(270), 180); // left
+  assert.equal(infNotchAngleToSvg(90), 0); // right
+  assert.equal(infNotchAngleToSvg(0), 270); // top
+});
+
+test("readDieGeometry converts dummy INF dNotchAngle 180 to SVG bottom (90)", async () => {
+  const root = await parseInf(fixture);
+  const { notchAngle } = readDieGeometry(root);
+  assert.equal(notchAngle, 90);
 });

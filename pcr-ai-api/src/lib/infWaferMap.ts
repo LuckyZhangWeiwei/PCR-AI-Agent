@@ -67,7 +67,7 @@ export type WaferResult = {
   passes: PassResult[];
   /** Die aspect ratio (dieWidth / dieHeight) from MdMg block. */
   dieAspect: number;
-  /** Notch angle in degrees (SVG convention: 0=right, 90=bottom, 180=left, 270=top). */
+  /** Notch angle in degrees for SVG rendering (0=right, 90=bottom, 180=left, 270=top). */
   notchAngle: number;
 };
 
@@ -669,6 +669,15 @@ export function buildWaferMapPassSpecs(root: InfBlock, passesArg: string): Wafer
 // ── Geometry helpers ───────────────────────────────────────────────────────
 
 /**
+ * Convert INF `dNotchAngle` to SVG canvas degrees.
+ * INF: 0=top, 90=right, 180=bottom, 270=left (clockwise).
+ * SVG: 0=right, 90=bottom, 180=left, 270=top (clockwise, y-down).
+ */
+export function infNotchAngleToSvg(infAngle: number): number {
+  return ((infAngle - 90) % 360 + 360) % 360;
+}
+
+/**
  * Read die geometry from MdMapResult.
  * - dDieWidth / dDieHeight are direct keys of MdMapResult
  * - dNotchAngle is in MdMapResult.MdBlank.dNotchAngle
@@ -692,7 +701,8 @@ export function readDieGeometry(root: InfBlock): { dieAspect: number; notchAngle
   // Notch angle: MdMapResult.MdBlank.dNotchAngle
   const mdBlank = mdMapResult?.block("MdBlank");
   const notchRaw = parseFloat(mdBlank?.key("dNotchAngle") ?? "270");
-  const notchAngle = isNaN(notchRaw) ? 270 : notchRaw;
+  const infNotch = isNaN(notchRaw) ? 270 : notchRaw;
+  const notchAngle = infNotchAngleToSvg(infNotch);
 
   return { dieAspect: aspect, notchAngle };
 }
