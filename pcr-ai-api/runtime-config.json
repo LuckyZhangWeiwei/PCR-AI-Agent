@@ -1,7 +1,7 @@
 {
   "agentEnabled": true,
   "agentApiBase": "https://api.siliconflow.cn/v1",
-  "agentModel": "deepseek-ai/DeepSeek-V4-Pro",
+  "agentModel": "deepseek-ai/DeepSeek-V4-Flash",
   "maxRounds": 8,
   "streamTimeoutSec": 150,
   "clientTimeoutSec": 240,
@@ -9,5 +9,8 @@
   "toolResultMaxHistoryChars": 8000,
   "listDefaultLimit": 2000,
   "listMaxLimit": 2000,
-  "agentSubModel": "deepseek-ai/DeepSeek-V4-Flash"
+  "agentSubModel": "deepseek-ai/DeepSeek-V4-Flash",
+  "jbDeterministicDispatch": true,
+  "jbLlmIntentClassifier": true,
+  "dataMaskingEnabled": true
 }

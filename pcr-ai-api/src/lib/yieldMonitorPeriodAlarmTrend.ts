@@ -2,6 +2,7 @@ import type { BindParameters } from "oracledb";
 import { parseYieldMonitorTriggerV3Query } from "./yieldMonitorTriggerFilters.js";
 import {
   filterYieldMonitorDummyRowsMatchingV3,
+  yieldMonitorDummyTimeOffsetMs,
   type YieldMonitorTriggerDummyRow,
 } from "./yieldMonitorTriggerDummy.js";
 import { parseBinFromTriggerLabel } from "./yieldTriggerLabelBin.js";
@@ -70,7 +71,9 @@ export function recentPeriodBuckets(
       const start = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const end =
         i === 0 ? now : new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
-      buckets.push({ start, end, label: formatYearMonth(start) });
+      const label =
+        i === 0 ? `${formatYearMonth(start)}(至今)` : formatYearMonth(start);
+      buckets.push({ start, end, label });
     }
   }
   return buckets.reverse();
@@ -257,12 +260,12 @@ export function aggregatePeriodAlarmTrendDummy(
   buckets: PeriodAlarmBucket[]
 ): PeriodAlarmTrendPoint[] {
   const rows = filterYieldMonitorDummyRowsMatchingV3(applied);
-  const maxTs = rows.reduce(
-    (m, r) => Math.max(m, new Date(r.TIME_STAMP).getTime()),
-    0
-  );
-  /** 与 `filterYieldMonitorDummyRowsMatchingV3` 时间窗偏移一致，否则桶划分全空。 */
-  const timeOffsetMs = maxTs > 0 ? Date.now() - maxTs : 0;
+  /**
+   * 必须与 `filterYieldMonitorDummyRowsMatchingV3` 内部用的偏移同源（基于时间窗过滤前的行计算）。
+   * 若改用已按时间窗过滤后的 `rows` 重新计算 maxTs，两次取值范围不同会得到不一致的偏移，
+   * 导致窗口边界附近的行在分桶时被错误丢弃（分桶结果比实际过滤结果少）。
+   */
+  const timeOffsetMs = yieldMonitorDummyTimeOffsetMs(applied);
   const grouped: Array<
     Array<YieldMonitorTriggerDummyRow & { PROBECARDTYPE?: string | null }>
   > = buckets.map(() => []);

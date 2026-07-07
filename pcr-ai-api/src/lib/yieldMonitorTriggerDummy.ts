@@ -311,10 +311,10 @@ function valueForYieldV3Dimension(
   }
 }
 
-/** 与 v3 Oracle **`UPPER(TRIM)`**、**`TYPE = delta_diff`** 及 **`timeStampBegin`/`End`** 别名一致（Dummy 用 trim + toUpperCase）。每行附 **`PROBECARDTYPE`**（与列表 / 聚合维度同源）。 */
-export function filterYieldMonitorDummyRowsMatchingV3(
+/** 除时间窗外的全部 v3 筛选（type/lot 前缀/hostname/device/…/pass），供时间偏移计算与主过滤共用同一基准。 */
+function filterYieldMonitorDummyRowsBeforeTime(
   applied: Record<string, unknown>
-): Array<YieldMonitorTriggerDummyRow & { PROBECARDTYPE: string | null }> {
+): YieldMonitorTriggerDummyRow[] {
   let rows = [...getYieldMonitorTriggerDummyRowsInternal()].filter(
     (r) =>
       String(r.TYPE).trim().toLowerCase() === YIELD_MONITOR_V3_TYPE_SCOPE &&
@@ -356,15 +356,42 @@ export function filterYieldMonitorDummyRowsMatchingV3(
     rows = rows.filter((r) => r.PASS === n);
   }
 
+  return rows;
+}
+
+function timeOffsetMsFromRows(
+  rows: readonly YieldMonitorTriggerDummyRow[]
+): number {
+  const maxTs = rows.reduce(
+    (m, r) => Math.max(m, new Date(r.TIME_STAMP).getTime()),
+    0
+  );
+  return maxTs > 0 ? Date.now() - maxTs : 0;
+}
+
+/**
+ * Dummy 数据时间戳固定，需要平移到「当前时刻」附近。偏移量必须基于**时间窗过滤前**（仅 type/lot/hostname/…）匹配行的
+ * maxTs 计算——若改用过滤后的行重新算一遍，会因为两次取值范围不同而得到不一致的偏移，导致窗口边界附近的行在分桶时被错误丢弃。
+ * 任何需要独立于 `filterYieldMonitorDummyRowsMatchingV3` 做时间分桶的调用方（如 period-alarm-trend）都应复用本函数。
+ */
+export function yieldMonitorDummyTimeOffsetMs(
+  applied: Record<string, unknown>
+): number {
+  return timeOffsetMsFromRows(filterYieldMonitorDummyRowsBeforeTime(applied));
+}
+
+/** 与 v3 Oracle **`UPPER(TRIM)`**、**`TYPE = delta_diff`** 及 **`timeStampBegin`/`End`** 别名一致（Dummy 用 trim + toUpperCase）。每行附 **`PROBECARDTYPE`**（与列表 / 聚合维度同源）。 */
+export function filterYieldMonitorDummyRowsMatchingV3(
+  applied: Record<string, unknown>
+): Array<YieldMonitorTriggerDummyRow & { PROBECARDTYPE: string | null }> {
+  let rows = filterYieldMonitorDummyRowsBeforeTime(applied);
+
   const tsLo = applied.timeStampBegin ?? applied.timeStampFrom;
   const tsHi = applied.timeStampEnd ?? applied.timeStampTo;
   if (tsLo !== undefined || tsHi !== undefined) {
     // Dummy data has fixed historical timestamps. Shift filter bounds so that
     // relative queries like "last 7 days" always hit data in dummy mode.
-    const maxTs = rows.reduce(
-      (m, r) => Math.max(m, new Date(r.TIME_STAMP).getTime()), 0
-    );
-    const offset = maxTs > 0 ? Date.now() - maxTs : 0;
+    const offset = timeOffsetMsFromRows(rows);
     if (tsLo !== undefined) {
       const from = new Date(String(tsLo)).getTime() - offset;
       rows = rows.filter((r) => new Date(r.TIME_STAMP).getTime() >= from);

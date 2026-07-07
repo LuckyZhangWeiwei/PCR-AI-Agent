@@ -7,7 +7,8 @@
       "Bash(git -C d:/AI/PCR-AI-Agent status)",
       "Bash(git -C d:/AI/PCR-AI-Agent add docs/DEV_LOG.md pcr-ai-report/src/reports/AiAgentReport.tsx)",
       "Bash(git -C d:/AI/PCR-AI-Agent commit -m ' *)",
-      "Bash(git -C d:/AI/PCR-AI-Agent push)"
+      "Bash(git -C d:/AI/PCR-AI-Agent push)",
+      "Bash(bash __TRACKED_VAR__/scripts/task-brief docs/superpowers/plans/2026-06-29-jb-semantic-router.md 2)"
     ]
   }
 }

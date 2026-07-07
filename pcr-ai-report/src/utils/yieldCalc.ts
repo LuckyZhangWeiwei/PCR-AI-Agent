@@ -365,7 +365,8 @@ export function recentPeriodBuckets(
     for (let i = 0; i < count; i++) {
       const start = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const end = i === 0 ? now : new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
-      buckets.push({ start, end, label: formatYearMonth(start) });
+      const label = i === 0 ? `${formatYearMonth(start)}(至今)` : formatYearMonth(start);
+      buckets.push({ start, end, label });
     }
   }
   return buckets.reverse();
