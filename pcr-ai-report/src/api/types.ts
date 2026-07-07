@@ -62,6 +62,26 @@ export type YieldMonitorV3AggregateResponse = {
   documentation?: string;
 };
 
+/** `GET …/yield-monitor-triggers/v3/period-alarm-trend` */
+export type PeriodAlarmTrendBucket = {
+  label: string;
+  timeStampFrom: string;
+  timeStampTo: string;
+  total: number;
+  testerCount: number;
+  cardCount: number;
+  binCount: number;
+  dutCount: number;
+};
+
+export type YieldMonitorPeriodAlarmTrendResponse = {
+  meta?: ApiMeta;
+  period: "week" | "month";
+  filters: Record<string, unknown>;
+  buckets: PeriodAlarmTrendBucket[];
+  documentation?: string;
+};
+
 export type InfcontrolLayerBinsResponse = {
   meta?: ApiMeta;
   limit: number;

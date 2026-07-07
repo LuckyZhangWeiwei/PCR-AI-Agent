@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiGetJson } from "../api/client";
-import { API_PREFIX, YIELD_AGGREGATE_PATH } from "../api/paths";
+import { API_PREFIX, YIELD_AGGREGATE_PATH, YIELD_PERIOD_ALARM_TREND_PATH } from "../api/paths";
 import type {
   AggregateGroup,
+  YieldMonitorPeriodAlarmTrendResponse,
   YieldMonitorV3AggregateResponse,
   YieldMonitorV3Response,
   YieldMonitorV3Row,
@@ -179,11 +180,24 @@ const YIELD_ALARM_TREND_CHART_BLOCK_ORDER = [
   "chAlarmDutTrend",
 ] as const;
 
-/** 每个趋势桶要请求的聚合维度：用于统计该维度当期出现的不同类别数。 */
-const TREND_DIMENSIONS = ["hostname", "probeCard", "bin", "dutNumber"] as const;
+const PERIOD_ALARM_FALLBACK_GROUP_TOP = 100;
 
-/** 趋势桶聚合请求的 groupTop：取 API 允许的最大值，让 groups.length 尽量准确反映真实类别数。 */
-const TREND_GROUP_TOP = 100;
+/** Bin 种类数：不含 goodbin / 空串（与 period-alarm-trend API 口径一致）。 */
+function countBadBinKinds(groups: AggregateGroup[]): number {
+  const kinds = new Set<string>();
+  for (const g of groups) {
+    const v = String(g.parts?.bin ?? g.key ?? "")
+      .trim()
+      .toLowerCase();
+    if (v && v !== "goodbin") kinds.add(v);
+  }
+  return kinds.size;
+}
+
+function isPeriodAlarmTrendNotFound(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.includes("NOT_FOUND") || msg.includes("404");
+}
 
 type TrendPoint = {
   bucket: PeriodBucket;
@@ -891,11 +905,13 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    const buckets = recentPeriodBuckets(period, 4);
     setLoadingTrend(true);
     setErrorTrend(null);
 
-    (async () => {
+    const nowIso = new Date().toISOString();
+
+    const loadLegacyFallback = async (): Promise<TrendPoint[]> => {
+      const buckets = recentPeriodBuckets(period, 4);
       const calls: (() => Promise<YieldMonitorV3AggregateResponse>)[] = [];
       for (const bucket of buckets) {
         const bucketParams = {
@@ -903,25 +919,25 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
           timeStampFrom: bucket.start.toISOString(),
           timeStampTo: bucket.end.toISOString(),
         };
-        for (const dim of TREND_DIMENSIONS) {
+        for (const dim of ["hostname", "probeCard", "bin", "dutNumber"] as const) {
           calls.push(() =>
             apiGetJson<YieldMonitorV3AggregateResponse>(apiBase, YIELD_AGGREGATE_PATH, {
               ...bucketParams,
               dimensions: dim,
-              groupTop: TREND_GROUP_TOP,
+              groupTop: PERIOD_ALARM_FALLBACK_GROUP_TOP,
             })
           );
         }
       }
-
       const settled = (await allSettledWithConcurrency(
         calls,
         REPORT_ORACLE_FANOUT_CONCURRENCY
       )) as PromiseSettledResult<YieldMonitorV3AggregateResponse>[];
-      if (cancelled) return;
-      setLoadingTrend(false);
-
-      const points: TrendPoint[] = buckets.map((bucket, i) => {
+      const firstRejected = settled.find((r) => r.status === "rejected");
+      if (firstRejected?.status === "rejected") {
+        throw firstRejected.reason;
+      }
+      return buckets.map((bucket, i) => {
         const [testerRes, cardRes, binRes, dutRes] = settled.slice(i * 4, i * 4 + 4);
         const ok = (r: PromiseSettledResult<YieldMonitorV3AggregateResponse>) =>
           r.status === "fulfilled" ? r.value : null;
@@ -929,33 +945,67 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         const card = ok(cardRes);
         const bin = ok(binRes);
         const dut = ok(dutRes);
-        const total =
-          tester?.totalRowsMatching ??
-          card?.totalRowsMatching ??
-          bin?.totalRowsMatching ??
-          dut?.totalRowsMatching ??
-          null;
         return {
           bucket,
-          total,
+          total:
+            tester?.totalRowsMatching ??
+            card?.totalRowsMatching ??
+            bin?.totalRowsMatching ??
+            dut?.totalRowsMatching ??
+            null,
           testerCount: tester ? tester.groups.length : null,
           cardCount: card ? card.groups.length : null,
-          binCount: bin ? bin.groups.length : null,
+          binCount: bin ? countBadBinKinds(bin.groups) : null,
           dutCount: dut ? dut.groups.length : null,
         };
       });
-      setTrendPoints(points);
+    };
 
-      const firstRejected = settled.find((r) => r.status === "rejected") as
-        | PromiseRejectedResult
-        | undefined;
-      setErrorTrend(
-        firstRejected
-          ? firstRejected.reason instanceof Error
-            ? firstRejected.reason.message
-            : String(firstRejected.reason)
-          : null
-      );
+    (async () => {
+      try {
+        const res = await apiGetJson<YieldMonitorPeriodAlarmTrendResponse>(
+          apiBase,
+          YIELD_PERIOD_ALARM_TREND_PATH,
+          { period, now: nowIso }
+        );
+        if (cancelled) return;
+        setTrendPoints(
+          res.buckets.map((b) => ({
+            bucket: {
+              start: new Date(b.timeStampFrom),
+              end: new Date(b.timeStampTo),
+              label: b.label,
+            },
+            total: b.total,
+            testerCount: b.testerCount,
+            cardCount: b.cardCount,
+            binCount: b.binCount,
+            dutCount: b.dutCount,
+          }))
+        );
+        setErrorTrend(null);
+      } catch (e) {
+        if (cancelled) return;
+        if (!isPeriodAlarmTrendNotFound(e)) {
+          setTrendPoints([]);
+          setErrorTrend(e instanceof Error ? e.message : String(e));
+          return;
+        }
+        try {
+          const points = await loadLegacyFallback();
+          if (cancelled) return;
+          setTrendPoints(points);
+          setErrorTrend(null);
+        } catch (fallbackErr) {
+          if (cancelled) return;
+          setTrendPoints([]);
+          setErrorTrend(
+            fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
+          );
+        }
+      } finally {
+        if (!cancelled) setLoadingTrend(false);
+      }
     })();
 
     return () => {
@@ -1509,7 +1559,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
             chAlarmTotalTrend: "总触发次数趋势",
             chAlarmTesterTrend: "Tester 数趋势",
             chAlarmCardTrend: "Probe Card 数趋势",
-            chAlarmBinTrend: "Bin 种类数趋势",
+            chAlarmBinTrend: "坏 Bin 种类数趋势",
             chAlarmDutTrend: "DUT 编号数趋势",
           }}
           sections={{

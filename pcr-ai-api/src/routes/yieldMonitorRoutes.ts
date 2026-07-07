@@ -44,6 +44,14 @@ import {
 import { clampLimitFromQuery } from "../lib/sqlIdent.js";
 import { withProbeWebConnection } from "../oracle.js";
 import { addDutNumberToYieldMonitorV3Row } from "../lib/yieldTriggerLabelDut.js";
+import {
+  PERIOD_ALARM_TREND_DOCUMENTATION,
+  aggregatePeriodAlarmTrendDummy,
+  buildPeriodAlarmTrendSql,
+  mapPeriodAlarmTrendRows,
+  parsePeriodAlarmTrendQuery,
+  periodAlarmTrendBinds,
+} from "../lib/yieldMonitorPeriodAlarmTrend.js";
 
 export const yieldMonitorRouter = Router();
 
@@ -387,6 +395,70 @@ yieldMonitorRouter.get("/yield-monitor-triggers/v3/aggregate", async (req, res) 
       filters: parsed.applied,
       totalRowsMatching,
       groups,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return sendAgentError(
+      res,
+      500,
+      "ORACLE_QUERY_FAILED",
+      "Oracle query failed",
+      enrichOracleDriverDetail(message)
+    );
+  }
+});
+
+/**
+ * **周期报警趋势**：近 4 周/月 × 5 指标，单次 Oracle 扫描；Bin 种类不含 goodbin。
+ */
+yieldMonitorRouter.get("/yield-monitor-triggers/v3/period-alarm-trend", async (req, res) => {
+  const parsed = parsePeriodAlarmTrendQuery(req.query as Record<string, unknown>);
+  if (!parsed.ok) {
+    return sendAgentError(
+      res,
+      400,
+      "VALIDATION_ERROR",
+      parsed.error,
+      "See GET /api/v1/manifest yield-monitor-triggers/v3/period-alarm-trend."
+    );
+  }
+
+  if (yieldMonitorTriggersUseDummy()) {
+    const buckets = aggregatePeriodAlarmTrendDummy(parsed.applied, parsed.buckets);
+    return res.json({
+      meta: {
+        apiVersion: "3",
+        requestId: reqId(req),
+        path: "yield-monitor-triggers/v3/period-alarm-trend",
+      },
+      documentation: PERIOD_ALARM_TREND_DOCUMENTATION,
+      period: parsed.period,
+      filters: parsed.applied,
+      buckets,
+    });
+  }
+
+  const sql = buildPeriodAlarmTrendSql(parsed.whereSql, parsed.buckets.length);
+  const binds = periodAlarmTrendBinds(parsed);
+
+  try {
+    const rows = await withProbeWebConnection(async (conn) => {
+      const result = await conn.execute(sql, binds, {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+      });
+      return (result.rows || []) as Record<string, unknown>[];
+    });
+    const buckets = mapPeriodAlarmTrendRows(parsed.buckets, rows);
+    return res.json({
+      meta: {
+        apiVersion: "3",
+        requestId: reqId(req),
+        path: "yield-monitor-triggers/v3/period-alarm-trend",
+      },
+      documentation: PERIOD_ALARM_TREND_DOCUMENTATION,
+      period: parsed.period,
+      filters: parsed.applied,
+      buckets,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
