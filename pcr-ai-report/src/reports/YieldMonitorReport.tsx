@@ -101,6 +101,9 @@ function buildCoreParams(f: FormState): Record<string, string | number | undefin
   };
 }
 
+/** 周期报警统计固定使用无筛选条件，不随「查询」按钮联动。 */
+const PERIOD_ALARM_CORE_PARAMS = buildCoreParams(initialForm);
+
 function buildListParams(
   f: FormState,
   limits: ReportListLimits,
@@ -459,9 +462,6 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
   const [selectedDevice,      setSelectedDevice]      = useState<string | null>(null);
   const [layoutEpoch, setLayoutEpoch] = useState(0);
   const [period, setPeriod] = useState<PeriodKey>("week");
-  const [appliedCoreParams, setAppliedCoreParams] = useState<
-    Record<string, string | number | undefined>
-  >(() => buildCoreParams(initialForm));
   const [periodTotal, setPeriodTotal] = useState<number | null>(null);
   const [periodPrevTotal, setPeriodPrevTotal] = useState<number | null>(null);
   const [periodByTester, setPeriodByTester] = useState<YieldMonitorV3AggregateResponse | null>(null);
@@ -682,7 +682,6 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     setSelectedDevice(null);
     setAggDevice(null);
     const core = buildCoreParams(form);
-    setAppliedCoreParams(core);
 
     const settled = await allSettledWithConcurrency(
       [
@@ -809,12 +808,12 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     let cancelled = false;
     const { start, end, prevStart, prevEnd } = periodWindow(period);
     const periodParams = {
-      ...appliedCoreParams,
+      ...PERIOD_ALARM_CORE_PARAMS,
       timeStampFrom: start.toISOString(),
       timeStampTo: end.toISOString(),
     };
     const prevParams = {
-      ...appliedCoreParams,
+      ...PERIOD_ALARM_CORE_PARAMS,
       timeStampFrom: prevStart.toISOString(),
       timeStampTo: prevEnd.toISOString(),
     };
@@ -888,7 +887,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [apiBase, appliedCoreParams, period]);
+  }, [apiBase, period]);
 
   useEffect(() => {
     let cancelled = false;
@@ -900,7 +899,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       const calls: (() => Promise<YieldMonitorV3AggregateResponse>)[] = [];
       for (const bucket of buckets) {
         const bucketParams = {
-          ...appliedCoreParams,
+          ...PERIOD_ALARM_CORE_PARAMS,
           timeStampFrom: bucket.start.toISOString(),
           timeStampTo: bucket.end.toISOString(),
         };
@@ -962,7 +961,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [apiBase, appliedCoreParams, period]);
+  }, [apiBase, period]);
 
   // ── KPI derivations ──────────────────────────────────────────────────────
 
@@ -1384,7 +1383,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
               className={`chip${period === p ? " chip--active" : ""}`}
               onClick={() => setPeriod(p)}
             >
-              {p === "week" ? "本周" : "本月"}
+              {p === "week" ? "周" : "月"}
             </button>
           ))}
         </div>
