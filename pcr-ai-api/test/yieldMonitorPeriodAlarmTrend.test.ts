@@ -33,7 +33,8 @@ describe("yieldMonitorPeriodAlarmTrend", () => {
 
   test("buildPeriodAlarmTrendSql 含 goodbin 排除与 4 桶 CASE", () => {
     const sql = buildPeriodAlarmTrendSql("WHERE 1=1", 4);
-    assert.ok(sql.includes("NOT IN ('', 'goodbin')"));
+    assert.ok(sql.includes("bin_v IS NOT NULL AND bin_v != 'goodbin'"));
+    assert.ok(sql.includes("dut_v IS NOT NULL"));
     assert.ok(sql.includes(":b0_from"));
     assert.ok(sql.includes(":b3_to"));
     assert.ok(sql.includes("COUNT(DISTINCT TRIM(HOSTNAME))"));

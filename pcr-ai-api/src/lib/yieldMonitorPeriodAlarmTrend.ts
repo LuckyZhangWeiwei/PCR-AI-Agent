@@ -31,9 +31,9 @@ export type PeriodAlarmTrendPoint = {
 export const PERIOD_ALARM_TREND_BUCKET_COUNT = 4;
 
 const BIN_EXPR =
-  "NVL(LOWER(REGEXP_SUBSTR(t.TRIGGER_LABEL, 'Bin#\\s*([0-9]+|goodbin)', 1, 1, 'i', 1)), '')";
+  "LOWER(REGEXP_SUBSTR(t.TRIGGER_LABEL, 'Bin#\\s*([0-9]+|goodbin)', 1, 1, 'i', 1))";
 const DUT_EXPR =
-  "NVL(REGEXP_SUBSTR(t.TRIGGER_LABEL, 'on\\s+dut#\\s*([0-9]+)', 1, 1, 'i', 1), '')";
+  "REGEXP_SUBSTR(t.TRIGGER_LABEL, 'on\\s+dut#\\s*([0-9]+)', 1, 1, 'i', 1)";
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
@@ -176,8 +176,8 @@ SELECT
   COUNT(*) AS TOTAL,
   COUNT(DISTINCT TRIM(HOSTNAME)) AS TESTER_CNT,
   COUNT(DISTINCT TRIM(PROBECARD)) AS CARD_CNT,
-  COUNT(DISTINCT CASE WHEN bin_v NOT IN ('', 'goodbin') THEN bin_v END) AS BIN_CNT,
-  COUNT(DISTINCT CASE WHEN dut_v != '' THEN dut_v END) AS DUT_CNT
+  COUNT(DISTINCT CASE WHEN bin_v IS NOT NULL AND bin_v != 'goodbin' THEN bin_v END) AS BIN_CNT,
+  COUNT(DISTINCT CASE WHEN dut_v IS NOT NULL THEN dut_v END) AS DUT_CNT
 FROM (
   SELECT
     t.HOSTNAME,

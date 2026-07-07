@@ -14,7 +14,7 @@
 | **周期报警 UI** | ✅ | 「周 \| 月」chip；5 张趋势柱图；**不随「查询」联动**（`PERIOD_ALARM_CORE_PARAMS` 无筛选） |
 | **新 API** | ✅ 已合入，⏭ **待部署** | `GET /api/v3/yield-monitor-triggers/v3/period-alarm-trend?period=week\|month&now=<ISO>` |
 | **16→1 请求** | ✅ | 单次 Oracle 扫描返回 4 桶 × 5 指标 |
-| **Bin 不含 goodbin** | ✅ | `COUNT(DISTINCT CASE WHEN bin_v NOT IN ('','goodbin') …)`；图表标题 **「坏 Bin 种类数趋势」** |
+| **Bin 不含 goodbin** | ✅ | `bin_v IS NOT NULL AND bin_v != 'goodbin'`（勿用 `NOT IN ('',…)` — Oracle 空串即 NULL）；图表标题 **「坏 Bin 种类数趋势」** |
 | **Tester/Card 种类** | ✅ | `COUNT(DISTINCT hostname/probeCard)`，不再被 `groupTop=100` 截断 |
 | **正式库验证（旧接口）** | ✅ | 月 4 桶 total 之和 = 并集 5484；周/月边界无重复计数 |
 | **部署后复验** | ⏭ 待做 | 见 §5 |
