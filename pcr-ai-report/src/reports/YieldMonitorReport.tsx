@@ -102,8 +102,22 @@ function buildCoreParams(f: FormState): Record<string, string | number | undefin
   };
 }
 
-/** 周期报警统计固定使用无筛选条件，不随「查询」按钮联动。 */
-const PERIOD_ALARM_CORE_PARAMS = buildCoreParams(initialForm);
+/** 周期报警趋势：沿用 device/lot/… 筛选；时间轴由 API 按周/月桶划分，不传 TIME_STAMP 窗。 */
+function buildPeriodAlarmFilterParams(
+  f: FormState
+): Record<string, string | number | undefined> {
+  return {
+    device: f.device || undefined,
+    mask: f.mask || undefined,
+    lotId: f.lotId || undefined,
+    wafer: f.wafer || undefined,
+    hostname: f.hostname || undefined,
+    platform: f.platform || undefined,
+    probeCardType: f.probeCardType || undefined,
+    probeCard: f.probeCard || undefined,
+    pass: f.pass ? Number(f.pass) : undefined,
+  };
+}
 
 function buildListParams(
   f: FormState,
@@ -176,23 +190,9 @@ const YIELD_ALARM_TREND_CHART_BLOCK_ORDER = [
   "chAlarmTotalTrend",
   "chAlarmTesterTrend",
   "chAlarmCardTrend",
-  "chAlarmBinTrend",
-  "chAlarmDutTrend",
 ] as const;
 
 const PERIOD_ALARM_FALLBACK_GROUP_TOP = 100;
-
-/** Bin 种类数：不含 goodbin / 空串（与 period-alarm-trend API 口径一致）。 */
-function countBadBinKinds(groups: AggregateGroup[]): number {
-  const kinds = new Set<string>();
-  for (const g of groups) {
-    const v = String(g.parts?.bin ?? g.key ?? "")
-      .trim()
-      .toLowerCase();
-    if (v && v !== "goodbin") kinds.add(v);
-  }
-  return kinds.size;
-}
 
 function isPeriodAlarmTrendNotFound(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
@@ -204,8 +204,6 @@ type TrendPoint = {
   total: number | null;
   testerCount: number | null;
   cardCount: number | null;
-  binCount: number | null;
-  dutCount: number | null;
 };
 
 // Sub-dimension options for drill-down panels
@@ -447,6 +445,8 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
   const { theme } = useThemeContext();
   const chartPalette = getChartPalette(theme);
   const [form, setForm] = useState<FormState>(initialForm);
+  /** 最近一次「查询」提交的筛选，周期报警统计与之联动。 */
+  const [appliedForm, setAppliedForm] = useState<FormState>(initialForm);
   const [list, setList] = useState<YieldMonitorV3Response | null>(null);
   const [aggTime, setAggTime] = useState<YieldMonitorV3AggregateResponse | null>(null);
   // probeCardType-level aggregate (chart); probeCard detail accessed via drill
@@ -511,6 +511,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
 
   const clearAll = useCallback(() => {
     setForm(initialForm);
+    setAppliedForm(initialForm);
     setList(null);
     setAggTime(null);
     setAggCardType(null);
@@ -684,6 +685,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
   );
 
   const query = useCallback(async () => {
+    setAppliedForm(form);
     setLoadingList(true);
     setLoadingAgg(true);
     setErrorList(null);
@@ -821,13 +823,14 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     if (!SHOW_LEGACY_PERIOD_CHARTS) return;
     let cancelled = false;
     const { start, end, prevStart, prevEnd } = periodWindow(period);
+    const periodFilterParams = buildPeriodAlarmFilterParams(appliedForm);
     const periodParams = {
-      ...PERIOD_ALARM_CORE_PARAMS,
+      ...periodFilterParams,
       timeStampFrom: start.toISOString(),
       timeStampTo: end.toISOString(),
     };
     const prevParams = {
-      ...PERIOD_ALARM_CORE_PARAMS,
+      ...periodFilterParams,
       timeStampFrom: prevStart.toISOString(),
       timeStampTo: prevEnd.toISOString(),
     };
@@ -901,7 +904,12 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [apiBase, period]);
+  }, [apiBase, period, appliedForm]);
+
+  const periodAlarmFilterParams = useMemo(
+    () => buildPeriodAlarmFilterParams(appliedForm),
+    [appliedForm]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -915,11 +923,11 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       const calls: (() => Promise<YieldMonitorV3AggregateResponse>)[] = [];
       for (const bucket of buckets) {
         const bucketParams = {
-          ...PERIOD_ALARM_CORE_PARAMS,
+          ...periodAlarmFilterParams,
           timeStampFrom: bucket.start.toISOString(),
           timeStampTo: bucket.end.toISOString(),
         };
-        for (const dim of ["hostname", "probeCard", "bin", "dutNumber"] as const) {
+        for (const dim of ["hostname", "probeCard"] as const) {
           calls.push(() =>
             apiGetJson<YieldMonitorV3AggregateResponse>(apiBase, YIELD_AGGREGATE_PATH, {
               ...bucketParams,
@@ -938,25 +946,16 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         throw firstRejected.reason;
       }
       return buckets.map((bucket, i) => {
-        const [testerRes, cardRes, binRes, dutRes] = settled.slice(i * 4, i * 4 + 4);
+        const [testerRes, cardRes] = settled.slice(i * 2, i * 2 + 2);
         const ok = (r: PromiseSettledResult<YieldMonitorV3AggregateResponse>) =>
           r.status === "fulfilled" ? r.value : null;
         const tester = ok(testerRes);
         const card = ok(cardRes);
-        const bin = ok(binRes);
-        const dut = ok(dutRes);
         return {
           bucket,
-          total:
-            tester?.totalRowsMatching ??
-            card?.totalRowsMatching ??
-            bin?.totalRowsMatching ??
-            dut?.totalRowsMatching ??
-            null,
+          total: tester?.totalRowsMatching ?? card?.totalRowsMatching ?? null,
           testerCount: tester ? tester.groups.length : null,
           cardCount: card ? card.groups.length : null,
-          binCount: bin ? countBadBinKinds(bin.groups) : null,
-          dutCount: dut ? dut.groups.length : null,
         };
       });
     };
@@ -966,7 +965,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         const res = await apiGetJson<YieldMonitorPeriodAlarmTrendResponse>(
           apiBase,
           YIELD_PERIOD_ALARM_TREND_PATH,
-          { period, now: nowIso }
+          { period, now: nowIso, ...periodAlarmFilterParams }
         );
         if (cancelled) return;
         setTrendPoints(
@@ -979,8 +978,6 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
             total: b.total,
             testerCount: b.testerCount,
             cardCount: b.cardCount,
-            binCount: b.binCount,
-            dutCount: b.dutCount,
           }))
         );
         setErrorTrend(null);
@@ -1011,7 +1008,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [apiBase, period]);
+  }, [apiBase, period, periodAlarmFilterParams]);
 
   // ── KPI derivations ──────────────────────────────────────────────────────
 
@@ -1217,21 +1214,6 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       buildTrendBarOption(theme, trendBuckets, trendPoints.map((p) => p.cardCount), chartPalette.accent2),
     [trendBuckets, trendPoints, theme, chartPalette.accent2]
   );
-  const trendBinOption = useMemo(
-    () =>
-      buildTrendBarOption(theme, trendBuckets, trendPoints.map((p) => p.binCount), chartPalette.accent3),
-    [trendBuckets, trendPoints, theme, chartPalette.accent3]
-  );
-  const trendDutOption = useMemo(
-    () =>
-      buildTrendBarOption(
-        theme,
-        trendBuckets,
-        trendPoints.map((p) => p.dutCount),
-        selectionTierColors(theme, "orange").base
-      ),
-    [trendBuckets, trendPoints, theme]
-  );
 
   const periodRatioPct = useMemo(() => {
     if (periodTotal === null || periodPrevTotal === null) return null;
@@ -1420,11 +1402,24 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
   }, [list]);
 
   const chips = useMemo(() => activeChips(form, listLimits), [form, listLimits]);
+  const periodAlarmFilterLabels = useMemo(() => {
+    const labels: string[] = [];
+    for (const [k, v] of Object.entries(periodAlarmFilterParams)) {
+      if (v !== undefined) labels.push(`${k} = ${v}`);
+    }
+    return labels;
+  }, [periodAlarmFilterParams]);
   const hasData = !!(list || aggTime || aggCardType);
 
   const yieldReportSections = useMemo(() => {
     const periodAlarmSection = (
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <p className="yield-trend-scope-hint muted small">
+          {periodAlarmFilterLabels.length > 0
+            ? `与查询条件联动：${periodAlarmFilterLabels.join(" · ")} · `
+            : "未设筛选时统计全库 · "}
+          横轴为近 4 个{period === "week" ? "周" : "月"}窗口（不受 TIME_STAMP 时间窗限制）
+        </p>
         <div className="preset-chips">
           {(["week", "month"] as const).map((p) => (
             <button
@@ -1559,8 +1554,6 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
             chAlarmTotalTrend: "总触发次数趋势",
             chAlarmTesterTrend: "Tester 数趋势",
             chAlarmCardTrend: "Probe Card 数趋势",
-            chAlarmBinTrend: "坏 Bin 种类数趋势",
-            chAlarmDutTrend: "DUT 编号数趋势",
           }}
           sections={{
             chAlarmTotalTrend: (
@@ -1587,24 +1580,6 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
                   <div style={{ color: "var(--muted)", fontSize: 13, padding: "8px 0" }}>加载中…</div>
                 ) : (
                   <DarkChart option={trendCardOption} height={YIELD_TREND_CHART_HEIGHT} />
-                )}
-              </div>
-            ),
-            chAlarmBinTrend: (
-              <div className="report-chart-panel chart-no-drill">
-                {loadingTrend ? (
-                  <div style={{ color: "var(--muted)", fontSize: 13, padding: "8px 0" }}>加载中…</div>
-                ) : (
-                  <DarkChart option={trendBinOption} height={YIELD_TREND_CHART_HEIGHT} />
-                )}
-              </div>
-            ),
-            chAlarmDutTrend: (
-              <div className="report-chart-panel chart-no-drill">
-                {loadingTrend ? (
-                  <div style={{ color: "var(--muted)", fontSize: 13, padding: "8px 0" }}>加载中…</div>
-                ) : (
-                  <DarkChart option={trendDutOption} height={YIELD_TREND_CHART_HEIGHT} />
                 )}
               </div>
             ),
@@ -1945,6 +1920,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     showDetail,
     layoutEpoch,
     period,
+    periodAlarmFilterLabels,
     periodTotal,
     periodPrevTotal,
     periodRatioLabel,
@@ -1964,8 +1940,6 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     trendTotalOption,
     trendTesterOption,
     trendCardOption,
-    trendBinOption,
-    trendDutOption,
     loadingTrend,
     errorTrend,
   ]);
