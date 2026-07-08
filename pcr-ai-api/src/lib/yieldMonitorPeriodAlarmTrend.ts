@@ -30,6 +30,15 @@ export type PeriodAlarmTrendPoint = {
 };
 
 export const PERIOD_ALARM_TREND_BUCKET_COUNT = 4;
+export const PERIOD_ALARM_MAX_WEEK_BUCKETS = 52;
+export const PERIOD_ALARM_MAX_MONTH_BUCKETS = 24;
+
+const PERIOD_ALARM_TIME_KEYS = [
+  "timeStampBegin",
+  "timeStampFrom",
+  "timeStampEnd",
+  "timeStampTo",
+] as const;
 
 const BIN_EXPR =
   "LOWER(REGEXP_SUBSTR(t.TRIGGER_LABEL, 'Bin#\\s*([0-9]+|goodbin)', 1, 1, 'i', 1))";
@@ -79,6 +88,149 @@ export function recentPeriodBuckets(
   return buckets.reverse();
 }
 
+function parseOptionalDateParam(raw: unknown, label: string): Date | undefined {
+  const s = firstString(raw);
+  if (s === undefined) return undefined;
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) {
+    throw new Error(`Invalid date for ${label}`);
+  }
+  return d;
+}
+
+function hasPeriodAlarmTimeFilter(q: Record<string, unknown>): boolean {
+  return PERIOD_ALARM_TIME_KEYS.some(
+    (k) => firstString(firstQueryValue(q, k)) !== undefined
+  );
+}
+
+function defaultPeriodAlarmRange(now: Date): { from: Date; to: Date } {
+  const hi = now;
+  const lo = new Date(hi.getTime());
+  lo.setUTCFullYear(lo.getUTCFullYear() - 1);
+  return { from: lo, to: hi };
+}
+
+/** 与查询区 TIME_STAMP 一致；未传时间窗时默认近 1 UTC 年（锚点 `now`）。 */
+export function resolvePeriodAlarmTimeRange(
+  q: Record<string, unknown>,
+  now: Date = new Date()
+): { ok: true; from: Date; to: Date } | { ok: false; error: string } {
+  try {
+    if (!hasPeriodAlarmTimeFilter(q)) {
+      return { ok: true, ...defaultPeriodAlarmRange(now) };
+    }
+
+    const tsFrom =
+      parseOptionalDateParam(firstQueryValue(q, "timeStampBegin"), "timeStampBegin") ??
+      parseOptionalDateParam(firstQueryValue(q, "timeStampFrom"), "timeStampFrom");
+    const tsTo =
+      parseOptionalDateParam(firstQueryValue(q, "timeStampEnd"), "timeStampEnd") ??
+      parseOptionalDateParam(firstQueryValue(q, "timeStampTo"), "timeStampTo");
+
+    if (tsFrom !== undefined && tsTo !== undefined && tsFrom > tsTo) {
+      return { ok: false, error: "timeStampFrom must be <= timeStampTo" };
+    }
+
+    if (tsFrom === undefined && tsTo === undefined) {
+      return { ok: true, ...defaultPeriodAlarmRange(now) };
+    }
+
+    if (tsFrom !== undefined && tsTo !== undefined) {
+      return { ok: true, from: tsFrom, to: tsTo };
+    }
+
+    if (tsFrom !== undefined) {
+      return { ok: true, from: tsFrom, to: now };
+    }
+
+    const to = tsTo!;
+    const from = new Date(to.getTime());
+    from.setUTCFullYear(from.getUTCFullYear() - 1);
+    return { ok: true, from, to };
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: message };
+  }
+}
+
+export type PeriodBucketsInRangeResult =
+  | { ok: true; buckets: PeriodAlarmBucket[] }
+  | { ok: false; error: string };
+
+/**
+ * 在 `[rangeFrom, rangeTo]` 内按周/月切分 x 轴桶（与前端 `yieldCalc.periodBucketsInRange` 一致）。
+ */
+export function periodBucketsInRange(
+  period: PeriodKey,
+  rangeFrom: Date,
+  rangeTo: Date
+): PeriodBucketsInRangeResult {
+  if (rangeFrom.getTime() >= rangeTo.getTime()) {
+    return { ok: false, error: "time range must span a positive duration" };
+  }
+
+  const buckets: PeriodAlarmBucket[] = [];
+
+  if (period === "week") {
+    const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+    let cursor = rangeFrom.getTime();
+    const endMs = rangeTo.getTime();
+    while (cursor < endMs) {
+      const bucketEndMs = Math.min(cursor + WEEK_MS, endMs);
+      const start = new Date(cursor);
+      const end = new Date(bucketEndMs);
+      buckets.push({
+        start,
+        end,
+        label: `${formatMonthDay(start)}-${formatMonthDay(end)}`,
+      });
+      cursor = bucketEndMs;
+      if (buckets.length > PERIOD_ALARM_MAX_WEEK_BUCKETS) {
+        return {
+          ok: false,
+          error: `time range spans more than ${PERIOD_ALARM_MAX_WEEK_BUCKETS} weeks; narrow TIME_STAMP filter`,
+        };
+      }
+    }
+  } else {
+    let y = rangeFrom.getFullYear();
+    let m = rangeFrom.getMonth();
+    while (true) {
+      const monthStart = new Date(y, m, 1);
+      if (monthStart.getTime() >= rangeTo.getTime()) break;
+      const monthEndExclusive = new Date(y, m + 1, 1);
+      const start =
+        monthStart.getTime() < rangeFrom.getTime() ? rangeFrom : monthStart;
+      const end =
+        monthEndExclusive.getTime() > rangeTo.getTime() ? rangeTo : monthEndExclusive;
+      if (start.getTime() < end.getTime()) {
+        buckets.push({
+          start,
+          end,
+          label: formatYearMonth(monthStart),
+        });
+      }
+      if (buckets.length > PERIOD_ALARM_MAX_MONTH_BUCKETS) {
+        return {
+          ok: false,
+          error: `time range spans more than ${PERIOD_ALARM_MAX_MONTH_BUCKETS} months; narrow TIME_STAMP filter`,
+        };
+      }
+      m += 1;
+      if (m > 11) {
+        m = 0;
+        y += 1;
+      }
+    }
+  }
+
+  if (buckets.length === 0) {
+    return { ok: false, error: "time range produced no period buckets" };
+  }
+  return { ok: true, buckets };
+}
+
 export type ParsePeriodAlarmTrendOk = {
   ok: true;
   period: PeriodKey;
@@ -120,7 +272,8 @@ function parseNowParam(raw: unknown): Date | undefined {
 
 /**
  * 解析周期报警趋势请求：必填 `period=week|month`；可选 `now`（ISO，默认服务端当前时刻）。
- * 可选与 v3 列表相同的字符串筛选（device / hostname / …），周期报警 UI 默认不传。
+ * 可选 `timeStampFrom`/`timeStampTo`（与 v3 列表一致）决定 x 轴桶范围；未传时默认近 1 UTC 年。
+ * 可选与 v3 列表相同的其它字符串筛选（device / hostname / …）。
  */
 export function parsePeriodAlarmTrendQuery(
   q: Record<string, unknown>
@@ -131,7 +284,21 @@ export function parsePeriodAlarmTrendQuery(
   }
   const period = periodRaw as PeriodKey;
   const now = parseNowParam(firstQueryValue(q, "now")) ?? new Date();
-  const buckets = recentPeriodBuckets(period, PERIOD_ALARM_TREND_BUCKET_COUNT, now);
+
+  const rangeResolved = resolvePeriodAlarmTimeRange(q, now);
+  if (!rangeResolved.ok) {
+    return { ok: false, error: rangeResolved.error };
+  }
+
+  const bucketResolved = periodBucketsInRange(
+    period,
+    rangeResolved.from,
+    rangeResolved.to
+  );
+  if (!bucketResolved.ok) {
+    return { ok: false, error: bucketResolved.error };
+  }
+  const buckets = bucketResolved.buckets;
   const spanFrom = buckets[0]!.start.toISOString();
   const spanTo = buckets[buckets.length - 1]!.end.toISOString();
 
@@ -321,5 +488,4 @@ export function mapPeriodAlarmTrendRows(
 }
 
 export const PERIOD_ALARM_TREND_DOCUMENTATION =
-  "近 4 个周/月窗口的触发总量与 COUNT(DISTINCT) 种类数（Tester / Probe Card / Bin excluding goodbin / DUT）；" +
-  "单次 Oracle 扫描返回 4 桶，替代 16 次 aggregate 请求。";
+  "按查询 TIME_STAMP 时间窗（未传则近 1 UTC 年）切分周/月 x 轴桶，单次 Oracle 扫描返回各桶触发总量与 COUNT(DISTINCT) 种类数（Tester / Probe Card / Bin excluding goodbin / DUT）。";

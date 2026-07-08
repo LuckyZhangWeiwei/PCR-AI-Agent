@@ -46,8 +46,9 @@ import {
   dateShortcutToday,
   formatBinLabel,
   parseDutNumber,
+  periodBucketsInRange,
   periodWindow,
-  recentPeriodBuckets,
+  resolvePeriodAlarmTimeRangeFromIso,
   tallyDutNumbers,
   type PeriodBucket,
   type PeriodKey,
@@ -102,8 +103,8 @@ function buildCoreParams(f: FormState): Record<string, string | number | undefin
   };
 }
 
-/** 周期报警趋势：沿用 device/lot/… 筛选；时间轴由 API 按周/月桶划分，不传 TIME_STAMP 窗。 */
-function buildPeriodAlarmFilterParams(
+/** 周期报警趋势查询参数：device/lot/… + TIME_STAMP（与 v3 列表键名一致）。 */
+function buildPeriodAlarmQueryParams(
   f: FormState
 ): Record<string, string | number | undefined> {
   return {
@@ -116,6 +117,8 @@ function buildPeriodAlarmFilterParams(
     probeCardType: f.probeCardType || undefined,
     probeCard: f.probeCard || undefined,
     pass: f.pass ? Number(f.pass) : undefined,
+    timeStampFrom: datetimeLocalToIso(f.timestampFrom),
+    timeStampTo: datetimeLocalToIso(f.timestampTo),
   };
 }
 
@@ -447,6 +450,8 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
   const [form, setForm] = useState<FormState>(initialForm);
   /** 最近一次「查询」提交的筛选，周期报警统计与之联动。 */
   const [appliedForm, setAppliedForm] = useState<FormState>(initialForm);
+  /** 是否已执行过查询；周期报警统计仅在查询后展示。 */
+  const [hasQueried, setHasQueried] = useState(false);
   const [list, setList] = useState<YieldMonitorV3Response | null>(null);
   const [aggTime, setAggTime] = useState<YieldMonitorV3AggregateResponse | null>(null);
   // probeCardType-level aggregate (chart); probeCard detail accessed via drill
@@ -512,6 +517,9 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
   const clearAll = useCallback(() => {
     setForm(initialForm);
     setAppliedForm(initialForm);
+    setHasQueried(false);
+    setTrendPoints([]);
+    setErrorTrend(null);
     setList(null);
     setAggTime(null);
     setAggCardType(null);
@@ -686,6 +694,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
 
   const query = useCallback(async () => {
     setAppliedForm(form);
+    setHasQueried(true);
     setLoadingList(true);
     setLoadingAgg(true);
     setErrorList(null);
@@ -820,10 +829,10 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
   }, [dutProbeCardTarget, apiBase, form, listLimits, list]);
 
   useEffect(() => {
-    if (!SHOW_LEGACY_PERIOD_CHARTS) return;
+    if (!SHOW_LEGACY_PERIOD_CHARTS || !hasQueried) return;
     let cancelled = false;
     const { start, end, prevStart, prevEnd } = periodWindow(period);
-    const periodFilterParams = buildPeriodAlarmFilterParams(appliedForm);
+    const periodFilterParams = buildPeriodAlarmQueryParams(appliedForm);
     const periodParams = {
       ...periodFilterParams,
       timeStampFrom: start.toISOString(),
@@ -904,14 +913,23 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [apiBase, period, appliedForm]);
+  }, [apiBase, period, appliedForm, hasQueried]);
 
-  const periodAlarmFilterParams = useMemo(
-    () => buildPeriodAlarmFilterParams(appliedForm),
+  const periodAlarmQueryParams = useMemo(
+    () => buildPeriodAlarmQueryParams(appliedForm),
     [appliedForm]
   );
 
+  const periodAlarmBuckets = useMemo(() => {
+    const { from, to } = resolvePeriodAlarmTimeRangeFromIso(
+      periodAlarmQueryParams.timeStampFrom as string | undefined,
+      periodAlarmQueryParams.timeStampTo as string | undefined
+    );
+    return periodBucketsInRange(period, from, to);
+  }, [period, periodAlarmQueryParams]);
+
   useEffect(() => {
+    if (!hasQueried) return;
     let cancelled = false;
     setLoadingTrend(true);
     setErrorTrend(null);
@@ -919,11 +937,11 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     const nowIso = new Date().toISOString();
 
     const loadLegacyFallback = async (): Promise<TrendPoint[]> => {
-      const buckets = recentPeriodBuckets(period, 4);
+      const buckets = periodAlarmBuckets;
       const calls: (() => Promise<YieldMonitorV3AggregateResponse>)[] = [];
       for (const bucket of buckets) {
         const bucketParams = {
-          ...periodAlarmFilterParams,
+          ...periodAlarmQueryParams,
           timeStampFrom: bucket.start.toISOString(),
           timeStampTo: bucket.end.toISOString(),
         };
@@ -965,7 +983,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         const res = await apiGetJson<YieldMonitorPeriodAlarmTrendResponse>(
           apiBase,
           YIELD_PERIOD_ALARM_TREND_PATH,
-          { period, now: nowIso, ...periodAlarmFilterParams }
+          { period, now: nowIso, ...periodAlarmQueryParams }
         );
         if (cancelled) return;
         setTrendPoints(
@@ -1008,7 +1026,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [apiBase, period, periodAlarmFilterParams]);
+  }, [apiBase, period, periodAlarmQueryParams, periodAlarmBuckets, hasQueried]);
 
   // ── KPI derivations ──────────────────────────────────────────────────────
 
@@ -1404,11 +1422,26 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
   const chips = useMemo(() => activeChips(form, listLimits), [form, listLimits]);
   const periodAlarmFilterLabels = useMemo(() => {
     const labels: string[] = [];
-    for (const [k, v] of Object.entries(periodAlarmFilterParams)) {
-      if (v !== undefined) labels.push(`${k} = ${v}`);
+    for (const [k, v] of Object.entries(periodAlarmQueryParams)) {
+      if (v !== undefined && k !== "timeStampFrom" && k !== "timeStampTo") {
+        labels.push(`${k} = ${v}`);
+      }
     }
     return labels;
-  }, [periodAlarmFilterParams]);
+  }, [periodAlarmQueryParams]);
+
+  const periodAlarmTimeHint = useMemo(() => {
+    if (appliedForm.timestampFrom && appliedForm.timestampTo) {
+      return `横轴按所选时间 ${appliedForm.timestampFrom} → ${appliedForm.timestampTo} 切分为 ${periodAlarmBuckets.length} 个${period === "week" ? "周" : "月"}`;
+    }
+    if (appliedForm.timestampFrom) {
+      return `横轴自 ${appliedForm.timestampFrom} 起至当前，切分为 ${periodAlarmBuckets.length} 个${period === "week" ? "周" : "月"}`;
+    }
+    if (appliedForm.timestampTo) {
+      return `横轴截至 ${appliedForm.timestampTo}（向前 1 年），切分为 ${periodAlarmBuckets.length} 个${period === "week" ? "周" : "月"}`;
+    }
+    return `未选 TIME_STAMP 时默认近 1 年，切分为 ${periodAlarmBuckets.length} 个${period === "week" ? "周" : "月"}`;
+  }, [appliedForm, period, periodAlarmBuckets.length]);
   const hasData = !!(list || aggTime || aggCardType);
 
   const yieldReportSections = useMemo(() => {
@@ -1417,8 +1450,8 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         <p className="yield-trend-scope-hint muted small">
           {periodAlarmFilterLabels.length > 0
             ? `与查询条件联动：${periodAlarmFilterLabels.join(" · ")} · `
-            : "未设筛选时统计全库 · "}
-          横轴为近 4 个{period === "week" ? "周" : "月"}窗口（不受 TIME_STAMP 时间窗限制）
+            : ""}
+          {periodAlarmTimeHint}
         </p>
         <div className="preset-chips">
           {(["week", "month"] as const).map((p) => (
@@ -1587,6 +1620,8 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         />
       </div>
     );
+
+    if (!hasQueried) return {};
 
     if (!hasData) return { periodAlarm: periodAlarmSection };
 
@@ -1893,6 +1928,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     };
   }, [
     hasData,
+    hasQueried,
     totalTriggers,
     uniqueLots,
     worstCardType,
@@ -1921,6 +1957,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     layoutEpoch,
     period,
     periodAlarmFilterLabels,
+    periodAlarmTimeHint,
     periodTotal,
     periodPrevTotal,
     periodRatioLabel,

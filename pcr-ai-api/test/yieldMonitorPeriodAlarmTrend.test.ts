@@ -4,7 +4,9 @@ import {
   aggregatePeriodAlarmTrendDummy,
   buildPeriodAlarmTrendSql,
   parsePeriodAlarmTrendQuery,
+  periodBucketsInRange,
   recentPeriodBuckets,
+  resolvePeriodAlarmTimeRange,
 } from "../src/lib/yieldMonitorPeriodAlarmTrend.js";
 import { filterYieldMonitorDummyRowsMatchingV3 } from "../src/lib/yieldMonitorTriggerDummy.js";
 import { parseBinFromTriggerLabel } from "../src/lib/yieldTriggerLabelBin.js";
@@ -24,6 +26,52 @@ describe("yieldMonitorPeriodAlarmTrend", () => {
     const month = recentPeriodBuckets("month", 4, NOW);
     assert.equal(month[3]!.start.getTime(), new Date(2026, 6, 1).getTime());
     assert.equal(month[0]!.start.getTime(), new Date(2026, 3, 1).getTime());
+  });
+
+  test("periodBucketsInRange 按查询时间窗切分", () => {
+    const from = new Date("2026-01-15T00:00:00.000Z");
+    const to = new Date("2026-03-10T00:00:00.000Z");
+
+    const months = periodBucketsInRange("month", from, to);
+    assert.equal(months.ok, true);
+    if (months.ok) {
+      assert.equal(months.buckets.length, 3);
+      assert.equal(months.buckets[0]!.label, "2026-01");
+      assert.equal(months.buckets[2]!.label, "2026-03");
+    }
+
+    const weeks = periodBucketsInRange("week", from, to);
+    assert.equal(weeks.ok, true);
+    if (weeks.ok) {
+      assert.ok(weeks.buckets.length >= 7);
+      assert.equal(weeks.buckets[0]!.start.getTime(), from.getTime());
+      assert.equal(weeks.buckets[weeks.buckets.length - 1]!.end.getTime(), to.getTime());
+    }
+  });
+
+  test("resolvePeriodAlarmTimeRange 未传时间时默认近 1 年", () => {
+    const now = new Date("2026-07-06T10:00:00.000Z");
+    const r = resolvePeriodAlarmTimeRange({}, now);
+    assert.equal(r.ok, true);
+    if (r.ok) {
+      assert.equal(r.to.getTime(), now.getTime());
+      assert.ok(r.from.getTime() < r.to.getTime());
+    }
+  });
+
+  test("parsePeriodAlarmTrendQuery 使用 timeStampFrom/To 切桶", () => {
+    const r = parsePeriodAlarmTrendQuery({
+      period: "month",
+      timeStampFrom: "2026-04-01T00:00:00.000Z",
+      timeStampTo: "2026-06-15T00:00:00.000Z",
+      now: "2026-07-06T10:00:00.000Z",
+    });
+    assert.equal(r.ok, true);
+    if (r.ok) {
+      assert.equal(r.buckets.length, 3);
+      assert.equal(r.buckets[0]!.label, "2026-04");
+      assert.equal(r.buckets[2]!.label, "2026-06");
+    }
   });
 
   test("parsePeriodAlarmTrendQuery 拒绝非法 period", () => {

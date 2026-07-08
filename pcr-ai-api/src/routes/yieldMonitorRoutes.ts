@@ -409,7 +409,7 @@ yieldMonitorRouter.get("/yield-monitor-triggers/v3/aggregate", async (req, res) 
 });
 
 /**
- * **周期报警趋势**：近 4 周/月 × 5 指标，单次 Oracle 扫描；Bin 种类不含 goodbin。
+ * **周期报警趋势**：按查询时间窗切分周/月 x 轴桶，单次 Oracle 扫描；Bin 种类不含 goodbin。
  */
 yieldMonitorRouter.get("/yield-monitor-triggers/v3/period-alarm-trend", async (req, res) => {
   const parsed = parsePeriodAlarmTrendQuery(req.query as Record<string, unknown>);

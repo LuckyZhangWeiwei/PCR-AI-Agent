@@ -372,6 +372,116 @@ export function recentPeriodBuckets(
   return buckets.reverse();
 }
 
+export const PERIOD_ALARM_MAX_WEEK_BUCKETS = 52;
+export const PERIOD_ALARM_MAX_MONTH_BUCKETS = 24;
+
+function v3DefaultThroughNowMinusOneUtcYear(now: Date = new Date()): { lo: Date; hi: Date } {
+  const hi = now;
+  const lo = new Date(hi.getTime());
+  lo.setUTCFullYear(lo.getUTCFullYear() - 1);
+  return { lo, hi };
+}
+
+/** 与 API `resolvePeriodAlarmTimeRange` 一致（ISO 字符串可部分缺失）。 */
+export function resolvePeriodAlarmTimeRangeFromIso(
+  timeStampFrom: string | undefined,
+  timeStampTo: string | undefined,
+  now: Date = new Date()
+): { from: Date; to: Date } {
+  const parseIso = (iso: string | undefined): Date | undefined => {
+    if (!iso) return undefined;
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? undefined : d;
+  };
+
+  const tsFrom = parseIso(timeStampFrom);
+  const tsTo = parseIso(timeStampTo);
+
+  if (!tsFrom && !tsTo) {
+    const { lo, hi } = v3DefaultThroughNowMinusOneUtcYear(now);
+    return { from: lo, to: hi };
+  }
+  if (tsFrom && tsTo) {
+    return { from: tsFrom, to: tsTo };
+  }
+  if (tsFrom) {
+    return { from: tsFrom, to: now };
+  }
+  const to = tsTo!;
+  const from = new Date(to.getTime());
+  from.setUTCFullYear(from.getUTCFullYear() - 1);
+  return { from, to };
+}
+
+/** 与 API `periodBucketsInRange` 一致。 */
+export function periodBucketsInRange(
+  period: PeriodKey,
+  rangeFrom: Date,
+  rangeTo: Date
+): PeriodBucket[] {
+  if (rangeFrom.getTime() >= rangeTo.getTime()) {
+    throw new Error("time range must span a positive duration");
+  }
+
+  const buckets: PeriodBucket[] = [];
+
+  if (period === "week") {
+    const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+    let cursor = rangeFrom.getTime();
+    const endMs = rangeTo.getTime();
+    while (cursor < endMs) {
+      const bucketEndMs = Math.min(cursor + WEEK_MS, endMs);
+      const start = new Date(cursor);
+      const end = new Date(bucketEndMs);
+      buckets.push({
+        start,
+        end,
+        label: `${formatMonthDay(start)}-${formatMonthDay(end)}`,
+      });
+      cursor = bucketEndMs;
+      if (buckets.length > PERIOD_ALARM_MAX_WEEK_BUCKETS) {
+        throw new Error(
+          `time range spans more than ${PERIOD_ALARM_MAX_WEEK_BUCKETS} weeks; narrow TIME_STAMP filter`
+        );
+      }
+    }
+  } else {
+    let y = rangeFrom.getFullYear();
+    let m = rangeFrom.getMonth();
+    while (true) {
+      const monthStart = new Date(y, m, 1);
+      if (monthStart.getTime() >= rangeTo.getTime()) break;
+      const monthEndExclusive = new Date(y, m + 1, 1);
+      const start =
+        monthStart.getTime() < rangeFrom.getTime() ? rangeFrom : monthStart;
+      const end =
+        monthEndExclusive.getTime() > rangeTo.getTime() ? rangeTo : monthEndExclusive;
+      if (start.getTime() < end.getTime()) {
+        buckets.push({
+          start,
+          end,
+          label: formatYearMonth(monthStart),
+        });
+      }
+      if (buckets.length > PERIOD_ALARM_MAX_MONTH_BUCKETS) {
+        throw new Error(
+          `time range spans more than ${PERIOD_ALARM_MAX_MONTH_BUCKETS} months; narrow TIME_STAMP filter`
+        );
+      }
+      m += 1;
+      if (m > 11) {
+        m = 0;
+        y += 1;
+      }
+    }
+  }
+
+  if (buckets.length === 0) {
+    throw new Error("time range produced no period buckets");
+  }
+  return buckets;
+}
+
 /** 派生聚合维度 `bin` 的展示格式：数字 → `BIN n`；`goodbin` → `GOODBIN`；空 → `(未知)`。 */
 export function formatBinLabel(bin: string): string {
   const v = bin.trim();
