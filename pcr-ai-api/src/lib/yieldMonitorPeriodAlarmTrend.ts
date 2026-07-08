@@ -255,9 +255,9 @@ function firstQueryValue(q: Record<string, unknown>, key: string): unknown {
 
 function firstString(raw: unknown): string | undefined {
   if (raw == null) return undefined;
-  if (typeof raw === "string") return raw;
+  if (typeof raw === "string") return raw.trim() === "" ? undefined : raw;
   if (Array.isArray(raw) && raw.length > 0 && typeof raw[0] === "string") {
-    return raw[0];
+    return raw[0].trim() === "" ? undefined : raw[0];
   }
   return undefined;
 }

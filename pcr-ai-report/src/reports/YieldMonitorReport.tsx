@@ -1717,7 +1717,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       aggTime ? (
         <div className="yield-trend-block chart-no-drill">
           <p className="yield-trend-scope-hint small">
-            {form.timestampFrom || form.timestampTo
+            {appliedForm.timestampFrom || appliedForm.timestampTo
               ? "按所选 TIME_STAMP 时间窗统计全部匹配行（不受明细 limit 影响）"
               : "未选手动时间时默认统计近一年全部匹配行（不受明细 limit 影响）"}
           </p>
@@ -2177,7 +2177,9 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
           }}
           sectionLabelSuffixes={{
             timeTrend:
-              form.timestampFrom || form.timestampTo ? "所选时间窗" : "近一年",
+              appliedForm.timestampFrom || appliedForm.timestampTo
+                ? "所选时间窗"
+                : "近一年",
           }}
           layoutEpoch={layoutEpoch}
         />
