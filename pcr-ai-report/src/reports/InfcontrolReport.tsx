@@ -1977,7 +1977,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
         <div>
           <h2>🔬 JB STAR</h2>
           <p className="report-desc">
-            Layer BIN data (<code>PASSTYPE = TEST</code>). Single query fetches detail rows + BIN ranking +
+            Layer BIN data (first test only; excludes Auto retest <code>RETESTBIN</code>). Single query fetches detail rows + BIN ranking +
             probe card type comparison + slot trend. Click any chart to drill down.
             Yield% is calculated in-browser from <code>bins[].isGoodBin</code> / <code>GROSSDIE</code>.
           </p>

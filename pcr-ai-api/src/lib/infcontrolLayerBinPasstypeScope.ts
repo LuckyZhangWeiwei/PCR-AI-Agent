@@ -1,7 +1,7 @@
 /**
  * v3/v4 层控列表与聚合共用的 INFLAYERBINLIST.PASSTYPE 范围。
- * 含 TEST / INTERRUPT（常规与中断）、TEST ISR / TEST INTERRUPT（带前缀的层类型）、
- * RETESTBIN（复测坏 bin）。
+ * 含 TEST / INTERRUPT（常规与中断）、TEST ISR / TEST INTERRUPT（带前缀的层类型）。
+ * 排除 RETESTBIN（Auto retest 复测坏 bin）— 明细表与图表仅展示 first test。
  * 仍排除 NA（Current 层）与 LAYERNAME=Abandoned（见 SQL / Dummy 侧 LAYERNAME 条件）。
  */
 export const INFCONTROL_LAYER_BIN_V3_PASSTYPES = [
@@ -9,7 +9,6 @@ export const INFCONTROL_LAYER_BIN_V3_PASSTYPES = [
   "INTERRUPT",
   "TEST ISR",
   "TEST INTERRUPT",
-  "RETESTBIN",
 ] as const;
 
 export type InfcontrolLayerBinV3Passtype =

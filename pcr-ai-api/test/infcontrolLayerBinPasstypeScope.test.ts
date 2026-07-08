@@ -8,9 +8,9 @@ import {
 } from "../src/lib/infcontrolLayerBinPasstypeScope.js";
 
 describe("infcontrolLayerBinPasstypeScope", () => {
-  test("Oracle IN list includes RETESTBIN, TEST ISR, and TEST INTERRUPT", () => {
+  test("Oracle IN list includes TEST ISR and TEST INTERRUPT but not RETESTBIN", () => {
     const sql = infcontrolLayerBinV3PasstypeOracleIn("t2");
-    assert.match(sql, /'RETESTBIN'/);
+    assert.doesNotMatch(sql, /'RETESTBIN'/);
     assert.match(sql, /'TEST ISR'/);
     assert.match(sql, /'TEST INTERRUPT'/);
     assert.match(sql, /'TEST'/);
@@ -25,6 +25,7 @@ describe("infcontrolLayerBinPasstypeScope", () => {
     assert.equal(infcontrolLayerBinV3PasstypeMatches("TEST INTERRUPT"), true);
     assert.equal(infcontrolLayerBinV3PasstypeMatches("NA"), false);
     assert.equal(infcontrolLayerBinV3PasstypeMatches("RETEST"), false);
+    assert.equal(infcontrolLayerBinV3PasstypeMatches("RETESTBIN"), false);
   });
 
   test("infcontrolLayerBinV3BaseWhereBlock appends extra AND", () => {
