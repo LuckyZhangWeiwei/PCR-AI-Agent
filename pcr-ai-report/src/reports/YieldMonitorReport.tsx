@@ -1623,24 +1623,36 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         axis="x"
         groupClassName="report-reorder-group--kpis"
         labels={{
-          kpiTrig: "触发总数",
+          kpiTrig: "触发总数（全量 · 不受 limit）",
           kpiLots: "涉及 Lot 数",
-          kpiWorstPct: "触发最多探针卡类型",
+          kpiWorstPct: "触发最多探针卡类型（全量 · 不受 limit）",
           kpiSelPc: "已选探针卡",
         }}
         sections={{
           kpiTrig: (
-            <KpiCard label="触发总数" value={totalTriggers} color="blue" subtext="触发总数" showLabel={false} />
+            <KpiCard
+              label="触发总数"
+              value={totalTriggers}
+              color="blue"
+              subtext="全量匹配 · 不受明细 limit 影响"
+              showLabel={false}
+            />
           ),
           kpiLots: (
-            <KpiCard label="涉及 Lot 数" value={uniqueLots} color="white" subtext="涉及 LOT 数" showLabel={false} />
+            <KpiCard
+              label="涉及 Lot 数"
+              value={uniqueLots}
+              color="white"
+              subtext={`明细 Top-${listLimits.defaultLimit} 内去重`}
+              showLabel={false}
+            />
           ),
           kpiWorstPct: (
             <KpiCard
               label="触发最多探针卡类型"
               value={worstCardType}
               color="red"
-              subtext="触发次数最多"
+              subtext="全量匹配 · 不受明细 limit 影响"
               showLabel={false}
             />
           ),
@@ -1660,6 +1672,11 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     const timeTrendSection =
       aggTime ? (
         <div className="yield-trend-block chart-no-drill">
+          <p className="yield-trend-scope-hint muted small">
+            {form.timestampFrom || form.timestampTo
+              ? "按所选 TIME_STAMP 时间窗统计全部匹配行（不受明细 limit 影响）"
+              : "未选手动时间时默认统计近一年全部匹配行（不受明细 limit 影响）"}
+          </p>
           <DarkChart option={timeTrendOption} height={YIELD_TREND_CHART_HEIGHT} />
         </div>
       ) : null;
@@ -1924,6 +1941,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     showTree,
     detailRows,
     list,
+    listLimits.defaultLimit,
     showDetail,
     layoutEpoch,
     period,
@@ -1959,7 +1977,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         <div>
           <h2>⚡ Yield Monitor</h2>
           <p className="report-desc">
-            Trigger analysis (<code>TYPE = delta_diff</code>). Set filters and click <strong>Query</strong> to
+            Trigger analysis (<code className="report-desc-type-scope">TYPE = delta_diff</code>). Set filters and click <strong>Query</strong> to
             fetch detail rows + time trend + probe card type / LOT aggregates in parallel.
             Click probe card type <span className="desc-arrow">→</span> drill to card ID <span className="desc-arrow">→</span> select <span className="desc-arrow">→</span> view DUT distribution.
           </p>
@@ -2106,6 +2124,12 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
           storageKey="pcr-ai-report:yield-monitor-modules"
           defaultOrder={YIELD_REPORT_SECTION_ORDER}
           sections={yieldReportSections}
+          sectionLabels={{
+            timeTrend:
+              form.timestampFrom || form.timestampTo
+                ? "每日触发量趋势（所选时间窗）"
+                : "每日触发量趋势（近一年）",
+          }}
           layoutEpoch={layoutEpoch}
         />
     </div>

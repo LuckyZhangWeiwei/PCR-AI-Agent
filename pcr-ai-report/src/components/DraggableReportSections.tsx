@@ -518,6 +518,8 @@ type TopSectionsProps = {
   storageKey: string;
   defaultOrder: readonly string[];
   sections: Record<string, ReactNode | null | undefined>;
+  /** Override default drag-bar titles (merged onto TOP_SECTION_LABELS). */
+  sectionLabels?: Record<string, string>;
   layoutEpoch?: number;
   closable?: boolean;
 };
@@ -526,16 +528,21 @@ export function DraggableReportSections({
   storageKey,
   defaultOrder,
   sections,
+  sectionLabels,
   layoutEpoch = 0,
   closable = true,
 }: TopSectionsProps) {
+  const labels = useMemo(
+    () => (sectionLabels ? { ...TOP_SECTION_LABELS, ...sectionLabels } : TOP_SECTION_LABELS),
+    [sectionLabels],
+  );
   return (
     <DraggableReportBlocks
       storageKey={storageKey}
       defaultOrder={defaultOrder}
       sections={sections}
       axis="y"
-      labels={TOP_SECTION_LABELS}
+      labels={labels}
       layoutEpoch={layoutEpoch}
       closable={closable}
     />

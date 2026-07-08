@@ -669,6 +669,12 @@ button.chip.chip--active:hover {
   padding: 0 4px;
 }
 
+.report-desc code.report-desc-type-scope {
+  color: var(--red-text);
+  background: rgba(var(--red-rgb), 0.12);
+  border-color: rgba(var(--red-rgb), 0.35);
+}
+
 .report-desc .desc-arrow {
   color: var(--accent-2);
   font-weight: 600;
@@ -1187,6 +1193,11 @@ button.chip.chip--active:hover {
   border: 1px solid rgba(var(--fg-rgb),0.1);
   border-radius: 8;
   padding: 8px 10px 6px;
+}
+
+.yield-trend-scope-hint {
+  margin: 0 0 6px;
+  line-height: 1.45;
 }
 
 /* Non-drillable chart: prohibition cursor follows the mouse */
