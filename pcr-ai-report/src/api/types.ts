@@ -229,6 +229,19 @@ export type YieldMonitorV3Response = {
   rows: YieldMonitorV3Row[];
 };
 
+/** Single aggregate block from **`GET …/v3/combined`** response `aggregates` map. */
+export interface YieldMonitorAggregateBlock {
+  dimensions: string[];
+  groupTop: number;
+  totalRowsMatching: number;
+  groups: AggregateGroup[];
+}
+
+/** **`GET …/v3/combined`** — list rows + all v3 aggregates in one call. */
+export interface YieldMonitorCombinedResponse extends YieldMonitorV3Response {
+  aggregates: Record<string, YieldMonitorAggregateBlock>;
+}
+
 export type SiteBinDutEntry = {
   dut: number | "single";
   dieCount: number;

@@ -79,79 +79,75 @@ function parseDimToken(raw: string): YieldMonitorV3AggDim | undefined {
   return map[t];
 }
 
-/** `GROUP BY` 与 GRP_KEY 片段（不含别名歧义） */
-function dimSql(d: YieldMonitorV3AggDim): {
+/** `GROUP BY` / GRP_KEY 片段；`bare` 用于 `WITH filtered AS (SELECT t.* …)` 内层（无表别名）。 */
+function dimSql(
+  d: YieldMonitorV3AggDim,
+  bare = false
+): {
   groupByExpr: string;
   grpKeyFrag: string;
 } {
+  const col = (name: string) => (bare ? name : `t.${name}`);
   switch (d) {
     case "device":
       return {
-        groupByExpr: "t.DEVICE",
-        grpKeyFrag: "NVL(t.DEVICE, '')",
+        groupByExpr: col("DEVICE"),
+        grpKeyFrag: `NVL(${col("DEVICE")}, '')`,
       };
     case "hostname":
       return {
-        groupByExpr: "t.HOSTNAME",
-        grpKeyFrag: "NVL(t.HOSTNAME, '')",
+        groupByExpr: col("HOSTNAME"),
+        grpKeyFrag: `NVL(${col("HOSTNAME")}, '')`,
       };
     case "lotId":
       return {
-        groupByExpr: "t.LOTID",
-        grpKeyFrag: "NVL(t.LOTID, '')",
+        groupByExpr: col("LOTID"),
+        grpKeyFrag: `NVL(${col("LOTID")}, '')`,
       };
     case "wafer":
       return {
-        groupByExpr: "t.WAFER",
-        grpKeyFrag: "NVL(t.WAFER, '')",
+        groupByExpr: col("WAFER"),
+        grpKeyFrag: `NVL(${col("WAFER")}, '')`,
       };
     case "probeCard":
       return {
-        groupByExpr: "t.PROBECARD",
-        grpKeyFrag: "NVL(t.PROBECARD, '')",
+        groupByExpr: col("PROBECARD"),
+        grpKeyFrag: `NVL(${col("PROBECARD")}, '')`,
       };
     case "probeCardType":
       return {
-        groupByExpr:
-          "NVL(REGEXP_SUBSTR(TRIM(t.PROBECARD), '^[^-]+', 1, 1), '')",
-        grpKeyFrag:
-          "NVL(REGEXP_SUBSTR(TRIM(t.PROBECARD), '^[^-]+', 1, 1), '')",
+        groupByExpr: `NVL(REGEXP_SUBSTR(TRIM(${col("PROBECARD")}), '^[^-]+', 1, 1), '')`,
+        grpKeyFrag: `NVL(REGEXP_SUBSTR(TRIM(${col("PROBECARD")}), '^[^-]+', 1, 1), '')`,
       };
     case "bin":
       return {
-        groupByExpr:
-          "NVL(LOWER(REGEXP_SUBSTR(t.TRIGGER_LABEL, 'Bin#\\s*([0-9]+|goodbin)', 1, 1, 'i', 1)), '')",
-        grpKeyFrag:
-          "NVL(LOWER(REGEXP_SUBSTR(t.TRIGGER_LABEL, 'Bin#\\s*([0-9]+|goodbin)', 1, 1, 'i', 1)), '')",
+        groupByExpr: `NVL(LOWER(REGEXP_SUBSTR(${col("TRIGGER_LABEL")}, 'Bin#\\s*([0-9]+|goodbin)', 1, 1, 'i', 1)), '')`,
+        grpKeyFrag: `NVL(LOWER(REGEXP_SUBSTR(${col("TRIGGER_LABEL")}, 'Bin#\\s*([0-9]+|goodbin)', 1, 1, 'i', 1)), '')`,
       };
     case "dutNumber":
       return {
-        groupByExpr:
-          "NVL(REGEXP_SUBSTR(t.TRIGGER_LABEL, 'on\\s+dut#\\s*([0-9]+)', 1, 1, 'i', 1), '')",
-        grpKeyFrag:
-          "NVL(REGEXP_SUBSTR(t.TRIGGER_LABEL, 'on\\s+dut#\\s*([0-9]+)', 1, 1, 'i', 1), '')",
+        groupByExpr: `NVL(REGEXP_SUBSTR(${col("TRIGGER_LABEL")}, 'on\\s+dut#\\s*([0-9]+)', 1, 1, 'i', 1), '')`,
+        grpKeyFrag: `NVL(REGEXP_SUBSTR(${col("TRIGGER_LABEL")}, 'on\\s+dut#\\s*([0-9]+)', 1, 1, 'i', 1), '')`,
       };
     case "pass":
       return {
-        groupByExpr: "t.PASS",
-        grpKeyFrag: "NVL(TO_CHAR(t.PASS), '')",
+        groupByExpr: col("PASS"),
+        grpKeyFrag: `NVL(TO_CHAR(${col("PASS")}), '')`,
       };
     case "triggerLabel":
       return {
-        groupByExpr: "t.TRIGGER_LABEL",
-        grpKeyFrag: "NVL(t.TRIGGER_LABEL, '')",
+        groupByExpr: col("TRIGGER_LABEL"),
+        grpKeyFrag: `NVL(${col("TRIGGER_LABEL")}, '')`,
       };
     case "timeDay":
       return {
-        groupByExpr: "TRUNC(t.TIME_STAMP)",
-        grpKeyFrag:
-          "TO_CHAR(TRUNC(t.TIME_STAMP), 'YYYY-MM-DD HH24:MI:SS')",
+        groupByExpr: `TRUNC(${col("TIME_STAMP")})`,
+        grpKeyFrag: `TO_CHAR(TRUNC(${col("TIME_STAMP")}), 'YYYY-MM-DD HH24:MI:SS')`,
       };
     case "timeHour":
       return {
-        groupByExpr: "TRUNC(t.TIME_STAMP, 'HH24')",
-        grpKeyFrag:
-          "TO_CHAR(TRUNC(t.TIME_STAMP, 'HH24'), 'YYYY-MM-DD HH24:MI:SS')",
+        groupByExpr: `TRUNC(${col("TIME_STAMP")}, 'HH24')`,
+        grpKeyFrag: `TO_CHAR(TRUNC(${col("TIME_STAMP")}, 'HH24'), 'YYYY-MM-DD HH24:MI:SS')`,
       };
     default: {
       const _e: never = d;
@@ -291,6 +287,84 @@ SELECT COUNT(*) AS TOTAL_MATCHING
 FROM YMWEB_YIELDMONITORTRIGGER t
 ${wc}
 `.trim();
+}
+
+/**
+ * 单次表扫描：`COUNT(*)` 全量匹配行 + Top-N `GROUP BY`（`WITH filtered` 共用一次读）。
+ */
+export function buildYieldMonitorTriggerV3AggregateSqlWithTotal(
+  whereSql: string,
+  dimensions: YieldMonitorV3AggDim[]
+): string {
+  const wc = whereSql.trim();
+  const groupByList = dimensions
+    .map((d) => dimSql(d, true).groupByExpr)
+    .join(", ");
+  const grpKeyExpr = dimensions
+    .map((d) => dimSql(d, true).grpKeyFrag)
+    .join(` || '${GRP_SEP}' || `);
+
+  return `
+WITH filtered AS (
+  SELECT t.*
+  FROM YMWEB_YIELDMONITORTRIGGER t
+  ${wc}
+),
+totals AS (
+  SELECT COUNT(*) AS TOTAL_MATCHING FROM filtered
+),
+grouped AS (
+  SELECT ${grpKeyExpr} AS GRP_KEY, COUNT(*) AS CNT
+  FROM filtered
+  GROUP BY ${groupByList}
+),
+ranked AS (
+  SELECT GRP_KEY, CNT, ROWNUM AS rnum
+  FROM (
+    SELECT GRP_KEY, CNT
+    FROM grouped
+    ORDER BY CNT DESC NULLS LAST
+  )
+  WHERE ROWNUM <= :agg_lim
+)
+SELECT r.GRP_KEY, r.CNT, t.TOTAL_MATCHING
+FROM ranked r
+CROSS JOIN totals t
+WHERE r.rnum >= 1
+`.trim();
+}
+
+export function mapYieldMonitorV3AggregateRows(
+  dimensions: YieldMonitorV3AggDim[],
+  aggRows: Record<string, unknown>[]
+): {
+  totalRowsMatching: number;
+  groups: Array<{ key: string; count: number; parts: Record<string, string | null> }>;
+} {
+  const totalObj = aggRows[0] as Record<string, unknown> | undefined;
+  const totalRaw =
+    totalObj?.TOTAL_MATCHING ?? totalObj?.total_matching ?? totalObj?.TOTAL;
+  const totalRowsMatching =
+    totalRaw != null && totalRaw !== "" ? Number(totalRaw) : 0;
+
+  const groups = aggRows
+    .filter((row) => {
+      const cntRaw = row.CNT ?? row.cnt;
+      return cntRaw != null && cntRaw !== "";
+    })
+    .map((row) => {
+      const keyRaw = row.GRP_KEY ?? row.grp_key;
+      const cntRaw = row.CNT ?? row.cnt;
+      const keyStr = keyRaw == null ? "" : String(keyRaw);
+      const n = Number(cntRaw);
+      return {
+        key: keyStr,
+        count: Number.isFinite(n) ? n : 0,
+        parts: buildYieldMonitorV3AggregateGroupParts(dimensions, keyStr),
+      };
+    });
+
+  return { totalRowsMatching, groups };
 }
 
 export function buildYieldMonitorV3AggregateGroupParts(

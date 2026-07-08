@@ -13,6 +13,10 @@ export const INFCONTROL_COMBINED_PATH =
 export const YIELD_AGGREGATE_PATH =
   "/api/v3/yield-monitor-triggers/v3/aggregate";
 
+/** 列表 + 多组 v3 库内聚合，一次 HTTP / 一次 Oracle 连接 */
+export const YIELD_COMBINED_PATH =
+  "/api/v3/yield-monitor-triggers/v3/combined";
+
 export const YIELD_PERIOD_ALARM_TREND_PATH =
   "/api/v3/yield-monitor-triggers/v3/period-alarm-trend";
 

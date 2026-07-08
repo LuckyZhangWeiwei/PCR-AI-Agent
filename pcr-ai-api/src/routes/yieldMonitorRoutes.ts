@@ -9,10 +9,10 @@ import {
 } from "../lib/yieldMonitorTriggerFilters.js";
 import {
   YIELD_MONITOR_V3_AGGREGATE_DOCUMENTATION,
-  buildYieldMonitorTriggerV3AggregateSql,
-  buildYieldMonitorTriggerV3AggregateTotalSql,
-  buildYieldMonitorV3AggregateGroupParts,
+  buildYieldMonitorTriggerV3AggregateSqlWithTotal,
+  mapYieldMonitorV3AggregateRows,
   parseYieldMonitorTriggerV3AggregateQuery,
+  type YieldMonitorV3AggDim,
 } from "../lib/yieldMonitorTriggerV3Aggregate.js";
 import { buildYieldMonitorTriggerMatchingCountSql } from "../lib/yieldMonitorTriggerAggregate.js";
 import {
@@ -42,6 +42,7 @@ import {
   buildYieldMonitorTriggersV3SqlFullMatching,
 } from "../lib/apiV3ListSql.js";
 import { clampLimitFromQuery } from "../lib/sqlIdent.js";
+import { parseAggsParam } from "../lib/parseAggsParam.js";
 import { withProbeWebConnection } from "../oracle.js";
 import { addDutNumberToYieldMonitorV3Row } from "../lib/yieldTriggerLabelDut.js";
 import {
@@ -334,53 +335,27 @@ yieldMonitorRouter.get("/yield-monitor-triggers/v3/aggregate", async (req, res) 
     });
   }
 
-  const aggSql = buildYieldMonitorTriggerV3AggregateSql(
+  const aggSql = buildYieldMonitorTriggerV3AggregateSqlWithTotal(
     parsed.whereSql,
     parsed.dimensions
   );
-  const totalSql = buildYieldMonitorTriggerV3AggregateTotalSql(parsed.whereSql);
   const bindAgg: BindParameters = {
     ...parsed.binds,
     agg_lim: parsed.groupTop,
   };
 
   try {
-    const [aggRows, countRows] = await withProbeWebConnection(async (conn) => {
+    const aggRows = await withProbeWebConnection(async (conn) => {
       const aggResult = await conn.execute(aggSql, bindAgg, {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
       });
-      const totalResult = await conn.execute(totalSql, parsed.binds, {
-        outFormat: oracledb.OUT_FORMAT_OBJECT,
-      });
-      return [aggResult.rows || [], totalResult.rows || []] as const;
+      return (aggResult.rows || []) as Record<string, unknown>[];
     });
 
-    const totalObj =
-      (countRows[0] as Record<string, unknown> | undefined) ?? {};
-    const totalRaw =
-      totalObj.TOTAL_MATCHING ?? totalObj.total_matching ?? totalObj.TOTAL;
-    const totalRowsMatching =
-      totalRaw != null && totalRaw !== "" ? Number(totalRaw) : 0;
-
-    const groups = (aggRows as Record<string, unknown>[])
-      .filter((row) => {
-        const cntRaw = row.CNT ?? row.cnt;
-        return cntRaw != null && cntRaw !== "";
-      })
-      .map((row) => {
-        const keyRaw = row.GRP_KEY ?? row.grp_key;
-        const cntRaw = row.CNT ?? row.cnt;
-        const keyStr = keyRaw == null ? "" : String(keyRaw);
-        const n = Number(cntRaw);
-        return {
-          key: keyStr,
-          count: Number.isFinite(n) ? n : 0,
-          parts: buildYieldMonitorV3AggregateGroupParts(
-            parsed.dimensions,
-            keyStr
-          ),
-        };
-      });
+    const { totalRowsMatching, groups } = mapYieldMonitorV3AggregateRows(
+      parsed.dimensions,
+      aggRows
+    );
 
     return res.json({
       meta: {
@@ -395,6 +370,173 @@ yieldMonitorRouter.get("/yield-monitor-triggers/v3/aggregate", async (req, res) 
       filters: parsed.applied,
       totalRowsMatching,
       groups,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return sendAgentError(
+      res,
+      500,
+      "ORACLE_QUERY_FAILED",
+      "Oracle query failed",
+      enrichOracleDriverDetail(message)
+    );
+  }
+});
+
+/**
+ * **v3 合并查询**：一次 HTTP + 一次 probeweb 连接，返回 v3 列表 + 多组 v3 库内聚合。
+ * `aggs` 格式：`dimensions:groupTop|…`（如 `timeDay:60|probeCardType:25|device,lotId,probeCardType,probeCard:100`）。
+ */
+yieldMonitorRouter.get("/yield-monitor-triggers/v3/combined", async (req, res) => {
+  const parsed = parseYieldMonitorTriggerV3Query(
+    req.query as Record<string, unknown>
+  );
+  if (!parsed.ok) {
+    return sendAgentError(
+      res,
+      400,
+      "VALIDATION_ERROR",
+      parsed.error,
+      "See GET /api/v1/manifest yield-monitor-triggers/v3/combined."
+    );
+  }
+
+  const aggsResult = parseAggsParam(req.query.aggs, 8);
+  if (!aggsResult.ok) {
+    return sendAgentError(
+      res,
+      400,
+      "VALIDATION_ERROR",
+      aggsResult.error,
+      'aggs format: dimensions:groupTop|dimensions:groupTop|… (e.g. timeDay:60|probeCardType:25)'
+    );
+  }
+
+  const limit = clampLimitFromQuery(
+    req.query as Record<string, unknown>,
+    200,
+    API_V3_LIST_LIMIT_MAX
+  );
+
+  const resolvedAggs: {
+    key: string;
+    dimensions: YieldMonitorV3AggDim[];
+    groupTop: number;
+    applied: Record<string, unknown>;
+  }[] = [];
+
+  for (const spec of aggsResult.specs) {
+    const aggParsed = parseYieldMonitorTriggerV3AggregateQuery({
+      ...(req.query as Record<string, unknown>),
+      dimensions: spec.groupBy,
+      groupTop: String(spec.groupTop),
+    });
+    if (!aggParsed.ok) {
+      return sendAgentError(
+        res,
+        400,
+        "VALIDATION_ERROR",
+        `aggs dimensions "${spec.groupBy}": ${aggParsed.error}`,
+        "Each dimensions value must be valid for yield-monitor-triggers/v3/aggregate."
+      );
+    }
+    resolvedAggs.push({
+      key: spec.groupBy,
+      dimensions: aggParsed.dimensions,
+      groupTop: aggParsed.groupTop,
+      applied: aggParsed.applied,
+    });
+  }
+
+  if (yieldMonitorTriggersUseDummy()) {
+    const rows = filterYieldMonitorDummyRowsV3(parsed.applied, limit).map((r) =>
+      enrichYieldMonitorTriggerV3ListRow(r as Record<string, unknown>)
+    );
+    const aggregates: Record<string, unknown> = {};
+    for (const rs of resolvedAggs) {
+      const { totalRowsMatching, groups } = aggregateYieldMonitorV3DummyRows(
+        rs.applied,
+        rs.dimensions,
+        rs.groupTop
+      );
+      aggregates[rs.key] = {
+        dimensions: rs.dimensions,
+        groupTop: rs.groupTop,
+        totalRowsMatching,
+        groups,
+      };
+    }
+    return res.json({
+      meta: {
+        apiVersion: "3",
+        requestId: reqId(req),
+        combinedPath: "yield-monitor-triggers/v3/combined",
+      },
+      limit,
+      limitMax: API_V3_LIST_LIMIT_MAX,
+      orderBy: "TIME_STAMP DESC NULLS LAST",
+      filters: { ...parsed.applied, limit },
+      count: rows.length,
+      rows,
+      aggregates,
+    });
+  }
+
+  const listSql = buildYieldMonitorTriggersV3Sql(parsed.whereSql);
+  const listBinds: BindParameters = { ...parsed.binds, lim: limit };
+
+  try {
+    const { listRows, aggregates } = await withProbeWebConnection(
+      async (conn) => {
+        const listResult = await conn.execute(listSql, listBinds, {
+          outFormat: oracledb.OUT_FORMAT_OBJECT,
+        });
+        const rawListRows = (listResult.rows || []) as Record<string, unknown>[];
+
+        const aggOut: Record<string, unknown> = {};
+        for (const rs of resolvedAggs) {
+          const aggSql = buildYieldMonitorTriggerV3AggregateSqlWithTotal(
+            parsed.whereSql,
+            rs.dimensions
+          );
+          const aggResult = await conn.execute(
+            aggSql,
+            { ...parsed.binds, agg_lim: rs.groupTop },
+            { outFormat: oracledb.OUT_FORMAT_OBJECT }
+          );
+          const { totalRowsMatching, groups } = mapYieldMonitorV3AggregateRows(
+            rs.dimensions,
+            (aggResult.rows || []) as Record<string, unknown>[]
+          );
+          aggOut[rs.key] = {
+            dimensions: rs.dimensions,
+            groupTop: rs.groupTop,
+            totalRowsMatching,
+            groups,
+          };
+        }
+
+        return { listRows: rawListRows, aggregates: aggOut };
+      }
+    );
+
+    const withDut = listRows.map((row) =>
+      enrichYieldMonitorTriggerV3ListRow(row)
+    );
+
+    return res.json({
+      meta: {
+        apiVersion: "3",
+        requestId: reqId(req),
+        combinedPath: "yield-monitor-triggers/v3/combined",
+      },
+      limit,
+      limitMax: API_V3_LIST_LIMIT_MAX,
+      orderBy: "TIME_STAMP DESC NULLS LAST",
+      filters: { ...parsed.applied, limit },
+      count: withDut.length,
+      rows: withDut,
+      aggregates,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);

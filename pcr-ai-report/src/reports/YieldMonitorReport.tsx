@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiGetJson } from "../api/client";
-import { API_PREFIX, YIELD_AGGREGATE_PATH, YIELD_PERIOD_ALARM_TREND_PATH } from "../api/paths";
+import { API_PREFIX, YIELD_AGGREGATE_PATH, YIELD_COMBINED_PATH, YIELD_PERIOD_ALARM_TREND_PATH } from "../api/paths";
 import type {
   AggregateGroup,
+  YieldMonitorAggregateBlock,
+  YieldMonitorCombinedResponse,
   YieldMonitorPeriodAlarmTrendResponse,
   YieldMonitorV3AggregateResponse,
   YieldMonitorV3Response,
@@ -196,6 +198,35 @@ const YIELD_ALARM_TREND_CHART_BLOCK_ORDER = [
 ] as const;
 
 const PERIOD_ALARM_FALLBACK_GROUP_TOP = 100;
+
+const YM_AGG_TIME_DAY = "timeDay";
+const YM_AGG_PROBE_CARD_TYPE = "probeCardType";
+const YM_AGG_LOT_ID = "lotId";
+const YM_AGG_TREE = "device,lotId,probeCardType,probeCard";
+const YM_AGG_DEVICE = "device";
+
+const YM_MAIN_QUERY_AGGS = [
+  `${YM_AGG_TIME_DAY}:60`,
+  `${YM_AGG_PROBE_CARD_TYPE}:25`,
+  `${YM_AGG_LOT_ID}:25`,
+  `${YM_AGG_TREE}:100`,
+  `${YM_AGG_DEVICE}:30`,
+].join("|");
+
+function yieldAggBlockToResponse(
+  block: YieldMonitorAggregateBlock | undefined,
+  filters: Record<string, unknown>
+): YieldMonitorV3AggregateResponse | null {
+  if (!block) return null;
+  return {
+    dimensions: block.dimensions,
+    groupTop: block.groupTop,
+    orderBy: "COUNT(*) DESC NULLS LAST",
+    filters,
+    totalRowsMatching: block.totalRowsMatching,
+    groups: block.groups,
+  };
+}
 
 function isPeriodAlarmTrendNotFound(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
@@ -706,78 +737,37 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     setSelectedLotId(null);
     setSelectedDevice(null);
     setAggDevice(null);
-    const core = buildCoreParams(form);
 
-    const settled = await allSettledWithConcurrency(
-      [
-        () =>
-          apiGetJson<YieldMonitorV3Response>(
-            apiBase,
-            `${API_PREFIX}/yield-monitor-triggers/v4`,
-            buildListParams(form, listLimits)
-          ),
-        () =>
-          apiGetJson<YieldMonitorV3AggregateResponse>(
-            apiBase,
-            YIELD_AGGREGATE_PATH,
-            { ...core, dimensions: "timeDay", groupTop: 60 }
-          ),
-        () =>
-          apiGetJson<YieldMonitorV3AggregateResponse>(
-            apiBase,
-            YIELD_AGGREGATE_PATH,
-            { ...core, dimensions: "probeCardType", groupTop: 25 }
-          ),
-        () =>
-          apiGetJson<YieldMonitorV3AggregateResponse>(
-            apiBase,
-            YIELD_AGGREGATE_PATH,
-            { ...core, dimensions: "lotId", groupTop: 25 }
-          ),
-        () =>
-          apiGetJson<YieldMonitorV3AggregateResponse>(
-            apiBase,
-            YIELD_AGGREGATE_PATH,
-            { ...core, dimensions: "device,lotId,probeCardType,probeCard", groupTop: 100 }
-          ),
-        () =>
-          apiGetJson<YieldMonitorV3AggregateResponse>(
-            apiBase,
-            YIELD_AGGREGATE_PATH,
-            { ...core, dimensions: "device", groupTop: 30 }
-          ),
-      ],
-      REPORT_ORACLE_FANOUT_CONCURRENCY
-    );
-    const [listRes, timeRes, cardTypeRes, lotRes, treeRes, deviceRes] = settled as [
-      PromiseSettledResult<YieldMonitorV3Response>,
-      PromiseSettledResult<YieldMonitorV3AggregateResponse>,
-      PromiseSettledResult<YieldMonitorV3AggregateResponse>,
-      PromiseSettledResult<YieldMonitorV3AggregateResponse>,
-      PromiseSettledResult<YieldMonitorV3AggregateResponse>,
-      PromiseSettledResult<YieldMonitorV3AggregateResponse>,
-    ];
-
-    setLoadingList(false);
-    setLoadingAgg(false);
-
-    if (listRes.status === "fulfilled") setList(listRes.value);
-    else
-      setErrorList(
-        listRes.reason instanceof Error
-          ? listRes.reason.message
-          : String(listRes.reason)
+    try {
+      const res = await apiGetJson<YieldMonitorCombinedResponse>(
+        apiBase,
+        YIELD_COMBINED_PATH,
+        {
+          ...buildListParams(form, listLimits),
+          aggs: YM_MAIN_QUERY_AGGS,
+        }
       );
-
-    if (timeRes.status === "fulfilled") setAggTime(timeRes.value);
-    if (cardTypeRes.status === "fulfilled") setAggCardType(cardTypeRes.value);
-    if (lotRes.status === "fulfilled") setAggLot(lotRes.value);
-    if (treeRes.status === "fulfilled") setAggTree(treeRes.value);
-    if (deviceRes.status === "fulfilled") setAggDevice(deviceRes.value);
-    if (timeRes.status === "rejected" || cardTypeRes.status === "rejected") {
-      setErrorAgg("部分聚合请求失败，图表可能不完整");
+      const filters = res.filters ?? {};
+      setList(res);
+      setAggTime(
+        yieldAggBlockToResponse(res.aggregates[YM_AGG_TIME_DAY], filters)
+      );
+      setAggCardType(
+        yieldAggBlockToResponse(res.aggregates[YM_AGG_PROBE_CARD_TYPE], filters)
+      );
+      setAggLot(yieldAggBlockToResponse(res.aggregates[YM_AGG_LOT_ID], filters));
+      setAggTree(yieldAggBlockToResponse(res.aggregates[YM_AGG_TREE], filters));
+      setAggDevice(
+        yieldAggBlockToResponse(res.aggregates[YM_AGG_DEVICE], filters)
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErrorList(msg);
+      setErrorAgg(msg);
+    } finally {
+      setLoadingList(false);
+      setLoadingAgg(false);
     }
-
   }, [apiBase, form, listLimits]);
 
   /** 当前应加载 DUT 分布的探针卡 */

@@ -433,6 +433,35 @@ describe(
       assert.ok(Array.isArray(b.groups));
     });
 
+    test("GET /api/v3/yield-monitor-triggers/v3/combined（列表 + 多聚合 · dummy）", async () => {
+      const qs = new URLSearchParams(yExampleQs);
+      qs.set("limit", "50");
+      qs.set(
+        "aggs",
+        "timeDay:10|probeCardType:10|device,lotId,probeCardType,probeCard:20"
+      );
+      const { status, body } = await getJson(
+        `${API}/yield-monitor-triggers/v3/combined?${qs.toString()}`
+      );
+      assertOkJson(status, body);
+      const b = body as {
+        meta?: { combinedPath?: string };
+        count?: number;
+        rows?: unknown[];
+        aggregates?: Record<
+          string,
+          { totalRowsMatching?: number; groups?: unknown[] }
+        >;
+      };
+      assert.equal(b.meta?.combinedPath, "yield-monitor-triggers/v3/combined");
+      assert.ok(Array.isArray(b.rows));
+      assert.ok(typeof b.count === "number");
+      assert.ok(b.aggregates?.timeDay);
+      assert.ok(typeof b.aggregates?.timeDay?.totalRowsMatching === "number");
+      assert.ok(Array.isArray(b.aggregates?.timeDay?.groups));
+      assert.ok(b.aggregates?.["device,lotId,probeCardType,probeCard"]);
+    });
+
     test("GET /api/v3/yield-monitor-triggers/v3/aggregate dimensions 含 probeCardType（dummy）", async () => {
       const qs = new URLSearchParams(yExampleQs);
       qs.set("dimensions", "device,probeCardType");

@@ -3,6 +3,7 @@ import { describe, test } from "node:test";
 import {
   parseYieldMonitorTriggerV3AggregateQuery,
   buildYieldMonitorTriggerV3AggregateSql,
+  buildYieldMonitorTriggerV3AggregateSqlWithTotal,
 } from "../src/lib/yieldMonitorTriggerV3Aggregate.js";
 
 describe("yieldMonitorTriggerV3Aggregate — bin / dutNumber 维度", () => {
@@ -35,5 +36,15 @@ describe("yieldMonitorTriggerV3Aggregate — bin / dutNumber 维度", () => {
         "REGEXP_SUBSTR(t.TRIGGER_LABEL, 'on\\s+dut#\\s*([0-9]+)', 1, 1, 'i', 1)"
       )
     );
+  });
+
+  test("buildYieldMonitorTriggerV3AggregateSqlWithTotal 单次扫描 WITH filtered", () => {
+    const sql = buildYieldMonitorTriggerV3AggregateSqlWithTotal("", ["device"]);
+    assert.ok(sql.includes("WITH filtered AS"));
+    assert.ok(sql.includes("totals AS"));
+    assert.ok(sql.includes("TOTAL_MATCHING"));
+    assert.ok(sql.includes("FROM filtered"));
+    assert.ok(!sql.includes("t.DEVICE"));
+    assert.ok(sql.includes("DEVICE"));
   });
 });
