@@ -1397,7 +1397,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       WAFER: r.WAFER ?? "",
       PROBECARDTYPE: r.PROBECARDTYPE ?? "—",
       PROBECARD: r.PROBECARD ?? "",
-      dutNumber: r.dutNumber ?? "—",
+      DUTNUMBER: r.dutNumber ?? "—",
     }));
   }, [list]);
 
@@ -1877,7 +1877,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
             onClick={() => setShowDetail((s) => !s)}
           >
             <span style={{ fontSize: 10, opacity: 0.6 }}>{showDetail ? "▼" : "▶"}</span>
-            共 {list?.count ?? 0} 条（含 PROBECARDTYPE / dutNumber）
+            共 {list?.count ?? 0} 条（含 PROBECARDTYPE / DUTNUMBER）
           </div>
           {showDetail && <DataTable rows={detailRows} maxHeight={400} />}
         </div>
