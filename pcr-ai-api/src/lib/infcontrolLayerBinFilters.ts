@@ -343,7 +343,7 @@ export function parseInfcontrolLayerBinsV3Query(
       "testEndTo",
     ] as const;
     const userTouchedTimeParams = infcontrolV3TimeQueryKeys.some(
-      (k) => firstQueryValue(q, k) !== undefined
+      (k) => firstString(firstQueryValue(q, k)) !== undefined
     );
     if (
       !userTouchedTimeParams &&

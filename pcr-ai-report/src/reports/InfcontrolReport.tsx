@@ -867,6 +867,8 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
   const { theme } = useThemeContext();
   const chartPalette = getChartPalette(theme);
   const [form, setForm] = useState<FormState>(initialForm);
+  const formRef = useRef(form);
+  formRef.current = form;
   const [list,        setList]        = useState<InfcontrolLayerBinsV3Response | null>(null);
   const [aggBin,      setAggBin]      = useState<InfcontrolAggregateBlock | null>(null);
   // probeCardType,bin aggregate — chart shows type-level; cardId accessed via drill
@@ -922,6 +924,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
   }, []);
 
   const clearAll = useCallback(() => {
+    formRef.current = initialForm;
     setForm(initialForm);
     setList(null);
     setAggBin(null);
@@ -956,6 +959,14 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     [funnelChain],
   );
 
+  const funnelTimeParams = useMemo(
+    () => ({
+      testEndFrom: datetimeLocalToIso(form.testEndFrom),
+      testEndTo: datetimeLocalToIso(form.testEndTo),
+    }),
+    [form.testEndFrom, form.testEndTo],
+  );
+
   // Fetch all rows for the selected device+lot from DB (no limit) when drilling to slot level
   useEffect(() => {
     if (!funnelDeviceVal || !funnelLotVal) {
@@ -968,21 +979,17 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     setFunnelLotLoading(true);
     setFunnelLotError(null);
     setFunnelLotRows(null);
-    apiGetJson<InfcontrolLayerBinsV3Response>(apiBase, INFCONTROL_COMBINED_PATH, {
+    apiGetJson<InfcontrolCombinedResponse>(apiBase, INFCONTROL_COMBINED_PATH, {
       device: funnelDeviceVal,
       lot: funnelLotVal,
       limit: 2000,
+      ...funnelTimeParams,
     })
       .then(res => { if (!cancelled) setFunnelLotRows((res.rows ?? []) as InfcontrolLayerBinV3Row[]); })
       .catch(e  => { if (!cancelled) setFunnelLotError(e instanceof Error ? e.message : String(e)); })
       .finally(() => { if (!cancelled) setFunnelLotLoading(false); });
     return () => { cancelled = true; };
-  }, [funnelDeviceVal, funnelLotVal, apiBase]);
-
-  const applyDateShortcut = useCallback((fn: () => [string, string]) => {
-    const [from, to] = fn();
-    setForm((f) => ({ ...f, testEndFrom: from, testEndTo: to }));
-  }, []);
+  }, [funnelDeviceVal, funnelLotVal, apiBase, funnelTimeParams]);
 
   const fetchDrill = useCallback(
     async (
@@ -1150,7 +1157,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
   );
 
 
-  const query = useCallback(async () => {
+  const runQuery = useCallback(async (formSnapshot: FormState = formRef.current) => {
     setLoadingList(true);
     setLoadingAgg(true);
     setErrorList(null);
@@ -1168,13 +1175,17 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     setDetailSelectedListIndices(new Set());
     setDrillBarSelectedKeys({});
     setSelectionHint(null);
+    setFunnelChain([]);
+    setFunnelLotRows(null);
+    setFunnelLotLoading(false);
+    setFunnelLotError(null);
 
     try {
       const res = await apiGetJson<InfcontrolCombinedResponse>(
         apiBase,
         INFCONTROL_COMBINED_PATH,
         {
-          ...buildListParams(form, listLimits),
+          ...buildListParams(formSnapshot, listLimits),
           aggs: [
             `${jbAggregateGroupBy("bin")}:30`,
             `${jbAggregateGroupBy("probeCardType")}:25`,
@@ -1199,7 +1210,19 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
       setLoadingAgg(false);
     }
 
-  }, [apiBase, form, listLimits]);
+  }, [apiBase, listLimits]);
+
+  const query = useCallback(() => {
+    void runQuery(formRef.current);
+  }, [runQuery]);
+
+  const applyDateShortcut = useCallback((fn: () => [string, string]) => {
+    const [from, to] = fn();
+    const next = { ...formRef.current, testEndFrom: from, testEndTo: to };
+    formRef.current = next;
+    setForm(next);
+    void runQuery(next);
+  }, [runQuery]);
 
   // ── KPI derivations ──────────────────────────────────────────────────────
 
@@ -2152,7 +2175,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
 
       {noTestEndFilter && !loadingList ? (
         <p className="field-hint" style={{ margin: "0 0 8px" }}>
-          未设置 testEnd 时间时，API 默认统计近 <strong>1 年</strong>匹配行；图表聚合较慢，与明细 limit 无关。建议先点「近7天」或「本月」再查询。
+          未设置 testEnd 时间时，API 默认统计近 <strong>1 年</strong>匹配行；图表与明细均来自同一批 top-N 行（受 limit 约束）。建议先点「Today / Last 7 days / This month」或手动选时间后点「查询」。
         </p>
       ) : null}
 

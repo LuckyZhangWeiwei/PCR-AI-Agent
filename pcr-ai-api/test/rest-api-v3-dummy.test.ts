@@ -515,6 +515,31 @@ describe(
       assert.ok(Array.isArray((body as { rows?: unknown }).rows));
     });
 
+    test("GET /api/v4/infcontrol-layer-bins/v4/combined testEndFrom/To 收窄结果（dummy）", async () => {
+      const qsWide = new URLSearchParams(icExampleQs);
+      qsWide.set("limit", "50");
+      qsWide.set("aggs", "bin:10");
+      const wide = await getJson(
+        `/api/v4/infcontrol-layer-bins/v4/combined?${qsWide.toString()}`
+      );
+      assertOkJson(wide.status, wide.body);
+      const wideCount = (wide.body as { count?: number }).count ?? 0;
+      assert.ok(wideCount > 0, "wide window should return rows");
+
+      const qsNarrow = new URLSearchParams(qsWide.toString());
+      qsNarrow.set("testEndFrom", "2099-01-01T00:00:00.000Z");
+      qsNarrow.set("testEndTo", "2099-01-02T00:00:00.000Z");
+      const narrow = await getJson(
+        `/api/v4/infcontrol-layer-bins/v4/combined?${qsNarrow.toString()}`
+      );
+      assertOkJson(narrow.status, narrow.body);
+      const narrowCount = (narrow.body as { count?: number }).count ?? 0;
+      assert.equal(narrowCount, 0, "future-only window should return zero rows");
+      const nf = (narrow.body as { filters?: Record<string, unknown> }).filters;
+      assert.equal(typeof nf?.testEndFrom, "string");
+      assert.equal(typeof nf?.testEndTo, "string");
+    });
+
     test("GET /api/v4/infcontrol-layer-bins/v4（dummy）与 v4 聚合对齐 v3 dummy 聚合", async () => {
       const { status, body } = await getJson(
         `/api/v4/infcontrol-layer-bins/v4?${icExampleQs}&limit=30`

@@ -289,7 +289,7 @@ export function parseYieldMonitorTriggerV3Query(
       "timeStampTo",
     ] as const;
     const userTouchedYieldTime = yieldV3TimeQueryKeys.some(
-      (k) => firstQueryValue(q, k) !== undefined
+      (k) => firstString(firstQueryValue(q, k)) !== undefined
     );
     if (!userTouchedYieldTime && tsLo === undefined && tsHi === undefined) {
       const { lo, hi } = v3DefaultThroughNowMinusOneUtcYear();
