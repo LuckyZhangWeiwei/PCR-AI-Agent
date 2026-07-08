@@ -920,7 +920,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     [appliedForm]
   );
 
-  const periodAlarmBuckets = useMemo(() => {
+  const periodAlarmBucketPlan = useMemo(() => {
     const { from, to } = resolvePeriodAlarmTimeRangeFromIso(
       periodAlarmQueryParams.timeStampFrom as string | undefined,
       periodAlarmQueryParams.timeStampTo as string | undefined
@@ -928,11 +928,20 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     return periodBucketsInRange(period, from, to);
   }, [period, periodAlarmQueryParams]);
 
+  const periodAlarmBuckets = periodAlarmBucketPlan.ok ? periodAlarmBucketPlan.buckets : [];
+
   useEffect(() => {
     if (!hasQueried) return;
     let cancelled = false;
     setLoadingTrend(true);
     setErrorTrend(null);
+
+    if (!periodAlarmBucketPlan.ok) {
+      setTrendPoints([]);
+      setErrorTrend(periodAlarmBucketPlan.error);
+      setLoadingTrend(false);
+      return;
+    }
 
     const nowIso = new Date().toISOString();
 
@@ -945,15 +954,20 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
           timeStampFrom: bucket.start.toISOString(),
           timeStampTo: bucket.end.toISOString(),
         };
-        for (const dim of ["hostname", "probeCard"] as const) {
-          calls.push(() =>
-            apiGetJson<YieldMonitorV3AggregateResponse>(apiBase, YIELD_AGGREGATE_PATH, {
-              ...bucketParams,
-              dimensions: dim,
-              groupTop: PERIOD_ALARM_FALLBACK_GROUP_TOP,
-            })
-          );
-        }
+        calls.push(() =>
+          apiGetJson<YieldMonitorV3AggregateResponse>(apiBase, YIELD_AGGREGATE_PATH, {
+            ...bucketParams,
+            dimensions: "hostname",
+            groupTop: PERIOD_ALARM_FALLBACK_GROUP_TOP,
+          })
+        );
+        calls.push(() =>
+          apiGetJson<YieldMonitorV3AggregateResponse>(apiBase, YIELD_AGGREGATE_PATH, {
+            ...bucketParams,
+            dimensions: "probeCard",
+            groupTop: PERIOD_ALARM_FALLBACK_GROUP_TOP,
+          })
+        );
       }
       const settled = (await allSettledWithConcurrency(
         calls,
@@ -1026,7 +1040,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [apiBase, period, periodAlarmQueryParams, periodAlarmBuckets, hasQueried]);
+  }, [apiBase, period, periodAlarmQueryParams, periodAlarmBucketPlan, hasQueried]);
 
   // ── KPI derivations ──────────────────────────────────────────────────────
 
@@ -1222,14 +1236,32 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       ),
     [trendBuckets, trendPoints, theme]
   );
+
+  const periodAlarmTotalTrendLabel =
+    period === "week" ? "每周触发总和" : "每月触发总和";
+  const periodAlarmTesterTrendLabel =
+    period === "week" ? "每周 Tester 数" : "每月 Tester 数";
+  const periodAlarmCardTrendLabel =
+    period === "week" ? "每周 Probe Card 数" : "每月 Probe Card 数";
+
   const trendTesterOption = useMemo(
     () =>
-      buildTrendBarOption(theme, trendBuckets, trendPoints.map((p) => p.testerCount), chartPalette.accent),
+      buildTrendBarOption(
+        theme,
+        trendBuckets,
+        trendPoints.map((p) => p.testerCount),
+        chartPalette.accent
+      ),
     [trendBuckets, trendPoints, theme, chartPalette.accent]
   );
   const trendCardOption = useMemo(
     () =>
-      buildTrendBarOption(theme, trendBuckets, trendPoints.map((p) => p.cardCount), chartPalette.accent2),
+      buildTrendBarOption(
+        theme,
+        trendBuckets,
+        trendPoints.map((p) => p.cardCount),
+        chartPalette.accent2
+      ),
     [trendBuckets, trendPoints, theme, chartPalette.accent2]
   );
 
@@ -1431,17 +1463,22 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
   }, [periodAlarmQueryParams]);
 
   const periodAlarmTimeHint = useMemo(() => {
+    if (!periodAlarmBucketPlan.ok) {
+      return periodAlarmBucketPlan.error;
+    }
+    const bucketCount = periodAlarmBucketPlan.buckets.length;
+    const unit = period === "week" ? "周" : "月";
     if (appliedForm.timestampFrom && appliedForm.timestampTo) {
-      return `横轴按所选时间 ${appliedForm.timestampFrom} → ${appliedForm.timestampTo} 切分为 ${periodAlarmBuckets.length} 个${period === "week" ? "周" : "月"}`;
+      return `每${unit}触发总和，按 ${appliedForm.timestampFrom} → ${appliedForm.timestampTo} 共 ${bucketCount} 个${unit}`;
     }
     if (appliedForm.timestampFrom) {
-      return `横轴自 ${appliedForm.timestampFrom} 起至当前，切分为 ${periodAlarmBuckets.length} 个${period === "week" ? "周" : "月"}`;
+      return `每${unit}触发总和，自 ${appliedForm.timestampFrom} 起至当前，共 ${bucketCount} 个${unit}`;
     }
     if (appliedForm.timestampTo) {
-      return `横轴截至 ${appliedForm.timestampTo}（向前 1 年），切分为 ${periodAlarmBuckets.length} 个${period === "week" ? "周" : "月"}`;
+      return `每${unit}触发总和，截至 ${appliedForm.timestampTo}（向前 1 年），共 ${bucketCount} 个${unit}`;
     }
-    return `未选 TIME_STAMP 时默认近 1 年，切分为 ${periodAlarmBuckets.length} 个${period === "week" ? "周" : "月"}`;
-  }, [appliedForm, period, periodAlarmBuckets.length]);
+    return `每${unit}触发总和，未选 TIME_STAMP 时默认近 1 年，共 ${bucketCount} 个${unit}`;
+  }, [appliedForm, period, periodAlarmBucketPlan]);
   const hasData = !!(list || aggTime || aggCardType);
 
   const yieldReportSections = useMemo(() => {
@@ -1584,9 +1621,9 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
           axis="grid"
           groupClassName="report-reorder-group--chartgrid"
           labels={{
-            chAlarmTotalTrend: "总触发次数趋势",
-            chAlarmTesterTrend: "Tester 数趋势",
-            chAlarmCardTrend: "Probe Card 数趋势",
+            chAlarmTotalTrend: periodAlarmTotalTrendLabel,
+            chAlarmTesterTrend: periodAlarmTesterTrendLabel,
+            chAlarmCardTrend: periodAlarmCardTrendLabel,
           }}
           sections={{
             chAlarmTotalTrend: (
@@ -1633,10 +1670,14 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         axis="x"
         groupClassName="report-reorder-group--kpis"
         labels={{
-          kpiTrig: "触发总数（全量 · 不受 limit）",
+          kpiTrig: "触发总数",
           kpiLots: "涉及 Lot 数",
-          kpiWorstPct: "触发最多探针卡类型（全量 · 不受 limit）",
+          kpiWorstPct: "触发最多探针卡类型",
           kpiSelPc: "已选探针卡",
+        }}
+        labelSuffixes={{
+          kpiTrig: "全量 · 不受 limit",
+          kpiWorstPct: "全量 · 不受 limit",
         }}
         sections={{
           kpiTrig: (
@@ -1645,6 +1686,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
               value={totalTriggers}
               color="blue"
               subtext="全量匹配 · 不受明细 limit 影响"
+              subtextClassName="report-scope-hint"
               showLabel={false}
             />
           ),
@@ -1654,6 +1696,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
               value={uniqueLots}
               color="white"
               subtext={`明细 Top-${listLimits.defaultLimit} 内去重`}
+              subtextClassName="report-scope-hint"
               showLabel={false}
             />
           ),
@@ -1663,6 +1706,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
               value={worstCardType}
               color="red"
               subtext="全量匹配 · 不受明细 limit 影响"
+              subtextClassName="report-scope-hint"
               showLabel={false}
             />
           ),
@@ -1682,7 +1726,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     const timeTrendSection =
       aggTime ? (
         <div className="yield-trend-block chart-no-drill">
-          <p className="yield-trend-scope-hint muted small">
+          <p className="yield-trend-scope-hint small">
             {form.timestampFrom || form.timestampTo
               ? "按所选 TIME_STAMP 时间窗统计全部匹配行（不受明细 limit 影响）"
               : "未选手动时间时默认统计近一年全部匹配行（不受明细 limit 影响）"}
@@ -1958,6 +2002,9 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     period,
     periodAlarmFilterLabels,
     periodAlarmTimeHint,
+    periodAlarmTotalTrendLabel,
+    periodAlarmTesterTrendLabel,
+    periodAlarmCardTrendLabel,
     periodTotal,
     periodPrevTotal,
     periodRatioLabel,
@@ -2136,10 +2183,11 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
           defaultOrder={YIELD_REPORT_SECTION_ORDER}
           sections={yieldReportSections}
           sectionLabels={{
+            timeTrend: "每日触发量趋势",
+          }}
+          sectionLabelSuffixes={{
             timeTrend:
-              form.timestampFrom || form.timestampTo
-                ? "每日触发量趋势（所选时间窗）"
-                : "每日触发量趋势（近一年）",
+              form.timestampFrom || form.timestampTo ? "所选时间窗" : "近一年",
           }}
           layoutEpoch={layoutEpoch}
         />

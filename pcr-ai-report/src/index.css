@@ -26,6 +26,9 @@
   --red-rgb:      248,81,73;
   --yellow-rgb:   210,153,34;
   --red-text:     #ff7b72;
+  --scope-hint:       #dba8a3;
+  --scope-hint-bg:    rgba(var(--red-rgb), 0.07);
+  --scope-hint-border: rgba(var(--red-rgb), 0.2);
 
   --dim-mask:   #79c0ff;
   --dim-device: #d2a8ff;
@@ -85,6 +88,9 @@
   --red-rgb:      207,34,46;
   --yellow-rgb:   154,103,0;
   --red-text:     #cf222e;
+  --scope-hint:       #b85c66;
+  --scope-hint-bg:    rgba(var(--red-rgb), 0.05);
+  --scope-hint-border: rgba(var(--red-rgb), 0.16);
 
   --dim-mask:   #0969da;
   --dim-device: #8250df;
@@ -670,9 +676,14 @@ button.chip.chip--active:hover {
 }
 
 .report-desc code.report-desc-type-scope {
-  color: var(--red-text);
-  background: rgba(var(--red-rgb), 0.12);
-  border-color: rgba(var(--red-rgb), 0.35);
+  color: var(--scope-hint);
+  background: var(--scope-hint-bg);
+  border-color: var(--scope-hint-border);
+}
+
+.report-scope-hint {
+  color: var(--scope-hint);
+  font-weight: 400;
 }
 
 .report-desc .desc-arrow {
@@ -1198,6 +1209,8 @@ button.chip.chip--active:hover {
 .yield-trend-scope-hint {
   margin: 0 0 6px;
   line-height: 1.45;
+  color: var(--scope-hint);
+  font-weight: 400;
 }
 
 /* Non-drillable chart: prohibition cursor follows the mouse */

@@ -18,6 +18,8 @@ type Props = {
   /** Numeric → animated count-up. String → displayed as-is. null → "—". */
   value: number | string | null;
   subtext?: string;
+  /** Extra class on subtext (e.g. `report-scope-hint` for data-scope notes). */
+  subtextClassName?: string;
   color?: KpiColor;
   /** When false, title is shown only on the parent drag bar (e.g. reorder strips). */
   showLabel?: boolean;
@@ -32,6 +34,7 @@ export function KpiCard({
   label,
   value,
   subtext,
+  subtextClassName,
   color = "white",
   showLabel = true,
 }: Props) {
@@ -64,7 +67,14 @@ export function KpiCard({
           : value}
       </div>
       {(subtext || !showLabel) && (
-        <div className="kpi-card-subtext" style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+        <div
+          className={["kpi-card-subtext", subtextClassName].filter(Boolean).join(" ")}
+          style={{
+            fontSize: 12,
+            color: subtextClassName ? undefined : "var(--muted)",
+            marginTop: 2,
+          }}
+        >
           {subtext ?? " "}
         </div>
       )}

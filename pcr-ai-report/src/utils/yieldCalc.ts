@@ -372,7 +372,7 @@ export function recentPeriodBuckets(
   return buckets.reverse();
 }
 
-export const PERIOD_ALARM_MAX_WEEK_BUCKETS = 52;
+export const PERIOD_ALARM_MAX_WEEK_BUCKETS = 54;
 export const PERIOD_ALARM_MAX_MONTH_BUCKETS = 24;
 
 function v3DefaultThroughNowMinusOneUtcYear(now: Date = new Date()): { lo: Date; hi: Date } {
@@ -413,14 +413,18 @@ export function resolvePeriodAlarmTimeRangeFromIso(
   return { from, to };
 }
 
-/** 与 API `periodBucketsInRange` 一致。 */
+/** 与 API `periodBucketsInRange` 一致；失败时返回 error 而非抛错。 */
+export type PeriodBucketsInRangeResult =
+  | { ok: true; buckets: PeriodBucket[] }
+  | { ok: false; error: string };
+
 export function periodBucketsInRange(
   period: PeriodKey,
   rangeFrom: Date,
   rangeTo: Date
-): PeriodBucket[] {
+): PeriodBucketsInRangeResult {
   if (rangeFrom.getTime() >= rangeTo.getTime()) {
-    throw new Error("time range must span a positive duration");
+    return { ok: false, error: "time range must span a positive duration" };
   }
 
   const buckets: PeriodBucket[] = [];
@@ -440,9 +444,10 @@ export function periodBucketsInRange(
       });
       cursor = bucketEndMs;
       if (buckets.length > PERIOD_ALARM_MAX_WEEK_BUCKETS) {
-        throw new Error(
-          `time range spans more than ${PERIOD_ALARM_MAX_WEEK_BUCKETS} weeks; narrow TIME_STAMP filter`
-        );
+        return {
+          ok: false,
+          error: `time range spans more than ${PERIOD_ALARM_MAX_WEEK_BUCKETS} weeks; narrow TIME_STAMP filter`,
+        };
       }
     }
   } else {
@@ -464,9 +469,10 @@ export function periodBucketsInRange(
         });
       }
       if (buckets.length > PERIOD_ALARM_MAX_MONTH_BUCKETS) {
-        throw new Error(
-          `time range spans more than ${PERIOD_ALARM_MAX_MONTH_BUCKETS} months; narrow TIME_STAMP filter`
-        );
+        return {
+          ok: false,
+          error: `time range spans more than ${PERIOD_ALARM_MAX_MONTH_BUCKETS} months; narrow TIME_STAMP filter`,
+        };
       }
       m += 1;
       if (m > 11) {
@@ -477,9 +483,9 @@ export function periodBucketsInRange(
   }
 
   if (buckets.length === 0) {
-    throw new Error("time range produced no period buckets");
+    return { ok: false, error: "time range produced no period buckets" };
   }
-  return buckets;
+  return { ok: true, buckets };
 }
 
 /** 派生聚合维度 `bin` 的展示格式：数字 → `BIN n`；`goodbin` → `GOODBIN`；空 → `(未知)`。 */

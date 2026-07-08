@@ -56,6 +56,11 @@ describe("yieldMonitorPeriodAlarmTrend", () => {
     if (r.ok) {
       assert.equal(r.to.getTime(), now.getTime());
       assert.ok(r.from.getTime() < r.to.getTime());
+      const weeks = periodBucketsInRange("week", r.from, r.to);
+      assert.equal(weeks.ok, true);
+      if (weeks.ok) {
+        assert.ok(weeks.buckets.length <= 54);
+      }
     }
   });
 

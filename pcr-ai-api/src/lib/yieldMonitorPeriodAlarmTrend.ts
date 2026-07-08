@@ -30,7 +30,7 @@ export type PeriodAlarmTrendPoint = {
 };
 
 export const PERIOD_ALARM_TREND_BUCKET_COUNT = 4;
-export const PERIOD_ALARM_MAX_WEEK_BUCKETS = 52;
+export const PERIOD_ALARM_MAX_WEEK_BUCKETS = 54;
 export const PERIOD_ALARM_MAX_MONTH_BUCKETS = 24;
 
 const PERIOD_ALARM_TIME_KEYS = [

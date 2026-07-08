@@ -42,6 +42,8 @@ export type DraggableReportBlocksProps = {
   axis?: DraggableSortAxis;
   groupClassName?: string;
   labels?: Record<string, string>;
+  /** Red scope note appended after the drag title, e.g. "全量 · 不受 limit". */
+  labelSuffixes?: Record<string, string>;
   /** Bump after report-level reset to reload order / visibility from storage */
   layoutEpoch?: number;
   /** Show ✕ on each block (default true) */
@@ -322,9 +324,23 @@ function usePersistedBlockLayout(
   };
 }
 
+function formatDragTitle(label: string, suffix?: string): string {
+  return suffix ? `${label}（${suffix}）` : label;
+}
+
+function DragTitle({ label, suffix }: { label: string; suffix?: string }) {
+  return (
+    <span className="report-reorder-drag-title">
+      {label}
+      {suffix ? <span className="report-scope-hint">（{suffix}）</span> : null}
+    </span>
+  );
+}
+
 function SortableBlock({
   id,
   label,
+  labelSuffix,
   children,
   closable,
   onClose,
@@ -332,6 +348,7 @@ function SortableBlock({
 }: {
   id: string;
   label: string;
+  labelSuffix?: string;
   children: React.ReactNode;
   closable: boolean;
   onClose: () => void;
@@ -354,6 +371,8 @@ function SortableBlock({
     opacity: isDragging ? 0 : undefined,
   };
 
+  const fullTitle = formatDragTitle(label, labelSuffix);
+
   return (
     <div
       ref={setNodeRef}
@@ -369,22 +388,22 @@ function SortableBlock({
         <button
           type="button"
           className="report-reorder-drag-head"
-          title={`拖动排序：${label}`}
-          aria-label={`拖动排序：${label}`}
+          title={`拖动排序：${fullTitle}`}
+          aria-label={`拖动排序：${fullTitle}`}
           {...listeners}
           {...attributes}
         >
           <span className="report-reorder-grip" aria-hidden>
             ⋮⋮
           </span>
-          <span className="report-reorder-drag-title">{label}</span>
+          <DragTitle label={label} suffix={labelSuffix} />
         </button>
         {closable ? (
           <button
             type="button"
             className="report-reorder-close"
-            title={`关闭：${label}`}
-            aria-label={`关闭：${label}`}
+            title={`关闭：${fullTitle}`}
+            aria-label={`关闭：${fullTitle}`}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={onClose}
           >
@@ -404,6 +423,7 @@ function DraggableReportBlocksInner({
   sortAxis,
   groupClassName,
   labels = {},
+  labelSuffixes = {},
   layoutEpoch = 0,
   closable = true,
   fullRowIds = [],
@@ -453,7 +473,13 @@ function DraggableReportBlocksInner({
     return null;
   }
 
-  const activeLabel = activeId != null ? (labels[String(activeId)] ?? String(activeId)) : null;
+  const activeLabel =
+    activeId != null
+      ? formatDragTitle(
+          labels[String(activeId)] ?? String(activeId),
+          labelSuffixes[String(activeId)],
+        )
+      : null;
 
   return (
     <div className={groupCls}>
@@ -469,6 +495,7 @@ function DraggableReportBlocksInner({
               key={id}
               id={id}
               label={labels[id] ?? id}
+              labelSuffix={labelSuffixes[id]}
               closable={closable}
               fullRow={fullRowSet.has(id)}
               onClose={() => closeBlock(id)}
@@ -520,6 +547,8 @@ type TopSectionsProps = {
   sections: Record<string, ReactNode | null | undefined>;
   /** Override default drag-bar titles (merged onto TOP_SECTION_LABELS). */
   sectionLabels?: Record<string, string>;
+  /** Red scope note appended after section drag titles. */
+  sectionLabelSuffixes?: Record<string, string>;
   layoutEpoch?: number;
   closable?: boolean;
 };
@@ -529,12 +558,17 @@ export function DraggableReportSections({
   defaultOrder,
   sections,
   sectionLabels,
+  sectionLabelSuffixes,
   layoutEpoch = 0,
   closable = true,
 }: TopSectionsProps) {
   const labels = useMemo(
     () => (sectionLabels ? { ...TOP_SECTION_LABELS, ...sectionLabels } : TOP_SECTION_LABELS),
     [sectionLabels],
+  );
+  const labelSuffixes = useMemo(
+    () => sectionLabelSuffixes ?? {},
+    [sectionLabelSuffixes],
   );
   return (
     <DraggableReportBlocks
@@ -543,6 +577,7 @@ export function DraggableReportSections({
       sections={sections}
       axis="y"
       labels={labels}
+      labelSuffixes={labelSuffixes}
       layoutEpoch={layoutEpoch}
       closable={closable}
     />
