@@ -584,8 +584,11 @@ function computeTesterAlarmRate(
   numerator: number,
   activityTotal: number
 ): number | null {
-  if (activityTotal <= 0) return null;
-  return numerator / activityTotal;
+  if (activityTotal <= 0 || numerator <= 0) return null;
+  const rate = numerator / activityTotal;
+  // JB 历史覆盖不足或 TIME_STAMP 与 TESTEND 分桶错位时，比率可 >>1；UI 按百分比展示，>100% 视为无效
+  if (rate > 1) return null;
+  return rate;
 }
 
 export function topTestersFromAlarmRows(

@@ -46,7 +46,8 @@ testerAlarmRate = testerAlarmNumerator / testerActivityTotal
 
 **分子不变**；分母为 JB **行数**（非 distinct slot），且不再过滤 alarm tester。
 
-> **勿用 distinct (LOT,SLOT) 作分母** — 同一 slot 有多条 layer/pass 行会被压成 1，导致 `testerAlarmRate >> 1`（如 42800%）。必须用 **COUNT(*)**。
+> **勿用 distinct (LOT,SLOT) 作分母** — 同一 slot 有多条 layer/pass 行会被压成 1；必须用 **COUNT(*)**。  
+> **比率 >100% 视为无效：** `computeTesterAlarmRate` 在 `numerator/activityTotal > 1` 时返回 `null`（JB 历史覆盖不足或 TIME_STAMP vs TESTEND 分桶错位；图表显示断点而非 188300%）。
 
 ### 1.2 PASSTYPE / LAYERNAME（与 JB Star v3 对齐）
 

@@ -258,6 +258,18 @@ describe("yieldMonitorPeriodAlarmTrend", () => {
     assert.equal(merged[1]!.testerAlarmRate, 5 / 800);
   });
 
+  test("mergePeriodAlarmJbSlotDenominator JB 覆盖不足时报警频率为 null", () => {
+    const buckets = recentPeriodBuckets("week", 1, NOW);
+    const points = mapPeriodAlarmTrendRows(buckets, [
+      { BUCKET_IDX: 0, TOTAL: 428, TESTER_CNT: 2, CARD_CNT: 3, BIN_CNT: 1, DUT_CNT: 1 },
+    ]);
+    const merged = mergePeriodAlarmJbSlotDenominator(points, [
+      { BUCKET_IDX: 0, ACTIVITY_TOTAL: 1 },
+    ]);
+    assert.equal(merged[0]!.testerActivityTotal, 1);
+    assert.equal(merged[0]!.testerAlarmRate, null);
+  });
+
   test("attachPeriodAlarmTopTesters 合并 Oracle Top 行", () => {
     const buckets = recentPeriodBuckets("week", 2, NOW);
     const points = mapPeriodAlarmTrendRows(buckets, [

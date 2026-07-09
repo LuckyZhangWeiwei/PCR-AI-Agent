@@ -252,10 +252,15 @@ function resolveTesterAlarmRate(
   numerator?: number | null,
   activityTotal?: number | null
 ): number | null {
-  if (rate != null && Number.isFinite(rate)) return rate;
+  if (rate != null && Number.isFinite(rate)) {
+    return rate > 1 ? null : rate;
+  }
   const num = numerator ?? total ?? 0;
   const denom = activityTotal ?? 0;
-  if (denom > 0) return num / denom;
+  if (denom > 0 && num > 0) {
+    const computed = num / denom;
+    return computed > 1 ? null : computed;
+  }
   return null;
 }
 
@@ -472,6 +477,8 @@ function buildTrendBarOption(
     period?: PeriodKey;
     metricLabel?: string;
     topTestersByBucket?: PeriodAlarmTopTester[][];
+    /** 与 Top 5 触发次数对照的桶内 delta_diff 总和（非柱图主指标时使用） */
+    triggerTotalsByBucket?: (number | null)[];
   }
 ): EChartsOption {
   const palette = getChartPalette(theme);
@@ -513,11 +520,11 @@ function buildTrendBarOption(
                 `${periodPrefix} ${label}`,
                 `${periodPrefix}${opts.metricLabel ?? ""}: ${val ?? 0}`,
               ];
-              appendTopTesterTooltipLines(
-                lines,
-                periodPrefix,
-                opts.topTestersByBucket![idx]
-              );
+              const triggerTotal =
+                opts.triggerTotalsByBucket?.[idx] ?? val ?? null;
+              appendTopTesterTooltipLines(lines, periodPrefix, opts.topTestersByBucket![idx], {
+                triggerTotal,
+              });
               return lines.join("<br/>");
             },
           }
@@ -548,12 +555,18 @@ function axisTooltipBase(theme: "light" | "dark"): Record<string, unknown> {
 function appendTopTesterTooltipLines(
   lines: string[],
   periodPrefix: string,
-  top: PeriodAlarmTopTester[] | undefined
+  top: PeriodAlarmTopTester[] | undefined,
+  opts?: { triggerTotal?: number | null; header?: string }
 ): void {
   if (!top?.length) return;
-  lines.push(`${periodPrefix} Top 5 Tester:`);
+  lines.push(opts?.header ?? `${periodPrefix} Top 5 触发次数:`);
   for (const t of top) {
     lines.push(`${t.hostname}: ${t.count}`);
+  }
+  const sum = top.reduce((s, t) => s + t.count, 0);
+  const triggerTotal = opts?.triggerTotal;
+  if (triggerTotal != null && triggerTotal > 0) {
+    lines.push(`Top 5 合计: ${sum} / ${periodPrefix}触发总和 ${triggerTotal}`);
   }
 }
 
@@ -608,7 +621,9 @@ function buildTrendTotalBarOption(
         const label = buckets[idx]?.label ?? p?.name ?? "";
         const val = values[idx];
         const lines = [`${periodPrefix} ${label}`, `${periodPrefix}触发总和: ${val ?? 0}`];
-        appendTopTesterTooltipLines(lines, periodPrefix, topTestersByBucket[idx]);
+        appendTopTesterTooltipLines(lines, periodPrefix, topTestersByBucket[idx], {
+          triggerTotal: val ?? null,
+        });
         return lines.join("<br/>");
       },
     },
@@ -624,7 +639,8 @@ function buildTrendLineOption(
   color: string,
   valueFormatter: (v: number) => string = (v) => String(v),
   metricLabel: string,
-  topTestersByBucket?: PeriodAlarmTopTester[][]
+  topTestersByBucket?: PeriodAlarmTopTester[][],
+  triggerTotals?: (number | null)[]
 ): EChartsOption {
   const palette = getChartPalette(theme);
   const periodPrefix = period === "week" ? "每周" : "每月";
@@ -680,7 +696,13 @@ function buildTrendLineOption(
             ? valueFormatter(raw[1])
             : "—";
         const lines = [`${periodPrefix} ${label}`, `${periodPrefix}${metricLabel}: ${val}`];
-        appendTopTesterTooltipLines(lines, periodPrefix, topTestersByBucket?.[idx]);
+        const triggerTotal = triggerTotals?.[idx];
+        if (triggerTotal != null) {
+          lines.push(`${periodPrefix}触发总和: ${triggerTotal}`);
+        }
+        appendTopTesterTooltipLines(lines, periodPrefix, topTestersByBucket?.[idx], {
+          triggerTotal: triggerTotal ?? null,
+        });
         return lines.join("<br/>");
       },
     },
@@ -1486,6 +1508,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
           period,
           metricLabel: " Tester 数",
           topTestersByBucket: trendTopTestersByBucket,
+          triggerTotalsByBucket: trendPoints.map((p) => p.total),
         }
       ),
     [trendBuckets, trendPoints, trendTopTestersByBucket, theme, chartPalette.accent, period]
@@ -1508,7 +1531,8 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         chartPalette.accent,
         (v) => `${v.toFixed(1)}%`,
         "Tester 报警频率",
-        trendTopTestersByBucket
+        trendTopTestersByBucket,
+        trendPoints.map((p) => p.total)
       ),
     [trendBuckets, trendPoints, trendTopTestersByBucket, theme, chartPalette.accent, period]
   );
