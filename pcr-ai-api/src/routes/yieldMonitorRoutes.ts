@@ -48,10 +48,13 @@ import { addDutNumberToYieldMonitorV3Row } from "../lib/yieldTriggerLabelDut.js"
 import {
   PERIOD_ALARM_TREND_DOCUMENTATION,
   aggregatePeriodAlarmTrendDummy,
+  attachPeriodAlarmTopTesters,
   buildPeriodAlarmTrendSql,
+  buildPeriodAlarmTrendTopTestersSql,
   mapPeriodAlarmTrendRows,
   parsePeriodAlarmTrendQuery,
-  periodAlarmTrendBinds,
+  periodAlarmTrendMainBinds,
+  periodAlarmTrendTopBinds,
 } from "../lib/yieldMonitorPeriodAlarmTrend.js";
 
 export const yieldMonitorRouter = Router();
@@ -580,17 +583,38 @@ yieldMonitorRouter.get("/yield-monitor-triggers/v3/period-alarm-trend", async (r
     });
   }
 
-  const sql = buildPeriodAlarmTrendSql(parsed.whereSql, parsed.buckets.length);
-  const binds = periodAlarmTrendBinds(parsed);
+  const sql = buildPeriodAlarmTrendSql(
+    parsed.activityWhereSql,
+    parsed.buckets.length
+  );
+  const topTestersSql = buildPeriodAlarmTrendTopTestersSql(
+    parsed.activityWhereSql,
+    parsed.buckets.length
+  );
+  const mainBinds = periodAlarmTrendMainBinds(parsed);
+  const topBinds = periodAlarmTrendTopBinds(parsed);
 
   try {
-    const rows = await withProbeWebConnection(async (conn) => {
-      const result = await conn.execute(sql, binds, {
+    const { rows, topRows } = await withProbeWebConnection(async (conn) => {
+      const result = await conn.execute(sql, mainBinds, {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
       });
-      return (result.rows || []) as Record<string, unknown>[];
+      const topResult = await conn.execute(topTestersSql, topBinds, {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+      });
+      return {
+        rows: (result.rows || []).map((row) =>
+          normalizeDbRowKeysUpper(row as Record<string, unknown>)
+        ),
+        topRows: (topResult.rows || []).map((row) =>
+          normalizeDbRowKeysUpper(row as Record<string, unknown>)
+        ),
+      };
     });
-    const buckets = mapPeriodAlarmTrendRows(parsed.buckets, rows);
+    const buckets = attachPeriodAlarmTopTesters(
+      mapPeriodAlarmTrendRows(parsed.buckets, rows),
+      topRows
+    );
     return res.json({
       meta: {
         apiVersion: "3",

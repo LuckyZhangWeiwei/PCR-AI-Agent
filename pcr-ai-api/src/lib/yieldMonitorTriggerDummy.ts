@@ -380,6 +380,81 @@ export function yieldMonitorDummyTimeOffsetMs(
   return timeOffsetMsFromRows(filterYieldMonitorDummyRowsBeforeTime(applied));
 }
 
+/** 与 `filterYieldMonitorDummyRowsBeforeTime` 相同筛选，但**不**限制 `TYPE = delta_diff`。 */
+function filterYieldMonitorDummyRowsBeforeTimeActivity(
+  applied: Record<string, unknown>
+): YieldMonitorTriggerDummyRow[] {
+  let rows = [...getYieldMonitorTriggerDummyRowsInternal()].filter((r) =>
+    !["kk", "gg", "c"].some((pfx) =>
+      String(r.LOTID ?? "").trim().toLowerCase().startsWith(pfx)
+    )
+  );
+
+  const ci = (param: keyof YieldMonitorTriggerDummyRow, key: string) => {
+    const v = applied[key];
+    if (v === undefined) return;
+    const want = String(v).trim().toUpperCase();
+    rows = rows.filter(
+      (r) => String(r[param]).trim().toUpperCase() === want
+    );
+  };
+
+  ci("HOSTNAME", "hostname");
+  ci("DEVICE", "device");
+  ci("LOTID", "lotId");
+  ci("WAFER", "wafer");
+  ci("PROBECARD", "probeCard");
+
+  if (applied.mask !== undefined) {
+    const want = String(applied.mask).trim().toUpperCase();
+    rows = rows.filter((r) => deviceMatchesMask(r.DEVICE, want));
+  }
+
+  if (applied.probeCardType !== undefined) {
+    const want = String(applied.probeCardType).trim().toUpperCase();
+    rows = rows.filter((r) => {
+      const pc = String(r.PROBECARD).trim().toUpperCase();
+      return pc === want || pc.startsWith(want + "-");
+    });
+  }
+
+  if (applied.pass !== undefined) {
+    const n = Number(applied.pass);
+    rows = rows.filter((r) => r.PASS === n);
+  }
+
+  return rows;
+}
+
+/** 周期报警 Tester 频率分母：联动筛选 + 全 TYPE，时间窗与 v3 一致。 */
+export function filterYieldMonitorDummyRowsMatchingActivity(
+  applied: Record<string, unknown>
+): Array<YieldMonitorTriggerDummyRow & { PROBECARDTYPE: string | null }> {
+  let rows = filterYieldMonitorDummyRowsBeforeTimeActivity(applied);
+
+  const tsLo = applied.timeStampBegin ?? applied.timeStampFrom;
+  const tsHi = applied.timeStampEnd ?? applied.timeStampTo;
+  if (tsLo !== undefined || tsHi !== undefined) {
+    const offset = yieldMonitorDummyTimeOffsetMs(applied);
+    if (tsLo !== undefined) {
+      const from = new Date(String(tsLo)).getTime() - offset;
+      rows = rows.filter((r) => new Date(r.TIME_STAMP).getTime() >= from);
+    }
+    if (tsHi !== undefined) {
+      const to = new Date(String(tsHi)).getTime() - offset;
+      rows = rows.filter((r) => new Date(r.TIME_STAMP).getTime() <= to);
+    }
+  }
+
+  rows = filterRowsByAppliedPlatform(rows, (r) => r.HOSTNAME, applied);
+
+  return rows.map((r) => ({
+    ...r,
+    PROBECARDTYPE: probeCardTypeLeadingSegment(r.PROBECARD),
+    MASK: deviceBaseMask(r.DEVICE),
+  }));
+}
+
 /** 与 v3 Oracle **`UPPER(TRIM)`**、**`TYPE = delta_diff`** 及 **`timeStampBegin`/`End`** 别名一致（Dummy 用 trim + toUpperCase）。每行附 **`PROBECARDTYPE`**（与列表 / 聚合维度同源）。 */
 export function filterYieldMonitorDummyRowsMatchingV3(
   applied: Record<string, unknown>

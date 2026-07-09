@@ -63,6 +63,11 @@ export type YieldMonitorV3AggregateResponse = {
 };
 
 /** `GET …/yield-monitor-triggers/v3/period-alarm-trend` */
+export type PeriodAlarmTopTester = {
+  hostname: string;
+  count: number;
+};
+
 export type PeriodAlarmTrendBucket = {
   label: string;
   timeStampFrom: string;
@@ -72,6 +77,10 @@ export type PeriodAlarmTrendBucket = {
   cardCount: number;
   binCount: number;
   dutCount: number;
+  testerAlarmNumerator: number;
+  testerActivityTotal: number;
+  testerAlarmRate: number | null;
+  topTesters: PeriodAlarmTopTester[];
 };
 
 export type YieldMonitorPeriodAlarmTrendResponse = {

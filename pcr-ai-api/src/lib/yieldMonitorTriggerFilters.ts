@@ -310,3 +310,143 @@ export function parseYieldMonitorTriggerV3Query(
     return { ok: false, error: message };
   }
 }
+
+/**
+ * v3 联动筛选（device / lot / … / TIME_STAMP），**不**固定 `TYPE = delta_diff`。
+ * 供周期报警 Tester 频率分母：同期同筛选下机台在 YM 的全 TYPE 记录数。
+ */
+export function parseYieldMonitorTriggerActivityQuery(
+  q: Record<string, unknown>
+): ParseFail | ParseYieldMonitorV3Ok {
+  const clauses: string[] = [];
+  const binds: BindParameters = {};
+  const applied: Record<string, unknown> = {};
+
+  try {
+    if (firstString(firstQueryValue(q, "type")) !== undefined) {
+      return {
+        ok: false,
+        error:
+          'Query parameter "type" is not supported on v3 yield endpoints (list or aggregate)',
+      };
+    }
+
+    clauses.push(`NOT REGEXP_LIKE(t.LOTID, '^(kk|gg|c)', 'i')`);
+
+    const strEqTrimCi = (param: string, columnSql: string, bindName: string) => {
+      const v = firstString(firstQueryValue(q, param));
+      if (v === undefined) return;
+      const t = v.trim();
+      if (t === "") return;
+      clauses.push(`UPPER(${columnSql}) = :${bindName}`);
+      (binds as Record<string, string | number | Date>)[bindName] = t.toUpperCase();
+      applied[param] = t;
+    };
+
+    strEqTrimCi("hostname", "t.HOSTNAME", "v3a_hostname");
+    const platformApplied = applyPlatformQueryFilter(
+      q,
+      clauses,
+      applied,
+      "t.HOSTNAME"
+    );
+    if (!platformApplied.ok) return platformApplied;
+
+    strEqTrimCi("device", "t.DEVICE", "v3a_device");
+    strEqTrimCi("lotId", "t.LOTID", "v3a_lotid");
+    strEqTrimCi("wafer", "t.WAFER", "v3a_wafer");
+    strEqTrimCi("probeCard", "t.PROBECARD", "v3a_probecard");
+
+    const maskVal = firstString(firstQueryValue(q, "mask"));
+    if (maskVal !== undefined && maskVal !== "") {
+      const t = maskVal.trim();
+      clauses.push(deviceMaskOracleWhere("t.DEVICE", "v3a_mask"));
+      (binds as Record<string, string | number | Date>).v3a_mask = t;
+      applied.mask = t;
+    }
+
+    const pctVal = firstString(firstQueryValue(q, "probeCardType"));
+    if (pctVal !== undefined && pctVal !== "") {
+      const t = pctVal.trim();
+      clauses.push(
+        `(UPPER(t.PROBECARD) = :v3a_pct OR UPPER(t.PROBECARD) LIKE :v3a_pct || '-%')`
+      );
+      (binds as Record<string, string | number | Date>).v3a_pct = t.toUpperCase();
+      applied.probeCardType = t;
+    }
+
+    const passN = parseOptionalNumber(firstQueryValue(q, "pass"), "pass");
+    if (passN !== undefined) {
+      parseRequiredFiniteNumber(passN, "pass");
+      clauses.push("t.PASS = :v3a_pass");
+      binds.v3a_pass = passN;
+      applied.pass = passN;
+    }
+
+    const tsLo =
+      parseOptionalDate(
+        firstQueryValue(q, "timeStampBegin"),
+        "timeStampBegin"
+      ) ??
+      parseOptionalDate(
+        firstQueryValue(q, "timeStampFrom"),
+        "timeStampFrom"
+      );
+    const tsHi =
+      parseOptionalDate(firstQueryValue(q, "timeStampEnd"), "timeStampEnd") ??
+      parseOptionalDate(firstQueryValue(q, "timeStampTo"), "timeStampTo");
+
+    if (tsLo !== undefined && tsHi !== undefined && tsLo > tsHi) {
+      return {
+        ok: false,
+        error:
+          "time window: lower bound must be <= upper bound (timeStampBegin/timeStampEnd or timeStampFrom/timeStampTo)",
+      };
+    }
+    if (tsLo !== undefined) {
+      clauses.push("t.TIME_STAMP >= :v3a_ts_lo");
+      binds.v3a_ts_lo = tsLo;
+      if (firstQueryValue(q, "timeStampBegin") != null) {
+        applied.timeStampBegin = tsLo.toISOString();
+      } else {
+        applied.timeStampFrom = tsLo.toISOString();
+      }
+    }
+    if (tsHi !== undefined) {
+      clauses.push("t.TIME_STAMP <= :v3a_ts_hi");
+      binds.v3a_ts_hi = tsHi;
+      if (firstQueryValue(q, "timeStampEnd") != null) {
+        applied.timeStampEnd = tsHi.toISOString();
+      } else {
+        applied.timeStampTo = tsHi.toISOString();
+      }
+    }
+
+    const yieldV3TimeQueryKeys = [
+      "timeStampBegin",
+      "timeStampFrom",
+      "timeStampEnd",
+      "timeStampTo",
+    ] as const;
+    const userTouchedYieldTime = yieldV3TimeQueryKeys.some(
+      (k) => firstString(firstQueryValue(q, k)) !== undefined
+    );
+    if (!userTouchedYieldTime && tsLo === undefined && tsHi === undefined) {
+      const { lo, hi } = v3DefaultThroughNowMinusOneUtcYear();
+      clauses.push("t.TIME_STAMP >= :v3a_ts_lo");
+      clauses.push("t.TIME_STAMP <= :v3a_ts_hi");
+      (binds as Record<string, string | number | Date>).v3a_ts_lo = lo;
+      (binds as Record<string, string | number | Date>).v3a_ts_hi = hi;
+      applied.timeStampBegin = lo.toISOString();
+      applied.timeStampEnd = hi.toISOString();
+    }
+
+    const whereSql =
+      clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+
+    return { ok: true, whereSql, binds, applied };
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: message };
+  }
+}
