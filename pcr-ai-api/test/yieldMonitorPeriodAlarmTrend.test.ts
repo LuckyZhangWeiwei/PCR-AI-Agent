@@ -112,7 +112,8 @@ describe("yieldMonitorPeriodAlarmTrend", () => {
     assert.ok(sql.includes("'TEST INTERRUPT'"));
     assert.ok(sql.includes("ABANDONED"));
     assert.ok(sql.includes("t2.TESTEND"));
-    assert.ok(sql.includes("GROUP BY bucket_idx, lot, slot"));
+    assert.ok(sql.includes("COUNT(*) AS activity_total"));
+    assert.ok(sql.includes("GROUP BY bucket_idx"));
   });
 
   test("periodAlarmTrendSql bind parity", () => {
@@ -241,22 +242,20 @@ describe("yieldMonitorPeriodAlarmTrend", () => {
     }
   });
 
-  test("mergePeriodAlarmJbSlotDenominator 统计桶内全部 JB distinct slot", () => {
+  test("mergePeriodAlarmJbSlotDenominator 统计桶内全部 JB 行数", () => {
     const buckets = recentPeriodBuckets("week", 2, NOW);
     const points = mapPeriodAlarmTrendRows(buckets, [
       { BUCKET_IDX: 0, TOTAL: 10, TESTER_CNT: 2, CARD_CNT: 3, BIN_CNT: 1, DUT_CNT: 1 },
       { BUCKET_IDX: 1, TOTAL: 5, TESTER_CNT: 1, CARD_CNT: 1, BIN_CNT: 1, DUT_CNT: 1 },
     ]);
     const merged = mergePeriodAlarmJbSlotDenominator(points, [
-      { BUCKET_IDX: 0, LOT: "L1", SLOT: 1 },
-      { BUCKET_IDX: 0, LOT: "L1", SLOT: 2 },
-      { BUCKET_IDX: 0, LOT: "L9", SLOT: 9 },
-      { BUCKET_IDX: 1, LOT: "L2", SLOT: 3 },
+      { BUCKET_IDX: 0, ACTIVITY_TOTAL: 1500 },
+      { BUCKET_IDX: 1, ACTIVITY_TOTAL: 800 },
     ]);
-    assert.equal(merged[0]!.testerActivityTotal, 3);
-    assert.equal(merged[0]!.testerAlarmRate, 10 / 3);
-    assert.equal(merged[1]!.testerActivityTotal, 1);
-    assert.equal(merged[1]!.testerAlarmRate, 5);
+    assert.equal(merged[0]!.testerActivityTotal, 1500);
+    assert.equal(merged[0]!.testerAlarmRate, 10 / 1500);
+    assert.equal(merged[1]!.testerActivityTotal, 800);
+    assert.equal(merged[1]!.testerAlarmRate, 5 / 800);
   });
 
   test("attachPeriodAlarmTopTesters 合并 Oracle Top 行", () => {

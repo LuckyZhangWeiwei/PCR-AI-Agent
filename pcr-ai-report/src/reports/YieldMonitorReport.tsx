@@ -1931,7 +1931,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
                     ) : (
                       <>
                         <p className="muted small" style={{ margin: "0 0 8px" }}>
-                          {periodAlarmTesterRateTrendLabel}：delta_diff 报警次数 ÷ 该桶同期同筛选下 JB Start 全部 distinct slot 数（含 TEST / INTERRUPT / TEST ISR / TEST INTERRUPT，不含 Auto retest）
+                          {periodAlarmTesterRateTrendLabel}：delta_diff 报警次数 ÷ 该桶同期同筛选下 JB Start 全部记录数（含 TEST / INTERRUPT / TEST ISR / TEST INTERRUPT，不含 Auto retest）
                         </p>
                         <DarkChart
                           key={`alarm-tester-rate-${period}`}

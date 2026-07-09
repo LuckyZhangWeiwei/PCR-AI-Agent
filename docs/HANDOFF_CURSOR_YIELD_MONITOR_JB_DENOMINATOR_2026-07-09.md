@@ -13,7 +13,7 @@
 
 | 项 | 状态 | 说明 |
 |---|---|---|
-| **Tester 报警频率分母（最终口径）** | ✅ 本 commit | **该桶同期同筛选下，JB Start 全部 distinct (LOT, SLOT)**；PASSTYPE 与 JB Star v3 一致；**不含 RETESTBIN** |
+| **Tester 报警频率分母（最终口径）** | ✅ 本 commit | **该桶同期同筛选下，JB Start 全部记录数 COUNT(*)**；PASSTYPE 与 JB Star v3 一致；**不含 RETESTBIN** |
 | **不再限定「出过报警的 tester」** | ✅ | 已删除 YM `alarmHosts` 子查询；分母与报警机台集合解耦 |
 | **PASSTYPE 范围** | ✅ | `TEST` / `INTERRUPT` / `TEST ISR` / `TEST INTERRUPT` + 排除 `LAYERNAME=Abandoned`（`infcontrolLayerBinV3BaseWhereBlock`） |
 | **双库查询** | ✅ | YM：`withProbeWebConnection`；JB 分母：`withConnection`（main pool） |
@@ -30,7 +30,7 @@
 |---|---|---|---|
 | A · 初版 `dbf31f0` | YM `YMWEB_YIELDMONITORTRIGGER` 全 TYPE，仅限该桶出过 `delta_diff` 的 tester | ~73–96%，均 ~82.6% | 已 supersede |
 | B · 中间稿（未单独部署） | JB distinct slot，**仅**该桶 YM 报警 tester | 低于 A，仍偏高 | 已 supersede |
-| C · **本 commit（最终）** | **该桶全部 JB Start distinct (LOT, SLOT)**，v3 PASSTYPE，同期同筛选 | 预期最低、最合理 | ✅ 目标口径 |
+| C · **本 commit（最终）** | **该桶全部 JB Start 记录数 COUNT(*)**，v3 PASSTYPE，同期同筛选 | 预期合理、通常 ≤100% | ✅ 目标口径 |
 
 ### 1.1 最终公式（每桶）
 
@@ -41,10 +41,12 @@ testerAlarmRate = testerAlarmNumerator / testerActivityTotal
 | 字段 | 含义 |
 |---|---|
 | `testerAlarmNumerator` | 桶内 YM `delta_diff` 报警行数（= `total`） |
-| `testerActivityTotal` | 桶内 **全部** JB Start **distinct (LOT, SLOT)** 数（按 `TESTEND` 分桶） |
+| `testerActivityTotal` | 桶内 **全部** JB Start **记录数**（`COUNT(*)`，按 `TESTEND` 分桶） |
 | `testerAlarmRate` | 比率；分母为 0 时 `null` |
 
-**分子不变**；仅分母从 YM 活动量 → JB slot（且不再过滤 alarm tester）。
+**分子不变**；分母为 JB **行数**（非 distinct slot），且不再过滤 alarm tester。
+
+> **勿用 distinct (LOT,SLOT) 作分母** — 同一 slot 有多条 layer/pass 行会被压成 1，导致 `testerAlarmRate >> 1`（如 42800%）。必须用 **COUNT(*)**。
 
 ### 1.2 PASSTYPE / LAYERNAME（与 JB Star v3 对齐）
 
