@@ -3,6 +3,7 @@ import { apiGetJson } from "../api/client";
 import { API_PREFIX, YIELD_AGGREGATE_PATH, YIELD_COMBINED_PATH, YIELD_PERIOD_ALARM_TREND_PATH } from "../api/paths";
 import type {
   AggregateGroup,
+  PeriodAlarmTopTester,
   YieldMonitorAggregateBlock,
   YieldMonitorCombinedResponse,
   YieldMonitorPeriodAlarmTrendResponse,
@@ -238,7 +239,32 @@ type TrendPoint = {
   total: number | null;
   testerCount: number | null;
   cardCount: number | null;
+  /** 来自 period-alarm-trend；legacy fallback 无此字段 */
+  testerAlarmRate?: number | null;
+  testerAlarmNumerator?: number | null;
+  testerActivityTotal?: number | null;
+  topTesters?: PeriodAlarmTopTester[];
 };
+
+function resolveTesterAlarmRate(
+  rate: number | null | undefined,
+  total: number | null,
+  numerator?: number | null,
+  activityTotal?: number | null
+): number | null {
+  if (rate != null && Number.isFinite(rate)) {
+    return rate > 1 ? null : rate;
+  }
+  const num = numerator ?? total ?? 0;
+  const denom = activityTotal ?? 0;
+  if (denom > 0 && num > 0) {
+    const computed = num / denom;
+    return computed > 1 ? null : computed;
+  }
+  return null;
+}
+
+type TesterTrendTab = "count" | "rate";
 
 // Sub-dimension options for drill-down panels
 const DRILL_FROM_DEVICE: { label: string; value: string }[] = [
@@ -446,9 +472,18 @@ function buildTrendBarOption(
   theme: "light" | "dark",
   buckets: PeriodBucket[],
   values: (number | null)[],
-  color: string
+  color: string,
+  opts?: {
+    period?: PeriodKey;
+    metricLabel?: string;
+    topTestersByBucket?: PeriodAlarmTopTester[][];
+    /** 与 Top 5 触发次数对照的桶内 delta_diff 总和（非柱图主指标时使用） */
+    triggerTotalsByBucket?: (number | null)[];
+  }
 ): EChartsOption {
   const palette = getChartPalette(theme);
+  const periodPrefix =
+    opts?.period === "week" ? "每周" : opts?.period === "month" ? "每月" : "";
   return {
     ...baseChartOption(theme),
     grid: yieldTrendChartGrid,
@@ -465,13 +500,212 @@ function buildTrendBarOption(
     series: [
       {
         type: "bar",
+        cursor: "default",
         data: values.map((v) => v ?? 0),
         itemStyle: { color, borderRadius: [4, 4, 0, 0] as unknown as number },
         label: { show: true, position: "top", color: palette.axisColor, fontSize: 10 },
         animationDuration: 600,
       },
     ],
-    tooltip: { trigger: "axis" },
+    tooltip:
+      opts?.topTestersByBucket && opts.period
+        ? {
+            ...axisTooltipBase(theme),
+            formatter: (params: unknown) => {
+              const idx = trendTooltipDataIndex(params);
+              if (idx === null) return "";
+              const label = buckets[idx]?.label ?? "";
+              const val = values[idx];
+              const lines = [
+                `${periodPrefix} ${label}`,
+                `${periodPrefix}${opts.metricLabel ?? ""}: ${val ?? 0}`,
+              ];
+              const triggerTotal =
+                opts.triggerTotalsByBucket?.[idx] ?? val ?? null;
+              appendTopTesterTooltipLines(lines, periodPrefix, opts.topTestersByBucket![idx], {
+                triggerTotal,
+              });
+              return lines.join("<br/>");
+            },
+          }
+        : axisTooltipBase(theme),
+  };
+}
+
+function topTestersFromAggregateGroups(
+  groups: YieldMonitorV3AggregateResponse["groups"] | undefined,
+  limit = 5
+): PeriodAlarmTopTester[] {
+  return [...(groups ?? [])]
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit)
+    .map((g) => ({
+      hostname: g.parts.hostname ?? g.key,
+      count: g.count,
+    }));
+}
+
+function axisTooltipBase(theme: "light" | "dark"): Record<string, unknown> {
+  return {
+    ...(baseChartOption(theme).tooltip as Record<string, unknown>),
+    trigger: "axis",
+  };
+}
+
+function appendTopTesterTooltipLines(
+  lines: string[],
+  periodPrefix: string,
+  top: PeriodAlarmTopTester[] | undefined,
+  opts?: { triggerTotal?: number | null; header?: string }
+): void {
+  if (!top?.length) return;
+  lines.push(opts?.header ?? `${periodPrefix} Top 5 触发次数:`);
+  for (const t of top) {
+    lines.push(`${t.hostname}: ${t.count}`);
+  }
+  const sum = top.reduce((s, t) => s + t.count, 0);
+  const triggerTotal = opts?.triggerTotal;
+  if (triggerTotal != null && triggerTotal > 0) {
+    lines.push(`Top 5 合计: ${sum} / ${periodPrefix}触发总和 ${triggerTotal}`);
+  }
+}
+
+function trendTooltipDataIndex(params: unknown): number | null {
+  const items = Array.isArray(params) ? params : [params];
+  const p = items[0] as { dataIndex?: number } | undefined;
+  if (!p || typeof p.dataIndex !== "number") return null;
+  return p.dataIndex;
+}
+
+/** 总和趋势柱图：hover 展示该桶 Top 5 tester（随周/月粒度切换）。 */
+function buildTrendTotalBarOption(
+  theme: "light" | "dark",
+  period: PeriodKey,
+  buckets: PeriodBucket[],
+  values: (number | null)[],
+  color: string,
+  topTestersByBucket: PeriodAlarmTopTester[][]
+): EChartsOption {
+  const palette = getChartPalette(theme);
+  const periodPrefix = period === "week" ? "每周" : "每月";
+  return {
+    ...baseChartOption(theme),
+    grid: yieldTrendChartGrid,
+    xAxis: {
+      type: "category",
+      data: buckets.map((b) => b.label),
+      axisLabel: { color: palette.axisColor, fontSize: 10 },
+    },
+    yAxis: {
+      type: "value",
+      axisLabel: { color: palette.axisColor },
+      splitLine: { lineStyle: { color: palette.splitLine } },
+    },
+    series: [
+      {
+        type: "bar",
+        cursor: "default",
+        data: values.map((v) => v ?? 0),
+        itemStyle: { color, borderRadius: [4, 4, 0, 0] as unknown as number },
+        label: { show: true, position: "top", color: palette.axisColor, fontSize: 10 },
+        animationDuration: 600,
+      },
+    ],
+    tooltip: {
+      ...axisTooltipBase(theme),
+      formatter: (params: unknown) => {
+        const idx = trendTooltipDataIndex(params);
+        if (idx === null) return "";
+        const items = Array.isArray(params) ? params : [params];
+        const p = items[0] as { name?: string; value?: unknown } | undefined;
+        const label = buckets[idx]?.label ?? p?.name ?? "";
+        const val = values[idx];
+        const lines = [`${periodPrefix} ${label}`, `${periodPrefix}触发总和: ${val ?? 0}`];
+        appendTopTesterTooltipLines(lines, periodPrefix, topTestersByBucket[idx], {
+          triggerTotal: val ?? null,
+        });
+        return lines.join("<br/>");
+      },
+    },
+  };
+}
+
+/** 周期趋势折线图（y 轴可为百分比等）；tooltip 随周/月粒度切换。 */
+function buildTrendLineOption(
+  theme: "light" | "dark",
+  period: PeriodKey,
+  buckets: PeriodBucket[],
+  values: (number | null)[],
+  color: string,
+  valueFormatter: (v: number) => string = (v) => String(v),
+  metricLabel: string,
+  topTestersByBucket?: PeriodAlarmTopTester[][],
+  triggerTotals?: (number | null)[]
+): EChartsOption {
+  const palette = getChartPalette(theme);
+  const periodPrefix = period === "week" ? "每周" : "每月";
+  return {
+    ...baseChartOption(theme),
+    grid: yieldTrendChartGrid,
+    xAxis: {
+      type: "category",
+      data: buckets.map((b) => b.label),
+      axisLabel: { color: palette.axisColor, fontSize: 10 },
+    },
+    yAxis: {
+      type: "value",
+      axisLabel: {
+        color: palette.axisColor,
+        formatter: (v: number) => valueFormatter(v),
+      },
+      splitLine: { lineStyle: { color: palette.splitLine } },
+    },
+    series: [
+      {
+        type: "line",
+        cursor: "default",
+        data: values.map((v) => (v != null ? v : null)),
+        smooth: true,
+        connectNulls: true,
+        lineStyle: { color, width: 2 },
+        itemStyle: { color },
+        label: {
+          show: true,
+          position: "top",
+          color: palette.axisColor,
+          fontSize: 10,
+          formatter: (p: { value: unknown }) =>
+            typeof p.value === "number" ? valueFormatter(p.value) : "—",
+        },
+        animationDuration: 600,
+      },
+    ],
+    tooltip: {
+      ...axisTooltipBase(theme),
+      formatter: (params: unknown) => {
+        const idx = trendTooltipDataIndex(params);
+        if (idx === null) return "";
+        const items = Array.isArray(params) ? params : [params];
+        const p = items[0] as { name?: string; value?: unknown } | undefined;
+        const label = buckets[idx]?.label ?? p?.name ?? "";
+        const raw = p?.value;
+        const val =
+          typeof raw === "number"
+            ? valueFormatter(raw)
+            : Array.isArray(raw) && typeof raw[1] === "number"
+            ? valueFormatter(raw[1])
+            : "—";
+        const lines = [`${periodPrefix} ${label}`, `${periodPrefix}${metricLabel}: ${val}`];
+        const triggerTotal = triggerTotals?.[idx];
+        if (triggerTotal != null) {
+          lines.push(`${periodPrefix}触发总和: ${triggerTotal}`);
+        }
+        appendTopTesterTooltipLines(lines, periodPrefix, topTestersByBucket?.[idx], {
+          triggerTotal: triggerTotal ?? null,
+        });
+        return lines.join("<br/>");
+      },
+    },
   };
 }
 
@@ -523,6 +757,15 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
   const [trendPoints, setTrendPoints] = useState<TrendPoint[]>([]);
   const [loadingTrend, setLoadingTrend] = useState(false);
   const [errorTrend, setErrorTrend] = useState<string | null>(null);
+  const [testerTrendTab, setTesterTrendTab] = useState<TesterTrendTab>("count");
+  const trendFetchGenRef = useRef(0);
+
+  const changePeriodAlarmGranularity = useCallback((next: PeriodKey) => {
+    setPeriod(next);
+    setTrendPoints([]);
+    setLoadingTrend(true);
+    setErrorTrend(null);
+  }, []);
 
   const resetReportLayout = useCallback(() => {
     resetReportLayoutStorage(YIELD_MONITOR_LAYOUT_STORAGE_KEYS);
@@ -922,7 +1165,9 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
 
   useEffect(() => {
     if (!hasQueried) return;
+    const fetchGen = ++trendFetchGenRef.current;
     let cancelled = false;
+    setTrendPoints([]);
     setLoadingTrend(true);
     setErrorTrend(null);
 
@@ -978,6 +1223,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
           total: tester?.totalRowsMatching ?? card?.totalRowsMatching ?? null,
           testerCount: tester ? tester.groups.length : null,
           cardCount: card ? card.groups.length : null,
+          topTesters: topTestersFromAggregateGroups(tester?.groups),
         };
       });
     };
@@ -989,7 +1235,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
           YIELD_PERIOD_ALARM_TREND_PATH,
           { period, now: nowIso, ...periodAlarmQueryParams }
         );
-        if (cancelled) return;
+        if (cancelled || fetchGen !== trendFetchGenRef.current) return;
         setTrendPoints(
           res.buckets.map((b) => ({
             bucket: {
@@ -1000,11 +1246,20 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
             total: b.total,
             testerCount: b.testerCount,
             cardCount: b.cardCount,
+            testerAlarmNumerator: b.testerAlarmNumerator ?? b.total,
+            testerActivityTotal: b.testerActivityTotal,
+            testerAlarmRate: resolveTesterAlarmRate(
+              b.testerAlarmRate,
+              b.total,
+              b.testerAlarmNumerator ?? b.total,
+              b.testerActivityTotal
+            ),
+            topTesters: b.topTesters ?? [],
           }))
         );
         setErrorTrend(null);
       } catch (e) {
-        if (cancelled) return;
+        if (cancelled || fetchGen !== trendFetchGenRef.current) return;
         if (!isPeriodAlarmTrendNotFound(e)) {
           setTrendPoints([]);
           setErrorTrend(e instanceof Error ? e.message : String(e));
@@ -1012,18 +1267,20 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         }
         try {
           const points = await loadLegacyFallback();
-          if (cancelled) return;
+          if (cancelled || fetchGen !== trendFetchGenRef.current) return;
           setTrendPoints(points);
           setErrorTrend(null);
         } catch (fallbackErr) {
-          if (cancelled) return;
+          if (cancelled || fetchGen !== trendFetchGenRef.current) return;
           setTrendPoints([]);
           setErrorTrend(
             fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
           );
         }
       } finally {
-        if (!cancelled) setLoadingTrend(false);
+        if (!cancelled && fetchGen === trendFetchGenRef.current) {
+          setLoadingTrend(false);
+        }
       }
     })();
 
@@ -1216,23 +1473,29 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
   );
 
   const trendBuckets = useMemo(() => trendPoints.map((p) => p.bucket), [trendPoints]);
+  const trendTopTestersByBucket = useMemo(
+    () => trendPoints.map((p) => p.topTesters ?? []),
+    [trendPoints]
+  );
   const trendTotalOption = useMemo(
     () =>
-      buildTrendBarOption(
+      buildTrendTotalBarOption(
         theme,
+        period,
         trendBuckets,
         trendPoints.map((p) => p.total),
-        selectionTierColors(theme, "gold").base
+        selectionTierColors(theme, "gold").base,
+        trendTopTestersByBucket
       ),
-    [trendBuckets, trendPoints, theme]
+    [trendBuckets, trendPoints, trendTopTestersByBucket, theme, period]
   );
 
   const periodAlarmTotalTrendLabel =
     period === "week" ? "每周触发总和" : "每月触发总和";
   const periodAlarmTesterTrendLabel =
     period === "week" ? "每周 Tester 数" : "每月 Tester 数";
-  const periodAlarmCardTrendLabel =
-    period === "week" ? "每周 Probe Card 数" : "每月 Probe Card 数";
+  const periodAlarmTesterRateTrendLabel =
+    period === "week" ? "每周 Tester 报警频率" : "每月 Tester 报警频率";
 
   const trendTesterOption = useMemo(
     () =>
@@ -1240,10 +1503,42 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         theme,
         trendBuckets,
         trendPoints.map((p) => p.testerCount),
-        chartPalette.accent
+        chartPalette.accent,
+        {
+          period,
+          metricLabel: " Tester 数",
+          topTestersByBucket: trendTopTestersByBucket,
+          triggerTotalsByBucket: trendPoints.map((p) => p.total),
+        }
       ),
-    [trendBuckets, trendPoints, theme, chartPalette.accent]
+    [trendBuckets, trendPoints, trendTopTestersByBucket, theme, chartPalette.accent, period]
   );
+  const trendTesterRateOption = useMemo(
+    () =>
+      buildTrendLineOption(
+        theme,
+        period,
+        trendBuckets,
+        trendPoints.map((p) => {
+          const rate = resolveTesterAlarmRate(
+            p.testerAlarmRate,
+            p.total,
+            p.testerAlarmNumerator,
+            p.testerActivityTotal
+          );
+          return rate != null ? rate * 100 : null;
+        }),
+        chartPalette.accent,
+        (v) => `${v.toFixed(1)}%`,
+        "Tester 报警频率",
+        trendTopTestersByBucket,
+        trendPoints.map((p) => p.total)
+      ),
+    [trendBuckets, trendPoints, trendTopTestersByBucket, theme, chartPalette.accent, period]
+  );
+  const periodAlarmCardTrendLabel =
+    period === "week" ? "每周 Probe Card 数" : "每月 Probe Card 数";
+
   const trendCardOption = useMemo(
     () =>
       buildTrendBarOption(
@@ -1486,7 +1781,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
               key={p}
               type="button"
               className={`chip${period === p ? " chip--active" : ""}`}
-              onClick={() => setPeriod(p)}
+              onClick={() => changePeriodAlarmGranularity(p)}
             >
               {p === "week" ? "周" : "月"}
             </button>
@@ -1621,16 +1916,55 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
                 {loadingTrend ? (
                   <div style={{ color: "var(--muted)", fontSize: 13, padding: "8px 0" }}>加载中…</div>
                 ) : (
-                  <DarkChart option={trendTotalOption} height={YIELD_TREND_CHART_HEIGHT} />
+                  <DarkChart
+                    key={`alarm-total-${period}`}
+                    option={trendTotalOption}
+                    height={YIELD_TREND_CHART_HEIGHT}
+                  />
                 )}
               </div>
             ),
             chAlarmTesterTrend: (
-              <div className="report-chart-panel chart-no-drill">
+              <div className="report-chart-panel">
+                <div className="preset-chips tester-trend-tabs" style={{ marginBottom: 8 }}>
+                  <button
+                    type="button"
+                    className={`chip${testerTrendTab === "count" ? " chip--active" : ""}`}
+                    onClick={() => setTesterTrendTab("count")}
+                  >
+                    {period === "week" ? "每周" : "每月"} Tester 数
+                  </button>
+                  <button
+                    type="button"
+                    className={`chip${testerTrendTab === "rate" ? " chip--active" : ""}`}
+                    onClick={() => setTesterTrendTab("rate")}
+                  >
+                    {period === "week" ? "每周" : "每月"} 报警频率
+                  </button>
+                </div>
                 {loadingTrend ? (
                   <div style={{ color: "var(--muted)", fontSize: 13, padding: "8px 0" }}>加载中…</div>
                 ) : (
-                  <DarkChart option={trendTesterOption} height={YIELD_TREND_CHART_HEIGHT} />
+                  <div className="chart-no-drill">
+                    {testerTrendTab === "count" ? (
+                      <DarkChart
+                        key={`alarm-tester-count-${period}`}
+                        option={trendTesterOption}
+                        height={YIELD_TREND_CHART_HEIGHT}
+                      />
+                    ) : (
+                      <>
+                        <p className="muted small" style={{ margin: "0 0 8px" }}>
+                          {periodAlarmTesterRateTrendLabel}：delta_diff 报警次数 ÷ 该桶同期同筛选下 JB Start 全部记录数（含 TEST / INTERRUPT / TEST ISR / TEST INTERRUPT，不含 Auto retest）
+                        </p>
+                        <DarkChart
+                          key={`alarm-tester-rate-${period}`}
+                          option={trendTesterRateOption}
+                          height={YIELD_TREND_CHART_HEIGHT}
+                        />
+                      </>
+                    )}
+                  </div>
                 )}
               </div>
             ),
@@ -1994,6 +2328,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     periodAlarmTimeHint,
     periodAlarmTotalTrendLabel,
     periodAlarmTesterTrendLabel,
+    periodAlarmTesterRateTrendLabel,
     periodAlarmCardTrendLabel,
     periodTotal,
     periodPrevTotal,
@@ -2013,6 +2348,9 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     trendBuckets,
     trendTotalOption,
     trendTesterOption,
+    trendTesterRateOption,
+    testerTrendTab,
+    changePeriodAlarmGranularity,
     trendCardOption,
     loadingTrend,
     errorTrend,

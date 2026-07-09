@@ -1770,6 +1770,9 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
               </span>
             ) : null}
           </div>
+          <p className="report-scope-hint small" style={{ margin: "0 0 8px", lineHeight: 1.45 }}>
+            明细仅含 first test，不包含 Auto retest（RETESTBIN）
+          </p>
           {selectionHint ? (
             <p className="field-hint" style={{ color: "var(--red-text)", margin: "0 0 8px" }}>
               {selectionHint}

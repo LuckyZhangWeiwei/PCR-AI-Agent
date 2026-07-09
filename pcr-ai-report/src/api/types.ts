@@ -63,6 +63,11 @@ export type YieldMonitorV3AggregateResponse = {
 };
 
 /** `GET …/yield-monitor-triggers/v3/period-alarm-trend` */
+export type PeriodAlarmTopTester = {
+  hostname: string;
+  count: number;
+};
+
 export type PeriodAlarmTrendBucket = {
   label: string;
   timeStampFrom: string;
@@ -72,6 +77,11 @@ export type PeriodAlarmTrendBucket = {
   cardCount: number;
   binCount: number;
   dutCount: number;
+  testerAlarmNumerator: number;
+  /** 同期同筛选、该桶内 JB Start 记录总数（分母；v3 PASSTYPE，不含 RETESTBIN） */
+  testerActivityTotal: number;
+  testerAlarmRate: number | null;
+  topTesters: PeriodAlarmTopTester[];
 };
 
 export type YieldMonitorPeriodAlarmTrendResponse = {

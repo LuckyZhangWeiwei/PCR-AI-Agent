@@ -1,5 +1,17 @@
 import type { BindParameters } from "oracledb";
-import { parseYieldMonitorTriggerV3Query } from "./yieldMonitorTriggerFilters.js";
+import {
+  parseYieldMonitorTriggerActivityQuery,
+  parseYieldMonitorTriggerV3Query,
+  YIELD_MONITOR_V3_TYPE_SCOPE,
+} from "./yieldMonitorTriggerFilters.js";
+import {
+  parseInfcontrolLayerBinsV3Query,
+} from "./infcontrolLayerBinFilters.js";
+import {
+  filterInfcontrolLayerBinV3DummyRowsMatching,
+  type InfcontrolLayerBinDummyRow,
+} from "./infcontrolLayerBinDummy.js";
+import { infcontrolLayerBinV3BaseWhereBlock } from "./infcontrolLayerBinPasstypeScope.js";
 import {
   filterYieldMonitorDummyRowsMatchingV3,
   yieldMonitorDummyTimeOffsetMs,
@@ -16,6 +28,11 @@ export type PeriodAlarmBucket = {
   label: string;
 };
 
+export type PeriodAlarmTopTester = {
+  hostname: string;
+  count: number;
+};
+
 export type PeriodAlarmTrendPoint = {
   label: string;
   timeStampFrom: string;
@@ -27,7 +44,17 @@ export type PeriodAlarmTrendPoint = {
   binCount: number;
   /** distinct dut# excluding empty */
   dutCount: number;
+  /** delta_diff 报警触发次数（= total；分子） */
+  testerAlarmNumerator: number;
+  /** 同期同筛选、该桶内 JB Start 记录总数（分母；v3 PASSTYPE，不含 RETESTBIN） */
+  testerActivityTotal: number;
+  /** testerAlarmNumerator / testerActivityTotal；分母为 0 时为 null */
+  testerAlarmRate: number | null;
+  /** 该桶触发次数 Top N 的 tester（按 count 降序） */
+  topTesters: PeriodAlarmTopTester[];
 };
+
+export const PERIOD_ALARM_TOP_TESTERS_LIMIT = 5;
 
 export const PERIOD_ALARM_TREND_BUCKET_COUNT = 4;
 export const PERIOD_ALARM_MAX_WEEK_BUCKETS = 54;
@@ -236,8 +263,16 @@ export type ParsePeriodAlarmTrendOk = {
   period: PeriodKey;
   now: Date;
   buckets: PeriodAlarmBucket[];
+  /** delta_diff 报警 WHERE（YM 报警机台集合 + Top tester） */
   whereSql: string;
-  binds: BindParameters;
+  /** YM 全 TYPE 扫描 WHERE（Top tester 子查询） */
+  activityWhereSql: string;
+  /** JB Start slot 分母 WHERE（`parseInfcontrolLayerBinsV3Query` AND 片段） */
+  jbSlotWhereAndSql: string;
+  alarmBinds: BindParameters;
+  activityBinds: BindParameters;
+  jbSlotBinds: BindParameters;
+  jbSlotApplied: Record<string, unknown>;
   applied: Record<string, unknown>;
 };
 
@@ -262,6 +297,53 @@ function firstString(raw: unknown): string | undefined {
   return undefined;
 }
 
+function mapPeriodAlarmFiltersToJbQuery(
+  filterQ: Record<string, unknown>,
+  spanFrom: string,
+  spanTo: string
+): Record<string, unknown> {
+  const jbQ: Record<string, unknown> = { ...filterQ };
+  delete jbQ.timeStampBegin;
+  delete jbQ.timeStampEnd;
+  delete jbQ.timeStampFrom;
+  delete jbQ.timeStampTo;
+  delete jbQ.wafer;
+  delete jbQ.type;
+  delete jbQ.platform;
+  jbQ.testEndFrom = spanFrom;
+  jbQ.testEndTo = spanTo;
+  if (jbQ.lotId !== undefined) {
+    jbQ.lot = jbQ.lotId;
+    delete jbQ.lotId;
+  }
+  if (jbQ.hostname !== undefined) {
+    jbQ.testerId = jbQ.hostname;
+    delete jbQ.hostname;
+  }
+  if (jbQ.probeCard !== undefined) {
+    jbQ.cardId = jbQ.probeCard;
+    delete jbQ.probeCard;
+  }
+  if (jbQ.pass !== undefined) {
+    jbQ.passId = jbQ.pass;
+    delete jbQ.pass;
+  }
+  return jbQ;
+}
+
+function periodAlarmBucketCaseExpr(
+  bucketCount: number,
+  columnSql: string
+): string {
+  const caseLines: string[] = [];
+  for (let i = bucketCount - 1; i >= 0; i--) {
+    caseLines.push(
+      `      WHEN ${columnSql} >= :b${i}_from AND ${columnSql} <= :b${i}_to THEN ${i}`
+    );
+  }
+  return `CASE\n${caseLines.join("\n")}\n      ELSE NULL\n    END`;
+}
+
 function parseNowParam(raw: unknown): Date | undefined {
   const s = firstString(raw);
   if (s === undefined) return undefined;
@@ -271,7 +353,7 @@ function parseNowParam(raw: unknown): Date | undefined {
 }
 
 /**
- * 解析周期报警趋势请求：必填 `period=week|month`；可选 `now`（ISO，默认服务端当前时刻）。
+ * 解析周期报警趋势请求
  * 可选 `timeStampFrom`/`timeStampTo`（与 v3 列表一致）决定 x 轴桶范围；未传时默认近 1 UTC 年。
  * 可选与 v3 列表相同的其它字符串筛选（device / hostname / …）。
  */
@@ -315,64 +397,173 @@ export function parsePeriodAlarmTrendQuery(
     return { ok: false, error: base.error };
   }
 
+  const activity = parseYieldMonitorTriggerActivityQuery({
+    ...filterQ,
+    timeStampFrom: spanFrom,
+    timeStampTo: spanTo,
+  });
+  if (!activity.ok) {
+    return { ok: false, error: activity.error };
+  }
+
+  const jb = parseInfcontrolLayerBinsV3Query(
+    mapPeriodAlarmFiltersToJbQuery(filterQ, spanFrom, spanTo)
+  );
+  if (!jb.ok) {
+    return { ok: false, error: jb.error };
+  }
+
   return {
     ok: true,
     period,
     now,
     buckets,
     whereSql: base.whereSql,
-    binds: base.binds,
+    activityWhereSql: activity.whereSql,
+    jbSlotWhereAndSql: jb.whereAndSql,
+    alarmBinds: base.binds,
+    activityBinds: activity.binds,
+    jbSlotBinds: jb.binds,
+    jbSlotApplied: jb.applied,
     applied: base.applied,
   };
 }
 
-/** 单次 Oracle 扫描：4 桶 × COUNT(*) + COUNT(DISTINCT …)；bin 不含 goodbin。 */
+/** 单次 Oracle 扫描：各桶 COUNT(*) + COUNT(DISTINCT …)（分母由 JB slot 查询在 Node 合并）。 */
 export function buildPeriodAlarmTrendSql(
-  whereSql: string,
+  activityWhereSql: string,
   bucketCount: number
 ): string {
-  const wc = whereSql.trim();
-  const caseLines: string[] = [];
-  for (let i = bucketCount - 1; i >= 0; i--) {
-    caseLines.push(
-      `      WHEN t.TIME_STAMP >= :b${i}_from AND t.TIME_STAMP <= :b${i}_to THEN ${i}`
-    );
-  }
-  const caseExpr = `CASE\n${caseLines.join("\n")}\n      ELSE NULL\n    END`;
+  const activityWc = activityWhereSql.trim();
+  const caseExpr = periodAlarmBucketCaseExpr(bucketCount, "t.TIME_STAMP");
+  const typeScopeUpper = YIELD_MONITOR_V3_TYPE_SCOPE.toUpperCase();
 
   return `
-SELECT
-  bucket_idx,
-  COUNT(*) AS TOTAL,
-  COUNT(DISTINCT TRIM(HOSTNAME)) AS TESTER_CNT,
-  COUNT(DISTINCT TRIM(PROBECARD)) AS CARD_CNT,
-  COUNT(DISTINCT CASE WHEN bin_v IS NOT NULL AND bin_v != 'goodbin' THEN bin_v END) AS BIN_CNT,
-  COUNT(DISTINCT CASE WHEN dut_v IS NOT NULL THEN dut_v END) AS DUT_CNT
-FROM (
+WITH bucketed AS (
   SELECT
-    t.HOSTNAME,
-    t.PROBECARD,
+    TRIM(t.HOSTNAME) AS hostname,
+    TRIM(t.PROBECARD) AS probe_card,
     ${BIN_EXPR} AS bin_v,
     ${DUT_EXPR} AS dut_v,
-    ${caseExpr} AS bucket_idx
+    ${caseExpr} AS bucket_idx,
+    CASE WHEN UPPER(TRIM(t."TYPE")) = '${typeScopeUpper}' THEN 1 ELSE 0 END AS is_alarm_row
   FROM YMWEB_YIELDMONITORTRIGGER t
-  ${wc}
-) sub
-WHERE bucket_idx IS NOT NULL
-GROUP BY bucket_idx
+  ${activityWc}
+)
+SELECT
+  b.bucket_idx,
+  SUM(b.is_alarm_row) AS TOTAL,
+  COUNT(DISTINCT CASE WHEN b.is_alarm_row = 1 THEN b.hostname END) AS TESTER_CNT,
+  COUNT(DISTINCT CASE WHEN b.is_alarm_row = 1 THEN b.probe_card END) AS CARD_CNT,
+  COUNT(DISTINCT CASE WHEN b.is_alarm_row = 1 AND b.bin_v IS NOT NULL AND b.bin_v != 'goodbin' THEN b.bin_v END) AS BIN_CNT,
+  COUNT(DISTINCT CASE WHEN b.is_alarm_row = 1 AND b.dut_v IS NOT NULL THEN b.dut_v END) AS DUT_CNT
+FROM bucketed b
+WHERE b.bucket_idx IS NOT NULL
+GROUP BY b.bucket_idx
+ORDER BY b.bucket_idx
+`.trim();
+}
+
+/** JB Start：每桶记录数 COUNT(*)，按 TESTEND 分桶（v3 PASSTYPE 范围，不含 RETESTBIN）。 */
+export function buildPeriodAlarmJbSlotTuplesSql(
+  jbWhereAndSql: string,
+  bucketCount: number
+): string {
+  const whereBlock = infcontrolLayerBinV3BaseWhereBlock(
+    "t2",
+    jbWhereAndSql.trim()
+  );
+  const caseExpr = periodAlarmBucketCaseExpr(bucketCount, "t2.TESTEND");
+
+  return `
+SELECT bucket_idx, activity_total
+FROM (
+  SELECT bucket_idx, COUNT(*) AS activity_total
+  FROM (
+    SELECT
+      ${caseExpr} AS bucket_idx
+    FROM INFCONTROL t1
+    INNER JOIN INFLAYERBINLIST t2 ON t1.KEYNUMBER = t2.KEYNUMBER
+    ${whereBlock}
+  ) bucketed
+  WHERE bucket_idx IS NOT NULL
+  GROUP BY bucket_idx
+) src
 ORDER BY bucket_idx
 `.trim();
 }
 
-export function periodAlarmTrendBinds(
+/** 各桶 delta_diff 触发次数 Top N tester（与主查询共用 activity 扫描 + 桶 bind）。 */
+export function buildPeriodAlarmTrendTopTestersSql(
+  activityWhereSql: string,
+  bucketCount: number,
+  topN = PERIOD_ALARM_TOP_TESTERS_LIMIT
+): string {
+  const activityWc = activityWhereSql.trim();
+  const caseExpr = periodAlarmBucketCaseExpr(bucketCount, "t.TIME_STAMP");
+  const typeScopeUpper = YIELD_MONITOR_V3_TYPE_SCOPE.toUpperCase();
+
+  return `
+WITH bucketed AS (
+  SELECT
+    TRIM(t.HOSTNAME) AS hostname,
+    ${caseExpr} AS bucket_idx,
+    CASE WHEN UPPER(TRIM(t."TYPE")) = '${typeScopeUpper}' THEN 1 ELSE 0 END AS is_alarm_row
+  FROM YMWEB_YIELDMONITORTRIGGER t
+  ${activityWc}
+)
+SELECT bucket_idx, hostname, cnt
+FROM (
+  SELECT bucket_idx, hostname, cnt,
+    ROW_NUMBER() OVER (PARTITION BY bucket_idx ORDER BY cnt DESC, hostname) AS rn
+  FROM (
+    SELECT bucket_idx, hostname, COUNT(*) AS cnt
+    FROM bucketed
+    WHERE is_alarm_row = 1
+      AND bucket_idx IS NOT NULL
+      AND hostname IS NOT NULL
+      AND LENGTH(hostname) > 0
+    GROUP BY bucket_idx, hostname
+  )
+)
+WHERE rn <= ${topN}
+ORDER BY bucket_idx, cnt DESC, hostname
+`.trim();
+}
+
+export function periodAlarmTrendJbSlotBinds(
   parsed: ParsePeriodAlarmTrendOk
 ): BindParameters {
-  const binds = { ...parsed.binds } as Record<string, unknown>;
+  const binds = { ...parsed.jbSlotBinds } as Record<string, unknown>;
   parsed.buckets.forEach((b, i) => {
     binds[`b${i}_from`] = b.start;
     binds[`b${i}_to`] = b.end;
   });
   return binds as BindParameters;
+}
+
+export function periodAlarmTrendMainBinds(
+  parsed: ParsePeriodAlarmTrendOk
+): BindParameters {
+  const binds = { ...parsed.activityBinds } as Record<string, unknown>;
+  parsed.buckets.forEach((b, i) => {
+    binds[`b${i}_from`] = b.start;
+    binds[`b${i}_to`] = b.end;
+  });
+  return binds as BindParameters;
+}
+
+export function periodAlarmTrendTopBinds(
+  parsed: ParsePeriodAlarmTrendOk
+): BindParameters {
+  return periodAlarmTrendMainBinds(parsed);
+}
+
+/** @deprecated 使用 periodAlarmTrendMainBinds / periodAlarmTrendTopBinds */
+export function periodAlarmTrendBinds(
+  parsed: ParsePeriodAlarmTrendOk
+): BindParameters {
+  return periodAlarmTrendMainBinds(parsed);
 }
 
 function assignBucketIndex(
@@ -389,9 +580,56 @@ function assignBucketIndex(
   return null;
 }
 
+function computeTesterAlarmRate(
+  numerator: number,
+  activityTotal: number
+): number | null {
+  if (activityTotal <= 0 || numerator <= 0) return null;
+  const rate = numerator / activityTotal;
+  // JB 历史覆盖不足或 TIME_STAMP 与 TESTEND 分桶错位时，比率可 >>1；UI 按百分比展示，>100% 视为无效
+  if (rate > 1) return null;
+  return rate;
+}
+
+export function topTestersFromAlarmRows(
+  rows: Array<YieldMonitorTriggerDummyRow & { PROBECARDTYPE?: string | null }>,
+  limit = PERIOD_ALARM_TOP_TESTERS_LIMIT
+): PeriodAlarmTopTester[] {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const hn = String(row.HOSTNAME ?? "").trim();
+    if (!hn) continue;
+    counts.set(hn, (counts.get(hn) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([hostname, count]) => ({ hostname, count }));
+}
+
+function countJbRowsInBucket(
+  jbRows: InfcontrolLayerBinDummyRow[],
+  bucket: PeriodAlarmBucket
+): number {
+  const from = bucket.start.getTime();
+  const to = bucket.end.getTime();
+  let count = 0;
+  for (const row of jbRows) {
+    const te = new Date(String(row.TESTEND)).getTime();
+    if (Number.isNaN(te) || te < from || te > to) continue;
+    count += 1;
+  }
+  return count;
+}
+
 function aggregateBucketMetrics(
-  rows: Array<YieldMonitorTriggerDummyRow & { PROBECARDTYPE?: string | null }>
-): Omit<PeriodAlarmTrendPoint, "label" | "timeStampFrom" | "timeStampTo"> {
+  rows: Array<YieldMonitorTriggerDummyRow & { PROBECARDTYPE?: string | null }>,
+  jbRows: InfcontrolLayerBinDummyRow[],
+  bucket: PeriodAlarmBucket
+): Omit<
+  PeriodAlarmTrendPoint,
+  "label" | "timeStampFrom" | "timeStampTo" | "topTesters"
+> {
   const testers = new Set<string>();
   const cards = new Set<string>();
   const bins = new Set<string>();
@@ -413,20 +651,28 @@ function aggregateBucketMetrics(
   testers.delete("");
   cards.delete("");
 
+  const total = rows.length;
+  const testerActivityTotal = countJbRowsInBucket(jbRows, bucket);
+
   return {
-    total: rows.length,
+    total,
     testerCount: testers.size,
     cardCount: cards.size,
     binCount: bins.size,
     dutCount: duts.size,
+    testerAlarmNumerator: total,
+    testerActivityTotal,
+    testerAlarmRate: computeTesterAlarmRate(total, testerActivityTotal),
   };
 }
 
 export function aggregatePeriodAlarmTrendDummy(
   applied: Record<string, unknown>,
-  buckets: PeriodAlarmBucket[]
+  buckets: PeriodAlarmBucket[],
+  jbApplied: Record<string, unknown>
 ): PeriodAlarmTrendPoint[] {
   const rows = filterYieldMonitorDummyRowsMatchingV3(applied);
+  const jbRows = filterInfcontrolLayerBinV3DummyRowsMatching(jbApplied);
   /**
    * 必须与 `filterYieldMonitorDummyRowsMatchingV3` 内部用的偏移同源（基于时间窗过滤前的行计算）。
    * 若改用已按时间窗过滤后的 `rows` 重新计算 maxTs，两次取值范围不同会得到不一致的偏移，
@@ -446,14 +692,72 @@ export function aggregatePeriodAlarmTrendDummy(
   }
 
   return buckets.map((bucket, i) => {
-    const metrics = aggregateBucketMetrics(grouped[i] ?? []);
+    const alarmRows = grouped[i] ?? [];
+    const metrics = aggregateBucketMetrics(alarmRows, jbRows, bucket);
     return {
       label: bucket.label,
       timeStampFrom: bucket.start.toISOString(),
       timeStampTo: bucket.end.toISOString(),
       ...metrics,
+      topTesters: topTestersFromAlarmRows(alarmRows),
     };
   });
+}
+
+export function mergePeriodAlarmJbSlotDenominator(
+  points: PeriodAlarmTrendPoint[],
+  jbSlotRows: Record<string, unknown>[]
+): PeriodAlarmTrendPoint[] {
+  const activityByBucket = new Map<number, number>();
+  for (const row of jbSlotRows) {
+    const idxRaw = row.BUCKET_IDX ?? row.bucket_idx;
+    const idx = idxRaw != null ? Number(idxRaw) : NaN;
+    if (!Number.isFinite(idx)) continue;
+    const totalRaw =
+      row.ACTIVITY_TOTAL ??
+      row.activity_total ??
+      row.ROW_CNT ??
+      row.row_cnt;
+    const total = totalRaw != null ? Number(totalRaw) : NaN;
+    if (!Number.isFinite(total) || total < 0) continue;
+    activityByBucket.set(idx, total);
+  }
+
+  return points.map((p, i) => {
+    const activity = activityByBucket.get(i) ?? 0;
+    const num = p.testerAlarmNumerator;
+    return {
+      ...p,
+      testerActivityTotal: activity,
+      testerAlarmRate: computeTesterAlarmRate(num, activity),
+    };
+  });
+}
+
+export function attachPeriodAlarmTopTesters(
+  points: PeriodAlarmTrendPoint[],
+  topRows: Record<string, unknown>[]
+): PeriodAlarmTrendPoint[] {
+  const byBucket = new Map<number, PeriodAlarmTopTester[]>();
+  for (const row of topRows) {
+    const idxRaw = row.BUCKET_IDX ?? row.bucket_idx;
+    const idx = idxRaw != null ? Number(idxRaw) : NaN;
+    if (!Number.isFinite(idx)) continue;
+    const hostnameRaw = row.HOSTNAME ?? row.hostname;
+    const hostname =
+      hostnameRaw == null ? "" : String(hostnameRaw).trim();
+    const cntRaw = row.CNT ?? row.cnt;
+    const count = cntRaw != null ? Number(cntRaw) : NaN;
+    if (!hostname || !Number.isFinite(count)) continue;
+    const list = byBucket.get(idx) ?? [];
+    list.push({ hostname, count });
+    byBucket.set(idx, list);
+  }
+
+  return points.map((p, i) => ({
+    ...p,
+    topTesters: byBucket.get(i) ?? [],
+  }));
 }
 
 export function mapPeriodAlarmTrendRows(
@@ -483,9 +787,13 @@ export function mapPeriodAlarmTrendRows(
       cardCount: num("CARD_CNT"),
       binCount: num("BIN_CNT"),
       dutCount: num("DUT_CNT"),
+      testerAlarmNumerator: num("TOTAL"),
+      testerActivityTotal: 0,
+      testerAlarmRate: null,
+      topTesters: [],
     };
   });
 }
 
 export const PERIOD_ALARM_TREND_DOCUMENTATION =
-  "按查询 TIME_STAMP 时间窗（未传则近 1 UTC 年）切分周/月 x 轴桶，单次 Oracle 扫描返回各桶触发总量与 COUNT(DISTINCT) 种类数（Tester / Probe Card / Bin excluding goodbin / DUT）。";
+  "按查询 TIME_STAMP 时间窗（未传则近 1 UTC 年）切分周/月 x 轴桶，返回各桶触发总量与 COUNT(DISTINCT) 种类数（Tester / Probe Card / Bin excluding goodbin / DUT）、Tester 报警频率（分子 YM delta_diff 次数 ÷ 分母同期同筛选 JB Start 记录总数，v3 PASSTYPE 不含 RETESTBIN）、以及各桶触发 Top 5 tester。";

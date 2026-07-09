@@ -2,8 +2,16 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import {
   aggregatePeriodAlarmTrendDummy,
+  attachPeriodAlarmTopTesters,
+  buildPeriodAlarmJbSlotTuplesSql,
   buildPeriodAlarmTrendSql,
+  buildPeriodAlarmTrendTopTestersSql,
+  mapPeriodAlarmTrendRows,
+  mergePeriodAlarmJbSlotDenominator,
   parsePeriodAlarmTrendQuery,
+  periodAlarmTrendJbSlotBinds,
+  periodAlarmTrendMainBinds,
+  periodAlarmTrendTopBinds,
   periodBucketsInRange,
   recentPeriodBuckets,
   resolvePeriodAlarmTimeRange,
@@ -76,6 +84,7 @@ describe("yieldMonitorPeriodAlarmTrend", () => {
       assert.equal(r.buckets.length, 3);
       assert.equal(r.buckets[0]!.label, "2026-04");
       assert.equal(r.buckets[2]!.label, "2026-06");
+      assert.ok(r.jbSlotWhereAndSql.includes("t2.TESTEND"));
     }
   });
 
@@ -84,26 +93,79 @@ describe("yieldMonitorPeriodAlarmTrend", () => {
     assert.equal(r.ok, false);
   });
 
-  test("buildPeriodAlarmTrendSql 含 goodbin 排除与 4 桶 CASE", () => {
+  test("buildPeriodAlarmTrendSql 含 goodbin 排除、主查询不含 YM 分母", () => {
     const sql = buildPeriodAlarmTrendSql("WHERE 1=1", 4);
-    assert.ok(sql.includes("bin_v IS NOT NULL AND bin_v != 'goodbin'"));
-    assert.ok(sql.includes("dut_v IS NOT NULL"));
+    assert.ok(sql.includes("WITH bucketed AS"));
+    assert.ok(sql.includes("b.bin_v != 'goodbin'"));
+    assert.ok(!sql.includes("TESTER_ACTIVITY_TOTAL"));
     assert.ok(sql.includes(":b0_from"));
     assert.ok(sql.includes(":b3_to"));
-    assert.ok(sql.includes("COUNT(DISTINCT TRIM(HOSTNAME))"));
+    assert.ok(sql.includes("COUNT(DISTINCT CASE WHEN b.is_alarm_row = 1 THEN b.hostname END"));
+  });
+
+  test("buildPeriodAlarmJbSlotTuplesSql 含 INFCONTROL、v3 PASSTYPE 与 TESTEND 分桶", () => {
+    const sql = buildPeriodAlarmJbSlotTuplesSql("t1.DEVICE IS NOT NULL", 4);
+    assert.ok(sql.includes("INFCONTROL t1"));
+    assert.ok(sql.includes("'TEST'"));
+    assert.ok(sql.includes("'INTERRUPT'"));
+    assert.ok(sql.includes("'TEST ISR'"));
+    assert.ok(sql.includes("'TEST INTERRUPT'"));
+    assert.ok(sql.includes("ABANDONED"));
+    assert.ok(sql.includes("t2.TESTEND"));
+    assert.ok(sql.includes("COUNT(*) AS activity_total"));
+    assert.ok(sql.includes("GROUP BY bucket_idx"));
+  });
+
+  test("periodAlarmTrendSql bind parity", () => {
+    const parsed = parsePeriodAlarmTrendQuery({
+      period: "month",
+      now: "2026-07-09T04:46:20.977Z",
+    });
+    assert.equal(parsed.ok, true);
+    if (!parsed.ok) return;
+    const mainSql = buildPeriodAlarmTrendSql(
+      parsed.activityWhereSql,
+      parsed.buckets.length
+    );
+    const topSql = buildPeriodAlarmTrendTopTestersSql(
+      parsed.activityWhereSql,
+      parsed.buckets.length
+    );
+    const jbSlotSql = buildPeriodAlarmJbSlotTuplesSql(
+      parsed.jbSlotWhereAndSql,
+      parsed.buckets.length
+    );
+    const mainBinds = periodAlarmTrendMainBinds(parsed);
+    const topBinds = periodAlarmTrendTopBinds(parsed);
+    const jbBinds = periodAlarmTrendJbSlotBinds(parsed);
+    const assertBinds = (sql: string, keys: Set<string>, label: string) => {
+      for (const m of sql.matchAll(/:([a-zA-Z_][a-zA-Z0-9_$]*)/g)) {
+        assert.ok(keys.has(m[1]!), `${label} missing bind :${m[1]}`);
+      }
+    };
+    assertBinds(mainSql, new Set(Object.keys(mainBinds as object)), "main");
+    assertBinds(topSql, new Set(Object.keys(topBinds as object)), "top");
+    assertBinds(jbSlotSql, new Set(Object.keys(jbBinds as object)), "jb slot");
   });
 
   test("aggregatePeriodAlarmTrendDummy binCount 不含 goodbin", () => {
     const buckets = recentPeriodBuckets("week", 1, NOW);
-    const applied = {
+    const parsed = parsePeriodAlarmTrendQuery({
+      period: "week",
       timeStampFrom: buckets[0]!.start.toISOString(),
       timeStampTo: buckets[0]!.end.toISOString(),
-      typeScope: "delta_diff",
-    };
-    const points = aggregatePeriodAlarmTrendDummy(applied, buckets);
+      now: NOW.toISOString(),
+    });
+    assert.equal(parsed.ok, true);
+    if (!parsed.ok) return;
+    const points = aggregatePeriodAlarmTrendDummy(
+      parsed.applied,
+      buckets,
+      parsed.jbSlotApplied
+    );
     assert.equal(points.length, 1);
     const p = points[0]!;
-    const rows = filterYieldMonitorDummyRowsMatchingV3(applied);
+    const rows = filterYieldMonitorDummyRowsMatchingV3(parsed.applied);
     const withGood = new Set<string>();
     const withoutGood = new Set<string>();
     for (const row of rows) {
@@ -116,5 +178,138 @@ describe("yieldMonitorPeriodAlarmTrend", () => {
       assert.equal(p.binCount, withoutGood.size);
       assert.ok(p.binCount < withGood.size);
     }
+  });
+
+  test("aggregatePeriodAlarmTrendDummy 含 JB distinct slot 报警频率", () => {
+    const buckets = recentPeriodBuckets("week", 1, NOW);
+    const parsed = parsePeriodAlarmTrendQuery({
+      period: "week",
+      timeStampFrom: buckets[0]!.start.toISOString(),
+      timeStampTo: buckets[0]!.end.toISOString(),
+      now: NOW.toISOString(),
+    });
+    assert.equal(parsed.ok, true);
+    if (!parsed.ok) return;
+    const points = aggregatePeriodAlarmTrendDummy(
+      parsed.applied,
+      buckets,
+      parsed.jbSlotApplied
+    );
+    assert.equal(points.length, 1);
+    const p = points[0]!;
+    assert.equal(p.testerAlarmNumerator, p.total);
+    if (p.total > 0) {
+      assert.ok(p.testerActivityTotal > 0, "JB slot denominator");
+      assert.ok(p.testerAlarmRate != null);
+      assert.ok(p.testerAlarmRate! > 0);
+      assert.ok(p.testerAlarmRate! < 1, "JB slot 分母应大于 YM 报警次数");
+    }
+  });
+
+  test("buildPeriodAlarmTrendTopTestersSql 含 ROW_NUMBER Top 5", () => {
+    const sql = buildPeriodAlarmTrendTopTestersSql("WHERE 1=1", 4, 5);
+    assert.ok(sql.includes("WITH bucketed AS"));
+    assert.ok(sql.includes("is_alarm_row = 1"));
+    assert.ok(sql.includes("ROW_NUMBER()"));
+    assert.ok(sql.includes("WHERE rn <= 5"));
+    assert.ok(sql.includes(":b0_from"));
+  });
+
+  test("week/month SQL bind parity 与 Dummy 报警频率", () => {
+    const now = "2026-07-09T04:46:20.977Z";
+    for (const period of ["week", "month"] as const) {
+      const parsed = parsePeriodAlarmTrendQuery({ period, now });
+      assert.equal(parsed.ok, true);
+      if (!parsed.ok) return;
+
+      const points = aggregatePeriodAlarmTrendDummy(
+        parsed.applied,
+        parsed.buckets,
+        parsed.jbSlotApplied
+      );
+      assert.equal(points.length, parsed.buckets.length);
+      const sample = points.find((p) => p.total > 0);
+      if (sample) {
+        assert.ok(sample.topTesters.length > 0, `${period} top testers`);
+        if (sample.testerActivityTotal > 0) {
+          assert.ok(sample.testerAlarmRate != null, `${period} alarm rate`);
+          assert.ok(
+            sample.testerAlarmRate! < 1,
+            `${period} JB slot rate should be below 100% when denominator matches`
+          );
+        }
+      }
+    }
+  });
+
+  test("mergePeriodAlarmJbSlotDenominator 统计桶内全部 JB 行数", () => {
+    const buckets = recentPeriodBuckets("week", 2, NOW);
+    const points = mapPeriodAlarmTrendRows(buckets, [
+      { BUCKET_IDX: 0, TOTAL: 10, TESTER_CNT: 2, CARD_CNT: 3, BIN_CNT: 1, DUT_CNT: 1 },
+      { BUCKET_IDX: 1, TOTAL: 5, TESTER_CNT: 1, CARD_CNT: 1, BIN_CNT: 1, DUT_CNT: 1 },
+    ]);
+    const merged = mergePeriodAlarmJbSlotDenominator(points, [
+      { BUCKET_IDX: 0, ACTIVITY_TOTAL: 1500 },
+      { BUCKET_IDX: 1, ACTIVITY_TOTAL: 800 },
+    ]);
+    assert.equal(merged[0]!.testerActivityTotal, 1500);
+    assert.equal(merged[0]!.testerAlarmRate, 10 / 1500);
+    assert.equal(merged[1]!.testerActivityTotal, 800);
+    assert.equal(merged[1]!.testerAlarmRate, 5 / 800);
+  });
+
+  test("mergePeriodAlarmJbSlotDenominator JB 覆盖不足时报警频率为 null", () => {
+    const buckets = recentPeriodBuckets("week", 1, NOW);
+    const points = mapPeriodAlarmTrendRows(buckets, [
+      { BUCKET_IDX: 0, TOTAL: 428, TESTER_CNT: 2, CARD_CNT: 3, BIN_CNT: 1, DUT_CNT: 1 },
+    ]);
+    const merged = mergePeriodAlarmJbSlotDenominator(points, [
+      { BUCKET_IDX: 0, ACTIVITY_TOTAL: 1 },
+    ]);
+    assert.equal(merged[0]!.testerActivityTotal, 1);
+    assert.equal(merged[0]!.testerAlarmRate, null);
+  });
+
+  test("attachPeriodAlarmTopTesters 合并 Oracle Top 行", () => {
+    const buckets = recentPeriodBuckets("week", 2, NOW);
+    const points = mapPeriodAlarmTrendRows(buckets, [
+      { BUCKET_IDX: 0, TOTAL: 10, TESTER_CNT: 2, CARD_CNT: 3, BIN_CNT: 1, DUT_CNT: 1 },
+      { BUCKET_IDX: 1, TOTAL: 5, TESTER_CNT: 1, CARD_CNT: 1, BIN_CNT: 1, DUT_CNT: 1 },
+    ]);
+    const merged = attachPeriodAlarmTopTesters(points, [
+      { BUCKET_IDX: 0, HOSTNAME: "t-a", CNT: 7 },
+      { BUCKET_IDX: 0, HOSTNAME: "t-b", CNT: 3 },
+      { BUCKET_IDX: 1, HOSTNAME: "t-c", CNT: 5 },
+    ]);
+    assert.equal(merged[0]!.topTesters.length, 2);
+    assert.equal(merged[0]!.topTesters[0]!.hostname, "t-a");
+    assert.equal(merged[0]!.topTesters[0]!.count, 7);
+    assert.equal(merged[1]!.topTesters[0]!.hostname, "t-c");
+  });
+
+  test("aggregatePeriodAlarmTrendDummy 含 topTesters", () => {
+    const buckets = recentPeriodBuckets("week", 1, NOW);
+    const parsed = parsePeriodAlarmTrendQuery({
+      period: "week",
+      timeStampFrom: buckets[0]!.start.toISOString(),
+      timeStampTo: buckets[0]!.end.toISOString(),
+      now: NOW.toISOString(),
+    });
+    assert.equal(parsed.ok, true);
+    if (!parsed.ok) return;
+    const points = aggregatePeriodAlarmTrendDummy(
+      parsed.applied,
+      buckets,
+      parsed.jbSlotApplied
+    );
+    assert.equal(points.length, 1);
+    const p = points[0]!;
+    assert.ok(Array.isArray(p.topTesters));
+    assert.ok(p.topTesters.length <= 5);
+    if (p.topTesters.length >= 2) {
+      assert.ok(p.topTesters[0]!.count >= p.topTesters[1]!.count);
+    }
+    const sumTop = p.topTesters.reduce((s, t) => s + t.count, 0);
+    assert.ok(sumTop <= p.total);
   });
 });
