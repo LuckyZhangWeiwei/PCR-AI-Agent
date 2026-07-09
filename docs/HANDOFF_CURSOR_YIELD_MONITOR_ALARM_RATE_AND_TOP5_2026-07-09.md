@@ -12,7 +12,7 @@
 | 项 | 状态 | 说明 |
 |---|---|---|
 | **Tester 报警频率 Tab** | ✅ 已合入 | 与「Tester 数」同 section 内 chip 切换；折线图 y 轴为百分比 |
-| **报警频率口径（方案一）** | ✅ | 分子 = 桶内 `delta_diff` 触发次数（`total`）；分母 = 同期同筛选下、**该桶内出过报警的 tester** 在 YM **全 TYPE** 记录总数 |
+| **报警频率口径** | ✅ 见新文档 | 分子 = 桶内 `delta_diff` 次数；**最终分母** = 该桶 **全部 JB Start distinct (LOT,SLOT)**（v3 PASSTYPE，不含 RETESTBIN）→ [`HANDOFF_CURSOR_YIELD_MONITOR_JB_DENOMINATOR_2026-07-09.md`](HANDOFF_CURSOR_YIELD_MONITOR_JB_DENOMINATOR_2026-07-09.md) |
 | **Top 5 Tester hover** | ✅ 前端 | 总和柱图 / Tester 数柱图 / 报警频率折线图 tooltip 均展示 Top 5（数据来自 API `topTesters`） |
 | **周 \| 月联动** | ✅ | 总和、Tester 数、报警频率、Top5 文案前缀随 `period=week\|month` 切换 |
 | **Oracle `ORA-01036`（month）** | ✅ 已修 | 主 SQL 改为单次 `bucketed` CTE；主/Top 查询分 bind |
@@ -32,7 +32,7 @@ testerAlarmRate = testerAlarmNumerator / testerActivityTotal
 | 字段 | 含义 |
 |---|---|
 | `testerAlarmNumerator` | 桶内 `delta_diff` 报警行数（= `total`） |
-| `testerActivityTotal` | 桶内「曾在该桶出过 `delta_diff` 的 hostname」在 YM **全 TYPE** 上的行数之和 |
+| `testerActivityTotal` | **（2026-07-09 后续 commit 已改）** 该桶 **全部** JB Start distinct (LOT,SLOT)；详见 [`HANDOFF_CURSOR_YIELD_MONITOR_JB_DENOMINATOR_2026-07-09.md`](HANDOFF_CURSOR_YIELD_MONITOR_JB_DENOMINATOR_2026-07-09.md) |
 | `testerAlarmRate` | 比率；分母为 0 时 `null` |
 
 **筛选联动：** 与周期报警区块共用 `periodAlarmQueryParams`（device / lot / hostname / 时间窗等），**不**再限 `TYPE=delta_diff` 于分母扫描（见 `parseYieldMonitorTriggerActivityQuery`）。
@@ -49,9 +49,9 @@ testerAlarmRate = testerAlarmNumerator / testerActivityTotal
 |---|---|
 | `src/lib/yieldMonitorTriggerFilters.ts` | 新增 `parseYieldMonitorTriggerActivityQuery`（联动筛选，**不**固定 `TYPE=delta_diff`） |
 | `src/lib/yieldMonitorTriggerDummy.ts` | 新增 `filterYieldMonitorDummyRowsMatchingActivity`（Dummy 分母路径） |
-| `src/lib/yieldMonitorPeriodAlarmTrend.ts` | 扩展响应字段；`bucketed` CTE 主 SQL；`EXISTS` 算分母；Top5 子查询改走 activity 扫描 + `is_alarm_row` |
-| `src/routes/yieldMonitorRoutes.ts` | 主查询 `periodAlarmTrendMainBinds`；Top5 `periodAlarmTrendTopBinds`（现同 main）；`normalizeDbRowKeysUpper` |
-| `test/yieldMonitorPeriodAlarmTrend.test.ts` | 13 项单测（周/月 bind parity、Dummy 频率、Top5 attach） |
+| `src/lib/yieldMonitorPeriodAlarmTrend.ts` | 扩展响应字段；`bucketed` CTE 主 SQL；Top5 子查询；**JB 分母见新 handoff** |
+| `src/routes/yieldMonitorRoutes.ts` | 主查询 `periodAlarmTrendMainBinds`；Top5；双库 JB slot 合并 |
+| `test/yieldMonitorPeriodAlarmTrend.test.ts` | **15** 项单测（含 JB 全量 slot 分母） |
 
 ### 2.1 响应形状（新增字段）
 
@@ -166,7 +166,7 @@ curl -s "$BASE?period=month&now=$NOW" | jq '.buckets[0] | {label,total,testerAct
 
 ```bash
 cd pcr-ai-api && npx tsx --test test/yieldMonitorPeriodAlarmTrend.test.ts
-# 期望 13/13 pass
+# 期望 15/15 pass
 ```
 
 ### 4.3 浏览器
@@ -205,6 +205,7 @@ cd pcr-ai-report && npm ci && npm run build && npm run pack:dist
 | 文档 | 关系 |
 |---|---|
 | [`HANDOFF_CURSOR_YIELD_MONITOR_PERIOD_ALARM_TREND_2026-07-07.md`](HANDOFF_CURSOR_YIELD_MONITOR_PERIOD_ALARM_TREND_2026-07-07.md) | 基础 period-alarm-trend |
+| [`HANDOFF_CURSOR_YIELD_MONITOR_JB_DENOMINATOR_2026-07-09.md`](HANDOFF_CURSOR_YIELD_MONITOR_JB_DENOMINATOR_2026-07-09.md) | **JB 全量 slot 分母（最终口径）** |
 | [`HANDOFF_AGENT_ISSUES_2026-06-27_ROUND2.md`](HANDOFF_AGENT_ISSUES_2026-06-27_ROUND2.md) | Oracle `TRIM/空串` 通用陷阱 |
 
 ---

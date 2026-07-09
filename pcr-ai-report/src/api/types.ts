@@ -78,6 +78,7 @@ export type PeriodAlarmTrendBucket = {
   binCount: number;
   dutCount: number;
   testerAlarmNumerator: number;
+  /** 同期同筛选、该桶内 JB Start distinct slot 数（分母；v3 PASSTYPE，不含 RETESTBIN） */
   testerActivityTotal: number;
   testerAlarmRate: number | null;
   topTesters: PeriodAlarmTopTester[];

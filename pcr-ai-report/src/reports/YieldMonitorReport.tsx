@@ -256,7 +256,6 @@ function resolveTesterAlarmRate(
   const num = numerator ?? total ?? 0;
   const denom = activityTotal ?? 0;
   if (denom > 0) return num / denom;
-  if (num > 0) return 1;
   return null;
 }
 
@@ -1932,7 +1931,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
                     ) : (
                       <>
                         <p className="muted small" style={{ margin: "0 0 8px" }}>
-                          {periodAlarmTesterRateTrendLabel}：delta_diff 报警次数 ÷ 同期同筛选下该桶内出过报警的 tester 在 YM 全 TYPE 记录总数
+                          {periodAlarmTesterRateTrendLabel}：delta_diff 报警次数 ÷ 该桶同期同筛选下 JB Start 全部 distinct slot 数（含 TEST / INTERRUPT / TEST ISR / TEST INTERRUPT，不含 Auto retest）
                         </p>
                         <DarkChart
                           key={`alarm-tester-rate-${period}`}

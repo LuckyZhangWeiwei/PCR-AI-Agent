@@ -43,16 +43,19 @@ import {
 } from "../lib/apiV3ListSql.js";
 import { clampLimitFromQuery } from "../lib/sqlIdent.js";
 import { parseAggsParam } from "../lib/parseAggsParam.js";
-import { withProbeWebConnection } from "../oracle.js";
+import { withConnection, withProbeWebConnection } from "../oracle.js";
 import { addDutNumberToYieldMonitorV3Row } from "../lib/yieldTriggerLabelDut.js";
 import {
   PERIOD_ALARM_TREND_DOCUMENTATION,
   aggregatePeriodAlarmTrendDummy,
   attachPeriodAlarmTopTesters,
+  buildPeriodAlarmJbSlotTuplesSql,
   buildPeriodAlarmTrendSql,
   buildPeriodAlarmTrendTopTestersSql,
   mapPeriodAlarmTrendRows,
+  mergePeriodAlarmJbSlotDenominator,
   parsePeriodAlarmTrendQuery,
+  periodAlarmTrendJbSlotBinds,
   periodAlarmTrendMainBinds,
   periodAlarmTrendTopBinds,
 } from "../lib/yieldMonitorPeriodAlarmTrend.js";
@@ -569,7 +572,11 @@ yieldMonitorRouter.get("/yield-monitor-triggers/v3/period-alarm-trend", async (r
   }
 
   if (yieldMonitorTriggersUseDummy()) {
-    const buckets = aggregatePeriodAlarmTrendDummy(parsed.applied, parsed.buckets);
+    const buckets = aggregatePeriodAlarmTrendDummy(
+      parsed.applied,
+      parsed.buckets,
+      parsed.jbSlotApplied
+    );
     return res.json({
       meta: {
         apiVersion: "3",
@@ -591,9 +598,13 @@ yieldMonitorRouter.get("/yield-monitor-triggers/v3/period-alarm-trend", async (r
     parsed.activityWhereSql,
     parsed.buckets.length
   );
+  const jbSlotSql = buildPeriodAlarmJbSlotTuplesSql(
+    parsed.jbSlotWhereAndSql,
+    parsed.buckets.length
+  );
   const mainBinds = periodAlarmTrendMainBinds(parsed);
   const topBinds = periodAlarmTrendTopBinds(parsed);
-
+  const jbSlotBinds = periodAlarmTrendJbSlotBinds(parsed);
   try {
     const { rows, topRows } = await withProbeWebConnection(async (conn) => {
       const result = await conn.execute(sql, mainBinds, {
@@ -611,9 +622,20 @@ yieldMonitorRouter.get("/yield-monitor-triggers/v3/period-alarm-trend", async (r
         ),
       };
     });
-    const buckets = attachPeriodAlarmTopTesters(
-      mapPeriodAlarmTrendRows(parsed.buckets, rows),
-      topRows
+    const jbSlotRows = await withConnection(async (conn) => {
+      const jbResult = await conn.execute(jbSlotSql, jbSlotBinds, {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+      });
+      return (jbResult.rows || []).map((row) =>
+        normalizeDbRowKeysUpper(row as Record<string, unknown>)
+      );
+    });
+    const buckets = mergePeriodAlarmJbSlotDenominator(
+      attachPeriodAlarmTopTesters(
+        mapPeriodAlarmTrendRows(parsed.buckets, rows),
+        topRows
+      ),
+      jbSlotRows
     );
     return res.json({
       meta: {
