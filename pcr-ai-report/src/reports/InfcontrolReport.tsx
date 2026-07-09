@@ -221,6 +221,13 @@ const TREE_DRILL_DIMS = new Set(["mask", "device", "lot", "probeCardType", "card
 
 const JB_DRILL_KEY_SEP = "|";
 
+/**
+ * ProbeCard Type / Device / 漏斗（lot·cardId·passId 层级）三张横向排名图固定左边距，使柱子左对齐。
+ * `containLabel: true`（默认）按各图类目文字的实际渲染宽度动态留白，短类目和长类目算出的左边距不同，
+ * 导致三张图的柱子起点不对齐；改成固定 left + containLabel:false 消除这个差异（与 Yield Monitor「图表矩阵」同一修复）。
+ */
+const JB_RANK_CHART_GRID = { left: 110, right: 44, top: 8, bottom: 8, containLabel: false };
+
 function rowMatchesJbDrillParent(
   row: InfcontrolLayerBinV3Row,
   parentDimKey: string,
@@ -685,6 +692,7 @@ function FunnelDrillSection({
       displayItems: sorted,
       chartOption: {
         ...horizontalBarChartBase(theme),
+        grid: JB_RANK_CHART_GRID,
         tooltip: {
           trigger: "axis",
           backgroundColor: "var(--surface-1)",
@@ -1288,6 +1296,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     const { base: COL, bright: COL_B, dim: COL_D } = selectionTierColors(theme, "gold");
     return {
       ...horizontalBarChartBase(theme),
+      grid: JB_RANK_CHART_GRID,
       xAxis: {
         type: "value",
         axisLabel: { color: chartPalette.axisColor },
@@ -1334,6 +1343,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
     const { base: COL, bright: COL_B, dim: COL_D } = selectionTierColors(theme, "blue-light");
     return {
       ...horizontalBarChartBase(theme),
+      grid: JB_RANK_CHART_GRID,
       xAxis: {
         type: "value",
         axisLabel: { color: chartPalette.axisColor },
