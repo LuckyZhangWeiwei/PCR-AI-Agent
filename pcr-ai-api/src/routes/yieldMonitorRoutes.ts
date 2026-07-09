@@ -49,9 +49,13 @@ import {
   PERIOD_ALARM_TREND_DOCUMENTATION,
   aggregatePeriodAlarmTrendDummy,
   attachPeriodAlarmTopDevices,
+  attachPeriodAlarmTopProbeCards,
+  attachPeriodAlarmTopTesters,
   buildPeriodAlarmJbSlotTuplesSql,
   buildPeriodAlarmTrendSql,
   buildPeriodAlarmTrendTopDevicesSql,
+  buildPeriodAlarmTrendTopProbeCardsSql,
+  buildPeriodAlarmTrendTopTestersSql,
   mapPeriodAlarmTrendRows,
   mergePeriodAlarmJbSlotDenominator,
   parsePeriodAlarmTrendQuery,
@@ -594,7 +598,15 @@ yieldMonitorRouter.get("/yield-monitor-triggers/v3/period-alarm-trend", async (r
     parsed.activityWhereSql,
     parsed.buckets.length
   );
+  const topTestersSql = buildPeriodAlarmTrendTopTestersSql(
+    parsed.activityWhereSql,
+    parsed.buckets.length
+  );
   const topDevicesSql = buildPeriodAlarmTrendTopDevicesSql(
+    parsed.activityWhereSql,
+    parsed.buckets.length
+  );
+  const topProbeCardsSql = buildPeriodAlarmTrendTopProbeCardsSql(
     parsed.activityWhereSql,
     parsed.buckets.length
   );
@@ -606,22 +618,36 @@ yieldMonitorRouter.get("/yield-monitor-triggers/v3/period-alarm-trend", async (r
   const topBinds = periodAlarmTrendTopBinds(parsed);
   const jbSlotBinds = periodAlarmTrendJbSlotBinds(parsed);
   try {
-    const { rows, topRows } = await withProbeWebConnection(async (conn) => {
-      const result = await conn.execute(sql, mainBinds, {
-        outFormat: oracledb.OUT_FORMAT_OBJECT,
-      });
-      const topResult = await conn.execute(topDevicesSql, topBinds, {
-        outFormat: oracledb.OUT_FORMAT_OBJECT,
-      });
-      return {
-        rows: (result.rows || []).map((row) =>
-          normalizeDbRowKeysUpper(row as Record<string, unknown>)
-        ),
-        topRows: (topResult.rows || []).map((row) =>
-          normalizeDbRowKeysUpper(row as Record<string, unknown>)
-        ),
-      };
-    });
+    const { rows, topTesterRows, topDeviceRows, topProbeCardRows } = await withProbeWebConnection(
+      async (conn) => {
+        const result = await conn.execute(sql, mainBinds, {
+          outFormat: oracledb.OUT_FORMAT_OBJECT,
+        });
+        const topTesterResult = await conn.execute(topTestersSql, topBinds, {
+          outFormat: oracledb.OUT_FORMAT_OBJECT,
+        });
+        const topDeviceResult = await conn.execute(topDevicesSql, topBinds, {
+          outFormat: oracledb.OUT_FORMAT_OBJECT,
+        });
+        const topProbeCardResult = await conn.execute(topProbeCardsSql, topBinds, {
+          outFormat: oracledb.OUT_FORMAT_OBJECT,
+        });
+        return {
+          rows: (result.rows || []).map((row) =>
+            normalizeDbRowKeysUpper(row as Record<string, unknown>)
+          ),
+          topTesterRows: (topTesterResult.rows || []).map((row) =>
+            normalizeDbRowKeysUpper(row as Record<string, unknown>)
+          ),
+          topDeviceRows: (topDeviceResult.rows || []).map((row) =>
+            normalizeDbRowKeysUpper(row as Record<string, unknown>)
+          ),
+          topProbeCardRows: (topProbeCardResult.rows || []).map((row) =>
+            normalizeDbRowKeysUpper(row as Record<string, unknown>)
+          ),
+        };
+      }
+    );
     const jbSlotRows = await withConnection(async (conn) => {
       const jbResult = await conn.execute(jbSlotSql, jbSlotBinds, {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
@@ -631,9 +657,15 @@ yieldMonitorRouter.get("/yield-monitor-triggers/v3/period-alarm-trend", async (r
       );
     });
     const buckets = mergePeriodAlarmJbSlotDenominator(
-      attachPeriodAlarmTopDevices(
-        mapPeriodAlarmTrendRows(parsed.buckets, rows),
-        topRows
+      attachPeriodAlarmTopProbeCards(
+        attachPeriodAlarmTopDevices(
+          attachPeriodAlarmTopTesters(
+            mapPeriodAlarmTrendRows(parsed.buckets, rows),
+            topTesterRows
+          ),
+          topDeviceRows
+        ),
+        topProbeCardRows
       ),
       jbSlotRows
     );

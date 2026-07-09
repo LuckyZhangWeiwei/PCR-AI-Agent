@@ -28,8 +28,18 @@ export type PeriodAlarmBucket = {
   label: string;
 };
 
+export type PeriodAlarmTopTester = {
+  hostname: string;
+  count: number;
+};
+
 export type PeriodAlarmTopDevice = {
   device: string;
+  count: number;
+};
+
+export type PeriodAlarmTopProbeCard = {
+  probeCard: string;
   count: number;
 };
 
@@ -50,11 +60,15 @@ export type PeriodAlarmTrendPoint = {
   testerActivityTotal: number;
   /** testerAlarmNumerator / testerActivityTotal；分母为 0 时为 null */
   testerAlarmRate: number | null;
+  /** 该桶触发次数 Top N 的 tester（按 count 降序） */
+  topTesters: PeriodAlarmTopTester[];
   /** 该桶触发次数 Top N 的 device（按 count 降序） */
   topDevices: PeriodAlarmTopDevice[];
+  /** 该桶触发次数 Top N 的 probe card（按 count 降序） */
+  topProbeCards: PeriodAlarmTopProbeCard[];
 };
 
-export const PERIOD_ALARM_TOP_DEVICES_LIMIT = 5;
+export const PERIOD_ALARM_TOP_N_LIMIT = 5;
 
 export const PERIOD_ALARM_TREND_BUCKET_COUNT = 4;
 export const PERIOD_ALARM_MAX_WEEK_BUCKETS = 54;
@@ -493,11 +507,13 @@ ORDER BY bucket_idx
 `.trim();
 }
 
-/** 各桶 delta_diff 触发次数 Top N device（与主查询共用 activity 扫描 + 桶 bind）。 */
-export function buildPeriodAlarmTrendTopDevicesSql(
+/** 各桶 delta_diff 触发次数 Top N（按某一列分组，与主查询共用 activity 扫描 + 桶 bind）。 */
+function buildPeriodAlarmTrendTopColumnSql(
+  oracleColumn: "HOSTNAME" | "DEVICE" | "PROBECARD",
+  alias: string,
   activityWhereSql: string,
   bucketCount: number,
-  topN = PERIOD_ALARM_TOP_DEVICES_LIMIT
+  topN: number
 ): string {
   const activityWc = activityWhereSql.trim();
   const caseExpr = periodAlarmBucketCaseExpr(bucketCount, "t.TIME_STAMP");
@@ -506,29 +522,74 @@ export function buildPeriodAlarmTrendTopDevicesSql(
   return `
 WITH bucketed AS (
   SELECT
-    TRIM(t.DEVICE) AS device,
+    TRIM(t.${oracleColumn}) AS ${alias},
     ${caseExpr} AS bucket_idx,
     CASE WHEN UPPER(TRIM(t."TYPE")) = '${typeScopeUpper}' THEN 1 ELSE 0 END AS is_alarm_row
   FROM YMWEB_YIELDMONITORTRIGGER t
   ${activityWc}
 )
-SELECT bucket_idx, device, cnt
+SELECT bucket_idx, ${alias}, cnt
 FROM (
-  SELECT bucket_idx, device, cnt,
-    ROW_NUMBER() OVER (PARTITION BY bucket_idx ORDER BY cnt DESC, device) AS rn
+  SELECT bucket_idx, ${alias}, cnt,
+    ROW_NUMBER() OVER (PARTITION BY bucket_idx ORDER BY cnt DESC, ${alias}) AS rn
   FROM (
-    SELECT bucket_idx, device, COUNT(*) AS cnt
+    SELECT bucket_idx, ${alias}, COUNT(*) AS cnt
     FROM bucketed
     WHERE is_alarm_row = 1
       AND bucket_idx IS NOT NULL
-      AND device IS NOT NULL
-      AND LENGTH(device) > 0
-    GROUP BY bucket_idx, device
+      AND ${alias} IS NOT NULL
+      AND LENGTH(${alias}) > 0
+    GROUP BY bucket_idx, ${alias}
   )
 )
 WHERE rn <= ${topN}
-ORDER BY bucket_idx, cnt DESC, device
+ORDER BY bucket_idx, cnt DESC, ${alias}
 `.trim();
+}
+
+/** 各桶 delta_diff 触发次数 Top N tester（与主查询共用 activity 扫描 + 桶 bind）。 */
+export function buildPeriodAlarmTrendTopTestersSql(
+  activityWhereSql: string,
+  bucketCount: number,
+  topN = PERIOD_ALARM_TOP_N_LIMIT
+): string {
+  return buildPeriodAlarmTrendTopColumnSql(
+    "HOSTNAME",
+    "hostname",
+    activityWhereSql,
+    bucketCount,
+    topN
+  );
+}
+
+/** 各桶 delta_diff 触发次数 Top N device（与主查询共用 activity 扫描 + 桶 bind）。 */
+export function buildPeriodAlarmTrendTopDevicesSql(
+  activityWhereSql: string,
+  bucketCount: number,
+  topN = PERIOD_ALARM_TOP_N_LIMIT
+): string {
+  return buildPeriodAlarmTrendTopColumnSql(
+    "DEVICE",
+    "device",
+    activityWhereSql,
+    bucketCount,
+    topN
+  );
+}
+
+/** 各桶 delta_diff 触发次数 Top N probe card（与主查询共用 activity 扫描 + 桶 bind）。 */
+export function buildPeriodAlarmTrendTopProbeCardsSql(
+  activityWhereSql: string,
+  bucketCount: number,
+  topN = PERIOD_ALARM_TOP_N_LIMIT
+): string {
+  return buildPeriodAlarmTrendTopColumnSql(
+    "PROBECARD",
+    "probe_card",
+    activityWhereSql,
+    bucketCount,
+    topN
+  );
 }
 
 export function periodAlarmTrendJbSlotBinds(
@@ -591,9 +652,25 @@ function computeTesterAlarmRate(
   return rate;
 }
 
+export function topTestersFromAlarmRows(
+  rows: Array<YieldMonitorTriggerDummyRow & { PROBECARDTYPE?: string | null }>,
+  limit = PERIOD_ALARM_TOP_N_LIMIT
+): PeriodAlarmTopTester[] {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const hn = String(row.HOSTNAME ?? "").trim();
+    if (!hn) continue;
+    counts.set(hn, (counts.get(hn) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([hostname, count]) => ({ hostname, count }));
+}
+
 export function topDevicesFromAlarmRows(
   rows: Array<YieldMonitorTriggerDummyRow & { PROBECARDTYPE?: string | null }>,
-  limit = PERIOD_ALARM_TOP_DEVICES_LIMIT
+  limit = PERIOD_ALARM_TOP_N_LIMIT
 ): PeriodAlarmTopDevice[] {
   const counts = new Map<string, number>();
   for (const row of rows) {
@@ -605,6 +682,22 @@ export function topDevicesFromAlarmRows(
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, limit)
     .map(([device, count]) => ({ device, count }));
+}
+
+export function topProbeCardsFromAlarmRows(
+  rows: Array<YieldMonitorTriggerDummyRow & { PROBECARDTYPE?: string | null }>,
+  limit = PERIOD_ALARM_TOP_N_LIMIT
+): PeriodAlarmTopProbeCard[] {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const pc = String(row.PROBECARD ?? "").trim();
+    if (!pc) continue;
+    counts.set(pc, (counts.get(pc) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([probeCard, count]) => ({ probeCard, count }));
 }
 
 function countJbRowsInBucket(
@@ -628,7 +721,7 @@ function aggregateBucketMetrics(
   bucket: PeriodAlarmBucket
 ): Omit<
   PeriodAlarmTrendPoint,
-  "label" | "timeStampFrom" | "timeStampTo" | "topDevices"
+  "label" | "timeStampFrom" | "timeStampTo" | "topTesters" | "topDevices" | "topProbeCards"
 > {
   const testers = new Set<string>();
   const cards = new Set<string>();
@@ -699,7 +792,9 @@ export function aggregatePeriodAlarmTrendDummy(
       timeStampFrom: bucket.start.toISOString(),
       timeStampTo: bucket.end.toISOString(),
       ...metrics,
+      topTesters: topTestersFromAlarmRows(alarmRows),
       topDevices: topDevicesFromAlarmRows(alarmRows),
+      topProbeCards: topProbeCardsFromAlarmRows(alarmRows),
     };
   });
 }
@@ -734,6 +829,32 @@ export function mergePeriodAlarmJbSlotDenominator(
   });
 }
 
+export function attachPeriodAlarmTopTesters(
+  points: PeriodAlarmTrendPoint[],
+  topRows: Record<string, unknown>[]
+): PeriodAlarmTrendPoint[] {
+  const byBucket = new Map<number, PeriodAlarmTopTester[]>();
+  for (const row of topRows) {
+    const idxRaw = row.BUCKET_IDX ?? row.bucket_idx;
+    const idx = idxRaw != null ? Number(idxRaw) : NaN;
+    if (!Number.isFinite(idx)) continue;
+    const hostnameRaw = row.HOSTNAME ?? row.hostname;
+    const hostname =
+      hostnameRaw == null ? "" : String(hostnameRaw).trim();
+    const cntRaw = row.CNT ?? row.cnt;
+    const count = cntRaw != null ? Number(cntRaw) : NaN;
+    if (!hostname || !Number.isFinite(count)) continue;
+    const list = byBucket.get(idx) ?? [];
+    list.push({ hostname, count });
+    byBucket.set(idx, list);
+  }
+
+  return points.map((p, i) => ({
+    ...p,
+    topTesters: byBucket.get(i) ?? [],
+  }));
+}
+
 export function attachPeriodAlarmTopDevices(
   points: PeriodAlarmTrendPoint[],
   topRows: Record<string, unknown>[]
@@ -757,6 +878,32 @@ export function attachPeriodAlarmTopDevices(
   return points.map((p, i) => ({
     ...p,
     topDevices: byBucket.get(i) ?? [],
+  }));
+}
+
+export function attachPeriodAlarmTopProbeCards(
+  points: PeriodAlarmTrendPoint[],
+  topRows: Record<string, unknown>[]
+): PeriodAlarmTrendPoint[] {
+  const byBucket = new Map<number, PeriodAlarmTopProbeCard[]>();
+  for (const row of topRows) {
+    const idxRaw = row.BUCKET_IDX ?? row.bucket_idx;
+    const idx = idxRaw != null ? Number(idxRaw) : NaN;
+    if (!Number.isFinite(idx)) continue;
+    const probeCardRaw = row.PROBE_CARD ?? row.probe_card;
+    const probeCard =
+      probeCardRaw == null ? "" : String(probeCardRaw).trim();
+    const cntRaw = row.CNT ?? row.cnt;
+    const count = cntRaw != null ? Number(cntRaw) : NaN;
+    if (!probeCard || !Number.isFinite(count)) continue;
+    const list = byBucket.get(idx) ?? [];
+    list.push({ probeCard, count });
+    byBucket.set(idx, list);
+  }
+
+  return points.map((p, i) => ({
+    ...p,
+    topProbeCards: byBucket.get(i) ?? [],
   }));
 }
 
@@ -790,7 +937,9 @@ export function mapPeriodAlarmTrendRows(
       testerAlarmNumerator: num("TOTAL"),
       testerActivityTotal: 0,
       testerAlarmRate: null,
+      topTesters: [],
       topDevices: [],
+      topProbeCards: [],
     };
   });
 }

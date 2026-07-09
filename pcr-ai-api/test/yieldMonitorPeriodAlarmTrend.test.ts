@@ -3,9 +3,13 @@ import { describe, test } from "node:test";
 import {
   aggregatePeriodAlarmTrendDummy,
   attachPeriodAlarmTopDevices,
+  attachPeriodAlarmTopProbeCards,
+  attachPeriodAlarmTopTesters,
   buildPeriodAlarmJbSlotTuplesSql,
   buildPeriodAlarmTrendSql,
   buildPeriodAlarmTrendTopDevicesSql,
+  buildPeriodAlarmTrendTopProbeCardsSql,
+  buildPeriodAlarmTrendTopTestersSql,
   mapPeriodAlarmTrendRows,
   mergePeriodAlarmJbSlotDenominator,
   parsePeriodAlarmTrendQuery,
@@ -127,7 +131,15 @@ describe("yieldMonitorPeriodAlarmTrend", () => {
       parsed.activityWhereSql,
       parsed.buckets.length
     );
+    const topTestersSql = buildPeriodAlarmTrendTopTestersSql(
+      parsed.activityWhereSql,
+      parsed.buckets.length
+    );
     const topSql = buildPeriodAlarmTrendTopDevicesSql(
+      parsed.activityWhereSql,
+      parsed.buckets.length
+    );
+    const topProbeCardsSql = buildPeriodAlarmTrendTopProbeCardsSql(
       parsed.activityWhereSql,
       parsed.buckets.length
     );
@@ -144,7 +156,9 @@ describe("yieldMonitorPeriodAlarmTrend", () => {
       }
     };
     assertBinds(mainSql, new Set(Object.keys(mainBinds as object)), "main");
+    assertBinds(topTestersSql, new Set(Object.keys(topBinds as object)), "top testers");
     assertBinds(topSql, new Set(Object.keys(topBinds as object)), "top");
+    assertBinds(topProbeCardsSql, new Set(Object.keys(topBinds as object)), "top probe cards");
     assertBinds(jbSlotSql, new Set(Object.keys(jbBinds as object)), "jb slot");
   });
 
@@ -206,10 +220,28 @@ describe("yieldMonitorPeriodAlarmTrend", () => {
     }
   });
 
+  test("buildPeriodAlarmTrendTopTestersSql 按 hostname 分组含 ROW_NUMBER Top 5", () => {
+    const sql = buildPeriodAlarmTrendTopTestersSql("WHERE 1=1", 4, 5);
+    assert.ok(sql.includes("TRIM(t.HOSTNAME) AS hostname"));
+    assert.ok(sql.includes("GROUP BY bucket_idx, hostname"));
+    assert.ok(sql.includes("ROW_NUMBER()"));
+    assert.ok(sql.includes("WHERE rn <= 5"));
+    assert.ok(sql.includes(":b0_from"));
+  });
+
   test("buildPeriodAlarmTrendTopDevicesSql 含 ROW_NUMBER Top 5", () => {
     const sql = buildPeriodAlarmTrendTopDevicesSql("WHERE 1=1", 4, 5);
     assert.ok(sql.includes("WITH bucketed AS"));
     assert.ok(sql.includes("is_alarm_row = 1"));
+    assert.ok(sql.includes("ROW_NUMBER()"));
+    assert.ok(sql.includes("WHERE rn <= 5"));
+    assert.ok(sql.includes(":b0_from"));
+  });
+
+  test("buildPeriodAlarmTrendTopProbeCardsSql 按 probe_card 分组含 ROW_NUMBER Top 5", () => {
+    const sql = buildPeriodAlarmTrendTopProbeCardsSql("WHERE 1=1", 4, 5);
+    assert.ok(sql.includes("TRIM(t.PROBECARD) AS probe_card"));
+    assert.ok(sql.includes("GROUP BY bucket_idx, probe_card"));
     assert.ok(sql.includes("ROW_NUMBER()"));
     assert.ok(sql.includes("WHERE rn <= 5"));
     assert.ok(sql.includes(":b0_from"));
@@ -270,6 +302,23 @@ describe("yieldMonitorPeriodAlarmTrend", () => {
     assert.equal(merged[0]!.testerAlarmRate, null);
   });
 
+  test("attachPeriodAlarmTopTesters 合并 Oracle Top 行", () => {
+    const buckets = recentPeriodBuckets("week", 2, NOW);
+    const points = mapPeriodAlarmTrendRows(buckets, [
+      { BUCKET_IDX: 0, TOTAL: 10, TESTER_CNT: 2, CARD_CNT: 3, BIN_CNT: 1, DUT_CNT: 1 },
+      { BUCKET_IDX: 1, TOTAL: 5, TESTER_CNT: 1, CARD_CNT: 1, BIN_CNT: 1, DUT_CNT: 1 },
+    ]);
+    const merged = attachPeriodAlarmTopTesters(points, [
+      { BUCKET_IDX: 0, HOSTNAME: "t-a", CNT: 7 },
+      { BUCKET_IDX: 0, HOSTNAME: "t-b", CNT: 3 },
+      { BUCKET_IDX: 1, HOSTNAME: "t-c", CNT: 5 },
+    ]);
+    assert.equal(merged[0]!.topTesters.length, 2);
+    assert.equal(merged[0]!.topTesters[0]!.hostname, "t-a");
+    assert.equal(merged[0]!.topTesters[0]!.count, 7);
+    assert.equal(merged[1]!.topTesters[0]!.hostname, "t-c");
+  });
+
   test("attachPeriodAlarmTopDevices 合并 Oracle Top 行", () => {
     const buckets = recentPeriodBuckets("week", 2, NOW);
     const points = mapPeriodAlarmTrendRows(buckets, [
@@ -287,7 +336,24 @@ describe("yieldMonitorPeriodAlarmTrend", () => {
     assert.equal(merged[1]!.topDevices[0]!.device, "d-c");
   });
 
-  test("aggregatePeriodAlarmTrendDummy 含 topDevices", () => {
+  test("attachPeriodAlarmTopProbeCards 合并 Oracle Top 行", () => {
+    const buckets = recentPeriodBuckets("week", 2, NOW);
+    const points = mapPeriodAlarmTrendRows(buckets, [
+      { BUCKET_IDX: 0, TOTAL: 10, TESTER_CNT: 2, CARD_CNT: 3, BIN_CNT: 1, DUT_CNT: 1 },
+      { BUCKET_IDX: 1, TOTAL: 5, TESTER_CNT: 1, CARD_CNT: 1, BIN_CNT: 1, DUT_CNT: 1 },
+    ]);
+    const merged = attachPeriodAlarmTopProbeCards(points, [
+      { BUCKET_IDX: 0, PROBE_CARD: "c-a", CNT: 7 },
+      { BUCKET_IDX: 0, PROBE_CARD: "c-b", CNT: 3 },
+      { BUCKET_IDX: 1, PROBE_CARD: "c-c", CNT: 5 },
+    ]);
+    assert.equal(merged[0]!.topProbeCards.length, 2);
+    assert.equal(merged[0]!.topProbeCards[0]!.probeCard, "c-a");
+    assert.equal(merged[0]!.topProbeCards[0]!.count, 7);
+    assert.equal(merged[1]!.topProbeCards[0]!.probeCard, "c-c");
+  });
+
+  test("aggregatePeriodAlarmTrendDummy 含 topTesters、topDevices 与 topProbeCards", () => {
     const buckets = recentPeriodBuckets("week", 1, NOW);
     const parsed = parsePeriodAlarmTrendQuery({
       period: "week",
@@ -304,6 +370,14 @@ describe("yieldMonitorPeriodAlarmTrend", () => {
     );
     assert.equal(points.length, 1);
     const p = points[0]!;
+    assert.ok(Array.isArray(p.topTesters));
+    assert.ok(p.topTesters.length <= 5);
+    if (p.topTesters.length >= 2) {
+      assert.ok(p.topTesters[0]!.count >= p.topTesters[1]!.count);
+    }
+    const sumTopTesters = p.topTesters.reduce((s, t) => s + t.count, 0);
+    assert.ok(sumTopTesters <= p.total);
+
     assert.ok(Array.isArray(p.topDevices));
     assert.ok(p.topDevices.length <= 5);
     if (p.topDevices.length >= 2) {
@@ -311,5 +385,13 @@ describe("yieldMonitorPeriodAlarmTrend", () => {
     }
     const sumTop = p.topDevices.reduce((s, t) => s + t.count, 0);
     assert.ok(sumTop <= p.total);
+
+    assert.ok(Array.isArray(p.topProbeCards));
+    assert.ok(p.topProbeCards.length <= 5);
+    if (p.topProbeCards.length >= 2) {
+      assert.ok(p.topProbeCards[0]!.count >= p.topProbeCards[1]!.count);
+    }
+    const sumTopCards = p.topProbeCards.reduce((s, t) => s + t.count, 0);
+    assert.ok(sumTopCards <= p.total);
   });
 });
