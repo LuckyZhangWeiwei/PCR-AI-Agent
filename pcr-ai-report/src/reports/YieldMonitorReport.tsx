@@ -206,6 +206,13 @@ const PERIOD_ALARM_FALLBACK_GROUP_TOP = 100;
 const PERIOD_ALARM_RATE_TAB_HINT =
   "delta_diff 报警次数 ÷ 该桶同期同筛选下 JB Start 全部记录数（含 TEST / INTERRUPT / TEST ISR / TEST INTERRUPT，不含 Auto retest）";
 
+/**
+ * 图表矩阵三张排名图（ProbeCard Type / Device / LOT）固定左边距，使柱子左对齐。
+ * `containLabel: true`（默认）会按各图类目文字的实际渲染宽度动态留白，短类目（如 4 位数字）和长类目
+ * （如设备名）算出的左边距不同，导致三张图的柱子起点不对齐；改成固定 left + containLabel:false 消除这个差异。
+ */
+const YIELD_CHART_MATRIX_GRID = { left: 110, right: 44, top: 8, bottom: 8, containLabel: false };
+
 const YM_AGG_TIME_DAY = "timeDay";
 const YM_AGG_PROBE_CARD_TYPE = "probeCardType";
 const YM_AGG_LOT_ID = "lotId";
@@ -1414,6 +1421,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     const { base: COL, bright: COL_B, dim: COL_D } = selectionTierColors(theme, "purple");
     return {
       ...horizontalBarChartBase(theme),
+      grid: YIELD_CHART_MATRIX_GRID,
       xAxis: {
         type: "value",
         axisLabel: { color: chartPalette.axisColor },
@@ -1737,6 +1745,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     const { base: COL, bright: COL_B, dim: COL_D } = selectionTierColors(theme, "orange");
     return {
       ...horizontalBarChartBase(theme),
+      grid: YIELD_CHART_MATRIX_GRID,
       xAxis: {
         type: "value",
         axisLabel: { color: chartPalette.axisColor },
@@ -1780,6 +1789,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     const { base: COL, bright: COL_B, dim: COL_D } = selectionTierColors(theme, "blue-light");
     return {
       ...horizontalBarChartBase(theme),
+      grid: YIELD_CHART_MATRIX_GRID,
       xAxis: {
         type: "value",
         axisLabel: { color: chartPalette.axisColor },
