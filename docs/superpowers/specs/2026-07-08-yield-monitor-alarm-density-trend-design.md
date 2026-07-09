@@ -1,5 +1,7 @@
 # Yield Monitor 周期报警趋势新增「YM 触发密度」独立图表 设计
 
+> **⚠️ 已被 Cursor 的实现取代（2026-07-09）：** Cursor 在 `main` 上独立实现了几乎相同的功能（`testerAlarmRate` = YM 报警数 / JB Start `COUNT(*)`，同一套 `infcontrolLayerBinV3BaseWhereBlock` PASSTYPE scope），布局是在既有「Tester 趋势」图表块内加 chip tab 切换「Tester 数」/「报警频率」（折线图），而不是本文档设计的独立第 4 张柱状图。唯一实质差异是比率封顶行为：Cursor 版本 `>100%` 时置为 `null`（不显示），本文档原设计是不封顶。经确认，**采用 Cursor 的封顶版本**,不再单独实现本文档的方案。详见 [`../../HANDOFF_CURSOR_YIELD_MONITOR_ALARM_RATE_AND_TOP5_2026-07-09.md`](../../HANDOFF_CURSOR_YIELD_MONITOR_ALARM_RATE_AND_TOP5_2026-07-09.md)、[`../../HANDOFF_CURSOR_YIELD_MONITOR_JB_DENOMINATOR_2026-07-09.md`](../../HANDOFF_CURSOR_YIELD_MONITOR_JB_DENOMINATOR_2026-07-09.md)。本文档以下内容仅作历史记录保留。
+
 日期:2026-07-08
 范围包:`pcr-ai-api`(扩展 `GET …/v3/period-alarm-trend`)+ `pcr-ai-report`(周期报警趋势区块新增一张独立图表)
 前置:[`2026-07-06-yield-monitor-period-trend-charts-design.md`](2026-07-06-yield-monitor-period-trend-charts-design.md)、[`../../HANDOFF_CURSOR_YIELD_MONITOR_PERIOD_ALARM_TREND_2026-07-07.md`](../../HANDOFF_CURSOR_YIELD_MONITOR_PERIOD_ALARM_TREND_2026-07-07.md)
@@ -17,7 +19,7 @@ ratio(bucket) = YM_total(bucket) / JB_total(bucket)
 ```
 
 - **分子** `YM_total`:该周期桶内 `TYPE='delta_diff'` 触发记录数(`COUNT(*)`),即现有 `period-alarm-trend` 返回的 `total` 字段,不变、不去重。
-- **分母** `JB_total`:该周期桶内 `PASSTYPE='TEST'` 的 JB STAR 记录数(`COUNT(*)`,一条 = 一片 wafer 的一次 pass 测试)。
+- **分母** `JB_total`:该周期桶内 JB STAR 记录数(`COUNT(*)`,一条 ≈ 一片 wafer 的一次 pass 测试)。**范围不是单纯 `PASSTYPE='TEST'`**——复用既有的 `infcontrolLayerBinV3BaseWhereBlock`(`src/lib/infcontrolLayerBinPasstypeScope.ts`)口径:`PASSTYPE IN ('TEST','INTERRUPT','TEST ISR','TEST INTERRUPT') AND LAYERNAME <> 'ABANDONED'`(排除 `RETESTBIN`/`NA`)。原因:一片 wafer 若测试中途换卡/中断,会拆成一条 `INTERRUPT`(前半段)+ 一条 `TEST`(补测后半段),只算 `PASSTYPE='TEST'` 会系统性漏计被中断的 wafer,不是可接受的噪声级误差。
 - **先对分子分母各自求和,再相除一次**(不是"逐日/逐 lot 算比率再平均")。若按更细粒度先算比率再平均,会被分母很小的桶(如某天只测 1 片)放大噪声,统计上不稳健,因此采用总量比。
 - **分子分母计数单位不同,比率可以超过 100%**:已用真实样本数据核实(`docs/delta-diff.xlsx`),同一片 wafer 同一个 pass 可能因为多个 bin/DUT 对同时超限、或良率持续漂移多次跌破阈值,产生多条 `delta_diff` 触发记录(样本中 142 个 `(LOTID,WAFER,PASS)` 组合有 9 个对应 2~3 条记录)。因此这个比率的准确含义是**"平均每次测试触发了几次报警"**(触发密度),不是"有百分之几的测试触发了报警"。**不对分子做 `(LOTID,WAFER,PASS)` 去重**,按用户确认的口径保留原始事件计数。
 - **除零处理**:`JB_total === 0` 时 `ratio = null`(该周期没有测试记录,比率无意义),图表该点留空/断点,不显示为 0。
@@ -42,7 +44,7 @@ ratio(bucket) = YM_total(bucket) / JB_total(bucket)
 | `pass` | `passId` |
 | 桶起止时间(`timeStampFrom`/`timeStampTo` 语义) | `testEndFrom`/`testEndTo` |
 
-JB STAR 侧固定 `PASSTYPE='TEST'`,复用现有 kk/gg/c 前缀 LOT 排除规则(`infcontrolLayerBinFilters.ts` 已有逻辑,自动继承)。
+JB STAR 侧固定 `infcontrolLayerBinV3BaseWhereBlock` 的 PASSTYPE/LAYERNAME 范围(见上「算法」一节),复用现有 kk/gg/c 前缀 LOT 排除规则(`infcontrolLayerBinFilters.ts` 已有逻辑,自动继承)。`wafer`→`slot` 仅当 `Number(wafer)` 可解析时才映射(YM `WAFER` 是自由文本,JB `SLOT` 是数值;解析失败则丢弃 `slot` 筛选,不让整个 JB 查询失败)。
 
 ## 后端设计(`pcr-ai-api`)
 
@@ -82,7 +84,7 @@ export type PeriodAlarmTrendPoint = {
 
 - [ ] `buildInfcontrolPeriodCountTrendSql`(Oracle)与 `aggregateInfcontrolPeriodCountTrendDummy`(Dummy)对同一 `applied` 筛选返回一致的分桶计数。
 - [ ] 筛选字段映射(mask/probeCardType/lot/slot/testerId/platform/passId)两侧一致。
-- [ ] `PASSTYPE='TEST'` 固定、kk/gg/c LOT 前缀排除两侧一致(复用现有 `parseInfcontrolLayerBinsV3Query`/`filterInfcontrolLayerBinV3DummyRowsMatching`,天然继承)。
+- [ ] `infcontrolLayerBinV3BaseWhereBlock` PASSTYPE/LAYERNAME 范围、kk/gg/c LOT 前缀排除两侧一致(复用现有 `parseInfcontrolLayerBinsV3Query`/`filterInfcontrolLayerBinV3DummyRowsMatching`,天然继承)。
 
 ## 前端设计(`pcr-ai-report`)
 

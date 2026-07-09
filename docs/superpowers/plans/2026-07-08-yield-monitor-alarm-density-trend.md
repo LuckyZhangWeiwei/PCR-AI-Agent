@@ -1,5 +1,7 @@
 # YM Alarm Density Trend Chart Implementation Plan
 
+> **⚠️ ABANDONED (2026-07-09):** Cursor independently shipped an equivalent feature (`testerAlarmRate`) directly on `main`, tab-integrated into the existing Tester trend chart block rather than the standalone 4th block this plan describes. Decision: adopt Cursor's version (including its >100%→null capping, which differs from this plan's uncapped design). The worktree branch that executed Tasks 1-4 of this plan (`worktree-yield-monitor-alarm-density-trend`) was discarded — its `jbTotal`/`ratio` additions duplicated what Cursor's `testerActivityTotal`/`testerAlarmRate` now do in the same file. See `../specs/2026-07-08-yield-monitor-alarm-density-trend-design.md` and `../../HANDOFF_CURSOR_YIELD_MONITOR_JB_DENOMINATOR_2026-07-09.md`. Steps below are left unmarked as a historical record only — do not execute.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a standalone "YM 触发密度" chart to the Yield Monitor tab's period alarm trend section, showing `ratio = YM_trigger_total(bucket) / JB_STAR_test_total(bucket)` per week/month bucket, computed server-side in the existing `GET …/v3/period-alarm-trend` endpoint.
