@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import {
   aggregatePeriodAlarmTrendDummy,
-  attachPeriodAlarmTopTesters,
+  attachPeriodAlarmTopDevices,
   buildPeriodAlarmJbSlotTuplesSql,
   buildPeriodAlarmTrendSql,
-  buildPeriodAlarmTrendTopTestersSql,
+  buildPeriodAlarmTrendTopDevicesSql,
   mapPeriodAlarmTrendRows,
   mergePeriodAlarmJbSlotDenominator,
   parsePeriodAlarmTrendQuery,
@@ -127,7 +127,7 @@ describe("yieldMonitorPeriodAlarmTrend", () => {
       parsed.activityWhereSql,
       parsed.buckets.length
     );
-    const topSql = buildPeriodAlarmTrendTopTestersSql(
+    const topSql = buildPeriodAlarmTrendTopDevicesSql(
       parsed.activityWhereSql,
       parsed.buckets.length
     );
@@ -206,8 +206,8 @@ describe("yieldMonitorPeriodAlarmTrend", () => {
     }
   });
 
-  test("buildPeriodAlarmTrendTopTestersSql 含 ROW_NUMBER Top 5", () => {
-    const sql = buildPeriodAlarmTrendTopTestersSql("WHERE 1=1", 4, 5);
+  test("buildPeriodAlarmTrendTopDevicesSql 含 ROW_NUMBER Top 5", () => {
+    const sql = buildPeriodAlarmTrendTopDevicesSql("WHERE 1=1", 4, 5);
     assert.ok(sql.includes("WITH bucketed AS"));
     assert.ok(sql.includes("is_alarm_row = 1"));
     assert.ok(sql.includes("ROW_NUMBER()"));
@@ -230,7 +230,7 @@ describe("yieldMonitorPeriodAlarmTrend", () => {
       assert.equal(points.length, parsed.buckets.length);
       const sample = points.find((p) => p.total > 0);
       if (sample) {
-        assert.ok(sample.topTesters.length > 0, `${period} top testers`);
+        assert.ok(sample.topDevices.length > 0, `${period} top devices`);
         if (sample.testerActivityTotal > 0) {
           assert.ok(sample.testerAlarmRate != null, `${period} alarm rate`);
           assert.ok(
@@ -270,24 +270,24 @@ describe("yieldMonitorPeriodAlarmTrend", () => {
     assert.equal(merged[0]!.testerAlarmRate, null);
   });
 
-  test("attachPeriodAlarmTopTesters 合并 Oracle Top 行", () => {
+  test("attachPeriodAlarmTopDevices 合并 Oracle Top 行", () => {
     const buckets = recentPeriodBuckets("week", 2, NOW);
     const points = mapPeriodAlarmTrendRows(buckets, [
       { BUCKET_IDX: 0, TOTAL: 10, TESTER_CNT: 2, CARD_CNT: 3, BIN_CNT: 1, DUT_CNT: 1 },
       { BUCKET_IDX: 1, TOTAL: 5, TESTER_CNT: 1, CARD_CNT: 1, BIN_CNT: 1, DUT_CNT: 1 },
     ]);
-    const merged = attachPeriodAlarmTopTesters(points, [
-      { BUCKET_IDX: 0, HOSTNAME: "t-a", CNT: 7 },
-      { BUCKET_IDX: 0, HOSTNAME: "t-b", CNT: 3 },
-      { BUCKET_IDX: 1, HOSTNAME: "t-c", CNT: 5 },
+    const merged = attachPeriodAlarmTopDevices(points, [
+      { BUCKET_IDX: 0, DEVICE: "d-a", CNT: 7 },
+      { BUCKET_IDX: 0, DEVICE: "d-b", CNT: 3 },
+      { BUCKET_IDX: 1, DEVICE: "d-c", CNT: 5 },
     ]);
-    assert.equal(merged[0]!.topTesters.length, 2);
-    assert.equal(merged[0]!.topTesters[0]!.hostname, "t-a");
-    assert.equal(merged[0]!.topTesters[0]!.count, 7);
-    assert.equal(merged[1]!.topTesters[0]!.hostname, "t-c");
+    assert.equal(merged[0]!.topDevices.length, 2);
+    assert.equal(merged[0]!.topDevices[0]!.device, "d-a");
+    assert.equal(merged[0]!.topDevices[0]!.count, 7);
+    assert.equal(merged[1]!.topDevices[0]!.device, "d-c");
   });
 
-  test("aggregatePeriodAlarmTrendDummy 含 topTesters", () => {
+  test("aggregatePeriodAlarmTrendDummy 含 topDevices", () => {
     const buckets = recentPeriodBuckets("week", 1, NOW);
     const parsed = parsePeriodAlarmTrendQuery({
       period: "week",
@@ -304,12 +304,12 @@ describe("yieldMonitorPeriodAlarmTrend", () => {
     );
     assert.equal(points.length, 1);
     const p = points[0]!;
-    assert.ok(Array.isArray(p.topTesters));
-    assert.ok(p.topTesters.length <= 5);
-    if (p.topTesters.length >= 2) {
-      assert.ok(p.topTesters[0]!.count >= p.topTesters[1]!.count);
+    assert.ok(Array.isArray(p.topDevices));
+    assert.ok(p.topDevices.length <= 5);
+    if (p.topDevices.length >= 2) {
+      assert.ok(p.topDevices[0]!.count >= p.topDevices[1]!.count);
     }
-    const sumTop = p.topTesters.reduce((s, t) => s + t.count, 0);
+    const sumTop = p.topDevices.reduce((s, t) => s + t.count, 0);
     assert.ok(sumTop <= p.total);
   });
 });

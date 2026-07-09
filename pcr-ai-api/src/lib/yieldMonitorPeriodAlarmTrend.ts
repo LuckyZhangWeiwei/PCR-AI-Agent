@@ -28,8 +28,8 @@ export type PeriodAlarmBucket = {
   label: string;
 };
 
-export type PeriodAlarmTopTester = {
-  hostname: string;
+export type PeriodAlarmTopDevice = {
+  device: string;
   count: number;
 };
 
@@ -50,11 +50,11 @@ export type PeriodAlarmTrendPoint = {
   testerActivityTotal: number;
   /** testerAlarmNumerator / testerActivityTotal；分母为 0 时为 null */
   testerAlarmRate: number | null;
-  /** 该桶触发次数 Top N 的 tester（按 count 降序） */
-  topTesters: PeriodAlarmTopTester[];
+  /** 该桶触发次数 Top N 的 device（按 count 降序） */
+  topDevices: PeriodAlarmTopDevice[];
 };
 
-export const PERIOD_ALARM_TOP_TESTERS_LIMIT = 5;
+export const PERIOD_ALARM_TOP_DEVICES_LIMIT = 5;
 
 export const PERIOD_ALARM_TREND_BUCKET_COUNT = 4;
 export const PERIOD_ALARM_MAX_WEEK_BUCKETS = 54;
@@ -493,11 +493,11 @@ ORDER BY bucket_idx
 `.trim();
 }
 
-/** 各桶 delta_diff 触发次数 Top N tester（与主查询共用 activity 扫描 + 桶 bind）。 */
-export function buildPeriodAlarmTrendTopTestersSql(
+/** 各桶 delta_diff 触发次数 Top N device（与主查询共用 activity 扫描 + 桶 bind）。 */
+export function buildPeriodAlarmTrendTopDevicesSql(
   activityWhereSql: string,
   bucketCount: number,
-  topN = PERIOD_ALARM_TOP_TESTERS_LIMIT
+  topN = PERIOD_ALARM_TOP_DEVICES_LIMIT
 ): string {
   const activityWc = activityWhereSql.trim();
   const caseExpr = periodAlarmBucketCaseExpr(bucketCount, "t.TIME_STAMP");
@@ -506,28 +506,28 @@ export function buildPeriodAlarmTrendTopTestersSql(
   return `
 WITH bucketed AS (
   SELECT
-    TRIM(t.HOSTNAME) AS hostname,
+    TRIM(t.DEVICE) AS device,
     ${caseExpr} AS bucket_idx,
     CASE WHEN UPPER(TRIM(t."TYPE")) = '${typeScopeUpper}' THEN 1 ELSE 0 END AS is_alarm_row
   FROM YMWEB_YIELDMONITORTRIGGER t
   ${activityWc}
 )
-SELECT bucket_idx, hostname, cnt
+SELECT bucket_idx, device, cnt
 FROM (
-  SELECT bucket_idx, hostname, cnt,
-    ROW_NUMBER() OVER (PARTITION BY bucket_idx ORDER BY cnt DESC, hostname) AS rn
+  SELECT bucket_idx, device, cnt,
+    ROW_NUMBER() OVER (PARTITION BY bucket_idx ORDER BY cnt DESC, device) AS rn
   FROM (
-    SELECT bucket_idx, hostname, COUNT(*) AS cnt
+    SELECT bucket_idx, device, COUNT(*) AS cnt
     FROM bucketed
     WHERE is_alarm_row = 1
       AND bucket_idx IS NOT NULL
-      AND hostname IS NOT NULL
-      AND LENGTH(hostname) > 0
-    GROUP BY bucket_idx, hostname
+      AND device IS NOT NULL
+      AND LENGTH(device) > 0
+    GROUP BY bucket_idx, device
   )
 )
 WHERE rn <= ${topN}
-ORDER BY bucket_idx, cnt DESC, hostname
+ORDER BY bucket_idx, cnt DESC, device
 `.trim();
 }
 
@@ -591,20 +591,20 @@ function computeTesterAlarmRate(
   return rate;
 }
 
-export function topTestersFromAlarmRows(
+export function topDevicesFromAlarmRows(
   rows: Array<YieldMonitorTriggerDummyRow & { PROBECARDTYPE?: string | null }>,
-  limit = PERIOD_ALARM_TOP_TESTERS_LIMIT
-): PeriodAlarmTopTester[] {
+  limit = PERIOD_ALARM_TOP_DEVICES_LIMIT
+): PeriodAlarmTopDevice[] {
   const counts = new Map<string, number>();
   for (const row of rows) {
-    const hn = String(row.HOSTNAME ?? "").trim();
-    if (!hn) continue;
-    counts.set(hn, (counts.get(hn) ?? 0) + 1);
+    const dv = String(row.DEVICE ?? "").trim();
+    if (!dv) continue;
+    counts.set(dv, (counts.get(dv) ?? 0) + 1);
   }
   return [...counts.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, limit)
-    .map(([hostname, count]) => ({ hostname, count }));
+    .map(([device, count]) => ({ device, count }));
 }
 
 function countJbRowsInBucket(
@@ -628,7 +628,7 @@ function aggregateBucketMetrics(
   bucket: PeriodAlarmBucket
 ): Omit<
   PeriodAlarmTrendPoint,
-  "label" | "timeStampFrom" | "timeStampTo" | "topTesters"
+  "label" | "timeStampFrom" | "timeStampTo" | "topDevices"
 > {
   const testers = new Set<string>();
   const cards = new Set<string>();
@@ -699,7 +699,7 @@ export function aggregatePeriodAlarmTrendDummy(
       timeStampFrom: bucket.start.toISOString(),
       timeStampTo: bucket.end.toISOString(),
       ...metrics,
-      topTesters: topTestersFromAlarmRows(alarmRows),
+      topDevices: topDevicesFromAlarmRows(alarmRows),
     };
   });
 }
@@ -734,29 +734,29 @@ export function mergePeriodAlarmJbSlotDenominator(
   });
 }
 
-export function attachPeriodAlarmTopTesters(
+export function attachPeriodAlarmTopDevices(
   points: PeriodAlarmTrendPoint[],
   topRows: Record<string, unknown>[]
 ): PeriodAlarmTrendPoint[] {
-  const byBucket = new Map<number, PeriodAlarmTopTester[]>();
+  const byBucket = new Map<number, PeriodAlarmTopDevice[]>();
   for (const row of topRows) {
     const idxRaw = row.BUCKET_IDX ?? row.bucket_idx;
     const idx = idxRaw != null ? Number(idxRaw) : NaN;
     if (!Number.isFinite(idx)) continue;
-    const hostnameRaw = row.HOSTNAME ?? row.hostname;
-    const hostname =
-      hostnameRaw == null ? "" : String(hostnameRaw).trim();
+    const deviceRaw = row.DEVICE ?? row.device;
+    const device =
+      deviceRaw == null ? "" : String(deviceRaw).trim();
     const cntRaw = row.CNT ?? row.cnt;
     const count = cntRaw != null ? Number(cntRaw) : NaN;
-    if (!hostname || !Number.isFinite(count)) continue;
+    if (!device || !Number.isFinite(count)) continue;
     const list = byBucket.get(idx) ?? [];
-    list.push({ hostname, count });
+    list.push({ device, count });
     byBucket.set(idx, list);
   }
 
   return points.map((p, i) => ({
     ...p,
-    topTesters: byBucket.get(i) ?? [],
+    topDevices: byBucket.get(i) ?? [],
   }));
 }
 
@@ -790,10 +790,10 @@ export function mapPeriodAlarmTrendRows(
       testerAlarmNumerator: num("TOTAL"),
       testerActivityTotal: 0,
       testerAlarmRate: null,
-      topTesters: [],
+      topDevices: [],
     };
   });
 }
 
 export const PERIOD_ALARM_TREND_DOCUMENTATION =
-  "按查询 TIME_STAMP 时间窗（未传则近 1 UTC 年）切分周/月 x 轴桶，返回各桶触发总量与 COUNT(DISTINCT) 种类数（Tester / Probe Card / Bin excluding goodbin / DUT）、Tester 报警频率（分子 YM delta_diff 次数 ÷ 分母同期同筛选 JB Start 记录总数，v3 PASSTYPE 不含 RETESTBIN）、以及各桶触发 Top 5 tester。";
+  "按查询 TIME_STAMP 时间窗（未传则近 1 UTC 年）切分周/月 x 轴桶，返回各桶触发总量与 COUNT(DISTINCT) 种类数（Tester / Probe Card / Bin excluding goodbin / DUT）、Tester 报警频率（分子 YM delta_diff 次数 ÷ 分母同期同筛选 JB Start 记录总数，v3 PASSTYPE 不含 RETESTBIN）、以及各桶触发 Top 5 device。";

@@ -48,10 +48,10 @@ import { addDutNumberToYieldMonitorV3Row } from "../lib/yieldTriggerLabelDut.js"
 import {
   PERIOD_ALARM_TREND_DOCUMENTATION,
   aggregatePeriodAlarmTrendDummy,
-  attachPeriodAlarmTopTesters,
+  attachPeriodAlarmTopDevices,
   buildPeriodAlarmJbSlotTuplesSql,
   buildPeriodAlarmTrendSql,
-  buildPeriodAlarmTrendTopTestersSql,
+  buildPeriodAlarmTrendTopDevicesSql,
   mapPeriodAlarmTrendRows,
   mergePeriodAlarmJbSlotDenominator,
   parsePeriodAlarmTrendQuery,
@@ -594,7 +594,7 @@ yieldMonitorRouter.get("/yield-monitor-triggers/v3/period-alarm-trend", async (r
     parsed.activityWhereSql,
     parsed.buckets.length
   );
-  const topTestersSql = buildPeriodAlarmTrendTopTestersSql(
+  const topDevicesSql = buildPeriodAlarmTrendTopDevicesSql(
     parsed.activityWhereSql,
     parsed.buckets.length
   );
@@ -610,7 +610,7 @@ yieldMonitorRouter.get("/yield-monitor-triggers/v3/period-alarm-trend", async (r
       const result = await conn.execute(sql, mainBinds, {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
       });
-      const topResult = await conn.execute(topTestersSql, topBinds, {
+      const topResult = await conn.execute(topDevicesSql, topBinds, {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
       });
       return {
@@ -631,7 +631,7 @@ yieldMonitorRouter.get("/yield-monitor-triggers/v3/period-alarm-trend", async (r
       );
     });
     const buckets = mergePeriodAlarmJbSlotDenominator(
-      attachPeriodAlarmTopTesters(
+      attachPeriodAlarmTopDevices(
         mapPeriodAlarmTrendRows(parsed.buckets, rows),
         topRows
       ),

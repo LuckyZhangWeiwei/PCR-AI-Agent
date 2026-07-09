@@ -3,7 +3,7 @@ import { apiGetJson } from "../api/client";
 import { API_PREFIX, YIELD_AGGREGATE_PATH, YIELD_COMBINED_PATH, YIELD_PERIOD_ALARM_TREND_PATH } from "../api/paths";
 import type {
   AggregateGroup,
-  PeriodAlarmTopTester,
+  PeriodAlarmTopDevice,
   YieldMonitorAggregateBlock,
   YieldMonitorCombinedResponse,
   YieldMonitorPeriodAlarmTrendResponse,
@@ -243,7 +243,7 @@ type TrendPoint = {
   testerAlarmRate?: number | null;
   testerAlarmNumerator?: number | null;
   testerActivityTotal?: number | null;
-  topTesters?: PeriodAlarmTopTester[];
+  topDevices?: PeriodAlarmTopDevice[];
 };
 
 function resolveTesterAlarmRate(
@@ -265,6 +265,7 @@ function resolveTesterAlarmRate(
 }
 
 type TesterTrendTab = "count" | "rate";
+type TotalTrendTab = "total" | "rate";
 
 // Sub-dimension options for drill-down panels
 const DRILL_FROM_DEVICE: { label: string; value: string }[] = [
@@ -476,7 +477,7 @@ function buildTrendBarOption(
   opts?: {
     period?: PeriodKey;
     metricLabel?: string;
-    topTestersByBucket?: PeriodAlarmTopTester[][];
+    topDevicesByBucket?: PeriodAlarmTopDevice[][];
     /** 与 Top 5 触发次数对照的桶内 delta_diff 总和（非柱图主指标时使用） */
     triggerTotalsByBucket?: (number | null)[];
   }
@@ -508,7 +509,7 @@ function buildTrendBarOption(
       },
     ],
     tooltip:
-      opts?.topTestersByBucket && opts.period
+      opts?.topDevicesByBucket && opts.period
         ? {
             ...axisTooltipBase(theme),
             formatter: (params: unknown) => {
@@ -522,7 +523,7 @@ function buildTrendBarOption(
               ];
               const triggerTotal =
                 opts.triggerTotalsByBucket?.[idx] ?? val ?? null;
-              appendTopTesterTooltipLines(lines, periodPrefix, opts.topTestersByBucket![idx], {
+              appendTopDeviceTooltipLines(lines, periodPrefix, opts.topDevicesByBucket![idx], {
                 triggerTotal,
               });
               return lines.join("<br/>");
@@ -532,15 +533,15 @@ function buildTrendBarOption(
   };
 }
 
-function topTestersFromAggregateGroups(
+function topDevicesFromAggregateGroups(
   groups: YieldMonitorV3AggregateResponse["groups"] | undefined,
   limit = 5
-): PeriodAlarmTopTester[] {
+): PeriodAlarmTopDevice[] {
   return [...(groups ?? [])]
     .sort((a, b) => b.count - a.count)
     .slice(0, limit)
     .map((g) => ({
-      hostname: g.parts.hostname ?? g.key,
+      device: g.parts.device ?? g.key,
       count: g.count,
     }));
 }
@@ -552,16 +553,16 @@ function axisTooltipBase(theme: "light" | "dark"): Record<string, unknown> {
   };
 }
 
-function appendTopTesterTooltipLines(
+function appendTopDeviceTooltipLines(
   lines: string[],
   periodPrefix: string,
-  top: PeriodAlarmTopTester[] | undefined,
+  top: PeriodAlarmTopDevice[] | undefined,
   opts?: { triggerTotal?: number | null; header?: string }
 ): void {
   if (!top?.length) return;
   lines.push(opts?.header ?? `${periodPrefix} Top 5 触发次数:`);
   for (const t of top) {
-    lines.push(`${t.hostname}: ${t.count}`);
+    lines.push(`${t.device}: ${t.count}`);
   }
   const sum = top.reduce((s, t) => s + t.count, 0);
   const triggerTotal = opts?.triggerTotal;
@@ -577,14 +578,14 @@ function trendTooltipDataIndex(params: unknown): number | null {
   return p.dataIndex;
 }
 
-/** 总和趋势柱图：hover 展示该桶 Top 5 tester（随周/月粒度切换）。 */
+/** 总和趋势柱图：hover 展示该桶 Top 5 device（随周/月粒度切换）。 */
 function buildTrendTotalBarOption(
   theme: "light" | "dark",
   period: PeriodKey,
   buckets: PeriodBucket[],
   values: (number | null)[],
   color: string,
-  topTestersByBucket: PeriodAlarmTopTester[][]
+  topDevicesByBucket: PeriodAlarmTopDevice[][]
 ): EChartsOption {
   const palette = getChartPalette(theme);
   const periodPrefix = period === "week" ? "每周" : "每月";
@@ -621,7 +622,7 @@ function buildTrendTotalBarOption(
         const label = buckets[idx]?.label ?? p?.name ?? "";
         const val = values[idx];
         const lines = [`${periodPrefix} ${label}`, `${periodPrefix}触发总和: ${val ?? 0}`];
-        appendTopTesterTooltipLines(lines, periodPrefix, topTestersByBucket[idx], {
+        appendTopDeviceTooltipLines(lines, periodPrefix, topDevicesByBucket[idx], {
           triggerTotal: val ?? null,
         });
         return lines.join("<br/>");
@@ -639,7 +640,7 @@ function buildTrendLineOption(
   color: string,
   valueFormatter: (v: number) => string = (v) => String(v),
   metricLabel: string,
-  topTestersByBucket?: PeriodAlarmTopTester[][],
+  topDevicesByBucket?: PeriodAlarmTopDevice[][],
   triggerTotals?: (number | null)[]
 ): EChartsOption {
   const palette = getChartPalette(theme);
@@ -700,7 +701,7 @@ function buildTrendLineOption(
         if (triggerTotal != null) {
           lines.push(`${periodPrefix}触发总和: ${triggerTotal}`);
         }
-        appendTopTesterTooltipLines(lines, periodPrefix, topTestersByBucket?.[idx], {
+        appendTopDeviceTooltipLines(lines, periodPrefix, topDevicesByBucket?.[idx], {
           triggerTotal: triggerTotal ?? null,
         });
         return lines.join("<br/>");
@@ -758,6 +759,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
   const [loadingTrend, setLoadingTrend] = useState(false);
   const [errorTrend, setErrorTrend] = useState<string | null>(null);
   const [testerTrendTab, setTesterTrendTab] = useState<TesterTrendTab>("count");
+  const [totalTrendTab, setTotalTrendTab] = useState<TotalTrendTab>("total");
   const trendFetchGenRef = useRef(0);
 
   const changePeriodAlarmGranularity = useCallback((next: PeriodKey) => {
@@ -1203,6 +1205,13 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
             groupTop: PERIOD_ALARM_FALLBACK_GROUP_TOP,
           })
         );
+        calls.push(() =>
+          apiGetJson<YieldMonitorV3AggregateResponse>(apiBase, YIELD_AGGREGATE_PATH, {
+            ...bucketParams,
+            dimensions: "device",
+            groupTop: PERIOD_ALARM_FALLBACK_GROUP_TOP,
+          })
+        );
       }
       const settled = (await allSettledWithConcurrency(
         calls,
@@ -1213,17 +1222,18 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         throw firstRejected.reason;
       }
       return buckets.map((bucket, i) => {
-        const [testerRes, cardRes] = settled.slice(i * 2, i * 2 + 2);
+        const [testerRes, cardRes, deviceRes] = settled.slice(i * 3, i * 3 + 3);
         const ok = (r: PromiseSettledResult<YieldMonitorV3AggregateResponse>) =>
           r.status === "fulfilled" ? r.value : null;
         const tester = ok(testerRes);
         const card = ok(cardRes);
+        const device = ok(deviceRes);
         return {
           bucket,
           total: tester?.totalRowsMatching ?? card?.totalRowsMatching ?? null,
           testerCount: tester ? tester.groups.length : null,
           cardCount: card ? card.groups.length : null,
-          topTesters: topTestersFromAggregateGroups(tester?.groups),
+          topDevices: topDevicesFromAggregateGroups(device?.groups),
         };
       });
     };
@@ -1254,7 +1264,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
               b.testerAlarmNumerator ?? b.total,
               b.testerActivityTotal
             ),
-            topTesters: b.topTesters ?? [],
+            topDevices: b.topDevices ?? [],
           }))
         );
         setErrorTrend(null);
@@ -1473,8 +1483,8 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
   );
 
   const trendBuckets = useMemo(() => trendPoints.map((p) => p.bucket), [trendPoints]);
-  const trendTopTestersByBucket = useMemo(
-    () => trendPoints.map((p) => p.topTesters ?? []),
+  const trendTopDevicesByBucket = useMemo(
+    () => trendPoints.map((p) => p.topDevices ?? []),
     [trendPoints]
   );
   const trendTotalOption = useMemo(
@@ -1485,9 +1495,9 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         trendBuckets,
         trendPoints.map((p) => p.total),
         selectionTierColors(theme, "gold").base,
-        trendTopTestersByBucket
+        trendTopDevicesByBucket
       ),
-    [trendBuckets, trendPoints, trendTopTestersByBucket, theme, period]
+    [trendBuckets, trendPoints, trendTopDevicesByBucket, theme, period]
   );
 
   const periodAlarmTotalTrendLabel =
@@ -1507,11 +1517,11 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         {
           period,
           metricLabel: " Tester 数",
-          topTestersByBucket: trendTopTestersByBucket,
+          topDevicesByBucket: trendTopDevicesByBucket,
           triggerTotalsByBucket: trendPoints.map((p) => p.total),
         }
       ),
-    [trendBuckets, trendPoints, trendTopTestersByBucket, theme, chartPalette.accent, period]
+    [trendBuckets, trendPoints, trendTopDevicesByBucket, theme, chartPalette.accent, period]
   );
   const trendTesterRateOption = useMemo(
     () =>
@@ -1531,10 +1541,10 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
         chartPalette.accent,
         (v) => `${v.toFixed(1)}%`,
         "Tester 报警频率",
-        trendTopTestersByBucket,
+        trendTopDevicesByBucket,
         trendPoints.map((p) => p.total)
       ),
-    [trendBuckets, trendPoints, trendTopTestersByBucket, theme, chartPalette.accent, period]
+    [trendBuckets, trendPoints, trendTopDevicesByBucket, theme, chartPalette.accent, period]
   );
   const periodAlarmCardTrendLabel =
     period === "week" ? "每周 Probe Card 数" : "每月 Probe Card 数";
@@ -1912,15 +1922,46 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
           }}
           sections={{
             chAlarmTotalTrend: (
-              <div className="report-chart-panel chart-no-drill">
+              <div className="report-chart-panel">
+                <div className="preset-chips tester-trend-tabs" style={{ marginBottom: 8 }}>
+                  <button
+                    type="button"
+                    className={`chip${totalTrendTab === "total" ? " chip--active" : ""}`}
+                    onClick={() => setTotalTrendTab("total")}
+                  >
+                    {period === "week" ? "每周" : "每月"} 触发总和
+                  </button>
+                  <button
+                    type="button"
+                    className={`chip${totalTrendTab === "rate" ? " chip--active" : ""}`}
+                    onClick={() => setTotalTrendTab("rate")}
+                  >
+                    {period === "week" ? "每周" : "每月"} 报警频率
+                  </button>
+                </div>
                 {loadingTrend ? (
                   <div style={{ color: "var(--muted)", fontSize: 13, padding: "8px 0" }}>加载中…</div>
                 ) : (
-                  <DarkChart
-                    key={`alarm-total-${period}`}
-                    option={trendTotalOption}
-                    height={YIELD_TREND_CHART_HEIGHT}
-                  />
+                  <div className="chart-no-drill">
+                    {totalTrendTab === "total" ? (
+                      <DarkChart
+                        key={`alarm-total-${period}`}
+                        option={trendTotalOption}
+                        height={YIELD_TREND_CHART_HEIGHT}
+                      />
+                    ) : (
+                      <>
+                        <p className="muted small" style={{ margin: "0 0 8px" }}>
+                          {periodAlarmTesterRateTrendLabel}：delta_diff 报警次数 ÷ 该桶同期同筛选下 JB Start 全部记录数（含 TEST / INTERRUPT / TEST ISR / TEST INTERRUPT，不含 Auto retest）
+                        </p>
+                        <DarkChart
+                          key={`alarm-total-rate-${period}`}
+                          option={trendTesterRateOption}
+                          height={YIELD_TREND_CHART_HEIGHT}
+                        />
+                      </>
+                    )}
+                  </div>
                 )}
               </div>
             ),
@@ -2350,6 +2391,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
     trendTesterOption,
     trendTesterRateOption,
     testerTrendTab,
+    totalTrendTab,
     changePeriodAlarmGranularity,
     trendCardOption,
     loadingTrend,
