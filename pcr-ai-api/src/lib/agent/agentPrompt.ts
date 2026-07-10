@@ -25,6 +25,7 @@
 // ║    └ 内含 11 个 ### 子节（grep SEC_DOMAIN 后按 ### 跳转）                ║
 // ║  SEC_WAFER_ENUM        枚举 lot 内所有 wafer                             ║
 // ║  SEC_WORST_CARD        哪张卡最差/报警最多/坏 die 最多                    ║
+// ║  SEC_CARD_TESTER_PERFORMANCE  探针卡+机台组合排名/趋势/坏bin（新工具）    ║
 // ║  SEC_BIN_ON_CARD       BIN X 集中在哪张卡 / 各卡 BIN 分布对比             ║
 // ║  SEC_CARD_LOTS         某张卡最近测试的 lot                               ║
 // ║  SEC_BIN_COMPARE       按 lot 对比两个 BIN                               ║
@@ -95,7 +96,7 @@ const SEC_TERMS_AND_TOOLS = `\
 - 工具参数、JSON 字段、服务端 markdown **表头**仍用 \`slot\` / \`dut\`（与代码一致），勿改 API 形参名。
 - 用户说「第 3 片 wafer」「waferId 3」→ JB 工具 \`slot=3\`；用户说「DUT5」「site 5」→ 正文仍写 **DUT5**。
 
-可用工具：query_yield_triggers, aggregate_yield_triggers, query_jb_bins, aggregate_jb_bins, query_lot_dut_bin_agg, query_lot_underperforming_duts, query_inf_site_bin_by_dut, generate_chart, ask_clarification, get_filter_values。
+可用工具：query_yield_triggers, aggregate_yield_triggers, query_jb_bins, aggregate_jb_bins, aggregate_probe_card_tester_performance, query_lot_dut_bin_agg, query_lot_underperforming_duts, query_inf_site_bin_by_dut, generate_chart, ask_clarification, get_filter_values。
 
 **用户提到「晶圆图」「wafer map」「die 坐标/分布」「cluster/聚集/划伤」等词时，系统会自动加载 INF 晶圆分析工具（23个 inf_* 工具）**，届时可使用 inf_draw_wafer_map、inf_analyze_wafer、inf_cluster_detect 等；无需用户指定，关键词触发即可。`;
 
@@ -961,6 +962,24 @@ const SEC_WORST_CARD = `\
 
 **推荐顺序**：先 ① 报警次数排名（快），再 ② 坏 die 汇总（深挖），综合给出结论。`;
 
+// ─── SEC_CARD_TESTER_PERFORMANCE ────────────────────────────────────────────
+// 探针卡+测试机组合排名 / 探针卡表现排名 / 良率趋势 / 常见坏 bin
+
+const SEC_CARD_TESTER_PERFORMANCE = `\
+## 探针卡+测试机组合排名 / 探针卡表现排名 / 良率趋势 / 常见坏 bin（\`aggregate_probe_card_tester_performance\`）
+
+**触发场景**：用户问"这个 device 下最好的探针卡+机台组合""探针卡表现排名""哪张探针卡最差""这张卡良率是不是在变差/退化""这张卡常见坏 bin 是什么/接触不良吗""哪个组合/搭配良率最好"。
+
+**调用**：\`aggregate_probe_card_tester_performance(device, passId?, testEndFrom?, testEndTo?)\`。**必须**先有 device（缺失时先追问或从上下文推断，不允许跨 device 硬凑）。不传 passId 时结果按 passId∈{1,3,5} 分三组，**每组独立汇报，禁止跨 sort 合并或求平均**。
+
+**结果结构**：每个 passId 分组含四张服务端直出的 markdown 表——\`comboRankingMarkdown\`（组合排名，良率降序）、\`cardRankingMarkdown\`（探针卡排名，良率**升序**即最差在前，含规则触发的评估文字与置信度档位）、\`cardTrendMarkdown\`（按卡的月度良率走势，仅含 ≥2 个月数据的卡）、\`cardBadBinMarkdown\`（按卡的坏 bin Top3 频率占比）。
+
+**硬规则**：
+1. 表格数字直接照抄工具返回的 markdown，**禁止自行重新计算或改写**；LLM 只在表格之后追加「### 数据解读」「### 专业建议」。
+2. \`cardBadBinMarkdown\` **只是坏 bin 编号出现频率统计，不是 die 级空间/坐标分布**——**禁止**解读成"边缘接触不良""角落 pattern""某区域集中"等需要晶圆坐标才能下的结论；只能说"该卡失效最常见的 bin 类型是 X"。用户明确要看空间分布时，提示改用晶圆图工具（\`inf_draw_wafer_map\` / \`inf_cluster_detect\`）。
+3. \`cardTrendMarkdown\` 只给月度原始数字，不做趋势拟合；LLM 描述走势方向（"持续下降""先降后稳"等）时不得编造统计显著性结论。
+4. 置信度档位（高/中/低）来自 \`lotCount\`，样本量小（低）的卡结论需注明"样本有限，仅供参考"。`;
+
 // ─── SEC_BIN_ON_CARD ───────────────────────────────────────────────────────
 // BIN X 集中在哪张卡 / 各卡 BIN 分布对比
 
@@ -1432,8 +1451,8 @@ export function classifyIntent(userQuestion: string, historyFirst?: string): Pro
     /测试|情况|platform|平台|die|良率|yield|lot|device|坏\s*bin/i.test(q)
   ) return "platform_query";
 
-  // Probe-card health / Yield Monitor trigger queries
-  if (/探针卡|probe\s*card|哪张卡|卡号|最差.*(卡|card)|报警最多|yield\s*monitor|触发次数|ym触发|dut.*不均/.test(q)) return "card_probe";
+  // Probe-card health / Yield Monitor trigger queries / combo ranking / degradation trend / bad-bin frequency
+  if (/探针卡|probe\s*card|哪张卡|卡号|最差.*(卡|card)|报警最多|yield\s*monitor|触发次数|ym触发|dut.*不均|组合排名|探针卡排名|最佳组合|最佳搭配|表现排名|接触不良|卡.*(退化|变差|趋势|稳定性)|(退化|变差|趋势|稳定性).*卡/.test(q)) return "card_probe";
 
   // DUT-level analysis: "哪个DUT的BIN8最多", "BIN8集中在哪些DUT", "各DUT分布"
   // Must have both a DUT/site keyword AND a BIN/fail keyword
@@ -1491,6 +1510,7 @@ export function buildSystemPrompt(manifest?: DataManifest, intent: PromptIntent 
     is("lot_bin", "wafer_map")                                && SEC_WAFER_ENUM,
     // Card comparison: card_probe + lot_bin (lot analysis often needs cross-card ranking)
     is("lot_bin", "card_probe")                               && SEC_WORST_CARD,
+    is("lot_bin", "card_probe")                               && SEC_CARD_TESTER_PERFORMANCE,
     is("lot_bin", "card_probe", "mask_query")                 && SEC_BIN_ON_CARD,
     is("lot_bin", "mask_query")                               && SEC_DEVICE_AGG_BAD_BIN,
     is("lot_bin", "card_probe")                               && SEC_CARD_LOTS,
