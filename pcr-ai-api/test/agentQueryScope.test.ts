@@ -248,4 +248,17 @@ describe("agentQueryScope", () => {
     assert.equal(args?.["cardId"], "6081-03");
     assert.equal(args?.["device"], undefined);
   });
+
+  it("buildLotListingQueryArgs inherits cardId for 最新N个lot follow-up without pronoun", () => {
+    const history = [
+      { role: "user", content: "6081-03 测试过什么lot，效果怎样" },
+      { role: "assistant", content: "…" },
+    ];
+    const args = buildLotListingQueryArgs(
+      "列出最新的5个lot，并给出平均yield",
+      history
+    );
+    assert.equal(args?.["cardId"], "6081-03");
+    assert.equal(args?.["device"], undefined);
+  });
 });

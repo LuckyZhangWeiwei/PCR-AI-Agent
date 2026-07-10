@@ -63,6 +63,7 @@ import {
   parseJbToolPayload,
   payloadCoversMultipleLots,
   resolveJbToolPayload,
+  shouldAppendUnderperformingDutYield,
 } from "./agentJbDeterministicReply.js";
 import {
   buildLotOverviewQueryArgs,
@@ -1043,8 +1044,12 @@ async function emitDeterministicJbTablesReply(
 
   // B 路 best-effort：lot 概况末尾补「各 DUT 良率」高亮表 + 散点图（失败/无数据静默跳过）
   let dutYieldSection = "";
-  if (mode === "generic" || mode === "lot_overview") {
-    dutYieldSection = await tryAppendUnderperformingDutSection(payload, emit);
+  if (shouldAppendUnderperformingDutYield(userQuestion, mode)) {
+    dutYieldSection = await tryAppendUnderperformingDutSection(
+      payload,
+      emit,
+      userQuestion
+    );
   }
 
   if (!withCommentary) {
@@ -2175,10 +2180,26 @@ async function tryRunUnderperformingDutDirectRoute(
  */
 export async function tryAppendUnderperformingDutSection(
   payload: Record<string, unknown>,
-  emit: (event: AgentSseEvent) => void
+  emit: (event: AgentSseEvent) => void,
+  userQuestion?: string
 ): Promise<string> {
-  const lot = String(payload["lot"] ?? "").trim();
-  const device = String(payload["device"] ?? "").trim();
+  const lotInQ = userQuestion ? extractLotFromUserText(userQuestion) : undefined;
+  let lot = String(payload["lot"] ?? "").trim();
+  let device = String(payload["device"] ?? "").trim();
+
+  if (lotInQ) {
+    const qLot = lotInQ.trim();
+    if (!lot || lot.toUpperCase() !== qLot.toUpperCase()) {
+      lot = qLot;
+      const recent = payload["recentLotsByTestEnd"] as
+        | Array<{ lot?: string; device?: string }>
+        | undefined;
+      const hit = recent?.find(
+        (e) => String(e.lot ?? "").trim().toUpperCase() === qLot.toUpperCase()
+      );
+      if (hit?.device) device = String(hit.device).trim();
+    }
+  }
   // device 可能是确定性层的占位符 "—"（见 agentJbDeterministicReply）→ 视为无 device，
   // 避免拿占位符去跑一次注定失败的慢 INF 取数。
   if (!lot || !device || device === "—") return "";
@@ -2888,7 +2909,10 @@ async function tryRunDeterministicJbSummary(
 
   const payload = resolveJbToolPayload(
     sessionId,
-    String(lastTool.content ?? "")
+    String(lastTool.content ?? ""),
+    extractLotFromUserText(userQuestion)
+      ? { preferredLot: extractLotFromUserText(userQuestion)! }
+      : undefined
   );
   if (!payload) return false;
 

@@ -26,6 +26,7 @@ import {
   isSingleWaferDieClusterQuestion,
   isCardTypeLevelOverviewQuestion,
   resolveJbToolPayload,
+  shouldAppendUnderperformingDutYield,
   stampFirstTestNote,
   FIRST_TEST_ONLY_NOTE,
 } from "../src/lib/agent/agentJbDeterministicReply.js";
@@ -685,6 +686,35 @@ describe("agentJbDeterministicReply", () => {
     const fromCache = resolveJbToolPayload(sid, hist);
     assert.equal(fromCache!._jbSessionCacheVersion, 6);
     clearJbToolRawJson(sid);
+  });
+
+  it("resolveJbToolPayload preferredLot ignores stale session cache for other lot", () => {
+    const sid = "test-preferred-lot";
+    clearJbToolRawJson(sid);
+    storeJbToolRawJson(
+      sid,
+      JSON.stringify({ lot: "DR43370.1W", device: "WA01N39W", count: 4 })
+    );
+    const nf121 = JSON.stringify({
+      lot: "NF12150.1Y",
+      device: "WB01P65J",
+      count: 22,
+    });
+    const p = resolveJbToolPayload(sid, nf121, { preferredLot: "NF12150.1Y" });
+    assert.equal(p?.["lot"], "NF12150.1Y");
+    assert.equal(p?.["device"], "WB01P65J");
+    clearJbToolRawJson(sid);
+  });
+
+  it("shouldAppendUnderperformingDutYield true for lot 测试情况 even if mode is equipment", () => {
+    assert.equal(
+      shouldAppendUnderperformingDutYield("NF12150.1Y 的测试情况", "equipment"),
+      true
+    );
+    assert.equal(
+      shouldAppendUnderperformingDutYield("6081-03 测试过什么lot", "lot_listing"),
+      false
+    );
   });
 
   it("buildDeterministicJbTables picks bin trend markdown", () => {

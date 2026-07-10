@@ -139,6 +139,23 @@ export function isCardPronounQuestion(text: string): boolean {
   return /这\s*(张|把|个|块)?\s*卡|该卡|此卡/i.test(text.trim());
 }
 
+/** 卡级对话的 lot 列表续问（未重复 cardId，如「最新 5 个 lot 良率」）。 */
+function isCardScopedListingFollowUp(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (extractLotFromUserText(t)) return false;
+  if (inferDeviceFromText(t) || inferTesterIdFromText(t)) return false;
+  return /(最近|最新|列出|top\s*\d+|\d+\s*个).*(lot|批次)/i.test(t);
+}
+
+/** 从 history 末条 query_jb_bins 工具参数读取 cardId。 */
+function cardIdFromLastJbQuery(history: ChatMessage[]): string | undefined {
+  const args = findLastToolCallArgs(history, "query_jb_bins");
+  const raw = String(args?.["cardId"] ?? "").trim();
+  if (!raw || !CARD_ID_RE.test(raw)) return undefined;
+  return raw.match(CARD_ID_RE)![1]!;
+}
+
 /** JB lot 列表 / 跨 lot 良率问题的统一查询范围（单一真相源）。 */
 export type JbListingScope = {
   cardId?: string;
@@ -210,8 +227,9 @@ export function resolveJbListingScope(
   const cardFromText = inferCardIdFromText(userQuestion);
   const cardId =
     cardFromText ??
-    (isCardPronounQuestion(userQuestion)
-      ? inferCardIdFromHistory(history)
+    (isCardPronounQuestion(userQuestion) ||
+    isCardScopedListingFollowUp(userQuestion)
+      ? inferCardIdFromHistory(history) ?? cardIdFromLastJbQuery(history)
       : undefined);
 
   const window = resolveRecentTimeWindow(userQuestion, history);

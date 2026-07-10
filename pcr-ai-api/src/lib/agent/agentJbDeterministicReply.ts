@@ -866,8 +866,32 @@ export function parseJbToolPayload(
 /** 内存缓存优先，否则解析工具 history（含 compact 后的 _trendRows）。 */
 export function resolveJbToolPayload(
   sessionId: string,
-  toolContent?: string
+  toolContent?: string,
+  opts?: { preferredLot?: string }
 ): Record<string, unknown> | null {
+  const preferredLot = opts?.preferredLot?.trim();
+  const lotMatches = (p: Record<string, unknown>, lot: string): boolean => {
+    const pLot = String(p["lot"] ?? p["LOT"] ?? "").trim();
+    return (
+      pLot.length > 0 && pLot.toUpperCase() === lot.trim().toUpperCase()
+    );
+  };
+
+  if (preferredLot) {
+    const cached = getJbToolRawJson(sessionId);
+    if (cached) {
+      const p = parseJbToolPayload(cached);
+      if (p && lotMatches(p, preferredLot)) return p;
+    }
+    if (toolContent?.trim()) {
+      const fromTool = parseJbToolPayload(toolContent);
+      if (fromTool && lotMatches(fromTool, preferredLot)) return fromTool;
+    }
+    // 会话级缓存可能是其它 lot（如先查 cardId 再查单 lot）→ 勿用错批次的 payload
+    if (toolContent?.trim()) return parseJbToolPayload(toolContent);
+    return null;
+  }
+
   const cached = getJbToolRawJson(sessionId);
   if (cached) {
     const p = parseJbToolPayload(cached);
@@ -877,6 +901,18 @@ export function resolveJbToolPayload(
     return parseJbToolPayload(toolContent);
   }
   return null;
+}
+
+/** lot 概况类问题末尾是否应补各 DUT 良率表（与 mode 解耦，避免 equipment 误判漏 DUT）。 */
+export function shouldAppendUnderperformingDutYield(
+  userQuestion: string,
+  mode: string
+): boolean {
+  if (mode === "lot_overview" || mode === "generic") return true;
+  return (
+    isLotOverviewQuestion(userQuestion) &&
+    extractLotFromUserText(userQuestion) != null
+  );
 }
 
 function digestFromPayload(o: Record<string, unknown>): AgentTablesDigest {
