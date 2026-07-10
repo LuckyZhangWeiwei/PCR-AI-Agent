@@ -168,6 +168,28 @@ export const TOOL_SCHEMAS = [
   {
     type: "function",
     function: {
+      name: "aggregate_probe_card_tester_performance",
+      description:
+        "按 device 计算 JB STAR 探针卡/测试机组合良率排名与探针卡表现排名（含月度趋势、坏 bin 频率、置信度档位）。用于回答：哪个探针卡+测试机组合良率最好/最差、探针卡表现排名、这张卡良率是不是在变差、这张卡常见坏 bin 是什么。**必填 device**；未传 passId 时按 passId∈{1,3,5} 分别输出三张组合表+三张探针卡表（pass1/pass3/pass5，不跨 sort 合并）。结果含月度良率趋势表（仅≥2个月数据的卡）与坏 bin Top3 频率表（仅频率统计，非坐标级分布）。数字均由服务端计算直出，禁止在回复里自行改写。",
+      parameters: {
+        type: "object",
+        properties: {
+          device: { type: "string", description: "device 代码，必填" },
+          passId: {
+            type: "number",
+            description:
+              "测试层 PASSID：pass1/常温/sort1→1，pass3/高温/sort2→3，pass5/低温/sort3→5（勿用2/4）；不传则分 1/3/5 三组分别输出",
+          },
+          testEndFrom: { type: "string", description: "TESTEND 起始时间（ISO），不传默认最近一年" },
+          testEndTo: { type: "string", description: "TESTEND 结束时间（ISO）" },
+        },
+        required: ["device"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "generate_chart",
       description:
         "根据数据生成 ECharts 图表。占比 pie 可传顶层 labels+values；或 data:{labels,series}。刚执行 query_inf_site_bin_by_dut 后画 DUT 占比可只传 chartType=pie 与含 DUT 编号的 title。**调用前必须已有真实数值**；禁止传空数组或占位符——若数据未获取，先调相关查询工具。",
