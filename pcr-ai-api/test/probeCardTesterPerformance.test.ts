@@ -69,3 +69,128 @@ describe("probeCardTesterPerformance: rowYieldPct", () => {
     assert.equal(rowYieldPct(row), 90);
   });
 });
+
+import { computeProbeCardTesterPerformance } from "../src/lib/probeCardTesterPerformance.js";
+
+function jbRow(opts: {
+  cardId: string;
+  testerId: string;
+  passId: number;
+  lot: string;
+  testEnd: string;
+  grossDie: number;
+  badBins?: { n: number; value: number }[];
+}): Record<string, unknown> {
+  return {
+    CARDID: opts.cardId,
+    TESTERID: opts.testerId,
+    PASSID: opts.passId,
+    LOT: opts.lot,
+    TESTEND: opts.testEnd,
+    GROSSDIE: opts.grossDie,
+    PASSBIN: undefined,
+    bins: (opts.badBins ?? []).map((b) => ({ n: b.n, value: b.value, isGoodBin: false })),
+  };
+}
+
+describe("computeProbeCardTesterPerformance: grouping and ranking", () => {
+  test("groups by passId, never merges 1/3/5", () => {
+    const rows = [
+      jbRow({ cardId: "A-01", testerId: "T1", passId: 1, lot: "L1.1A", testEnd: "2026-01-05", grossDie: 100 }),
+      jbRow({ cardId: "A-01", testerId: "T1", passId: 3, lot: "L1.1A", testEnd: "2026-01-05", grossDie: 100 }),
+    ];
+    const groups = computeProbeCardTesterPerformance(rows);
+    assert.equal(groups.length, 2);
+    assert.deepEqual(groups.map((g) => g.passId).sort(), [1, 3]);
+  });
+
+  test("comboRanking sorted by avgYield desc, tie broken by stdDev asc", () => {
+    const rows = [
+      // Card B: 2 records, both 100% yield -> avg 100, stddev 0
+      jbRow({ cardId: "B-01", testerId: "T2", passId: 1, lot: "L1", testEnd: "2026-01-01", grossDie: 100 }),
+      jbRow({ cardId: "B-01", testerId: "T2", passId: 1, lot: "L2", testEnd: "2026-02-01", grossDie: 100 }),
+      // Card A: 1 record, 90% yield
+      jbRow({ cardId: "A-01", testerId: "T1", passId: 1, lot: "L3", testEnd: "2026-01-01", grossDie: 100, badBins: [{ n: 5, value: 10 }] }),
+    ];
+    const [group] = computeProbeCardTesterPerformance(rows);
+    assert.equal(group!.comboRanking[0]!.cardId, "B-01");
+    assert.equal(group!.comboRanking[0]!.avgYieldPct, 100);
+    assert.equal(group!.comboRanking[1]!.cardId, "A-01");
+  });
+
+  test("confidenceTier from lotCount: >=10 高, 3-9 中, <3 低", () => {
+    const many = Array.from({ length: 10 }, (_, i) =>
+      jbRow({ cardId: "C-01", testerId: "T1", passId: 1, lot: `L${i}`, testEnd: "2026-01-01", grossDie: 100 })
+    );
+    const mid = Array.from({ length: 3 }, (_, i) =>
+      jbRow({ cardId: "C-02", testerId: "T1", passId: 1, lot: `M${i}`, testEnd: "2026-01-01", grossDie: 100 })
+    );
+    const few = [jbRow({ cardId: "C-03", testerId: "T1", passId: 1, lot: "F0", testEnd: "2026-01-01", grossDie: 100 })];
+    const [group] = computeProbeCardTesterPerformance([...many, ...mid, ...few]);
+    const byId = new Map(group!.cardRanking.map((r) => [r.cardId, r]));
+    assert.equal(byId.get("C-01")!.confidenceTier, "高");
+    assert.equal(byId.get("C-02")!.confidenceTier, "中");
+    assert.equal(byId.get("C-03")!.confidenceTier, "低");
+  });
+
+  test("cardRanking assessment: lotCount<3 wins first regardless of yield", () => {
+    const rows = [jbRow({ cardId: "D-01", testerId: "T1", passId: 1, lot: "L1", testEnd: "2026-01-01", grossDie: 100 })];
+    const [group] = computeProbeCardTesterPerformance(rows);
+    assert.equal(group!.cardRanking[0]!.assessment, "样本有限，置信度低");
+  });
+
+  test("cardRanking assessment: avgYield far below group mean -> 良率明显偏低", () => {
+    // 5 cards with lotCount>=3 each, one is a clear outlier low-yield card
+    const good = ["E-01", "E-02", "E-03", "E-04"].flatMap((cardId) =>
+      Array.from({ length: 3 }, (_, i) =>
+        jbRow({ cardId, testerId: "T1", passId: 1, lot: `${cardId}-${i}`, testEnd: "2026-01-01", grossDie: 100 })
+      )
+    );
+    const bad = Array.from({ length: 3 }, (_, i) =>
+      jbRow({ cardId: "E-05", testerId: "T1", passId: 1, lot: `E-05-${i}`, testEnd: "2026-01-01", grossDie: 100, badBins: [{ n: 5, value: 60 }] })
+    );
+    const [group] = computeProbeCardTesterPerformance([...good, ...bad]);
+    const worst = group!.cardRanking.find((r) => r.cardId === "E-05")!;
+    assert.equal(worst.assessment, "良率明显偏低");
+  });
+
+  test("cardTrend only includes cards with >=2 distinct months", () => {
+    const rows = [
+      jbRow({ cardId: "F-01", testerId: "T1", passId: 1, lot: "L1", testEnd: "2026-01-05", grossDie: 100 }),
+      jbRow({ cardId: "F-01", testerId: "T1", passId: 1, lot: "L2", testEnd: "2026-02-05", grossDie: 100 }),
+      // single-month card excluded
+      jbRow({ cardId: "F-02", testerId: "T1", passId: 1, lot: "L3", testEnd: "2026-01-05", grossDie: 100 }),
+    ];
+    const [group] = computeProbeCardTesterPerformance(rows);
+    const cardIds = new Set(group!.cardTrend.map((r) => r.cardId));
+    assert.ok(cardIds.has("F-01"));
+    assert.ok(!cardIds.has("F-02"));
+    assert.equal(group!.cardTrend.filter((r) => r.cardId === "F-01").length, 2);
+  });
+
+  test("cardBadBin: top 3 bins by share of that card's total bad die", () => {
+    const rows = [
+      jbRow({ cardId: "G-01", testerId: "T1", passId: 1, lot: "L1", testEnd: "2026-01-01", grossDie: 200, badBins: [{ n: 7, value: 65 }, { n: 12, value: 20 }, { n: 23, value: 8 }, { n: 40, value: 7 }] }),
+    ];
+    const [group] = computeProbeCardTesterPerformance(rows);
+    const entry = group!.cardBadBin.find((r) => r.cardId === "G-01")!;
+    assert.equal(entry.topBins.length, 3);
+    assert.equal(entry.topBins[0]!.bin, 7);
+    assert.ok(Math.abs(entry.topBins[0]!.pct - 65) < 1e-6);
+  });
+
+  test("markdown tables are non-empty strings containing cardId", () => {
+    const rows = [jbRow({ cardId: "H-01", testerId: "T1", passId: 1, lot: "L1", testEnd: "2026-01-01", grossDie: 100 })];
+    const [group] = computeProbeCardTesterPerformance(rows);
+    assert.ok(group!.comboRankingMarkdown.includes("H-01"));
+    assert.ok(group!.cardRankingMarkdown.includes("H-01"));
+  });
+
+  test("rows with GROSSDIE missing are excluded from all stats", () => {
+    const rows = [
+      jbRow({ cardId: "I-01", testerId: "T1", passId: 1, lot: "L1", testEnd: "2026-01-01", grossDie: 0 }),
+    ];
+    const groups = computeProbeCardTesterPerformance(rows);
+    assert.equal(groups.length, 0);
+  });
+});
