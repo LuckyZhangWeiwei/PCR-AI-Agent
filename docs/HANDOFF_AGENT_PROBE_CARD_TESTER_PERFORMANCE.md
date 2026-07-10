@@ -96,7 +96,7 @@ cd pcr-ai-api
 npm ci && npm run build && npm run pm2:reload
 ```
 
-真库验证（部署后）：用一个已知有较多 lot 历史的 device（如从 manifest `topDevices` 挑一个）在 Agent 对话里问「[device] 这个 device 下最好的探针卡+机台组合」，确认：
+真库验证（部署后）：用一个已知有较多 lot 历史的 device（如从 manifest `topDevices` 挑一个）在 Agent 对话里问「WA03P02G 这个 device 下最好的探针卡+机台组合」，确认：
 - 分 pass1/pass3/pass5 三组输出
 - Oracle 路径的 COUNT 查询先执行（可在服务端日志 `logAgentSql` 输出确认），未超 `MEMORY_AGG_ORACLE_MAX_ROWS` 时正常拉全量行
 - 数字与手工核算一致
