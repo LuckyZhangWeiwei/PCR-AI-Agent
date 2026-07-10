@@ -23,6 +23,7 @@ import {
 } from "../infcontrolLayerBinFilters.js";
 import {
   parseInfcontrolLayerBinsV3AggregateQuery,
+  adaptInfcontrolV3WhereAndSqlToAggregateAliases,
 } from "../infcontrolLayerBinV3Aggregate.js";
 import {
   buildInfcontrolLayerBinAggregateSql,
@@ -41,6 +42,9 @@ import {
   buildInfcontrolLayerBinsV3Sql,
   buildInfcontrolLayerBinsV3SqlFullMatching,
 } from "../apiV3ListSql.js";
+import { infcontrolLayerBinV3BaseWhereBlock } from "../infcontrolLayerBinPasstypeScope.js";
+import { readMemoryAggregateOracleMaxRows } from "../memoryAggregateOracleLimits.js";
+import { computeProbeCardTesterPerformance } from "../probeCardTesterPerformance.js";
 import { probeCardTypeLeadingSegment } from "../probeCardTypeLeadingSegment.js";
 import { deviceBaseMask } from "../deviceMask.js";
 import { addDutNumberToYieldMonitorV3Row } from "../yieldTriggerLabelDut.js";
@@ -516,6 +520,80 @@ async function toolAggregateJbBins(
   return truncateResult({ totalRowsMatching: total, groups }, maxChars);
 }
 
+async function toolAggregateProbeCardTesterPerformance(
+  args: Record<string, unknown>,
+  maxChars: number
+): Promise<string> {
+  const device = typeof args["device"] === "string" ? args["device"].trim() : "";
+  if (!device) {
+    return "aggregate_probe_card_tester_performance 参数错误: device 不能为空，必须先给出 device 代码。";
+  }
+
+  const params: Record<string, unknown> = { device };
+  if (typeof args["passId"] === "number") params["passId"] = args["passId"];
+  if (args["testEndFrom"]) params["testEndFrom"] = args["testEndFrom"];
+  if (args["testEndTo"]) params["testEndTo"] = args["testEndTo"];
+
+  const parsed = parseInfcontrolLayerBinsV3Query(params);
+  if (!parsed.ok) return `查询参数错误: ${parsed.error}`;
+
+  const maxRows = readMemoryAggregateOracleMaxRows();
+  let rawRows: Record<string, unknown>[];
+
+  if (infcontrolLayerBinsUseDummy()) {
+    rawRows = filterInfcontrolLayerBinV3DummyRowsMatching(
+      parsed.applied
+    ) as Record<string, unknown>[];
+    if (rawRows.length > maxRows) {
+      return `aggregate_probe_card_tester_performance 错误：匹配行数 (${rawRows.length}) 超过上限 (${maxRows})，请缩小 passId 或 testEndFrom/testEndTo 时间范围。`;
+    }
+  } else {
+    const adapted = adaptInfcontrolV3WhereAndSqlToAggregateAliases(parsed.whereAndSql);
+    const countWhereSql = infcontrolLayerBinV3BaseWhereBlock("lb", adapted);
+    const countSql = buildInfcontrolLayerBinMatchingCountSql(countWhereSql);
+    const matchingCount = await withConnection(async (conn) => {
+      const result = await conn.execute(countSql, parsed.binds, {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+      });
+      const rows = (result.rows ?? []) as Record<string, unknown>[];
+      return typeof rows[0]?.["TOTAL_MATCHING"] === "number"
+        ? (rows[0]["TOTAL_MATCHING"] as number)
+        : 0;
+    });
+    if (matchingCount > maxRows) {
+      return `aggregate_probe_card_tester_performance 错误：匹配行数 (${matchingCount}) 超过上限 (${maxRows})，请缩小 passId 或 testEndFrom/testEndTo 时间范围。`;
+    }
+    const sql = buildInfcontrolLayerBinsV3SqlFullMatching(parsed.whereAndSql);
+    logAgentSql("aggregate_probe_card_tester_performance", sql, parsed.binds, {
+      device,
+      passId: typeof args["passId"] === "number" ? args["passId"] : undefined,
+    });
+    rawRows = await withConnection(async (conn) => {
+      const result = await conn.execute(sql, parsed.binds, {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+      });
+      return (result.rows ?? []) as Record<string, unknown>[];
+    });
+  }
+
+  const enriched = rawRows.map(enrichJbRow);
+  const groups = computeProbeCardTesterPerformance(enriched);
+
+  if (groups.length === 0) {
+    return `aggregate_probe_card_tester_performance: device=${device} 在指定范围内未查到有效良率数据（GROSSDIE 缺失，或 PASSID 不在 1/3/5 范围内）。可尝试放宽 testEndFrom/testEndTo。`;
+  }
+
+  return truncateResult(
+    {
+      device,
+      passIdFilter: typeof args["passId"] === "number" ? args["passId"] : null,
+      totalRowsMatching: rawRows.length,
+      groups,
+    },
+    maxChars
+  );
+}
+
 /**
  * Compact INF DUT-distribution data before handing to the model.
  *
@@ -869,6 +947,8 @@ export async function runTool(
       return toolQueryJbBins(args, maxChars, options);
     case "aggregate_jb_bins":
       return toolAggregateJbBins(args, maxChars);
+    case "aggregate_probe_card_tester_performance":
+      return toolAggregateProbeCardTesterPerformance(args, maxChars);
     case "generate_chart": {
       try {
         const fromHistory =
