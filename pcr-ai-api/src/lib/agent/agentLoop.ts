@@ -54,12 +54,14 @@ import {
   isLotDetailListingQuestion,
   isLotYieldRankingQuestion,
   buildLotListingContext,
+  inferLotListingPresentation,
   isPerSlotBadBinRankingQuestion,
   isProbeCardQuestion,
   isBinCardAttributionQuestion,
   isTesterMachineQuestion,
   jbReplySkipsCommentaryLlm,
   parseJbToolPayload,
+  payloadCoversMultipleLots,
   resolveJbToolPayload,
 } from "./agentJbDeterministicReply.js";
 import {
@@ -103,7 +105,7 @@ import {
 } from "./agentUnderperformingDutView.js";
 import type { PassUnderperformingDutsResult } from "../lotUnderperformingDuts.js";
 import { runLotUnderperformingDuts } from "../lotUnderperformingDutsResolve.js";
-import { buildScopeLabelFromAggregateArgs, findLastToolCallArgs, inferDeviceFromText, inferLotFromHistory } from "./agentQueryScope.js";
+import { buildScopeLabelFromAggregateArgs, findLastToolCallArgs, inferDeviceFromText, inferLotFromHistory, jbListingScopeLabel, resolveJbListingScope } from "./agentQueryScope.js";
 import { deviceBaseMask } from "../deviceMask.js";
 import {
   buildInfDrawArgsAfterJbLookup,
@@ -977,9 +979,12 @@ async function emitDeterministicJbTablesReply(
   const turnLots = collectQueryJbBinsLotsThisTurn(history);
   if (turnLots.length > 1) {
     const lotNamedInQuestion = Boolean(extractLotFromUserText(userQuestion));
+    const canRenderScopedListing =
+      decision.mode === "lot_listing" && payloadCoversMultipleLots(payload);
     // lot_yield_ranking 故意 fan-out 多 lot query_jb_bins 再合并 rank，不能 bail
     if (
       decision.mode !== "lot_yield_ranking" &&
+      !canRenderScopedListing &&
       (decision.isMultiLotCompare || !lotNamedInQuestion)
     ) {
       console.warn(
@@ -1004,8 +1009,20 @@ async function emitDeterministicJbTablesReply(
         `本次出表可能基于残缺片数；应先 query_jb_bins(lot:"${lotInQuestion}", limit:200) 取全量再出详细。`
     );
   }
-  const listingCtx = buildLotListingContext(payload, history);
-  const tables = buildDeterministicJbTables(userQuestion, payload, listingCtx, decision.mode);
+  const listingCtx = {
+    ...buildLotListingContext(payload, history),
+    scopeLabel: (() => {
+      const scope = resolveJbListingScope(userQuestion, history);
+      return scope ? jbListingScopeLabel(scope) : undefined;
+    })(),
+    presentation: inferLotListingPresentation(userQuestion),
+  };
+  const tables = buildDeterministicJbTables(
+    userQuestion,
+    payload,
+    listingCtx,
+    decision.mode
+  );
   if (!tables?.trim()) return false;
 
   const mode = decision.mode;
@@ -3339,7 +3356,7 @@ export async function runAgentLoop(
       lastTool ? String(lastTool.content ?? "") : undefined
     );
 
-    if (awaitingSummary && lotListingNeedsJbRecovery(userQuestion, lastTool?.name)) {
+    if (awaitingSummary && lotListingNeedsJbRecovery(userQuestion, lastTool?.name, history)) {
       const listingRecovered = await tryRunLotListingDirectRoute(
         sessionId,
         userQuestion,

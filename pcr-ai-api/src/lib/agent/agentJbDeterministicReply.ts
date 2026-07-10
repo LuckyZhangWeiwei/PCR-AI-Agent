@@ -136,6 +136,13 @@ export function isLotListingQuestion(text: string): boolean {
   // 口语「(都)测试了什么lot / 测了哪些lot / 都有什么批次」——跨 lot 列表，非单 lot 概况。
   // 「什么/哪些/多少」紧接 lot/批次（含「什么lot」「哪些批次」）。wafer/片/slot 是 lot 内枚举，排除。
   if (/(什么|哪些|多少)\s*(lot|批次)/i.test(t) && !/wafer|片|slot/i.test(t)) return true;
+  // 最近 N 个 lot + 良率/yield — 仍是跨 lot 枚举（scope 由 resolveJbListingScope 决定）
+  if (
+    /(最近|最新).*\d*\s*(个)?\s*(lot|批次)/i.test(t) &&
+    /(良率|yield|良品率|评价)/i.test(t)
+  ) {
+    return true;
+  }
   // 「什么/哪些/多少」与 lot/批次 分离但同句（「都测试了哪些批次」「跑了多少个lot」）。
   if (
     /(都|测试了|测了|跑了|做了|包含|涉及|有)\s*(什么|哪些|多少)/i.test(t) &&
@@ -300,7 +307,51 @@ export type LotListingContext = {
   ymSuspectDutsByLot?: Map<string, string[]>;
   topFailBinByLot?: Map<string, string>;
   detailed?: boolean;
+  /** 表头 scope 标签（来自 resolveJbListingScope）。 */
+  scopeLabel?: string;
+  /** 列/行数呈现（良率列、topN、平均良率）。 */
+  presentation?: LotListingPresentation;
 };
+
+/** lot 列表表的呈现选项（与查询 scope 解耦）。 */
+export type LotListingPresentation = {
+  topN?: number;
+  includeYield: boolean;
+  includeAverageYield: boolean;
+};
+
+const ZH_NUM_LISTING: Record<string, number> = {
+  一: 1,
+  两: 2,
+  二: 2,
+  三: 3,
+  四: 4,
+  五: 5,
+  六: 6,
+  七: 7,
+  八: 8,
+  九: 9,
+  十: 10,
+};
+
+export function inferLotListingPresentation(text: string): LotListingPresentation {
+  const t = text.trim();
+  let topN: number | undefined;
+  const nMatch = t.match(/top\s*(\d+)|(\d+)\s*个/i);
+  if (nMatch) {
+    topN = Math.min(Math.max(1, Number(nMatch[1] ?? nMatch[2])), 50);
+  }
+  const zhMatch = t.match(/([一两二三四五六七八九十两])\s*个\s*(lot|批次)/i);
+  if (!topN && zhMatch) {
+    const n = ZH_NUM_LISTING[zhMatch[1]!];
+    if (n) topN = n;
+  }
+  const includeYield = /(良率|yield|良品率|评价)/i.test(t);
+  const includeAverageYield =
+    /平均.*(良率|yield|良品率)/i.test(t) ||
+    (includeYield && topN != null);
+  return { topN, includeYield, includeAverageYield };
+}
 
 export function buildLotListingContext(
   toolPayload: Record<string, unknown>,
@@ -407,7 +458,9 @@ export function isCardTestOverviewQuestion(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
   if (!/\b\d{4}-\d{2,3}\b/.test(t)) return false;
-  return /(测试情况|的情况|整体情况|使用情况|历次测试|测试结果|性能)/i.test(t);
+  return /(测试情况|的情况|整体情况|使用情况|历次测试|测试结果|性能|效果怎样|效果怎么样|效果如何)/i.test(
+    t
+  );
 }
 
 /** 从用户文字提取探针卡 ID（dddd-dd/ddd 格式）。 */
@@ -999,20 +1052,105 @@ function buildLotYieldRankingMarkdown(
   return `${header}\n\n${rows.join("\n")}`;
 }
 
-/** 跨 lot 列表（JB recentLotsByTestEnd + YM 合并；可选 fail bin / 嫌疑 DUT 列）。 */
+type LotYieldRankRow = {
+  lot: string;
+  device: string;
+  yieldPct: number;
+  worstSlot: number;
+  worstPassId: number;
+  testEnd: string | null;
+};
+
+/** 跨 lot 良率表（lotYieldRankByTestEnd；供 lot_listing 与 card_test_overview 共用）。 */
+function buildLotYieldRankListingMarkdown(
+  rank: LotYieldRankRow[],
+  options: {
+    scopeTag: string;
+    totalLots: number;
+    presentation: LotListingPresentation;
+  }
+): string | null {
+  if (!rank.length) return null;
+  const { scopeTag, totalLots, presentation } = options;
+  const topN = presentation.topN;
+  const sorted = [...rank].sort((a, b) =>
+    (b.testEnd ?? "").localeCompare(a.testEnd ?? "")
+  );
+  const slice = topN != null ? sorted.slice(0, topN) : sorted;
+  if (!slice.length) return null;
+
+  const rows = [
+    "| # | lot | device | 良率% | 最差片 / pass | 测试结束 |",
+    "|---:|---|---|---:|---|---|",
+    ...slice.map((e, i) => {
+      const passLabel = `waferId ${e.worstSlot} / pass${e.worstPassId}`;
+      const testEnd = e.testEnd ? String(e.testEnd).slice(0, 10) : "—";
+      return `| ${i + 1} | ${e.lot} | ${e.device} | ${e.yieldPct.toFixed(2)}% | ${passLabel} | ${testEnd} |`;
+    }),
+  ];
+
+  let header = `**测试 lot 良率列表${scopeTag}**`;
+  if (topN != null) {
+    header =
+      `**测试 lot 良率列表${scopeTag}（最近 ${slice.length} 个 lot` +
+      (totalLots > slice.length ? `，该范围共 ${totalLots} 个 lot` : "") +
+      `，按 TESTEND 降序）**`;
+  } else if (totalLots > slice.length) {
+    header = `**测试 lot 良率列表${scopeTag}（共 ${totalLots} 个 lot，下表列 ${slice.length} 个）**`;
+  }
+
+  let body = `${header}\n\n${rows.join("\n")}`;
+  if (presentation.includeAverageYield && slice.length > 0) {
+    const avg =
+      slice.reduce((s, e) => s + e.yieldPct, 0) / slice.length;
+    body += `\n\n**平均良率（上述 ${slice.length} 个 lot）：${avg.toFixed(2)}%**`;
+  }
+  return body;
+}
+
+/** 跨 lot 列表（JB recentLotsByTestEnd + YM 合并；可选 fail bin / 嫌疑 DUT / 良率列）。 */
 export function buildRecentLotsListingMarkdown(
   toolPayload: Record<string, unknown>,
   ctx?: Partial<LotListingContext>
 ): string | null {
-  const recent = toolPayload["recentLotsByTestEnd"] as
-    | RecentLotByTestEndEntry[]
+  const presentation = ctx?.presentation ?? {
+    includeYield: false,
+    includeAverageYield: false,
+  };
+  const rank = toolPayload["lotYieldRankByTestEnd"] as
+    | LotYieldRankRow[]
     | undefined;
   const totalDistinct = Number(
     toolPayload["totalDistinctLots"] ??
       toolPayload["distinctLotCount"] ??
       toolPayload["multiLotDistinctCount"] ??
+      rank?.length ??
       0
   );
+
+  const scopeTag = ctx?.scopeLabel
+    ? `（${ctx.scopeLabel}）`
+    : (() => {
+        const scopeDevice = String(toolPayload["device"] ?? "").trim();
+        const scopeTester = String(toolPayload["testerId"] ?? "").trim();
+        const scopeParts = [
+          scopeDevice ? `device=${scopeDevice}` : "",
+          scopeTester ? `机台=${scopeTester}` : "",
+        ].filter(Boolean);
+        return scopeParts.length ? `（${scopeParts.join("，")}）` : "";
+      })();
+
+  if (presentation.includeYield && rank?.length) {
+    return buildLotYieldRankListingMarkdown(rank, {
+      scopeTag,
+      totalLots: totalDistinct || rank.length,
+      presentation,
+    });
+  }
+
+  const recent = toolPayload["recentLotsByTestEnd"] as
+    | RecentLotByTestEndEntry[]
+    | undefined;
   const ymLots = ctx?.ymLots;
   const ymAlarm = ctx?.ymAlarmCountByLot ?? new Map<string, number>();
   const ymSuspect = ctx?.ymSuspectDutsByLot ?? new Map<string, string[]>();
@@ -1110,24 +1248,22 @@ export function buildRecentLotsListingMarkdown(
   });
 
   const totalKnown = Math.max(totalDistinct, rows.length);
-  const scopeDevice = String(toolPayload["device"] ?? "").trim();
-  const scopeTester = String(toolPayload["testerId"] ?? "").trim();
-  const scopeParts = [
-    scopeDevice ? `device=${scopeDevice}` : "",
-    scopeTester ? `机台=${scopeTester}` : "",
-  ].filter(Boolean);
-  const scopeTag = scopeParts.length ? `（${scopeParts.join("，")}）` : "";
+
+  const displayRows =
+    presentation.topN != null ? rows.slice(0, presentation.topN) : rows;
 
   let header = `**测试 lot 列表${scopeTag}（共 ${totalKnown} 个 lot，按测试结束时间降序）**`;
-  if (totalDistinct > 0 && rows.length < totalDistinct) {
-    header = `**测试 lot 列表${scopeTag}（共 ${totalDistinct} 个 lot，下表列前 ${rows.length} 个）**`;
+  if (totalDistinct > 0 && displayRows.length < totalDistinct) {
+    header = `**测试 lot 列表${scopeTag}（共 ${totalDistinct} 个 lot，下表列前 ${displayRows.length} 个）**`;
+  } else if (presentation.topN != null) {
+    header = `**测试 lot 列表${scopeTag}（最近 ${displayRows.length} 个 lot）**`;
   }
 
   const tableRows = detailed
     ? [
         "| # | Lot | Device | 测试结束 | 片数 | TOP fail BIN | YM 报警 | 嫌疑 DUT | 数据来源 |",
         "|---:|---|---|---|---:|---|---:|---|---|",
-        ...rows.map((r, i) => {
+        ...displayRows.map((r, i) => {
           const alarm = ymAlarm.get(r.lot);
           const duts = ymSuspect.get(r.lot)?.join("、") ?? "—";
           const failBin = topFail.get(r.lot) ?? "—";
@@ -1137,7 +1273,7 @@ export function buildRecentLotsListingMarkdown(
     : [
         "| # | Lot | Device | 测试结束 | 片数 | 数据来源 |",
         "|---:|---|---|---|---:|---|",
-        ...rows.map((r, i) =>
+        ...displayRows.map((r, i) =>
           `| ${i + 1} | ${r.lot} | ${r.device} | ${r.testEnd} | ${r.slotCount} | ${r.source} |`
         ),
       ];
@@ -1290,32 +1426,15 @@ function buildCardTestOverviewMarkdown(
     }
   }
 
-  // 4. 近期 lot 测试记录（按 testEnd 降序，最多 10 条）
-  type RankEntry = {
-    lot: string;
-    device: string;
-    yieldPct: number;
-    worstSlot: number;
-    worstPassId: number;
-    testEnd: string | null;
-  };
-  const rank = toolPayload["lotYieldRankByTestEnd"] as RankEntry[] | undefined;
+  // 4. 近期 lot 测试记录（与 lot_listing 共用良率表）
+  const rank = toolPayload["lotYieldRankByTestEnd"] as LotYieldRankRow[] | undefined;
   if (rank?.length) {
-    const recent = [...rank]
-      .sort((a, b) =>
-        (b.testEnd ?? "").localeCompare(a.testEnd ?? "")
-      )
-      .slice(0, 10);
-    const rows = [
-      "| lot | device | 良率% | 最差片 / pass | 测试结束时间 |",
-      "|---|---|---|---|---|",
-      ...recent.map((e) => {
-        const passLabel = `waferId ${e.worstSlot} / pass${e.worstPassId}`;
-        const testEnd = e.testEnd ? String(e.testEnd).slice(0, 10) : "—";
-        return `| ${e.lot} | ${e.device} | ${e.yieldPct.toFixed(1)}% | ${passLabel} | ${testEnd} |`;
-      }),
-    ];
-    parts.push(`**近期 lot 测试记录（按 testEnd 降序）**\n\n${rows.join("\n")}`);
+    const lotYieldMd = buildLotYieldRankListingMarkdown(rank, {
+      scopeTag: `（cardId=${cardId}）`,
+      totalLots: rank.length,
+      presentation: { topN: 10, includeYield: true, includeAverageYield: false },
+    });
+    if (lotYieldMd) parts.push(lotYieldMd);
   }
 
   return parts.length ? parts.join("\n\n") : null;
@@ -1332,9 +1451,12 @@ export function buildDeterministicJbTables(
 
   if (mode === "lot_listing") {
     const detailed = isLotDetailListingQuestion(userMessage);
+    const presentation =
+      listingCtx?.presentation ?? inferLotListingPresentation(userMessage);
     return buildRecentLotsListingMarkdown(toolPayload, {
       ...listingCtx,
       detailed,
+      presentation,
     });
   }
 

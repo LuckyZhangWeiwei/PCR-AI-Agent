@@ -24,6 +24,8 @@ export interface AgentConfig {
 const DEFAULT_API_BASE = "https://api.siliconflow.cn/v1";
 const DEFAULT_MODEL = "deepseek-ai/DeepSeek-V4-Flash";
 const DEFAULT_SUB_MODEL = "deepseek-ai/DeepSeek-V4-Flash";
+/** 生产环境唯一允许的 Agent 主/子模型。 */
+export const ALLOWED_AGENT_MODEL = DEFAULT_MODEL;
 export const DEFAULT_MAX_ROUNDS = 8;
 const MIN_MAX_ROUNDS = 1;
 const MAX_MAX_ROUNDS = 20;
@@ -176,13 +178,9 @@ export function resolveAgentConfig(
     DEFAULT_API_BASE;
   const apiBase = sanitizeApiBase(rawBase);
   const model =
-    override?.model?.trim() ||
-    process.env.AGENT_MODEL?.trim() ||
-    DEFAULT_MODEL;
+    ALLOWED_AGENT_MODEL;
   const subAgentModel =
-    override?.subAgentModel?.trim() ||
-    process.env.AGENT_SUB_MODEL?.trim() ||
-    DEFAULT_SUB_MODEL;
+    ALLOWED_AGENT_MODEL;
   const maxRounds = clampMaxRounds(
     override?.maxRounds ?? process.env.AGENT_MAX_ROUNDS
   );

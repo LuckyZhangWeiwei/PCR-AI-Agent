@@ -239,4 +239,13 @@ describe("agentQueryScope", () => {
     const args = buildJbScopeArgs("WC13N55Z 各 lot 良率 top5", [], "query_jb_bins");
     assert.equal(args?.["device"], "WC13N55Z");
   });
+
+  it("buildLotListingQueryArgs uses cardId when user refers to 这个卡", () => {
+    const args = buildLotListingQueryArgs(
+      "列出这个卡最近5个lot的平均良品率",
+      [{ role: "user", content: "6081-03 测试过什么lot" }]
+    );
+    assert.equal(args?.["cardId"], "6081-03");
+    assert.equal(args?.["device"], undefined);
+  });
 });

@@ -70,7 +70,7 @@ const CHECKERS: PendingQueryChecker[] = [
     name: "query_jb_bins:after_filter_values",
     check(userQuestion, lastToolName, _payload, history) {
       if (lastToolName !== "get_filter_values") return null;
-      if (!canRunLotListingDirectRoute(userQuestion)) return null;
+      if (!canRunLotListingDirectRoute(userQuestion, history)) return null;
       const args = buildLotListingQueryArgs(userQuestion, history);
       if (!args) return null;
       return {

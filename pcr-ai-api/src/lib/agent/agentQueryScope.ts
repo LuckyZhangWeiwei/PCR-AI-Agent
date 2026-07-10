@@ -89,6 +89,188 @@ export function inferPlatformFromText(text: string): string | undefined {
   return undefined;
 }
 
+const CARD_ID_RE = /\b(\d{4}-\d{2,3})\b/;
+
+/** 从用户句提取完整探针卡号（dddd-dd / dddd-ddd）。 */
+export function inferCardIdFromText(text: string): string | undefined {
+  const m = text.match(CARD_ID_RE);
+  return m ? m[1] : undefined;
+}
+
+/** 从近期对话推断 cardId（用户句、工具参数、YM probeCard）。 */
+export function inferCardIdFromHistory(history: ChatMessage[]): string | undefined {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const msg = history[i]!;
+    if (msg.role === "user") {
+      const c = inferCardIdFromText(String(msg.content ?? ""));
+      if (c) return c;
+    }
+    if (msg.role === "assistant") {
+      const fromText = inferCardIdFromText(String(msg.content ?? ""));
+      if (fromText) return fromText;
+      if (msg.tool_calls?.length) {
+        for (const tc of msg.tool_calls) {
+          const args = tryParseToolCallArgs(tc.function.arguments);
+          const cardId = String(
+            args?.["cardId"] ?? args?.["probeCard"] ?? ""
+          ).trim();
+          if (CARD_ID_RE.test(cardId)) return cardId.match(CARD_ID_RE)![1]!;
+        }
+      }
+    }
+    if (msg.role === "tool") {
+      try {
+        const o = JSON.parse(String(msg.content ?? "")) as Record<string, unknown>;
+        const cardByPass = o["cardByPassId"] as Array<{ cardId?: string }> | undefined;
+        for (const e of cardByPass ?? []) {
+          const c = String(e.cardId ?? "").trim();
+          if (CARD_ID_RE.test(c)) return c.match(CARD_ID_RE)![1]!;
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  return undefined;
+}
+
+/** 用户是否指代「这张/这个/该」探针卡（需结合 history 解析 cardId）。 */
+export function isCardPronounQuestion(text: string): boolean {
+  return /这\s*(张|把|个|块)?\s*卡|该卡|此卡/i.test(text.trim());
+}
+
+/** JB lot 列表 / 跨 lot 良率问题的统一查询范围（单一真相源）。 */
+export type JbListingScope = {
+  cardId?: string;
+  device?: string;
+  testerId?: string;
+  tstype?: string;
+  mask?: string;
+  testEndFrom?: string;
+  testEndTo?: string;
+};
+
+export function jbListingScopeToQueryArgs(
+  scope: JbListingScope
+): Record<string, unknown> {
+  const args: Record<string, unknown> = { limit: 200 };
+  if (scope.cardId) args["cardId"] = scope.cardId;
+  if (scope.device) args["device"] = scope.device;
+  if (scope.testerId) args["testerId"] = scope.testerId;
+  if (scope.tstype) args["tstype"] = scope.tstype;
+  if (scope.mask) args["mask"] = scope.mask;
+  if (scope.testEndFrom) args["testEndFrom"] = scope.testEndFrom;
+  if (scope.testEndTo) args["testEndTo"] = scope.testEndTo;
+  return args;
+}
+
+export function jbListingScopeLabel(scope: JbListingScope): string {
+  const parts: string[] = [];
+  if (scope.cardId) parts.push(`cardId=${scope.cardId}`);
+  if (scope.device) parts.push(`device=${scope.device}`);
+  if (scope.testerId) parts.push(`机台=${scope.testerId}`);
+  if (scope.mask) parts.push(`mask=${scope.mask}`);
+  if (scope.tstype) parts.push(`platform=${scope.tstype}`);
+  return parts.join("，");
+}
+
+/** 上轮 query_jb_bins 参数是否与当前解析出的 listing scope 一致。 */
+export function jbListingScopeMatchesArgs(
+  scope: JbListingScope,
+  args: Record<string, unknown> | null
+): boolean {
+  if (!args) return false;
+  if (scope.cardId) {
+    return String(args["cardId"] ?? "").trim() === scope.cardId;
+  }
+  if (String(args["cardId"] ?? "").trim()) return false;
+  if (scope.device) {
+    const d = String(args["device"] ?? "").trim().toUpperCase();
+    if (d !== scope.device.toUpperCase()) return false;
+  }
+  if (scope.testerId) {
+    const t = String(args["testerId"] ?? "").trim().toLowerCase();
+    if (t !== scope.testerId.toLowerCase()) return false;
+  }
+  if (scope.mask) {
+    const m = String(args["mask"] ?? "").trim().toUpperCase();
+    if (m !== scope.mask.toUpperCase()) return false;
+  }
+  return true;
+}
+
+/**
+ * 解析 lot 列表 / 跨 lot 良率问题的 JB 查询范围。
+ * 优先级：句中 cardId > 指代卡+history > YM 工具上下文 > device/机台/mask。
+ */
+export function resolveJbListingScope(
+  userQuestion: string,
+  history: ChatMessage[] = []
+): JbListingScope | null {
+  const cardFromText = inferCardIdFromText(userQuestion);
+  const cardId =
+    cardFromText ??
+    (isCardPronounQuestion(userQuestion)
+      ? inferCardIdFromHistory(history)
+      : undefined);
+
+  const window = resolveRecentTimeWindow(userQuestion, history);
+
+  if (cardId) {
+    const scope: JbListingScope = { cardId };
+    if (window.testEndFrom) scope.testEndFrom = window.testEndFrom;
+    if (window.testEndTo) scope.testEndTo = window.testEndTo;
+    return scope;
+  }
+
+  const ymArgs =
+    findLastToolCallArgs(history, "query_yield_triggers") ??
+    findLastToolCallArgs(history, "aggregate_yield_triggers");
+  const ymDevice = String(ymArgs?.["device"] ?? "").trim();
+  const ymTester = String(
+    ymArgs?.["hostname"] ?? ymArgs?.["testerId"] ?? ""
+  ).trim();
+  if (ymDevice || ymTester) {
+    const scope: JbListingScope = {};
+    if (ymDevice) scope.device = ymDevice.toUpperCase();
+    if (ymTester) scope.testerId = ymTester.toLowerCase();
+    const testEndFrom = String(
+      ymArgs?.["testEndFrom"] ?? ymArgs?.["timeFrom"] ?? window.testEndFrom ?? ""
+    ).trim();
+    const testEndTo = String(
+      ymArgs?.["testEndTo"] ?? ymArgs?.["timeTo"] ?? window.testEndTo ?? ""
+    ).trim();
+    if (testEndFrom) scope.testEndFrom = testEndFrom.slice(0, 10);
+    if (testEndTo) scope.testEndTo = testEndTo.slice(0, 10);
+    return scope;
+  }
+
+  const device =
+    inferDeviceFromText(userQuestion) || inferDeviceFromHistory(history);
+  const testerId =
+    inferTesterIdFromText(userQuestion) || inferTesterFromHistory(history);
+  const tstype =
+    device || testerId
+      ? undefined
+      : inferPlatformFromText(userQuestion) ||
+        inferPlatformFromHistory(history);
+  const mask =
+    !device && !testerId && !tstype
+      ? inferMaskFromText(userQuestion) || inferMaskFromHistory(history)
+      : undefined;
+
+  if (!device && !testerId && !tstype && !mask) return null;
+
+  const scope: JbListingScope = {};
+  if (device) scope.device = device;
+  if (testerId) scope.testerId = testerId;
+  if (tstype) scope.tstype = tstype;
+  if (mask) scope.mask = mask;
+  if (window.testEndFrom) scope.testEndFrom = window.testEndFrom;
+  if (window.testEndTo) scope.testEndTo = window.testEndTo;
+  return scope;
+}
+
 export function inferTesterIdFromText(text: string): string | undefined {
   const b3 = text.match(/(b3(?:uflex|flex|ps16|j750|mst)\d+)/i);
   if (b3) return b3[1]!.toLowerCase();
@@ -277,40 +459,14 @@ export function resolveRecentTimeWindow(
 export function buildJbScopeArgs(
   userQuestion: string,
   history: ChatMessage[],
-  lastToolName: string
+  _lastToolName: string
 ): Record<string, unknown> | null {
-  const ymArgs =
-    findLastToolCallArgs(history, lastToolName) ??
-    findLastToolCallArgs(history, "query_yield_triggers") ??
-    findLastToolCallArgs(history, "aggregate_yield_triggers");
-  const device =
-    String(ymArgs?.["device"] ?? "").trim() ||
-    inferDeviceFromText(userQuestion) ||
-    inferDeviceFromHistory(history);
-  const testerId =
-    String(ymArgs?.["hostname"] ?? ymArgs?.["testerId"] ?? "").trim() ||
-    inferTesterIdFromText(userQuestion) ||
-    inferTesterFromHistory(history);
-  if (!device && !testerId) return null;
-
-  const window = inferRecentMonthsWindow(userQuestion);
-  const args: Record<string, unknown> = { limit: 200 };
-  if (device) args["device"] = device;
-  if (testerId) args["testerId"] = testerId;
-
-  // YM tool calls carry timeFrom/timeTo (TIME_STAMP), JB tools use testEndFrom/testEndTo.
-  // When inheriting a window the user already established, prefer it over a window
-  // re-derived from the question text (which drifts as "now" advances).
-  const testEndFrom = String(
-    ymArgs?.["testEndFrom"] ?? ymArgs?.["timeFrom"] ?? window.testEndFrom ?? ""
-  ).trim();
-  const testEndTo = String(
-    ymArgs?.["testEndTo"] ?? ymArgs?.["timeTo"] ?? window.testEndTo ?? ""
-  ).trim();
-  if (testEndFrom) args["testEndFrom"] = testEndFrom.slice(0, 10);
-  if (testEndTo) args["testEndTo"] = testEndTo.slice(0, 10);
-
-  return args;
+  const scope = resolveJbListingScope(userQuestion, history);
+  if (!scope) return null;
+  if (!scope.cardId && !scope.device && !scope.testerId && !scope.mask) {
+    return null;
+  }
+  return jbListingScopeToQueryArgs(scope);
 }
 
 export function buildAggregateJbBinsScopeArgs(
@@ -319,6 +475,11 @@ export function buildAggregateJbBinsScopeArgs(
   jbPayload: Record<string, unknown>
 ): Record<string, unknown> | null {
   const jbArgs = findLastToolCallArgs(history, "query_jb_bins");
+  const listingScope = resolveJbListingScope(userQuestion, history);
+  const cardId =
+    String(jbArgs?.["cardId"] ?? "").trim() ||
+    listingScope?.cardId ||
+    "";
   const device =
     String(jbPayload["device"] ?? jbArgs?.["device"] ?? "").trim() ||
     inferDeviceFromText(userQuestion) ||
@@ -327,7 +488,6 @@ export function buildAggregateJbBinsScopeArgs(
     String(jbPayload["testerId"] ?? jbArgs?.["testerId"] ?? "").trim() ||
     inferTesterIdFromText(userQuestion) ||
     inferTesterFromHistory(history);
-  const cardId = String(jbArgs?.["cardId"] ?? "").trim();
   if (!device && !testerId && !cardId) return null;
 
   const window = inferRecentMonthsWindow(userQuestion);
@@ -350,28 +510,8 @@ export function buildLotListingQueryArgs(
   userQuestion: string,
   history: ChatMessage[] = []
 ): Record<string, unknown> | null {
-  const fromYm = buildJbScopeArgs(userQuestion, history, "query_yield_triggers");
-  if (fromYm?.["device"] || fromYm?.["testerId"]) return fromYm;
-
-  const device =
-    inferDeviceFromText(userQuestion) || inferDeviceFromHistory(history);
-  const testerId =
-    inferTesterIdFromText(userQuestion) || inferTesterFromHistory(history);
-  const tstype =
-    device || testerId
-      ? undefined
-      : inferPlatformFromText(userQuestion) ||
-        inferPlatformFromHistory(history);
-  if (!device && !testerId && !tstype) return null;
-
-  const window = resolveRecentTimeWindow(userQuestion, history);
-  const args: Record<string, unknown> = { limit: 200 };
-  if (device) args["device"] = device;
-  if (testerId) args["testerId"] = testerId;
-  if (tstype) args["tstype"] = tstype;
-  if (window.testEndFrom) args["testEndFrom"] = window.testEndFrom;
-  if (window.testEndTo) args["testEndTo"] = window.testEndTo;
-  return args;
+  const scope = resolveJbListingScope(userQuestion, history);
+  return scope ? jbListingScopeToQueryArgs(scope) : null;
 }
 
 function inferPlatformFromHistory(history: ChatMessage[]): string | undefined {

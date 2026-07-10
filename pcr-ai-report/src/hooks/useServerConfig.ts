@@ -26,7 +26,7 @@ export interface ServerConfig {
 export const SERVER_CONFIG_DEFAULTS: ServerConfig = {
   agentEnabled: true,
   agentApiBase: "https://api.siliconflow.cn/v1",
-  agentModel: "deepseek-ai/DeepSeek-V4-Pro",
+  agentModel: "deepseek-ai/DeepSeek-V4-Flash",
   agentSubModel: "deepseek-ai/DeepSeek-V4-Flash",
   agentApiKey: "",
   jbDeterministicDispatch: false,

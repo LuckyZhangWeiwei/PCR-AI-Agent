@@ -804,6 +804,75 @@ describe("agentJbDeterministicReply", () => {
   });
 });
 
+describe("JB listing scope (card / device)", () => {
+  it("resolveJbListingScope prefers cardId over device from history", async () => {
+    const { resolveJbListingScope, jbListingScopeToQueryArgs } = await import(
+      "../src/lib/agent/agentQueryScope.js"
+    );
+    const scope = resolveJbListingScope("列出这个卡最近测试的5个lot 的平均良品率", [
+      { role: "user", content: "6081-03 测试过什么lot" },
+      { role: "assistant", content: "YM 侧 3 次报警" },
+    ]);
+    assert.equal(scope?.cardId, "6081-03");
+    assert.equal(jbListingScopeToQueryArgs(scope!)["cardId"], "6081-03");
+    assert.equal(jbListingScopeToQueryArgs(scope!)["device"], undefined);
+  });
+
+  it("detectJbReplyMode routes card lot+yield to lot_listing (not extra mode)", () => {
+    assert.equal(
+      detectJbReplyMode("列出这个卡最近测试的5个lot 的评价yield"),
+      "lot_listing"
+    );
+  });
+
+  it("buildRecentLotsListingMarkdown with yield presentation", () => {
+    const md = buildRecentLotsListingMarkdown(
+      {
+        lotYieldRankByTestEnd: [
+          {
+            lot: "DR43370.1W",
+            device: "WA01N39W",
+            yieldPct: 96.42,
+            worstSlot: 2,
+            worstPassId: 1,
+            testEnd: "2026-07-09",
+          },
+          {
+            lot: "DR44204.1F",
+            device: "WA01N39W",
+            yieldPct: 96.69,
+            worstSlot: 5,
+            worstPassId: 1,
+            testEnd: "2026-07-08",
+          },
+        ],
+      },
+      {
+        scopeLabel: "cardId=6081-03",
+        presentation: {
+          topN: 2,
+          includeYield: true,
+          includeAverageYield: true,
+        },
+      }
+    );
+    assert.ok(md?.includes("cardId=6081-03"));
+    assert.ok(md?.includes("DR43370.1W"));
+    assert.ok(md?.includes("平均良率"));
+  });
+
+  it("canRunLotListingDirectRoute true for card-scoped lot list", async () => {
+    const { canRunLotListingDirectRoute } = await import(
+      "../src/lib/agent/agentJbLotListingRoute.js"
+    );
+    assert.ok(
+      canRunLotListingDirectRoute("列出这个卡最近测试的5个lot", [
+        { role: "user", content: "6081-03 测试过什么lot" },
+      ])
+    );
+  });
+});
+
 describe("stampFirstTestNote", () => {
   it("在数据块末尾追加 first-test 脚注", () => {
     const out = stampFirstTestNote("## 实测数据\n\n| a |\n|---|");

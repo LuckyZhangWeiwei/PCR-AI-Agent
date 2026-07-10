@@ -14,7 +14,8 @@ describe("resolveAgentConfig", () => {
     });
     assert.equal(cfg.apiKey, "sk-test");
     assert.equal(cfg.apiBase, "https://custom.api/v1"); // trailing slash stripped
-    assert.equal(cfg.model, "my-model");
+    assert.equal(cfg.model, "deepseek-ai/DeepSeek-V4-Flash");
+    assert.equal(cfg.subAgentModel, "deepseek-ai/DeepSeek-V4-Flash");
     assert.equal(cfg.maxRounds, 8);
     assert.equal(cfg.streamTimeoutSec, 120);
     assert.equal(cfg.streamTimeoutMs, 120_000);

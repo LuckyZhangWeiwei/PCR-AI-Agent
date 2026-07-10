@@ -27,8 +27,8 @@ export interface RuntimeConfig {
 export const RUNTIME_CONFIG_DEFAULTS: RuntimeConfig = {
   agentEnabled: true,
   agentApiBase: "https://api.siliconflow.cn/v1",
-  agentModel: "deepseek-ai/DeepSeek-V3",
-  agentSubModel: "",
+  agentModel: "deepseek-ai/DeepSeek-V4-Flash",
+  agentSubModel: "deepseek-ai/DeepSeek-V4-Flash",
   agentApiKey: "",
   jbDeterministicDispatch: false,
   jbLlmIntentClassifier: false,

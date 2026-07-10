@@ -33,7 +33,8 @@ This is a two-package monorepo (no shared workspace tooling — each package has
 > **Cursor 真库验证（2026-07-01 · 部署后）：** [`docs/HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-07-01.md`](docs/HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-07-01.md) — 新 API `NF12316.1X` ✅；派发 A1-1/2 ✅；A1-4/P-D/分类器待修；双开关 FLIP 建议。  
 > **Cursor mask 快路 + A1-4 fan-out（2026-07-01 · 已部署 5/5）：** [`docs/HANDOFF_CURSOR_JB_MASK_YIELD_ROUTE_2026-07-01.md`](docs/HANDOFF_CURSOR_JB_MASK_YIELD_ROUTE_2026-07-01.md) — Pass B/C + handoff 全绿；A1-4 `lots=5`；默认模型 Flash；A1-2/A2-4 待修。  
 > **真库验证：DUT 低良率阈值口径 + JB Star 跨 LOT 多选（2026-07-04 · Cursor 5/5 闭环）：** [`docs/HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-07-04_DUT_YIELD_MULTISELECT.md`](docs/HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-07-04_DUT_YIELD_MULTISELECT.md) — A1 PASS1=TEST、良品 **BIN55**（非 BIN1）；**A2 建议改取数**（JB PASSBIN 优先）；A3 维持 passId=[1,3,5]；B API 跨 LOT **无 bug**；Agent 未调低良率工具待修。任务书：[`docs/HANDOFF_CURSOR_REALDB_DUT_YIELD_AND_MULTISELECT_2026-07-04.md`](docs/HANDOFF_CURSOR_REALDB_DUT_YIELD_AND_MULTISELECT_2026-07-04.md)。  
-> **Cursor 修复（2026-07-04 · P0+P1 已合入）：** [`docs/HANDOFF_CURSOR_FIX_DUT_GOODBIN_AND_AGENT_ROUTE_2026-07-04.md`](docs/HANDOFF_CURSOR_FIX_DUT_GOODBIN_AND_AGENT_ROUTE_2026-07-04.md) — JB PASSBIN 良品 bin 取数 + Agent A 路谓词放宽。
+> **Cursor 修复（2026-07-04 · P0+P1 已合入）：** [`docs/HANDOFF_CURSOR_FIX_DUT_GOODBIN_AND_AGENT_ROUTE_2026-07-04.md`](docs/HANDOFF_CURSOR_FIX_DUT_GOODBIN_AND_AGENT_ROUTE_2026-07-04.md) — JB PASSBIN 良品 bin 取数 + Agent A 路谓词放宽。  
+> **Cursor 修复（2026-07-10 · 探针卡 lot 列表 scope）：** [`docs/HANDOFF_CURSOR_JB_CARD_LISTING_SCOPE_2026-07-10.md`](docs/HANDOFF_CURSOR_JB_CARD_LISTING_SCOPE_2026-07-10.md) — `resolveJbListingScope`（cardId 优先）、`lot_listing` 良率呈现、Flash 强制、无 card 专用路由；⏭ 真库 6081-03 回归。
 
 ---
 
