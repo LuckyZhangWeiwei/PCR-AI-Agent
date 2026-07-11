@@ -520,6 +520,10 @@ async function toolAggregateJbBins(
   return truncateResult({ totalRowsMatching: total, groups }, maxChars);
 }
 
+function probeCardPerfRowLimitExceededMessage(count: number, maxRows: number): string {
+  return `aggregate_probe_card_tester_performance 错误：匹配行数 (${count}) 超过上限 (${maxRows})，请缩小 passId 或 testEndFrom/testEndTo 时间范围。`;
+}
+
 async function toolAggregateProbeCardTesterPerformance(
   args: Record<string, unknown>,
   maxChars: number
@@ -545,7 +549,7 @@ async function toolAggregateProbeCardTesterPerformance(
       parsed.applied
     ) as Record<string, unknown>[];
     if (rawRows.length > maxRows) {
-      return `aggregate_probe_card_tester_performance 错误：匹配行数 (${rawRows.length}) 超过上限 (${maxRows})，请缩小 passId 或 testEndFrom/testEndTo 时间范围。`;
+      return probeCardPerfRowLimitExceededMessage(rawRows.length, maxRows);
     }
   } else {
     const adapted = adaptInfcontrolV3WhereAndSqlToAggregateAliases(parsed.whereAndSql);
@@ -561,7 +565,7 @@ async function toolAggregateProbeCardTesterPerformance(
         : 0;
     });
     if (matchingCount > maxRows) {
-      return `aggregate_probe_card_tester_performance 错误：匹配行数 (${matchingCount}) 超过上限 (${maxRows})，请缩小 passId 或 testEndFrom/testEndTo 时间范围。`;
+      return probeCardPerfRowLimitExceededMessage(matchingCount, maxRows);
     }
     const sql = buildInfcontrolLayerBinsV3SqlFullMatching(parsed.whereAndSql);
     logAgentSql("aggregate_probe_card_tester_performance", sql, parsed.binds, {

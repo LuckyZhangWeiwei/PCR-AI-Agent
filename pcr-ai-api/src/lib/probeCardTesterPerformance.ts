@@ -1,4 +1,4 @@
-import { badDieFromJbRow } from "./jbYieldCalc.js";
+import { badDieFromJbRow, goodBinIndicesForJbRow } from "./jbYieldCalc.js";
 
 // ─── stats helpers ──────────────────────────────────────────────────────────
 
@@ -27,7 +27,7 @@ export function median(values: number[]): number {
 // ─── per-row yield ──────────────────────────────────────────────────────────
 
 function grossDieOf(row: Record<string, unknown>): number {
-  const g = Number((row as Record<string, unknown>)["GROSSDIE"] ?? (row as Record<string, unknown>)["grossDie"] ?? 0);
+  const g = Number(row["GROSSDIE"] ?? row["grossdie"] ?? 0);
   return Number.isFinite(g) && g > 0 ? g : 0;
 }
 
@@ -42,10 +42,9 @@ export function rowYieldPct(row: Record<string, unknown>): number | null {
   const grossDie = grossDieOf(row);
   if (grossDie <= 0) return null;
   const bad = badDieFromJbRow(row);
-  return (1 - bad / grossDie) * 100;
+  const goodDie = Math.max(0, grossDie - bad);
+  return (goodDie / grossDie) * 100;
 }
-
-import { goodBinIndicesForJbRow } from "./jbYieldCalc.js";
 
 // ─── shared row accessors ───────────────────────────────────────────────────
 

@@ -68,6 +68,15 @@ describe("probeCardTesterPerformance: rowYieldPct", () => {
     // bins 3 and 9 are good (PASSBIN token), only bin 12's 10 die are bad
     assert.equal(rowYieldPct(row), 90);
   });
+
+  test("floors at 0 when bad die exceeds GROSSDIE (interrupt-partial row)", () => {
+    const row = {
+      GROSSDIE: 50,
+      PASSBIN: undefined,
+      bins: [{ n: 5, value: 80, isGoodBin: false }],
+    };
+    assert.equal(rowYieldPct(row), 0);
+  });
 });
 
 import { computeProbeCardTesterPerformance } from "../src/lib/probeCardTesterPerformance.js";
@@ -152,6 +161,51 @@ describe("computeProbeCardTesterPerformance: grouping and ranking", () => {
     const [group] = computeProbeCardTesterPerformance([...good, ...bad]);
     const worst = group!.cardRanking.find((r) => r.cardId === "E-05")!;
     assert.equal(worst.assessment, "良率明显偏低");
+  });
+
+  // Shared scenario for assessment rules 3 & 4: 4 cards, same passId group,
+  // each lotCount=3 (clears rule 1) and same avgYieldPct=95 (clears rule 2 —
+  // no outlier vs. group mean). J-01/J-02/J-03 have 3 identical 95% rows each
+  // (stdDev = 0). J-04 has rows yielding 100/90/95 (mean 95, sample stdDev =
+  // sqrt(((100-95)^2+(90-95)^2+(95-95)^2)/2) = sqrt(50/2) = 5).
+  // groupStdDevMedian = median([0,0,0,5]) = (0+0)/2 = 0, so J-04's stdDev (5)
+  // is the only one strictly greater than the median.
+  function varianceScenarioRows(): Record<string, unknown>[] {
+    const flat = ["J-01", "J-02", "J-03"].flatMap((cardId) =>
+      Array.from({ length: 3 }, (_, i) =>
+        jbRow({
+          cardId,
+          testerId: "T1",
+          passId: 1,
+          lot: `${cardId}-${i}`,
+          testEnd: "2026-01-01",
+          grossDie: 100,
+          badBins: [{ n: 5, value: 5 }], // yield 95 every row
+        })
+      )
+    );
+    const varied = [
+      jbRow({ cardId: "J-04", testerId: "T1", passId: 1, lot: "J-04-0", testEnd: "2026-01-01", grossDie: 100 }), // yield 100
+      jbRow({ cardId: "J-04", testerId: "T1", passId: 1, lot: "J-04-1", testEnd: "2026-01-01", grossDie: 100, badBins: [{ n: 5, value: 10 }] }), // yield 90
+      jbRow({ cardId: "J-04", testerId: "T1", passId: 1, lot: "J-04-2", testEnd: "2026-01-01", grossDie: 100, badBins: [{ n: 5, value: 5 }] }), // yield 95
+    ];
+    return [...flat, ...varied];
+  }
+
+  test("cardRanking assessment: stdDev above group median -> 波动较大，稳定性差", () => {
+    const [group] = computeProbeCardTesterPerformance(varianceScenarioRows());
+    const byId = new Map(group!.cardRanking.map((r) => [r.cardId, r]));
+    const j04 = byId.get("J-04")!;
+    assert.ok(Math.abs(j04.stdDevYieldPct - 5) < 1e-6, `expected stdDev ~5, got ${j04.stdDevYieldPct}`);
+    assert.equal(j04.assessment, "波动较大，稳定性差");
+  });
+
+  test("cardRanking assessment: average yield, low variance -> 表现稳定", () => {
+    const [group] = computeProbeCardTesterPerformance(varianceScenarioRows());
+    const byId = new Map(group!.cardRanking.map((r) => [r.cardId, r]));
+    const j01 = byId.get("J-01")!;
+    assert.equal(j01.stdDevYieldPct, 0);
+    assert.equal(j01.assessment, "表现稳定");
   });
 
   test("cardTrend only includes cards with >=2 distinct months", () => {

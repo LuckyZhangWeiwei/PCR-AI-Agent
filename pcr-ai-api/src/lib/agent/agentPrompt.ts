@@ -1452,7 +1452,7 @@ export function classifyIntent(userQuestion: string, historyFirst?: string): Pro
   ) return "platform_query";
 
   // Probe-card health / Yield Monitor trigger queries / combo ranking / degradation trend / bad-bin frequency
-  if (/探针卡|probe\s*card|哪张卡|卡号|最差.*(卡|card)|报警最多|yield\s*monitor|触发次数|ym触发|dut.*不均|组合排名|探针卡排名|最佳组合|最佳搭配|表现排名|接触不良|卡.*(退化|变差|趋势|稳定性)|(退化|变差|趋势|稳定性).*卡/.test(q)) return "card_probe";
+  if (/探针卡|probe\s*card|哪张卡|卡号|最差.*(?:卡|card)|报警最多|yield\s*monitor|触发次数|ym触发|dut.*不均|组合排名|探针卡排名|最佳组合|最佳搭配|表现排名|接触不良|卡.*(?:退化|变差|趋势|稳定性)|(?:退化|变差|趋势|稳定性).*卡/.test(q)) return "card_probe";
 
   // DUT-level analysis: "哪个DUT的BIN8最多", "BIN8集中在哪些DUT", "各DUT分布"
   // Must have both a DUT/site keyword AND a BIN/fail keyword

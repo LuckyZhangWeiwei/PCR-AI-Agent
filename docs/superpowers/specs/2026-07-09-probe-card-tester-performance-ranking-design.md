@@ -22,7 +22,7 @@
 
 - **数据源：仅 JB STAR**（INFCONTROL ⋈ INFLAYERBINLIST）。不引入 Yield Monitor 数据（DUT 不均衡报警是另一个维度，v1 不混用，避免口径混乱）。
 - **必需参数：`device`**。探针卡种类（`probeCardType` = `CARDID` 首段）与 device 绑定，跨 device 汇总排名没有业务意义。模型未拿到 device 时应先追问或从上下文/最近 lot 推断，不允许跨 device 硬算。
-- **固定 `PASSTYPE='TEST'`**（沿用项目里所有 JB 查询的既有约定，天然排除 RETESTBIN，对应截图「Ignore Retest Steps」的要求）。
+- **PASSTYPE 范围**：复用既有 JB 查询约定（`infcontrolLayerBinV3BaseWhereBlock`），admits TEST/INTERRUPT/TEST ISR/TEST INTERRUPT，仅排除 RETESTBIN（与 §3 换卡/中断分段归因的讨论一致）。
 - **passId 处理**：
   - 若用户/模型显式给了 `passId`，只统计该 passId。
   - **若未指定 `passId`，默认按 `passId ∈ {1, 3, 5}` 分别输出**（pass1/pass3/pass5 各一张组合表 + 各一张探针卡排名表），**不跨 sort 合并/均值**。这是项目里反复强调的硬约束（`domain_pass_sort_mapping`、`HANDOFF_AGENT_JB_DETERMINISTIC_SUMMARY.md` §0），必须延续。
