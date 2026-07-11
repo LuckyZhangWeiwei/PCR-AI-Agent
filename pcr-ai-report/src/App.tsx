@@ -374,12 +374,17 @@ function AppShell() {
                   onChange={(e) => setAgentModelInput(e.target.value)}
                   onBlur={(e) => updateServerConfig({ agentModel: e.target.value.trim() })}
                   spellCheck={false}
-                  placeholder="deepseek-ai/DeepSeek-V3"
+                  placeholder="deepseek-ai/DeepSeek-V4-Flash"
                 />
               </label>
               <p className="field-hint">
-                SiliconFlow 模型 ID，例如 <code>deepseek-ai/DeepSeek-V3</code>、
-                <code>MiniMax/MiniMax-M1</code>。需支持 Function Calling。
+                仅支持两个模型族：<code>DeepSeek-V4-Flash</code>（如{" "}
+                <code>deepseek-ai/DeepSeek-V4-Flash</code>）或{" "}
+                <code>MiniMax-M2.5</code>（如{" "}
+                <code>Pro/MiniMaxAI/MiniMax-M2.5</code>）。只要模型名里包含这两个
+                名字之一即可生效（大小写、供应商前缀不敏感），可配合「API 地址」换成
+                硅基流动以外的 OpenAI 兼容平台；填其它模型名会静默回退到
+                DeepSeek-V4-Flash。
               </p>
               <label>
                 <span>子任务模型（历史压缩 + 表解读）</span>
