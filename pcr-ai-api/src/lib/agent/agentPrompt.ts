@@ -975,7 +975,7 @@ const SEC_CARD_TESTER_PERFORMANCE = `\
 **结果结构**：每个 passId 分组含四张服务端直出的 markdown 表——\`comboRankingMarkdown\`（组合排名，良率降序）、\`cardRankingMarkdown\`（探针卡排名，良率**升序**即最差在前，含规则触发的评估文字与置信度档位）、\`cardTrendMarkdown\`（按卡的月度良率走势，仅含 ≥2 个月数据的卡）、\`cardBadBinMarkdown\`（按卡的坏 bin Top3 频率占比）。
 
 **硬规则**：
-1. 表格数字直接照抄工具返回的 markdown，**禁止自行重新计算或改写**；LLM 只在表格之后追加「### 数据解读」「### 专业建议」。
+1. **必须把工具结果里的 \`comboRankingMarkdown\`、\`cardRankingMarkdown\`（以及适用时的 \`cardTrendMarkdown\`、\`cardBadBinMarkdown\`）字段原样、逐字贴入回复正文，不得省略、不得改写成自己的列表或段落**——即使良率、标准差、评估文字这些数字转述得准确，用自己的话重新组织也会引入转述风险（例如把 pass3 误写成 pass2）。贴完表格后，再另起「### 数据解读」「### 专业建议」两节，只在这两节里用自然语言做解读和建议，不要在这两节里重复誊写表格已有的具体数字。
 2. \`cardBadBinMarkdown\` **只是坏 bin 编号出现频率统计，不是 die 级空间/坐标分布**——**禁止**解读成"边缘接触不良""角落 pattern""某区域集中"等需要晶圆坐标才能下的结论；只能说"该卡失效最常见的 bin 类型是 X"。用户明确要看空间分布时，提示改用晶圆图工具（\`inf_draw_wafer_map\` / \`inf_cluster_detect\`）。
 3. \`cardTrendMarkdown\` 只给月度原始数字，不做趋势拟合；LLM 描述走势方向（"持续下降""先降后稳"等）时不得编造统计显著性结论。
 4. 置信度档位（高/中/低）来自 \`lotCount\`，样本量小（低）的卡结论需注明"样本有限，仅供参考"。`;

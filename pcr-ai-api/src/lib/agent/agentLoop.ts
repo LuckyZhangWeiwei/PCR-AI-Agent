@@ -2826,6 +2826,115 @@ export function renderAggregateJbBinsResult(
   return null;
 }
 
+/**
+ * 直出 aggregate_probe_card_tester_performance 服务端表 + 单独一轮"仅写解读/建议"的
+ * LLM 调用，复用既有 BRIEF_COMMENTARY_SYSTEM 架构。
+ *
+ * 2026-07-11 真实 MiniMax-M2.5 联调发现：仅在 agentPrompt.ts 里用文字硬规则要求"必须原样
+ * 贴表、禁止改写"，模型仍会把 comboRankingMarkdown / cardRankingMarkdown 转述成自己的大白话
+ * 总结（且转述时出现过 pass2/pass3 张冠李戴）。与 query_jb_bins 走 `tryRunDeterministicJbSummary`
+ * 服务端直出表的理由完全一致：数字必须由服务端保证，不能寄望于 prompt 约束模型的转述行为。
+ */
+async function tryRunDeterministicProbeCardPerfSummary(
+  sessionId: string,
+  userQuestion: string,
+  agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void
+): Promise<boolean> {
+  const history = getHistory(sessionId);
+  const lastTool = lastToolMessage(history);
+  if (lastTool?.name !== "aggregate_probe_card_tester_performance") return false;
+
+  let payload: Record<string, unknown> | null = null;
+  try {
+    payload = JSON.parse(String(lastTool.content ?? "")) as Record<string, unknown>;
+  } catch {
+    return false;
+  }
+  const groups = Array.isArray(payload?.["groups"])
+    ? (payload["groups"] as Array<Record<string, unknown>>)
+    : [];
+  if (groups.length === 0) return false;
+
+  const tableParts: string[] = [];
+  for (const g of groups) {
+    for (const key of [
+      "comboRankingMarkdown",
+      "cardRankingMarkdown",
+      "cardTrendMarkdown",
+      "cardBadBinMarkdown",
+    ] as const) {
+      const md = g[key];
+      if (typeof md === "string" && md.trim()) tableParts.push(md.trim());
+    }
+  }
+  if (tableParts.length === 0) return false;
+  const tables = tableParts.join("\n\n");
+
+  const tablesBlock = `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${tables}`;
+  emit({ type: "status", message: "正在输出服务端探针卡/机台组合排名表…" });
+  emitTextInChunks(tablesBlock, emit);
+
+  emit({ type: "status", message: "正在生成数据解读与专业建议…" });
+  emit({
+    type: "text",
+    delta: `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n`,
+  });
+
+  const commFilter = createDeepSeekFilter(emit);
+  let streamError: string | undefined;
+
+  await streamSiliconFlow(
+    {
+      model: agentConfig.subAgentModel,
+      messages: [
+        { role: "system", content: BRIEF_COMMENTARY_SYSTEM },
+        {
+          role: "user",
+          content: buildBriefCommentaryUserMessage(userQuestion, tables),
+        },
+      ],
+      // No tool schemas: commentary is text-only (数据解读 + 专业建议 ≈ 300-600 tokens)
+      max_tokens: 1024,
+    },
+    agentConfig,
+    (chunk) => {
+      switch (chunk.type) {
+        case "delta":
+          commFilter.push(chunk.text);
+          break;
+        case "error":
+          streamError = chunk.message;
+          break;
+        default:
+          break;
+      }
+    }
+  );
+
+  commFilter.finalize();
+  const commentary = commFilter.cleanText.trim();
+
+  let commentaryOrFallback: string;
+  if (commentary) {
+    commentaryOrFallback = commentary;
+  } else {
+    commentaryOrFallback = streamError
+      ? `*（解读生成失败：${cleanStreamErrorMessage(streamError)}；以上实测数据表为准。）*`
+      : `*（模型未返回解读；以上实测数据表为准。）*`;
+    emit({ type: "text", delta: commentaryOrFallback });
+  }
+
+  const full =
+    tablesBlock +
+    `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n` +
+    commentaryOrFallback;
+
+  appendMessages(sessionId, { role: "assistant", content: full });
+  emit({ type: "done" });
+  return true;
+}
+
 async function tryRunDeterministicJbSummary(
   sessionId: string,
   userQuestion: string,
@@ -3626,6 +3735,14 @@ export async function runAgentLoop(
         emit
       );
       if (dutBinHandled) return;
+
+      const probeCardPerfHandled = await tryRunDeterministicProbeCardPerfSummary(
+        sessionId,
+        userQuestion,
+        agentConfig,
+        emit
+      );
+      if (probeCardPerfHandled) return;
 
       const handled = await tryRunDeterministicJbSummary(
         sessionId,
