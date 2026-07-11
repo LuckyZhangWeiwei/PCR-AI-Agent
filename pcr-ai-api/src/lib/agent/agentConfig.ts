@@ -24,8 +24,29 @@ export interface AgentConfig {
 const DEFAULT_API_BASE = "https://api.siliconflow.cn/v1";
 const DEFAULT_MODEL = "deepseek-ai/DeepSeek-V4-Flash";
 const DEFAULT_SUB_MODEL = "deepseek-ai/DeepSeek-V4-Flash";
-/** 生产环境唯一允许的 Agent 主/子模型。 */
-export const ALLOWED_AGENT_MODEL = DEFAULT_MODEL;
+
+/**
+ * 允许的 Agent 主/子模型固定为两个模型族：DeepSeek-V4-Flash、MiniMax-M2.5。
+ * 供应商（apiBase）可自由更换（硅基流动 / 七牛云等），不同供应商上同一模型的
+ * ID 前缀/组织名可能不同，因此按"模型族"做归一化子串匹配，而非要求完整 ID
+ * 字符串与某个供应商精确一致。
+ */
+function normalizeModelId(id: string): string {
+  return id.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+export function isDeepSeekV4Flash(model: string): boolean {
+  return normalizeModelId(model).includes("deepseekv4flash");
+}
+
+export function isMiniMaxM25(model: string): boolean {
+  return normalizeModelId(model).includes("minimaxm25");
+}
+
+export function isAllowedAgentModel(model: string): boolean {
+  return isDeepSeekV4Flash(model) || isMiniMaxM25(model);
+}
+
 export const DEFAULT_MAX_ROUNDS = 8;
 const MIN_MAX_ROUNDS = 1;
 const MAX_MAX_ROUNDS = 20;
@@ -118,15 +139,20 @@ function resolveStreamTimeout(
 }
 
 /**
- * Returns true for models with ≥200K context window that support longer histories
- * and larger tool-result storage without triggering context overflow.
+ * Returns true for models with a large enough context window (≥190K) that they
+ * support longer histories and larger tool-result storage without triggering
+ * context overflow.
  *
  * Detection rules (either condition is sufficient):
  *  • apiBase is Zhipu AI BigModel (open.bigmodel.cn) — all models are ≥200K
+ *  • Model name matches the MiniMax-M2.5 family (192K; see isMiniMaxM25) —
+ *    deliberately included despite being just under the 200K line, per
+ *    docs/superpowers/specs/2026-07-11-agent-minimax-m2.5-adaptation-design.md
  *  • Model name contains glm-4.7, glm-4.6, glm-5, glm-z1 (large-context GLM series)
  */
 export function detectLargeContext(model: string, apiBase: string): boolean {
   if (apiBase.includes("bigmodel.cn")) return true;
+  if (isMiniMaxM25(model)) return true;
   const m = model.toLowerCase();
   return (
     m.includes("glm-4.7") ||
@@ -162,6 +188,18 @@ function sanitizeApiBase(raw: string): string {
   return base;
 }
 
+function resolveAllowedModel(
+  overrideValue: string | undefined,
+  envValue: string | undefined,
+  fallback: string
+): string {
+  const fromOverride = overrideValue?.trim();
+  if (fromOverride && isAllowedAgentModel(fromOverride)) return fromOverride;
+  const fromEnv = envValue?.trim();
+  if (fromEnv && isAllowedAgentModel(fromEnv)) return fromEnv;
+  return fallback;
+}
+
 // Reads process.env lazily at call time — do not hoist env reads to module scope.
 export function resolveAgentConfig(
   override?: Partial<AgentConfig>
@@ -177,10 +215,16 @@ export function resolveAgentConfig(
     process.env.SILICONFLOW_API_BASE?.trim() ||
     DEFAULT_API_BASE;
   const apiBase = sanitizeApiBase(rawBase);
-  const model =
-    ALLOWED_AGENT_MODEL;
-  const subAgentModel =
-    ALLOWED_AGENT_MODEL;
+  const model = resolveAllowedModel(
+    override?.model,
+    process.env.AGENT_MODEL,
+    DEFAULT_MODEL
+  );
+  const subAgentModel = resolveAllowedModel(
+    override?.subAgentModel,
+    process.env.AGENT_SUB_MODEL,
+    DEFAULT_SUB_MODEL
+  );
   const maxRounds = clampMaxRounds(
     override?.maxRounds ?? process.env.AGENT_MAX_ROUNDS
   );

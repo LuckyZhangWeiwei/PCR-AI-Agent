@@ -134,4 +134,103 @@ describe("resolveAgentConfig", () => {
       if (savedAgent !== undefined) process.env.AGENT_API_KEY = savedAgent;
     }
   });
+
+  it("accepts MiniMax-M2.5 as model via override (SiliconFlow ID)", async () => {
+    const { resolveAgentConfig } = await import(
+      "../src/lib/agent/agentConfig.js"
+    );
+    const cfg = resolveAgentConfig({ model: "Pro/MiniMaxAI/MiniMax-M2.5" });
+    assert.equal(cfg.model, "Pro/MiniMaxAI/MiniMax-M2.5");
+  });
+
+  it("accepts a differently-prefixed MiniMax-M2.5 ID (simulating another provider)", async () => {
+    const { resolveAgentConfig } = await import(
+      "../src/lib/agent/agentConfig.js"
+    );
+    const cfg = resolveAgentConfig({ model: "MiniMaxAI/MiniMax-M2.5" });
+    assert.equal(cfg.model, "MiniMaxAI/MiniMax-M2.5");
+  });
+
+  it("validates model and subAgentModel independently", async () => {
+    const { resolveAgentConfig } = await import(
+      "../src/lib/agent/agentConfig.js"
+    );
+    const cfg = resolveAgentConfig({
+      model: "Pro/MiniMaxAI/MiniMax-M2.5",
+      subAgentModel: "not-a-real-model",
+    });
+    assert.equal(cfg.model, "Pro/MiniMaxAI/MiniMax-M2.5");
+    assert.equal(cfg.subAgentModel, "deepseek-ai/DeepSeek-V4-Flash");
+  });
+
+  it("still falls back to DeepSeek-V4-Flash for an unrecognized model", async () => {
+    const { resolveAgentConfig } = await import(
+      "../src/lib/agent/agentConfig.js"
+    );
+    const cfg = resolveAgentConfig({ model: "my-model" });
+    assert.equal(cfg.model, "deepseek-ai/DeepSeek-V4-Flash");
+  });
+
+  it("reads AGENT_MODEL from env when override omitted", async () => {
+    const saved = process.env.AGENT_MODEL;
+    process.env.AGENT_MODEL = "Pro/MiniMaxAI/MiniMax-M2.5";
+    try {
+      const { resolveAgentConfig } = await import(
+        "../src/lib/agent/agentConfig.js"
+      );
+      assert.equal(resolveAgentConfig({}).model, "Pro/MiniMaxAI/MiniMax-M2.5");
+    } finally {
+      if (saved !== undefined) process.env.AGENT_MODEL = saved;
+      else delete process.env.AGENT_MODEL;
+    }
+  });
+});
+
+describe("isAllowedAgentModel / detectLargeContext (MiniMax-M2.5)", () => {
+  it("isDeepSeekV4Flash matches regardless of vendor prefix/case", async () => {
+    const { isDeepSeekV4Flash } = await import(
+      "../src/lib/agent/agentConfig.js"
+    );
+    assert.equal(isDeepSeekV4Flash("deepseek-ai/DeepSeek-V4-Flash"), true);
+    assert.equal(isDeepSeekV4Flash("DEEPSEEK-AI/deepseek-v4-flash"), true);
+    assert.equal(isDeepSeekV4Flash("Pro/MiniMaxAI/MiniMax-M2.5"), false);
+  });
+
+  it("isMiniMaxM25 matches regardless of vendor prefix/case", async () => {
+    const { isMiniMaxM25 } = await import("../src/lib/agent/agentConfig.js");
+    assert.equal(isMiniMaxM25("Pro/MiniMaxAI/MiniMax-M2.5"), true);
+    assert.equal(isMiniMaxM25("MiniMaxAI/MiniMax-M2.5"), true);
+    assert.equal(isMiniMaxM25("minimax/minimax-m2.5"), true);
+    assert.equal(isMiniMaxM25("deepseek-ai/DeepSeek-V4-Flash"), false);
+  });
+
+  it("detectLargeContext returns true for MiniMax-M2.5 regardless of apiBase", async () => {
+    const { detectLargeContext } = await import(
+      "../src/lib/agent/agentConfig.js"
+    );
+    assert.equal(
+      detectLargeContext(
+        "Pro/MiniMaxAI/MiniMax-M2.5",
+        "https://api.siliconflow.cn/v1"
+      ),
+      true
+    );
+    assert.equal(
+      detectLargeContext("MiniMaxAI/MiniMax-M2.5", "https://example-qiniu.com/v1"),
+      true
+    );
+  });
+
+  it("detectLargeContext still returns false for DeepSeek-V4-Flash on a normal apiBase", async () => {
+    const { detectLargeContext } = await import(
+      "../src/lib/agent/agentConfig.js"
+    );
+    assert.equal(
+      detectLargeContext(
+        "deepseek-ai/DeepSeek-V4-Flash",
+        "https://api.siliconflow.cn/v1"
+      ),
+      false
+    );
+  });
 });
