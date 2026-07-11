@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-07-11 — AI Agent 适配 MiniMax-M2.5（多模型白名单 + 大上下文档位）
+
+**完成内容：**
+- `pcr-ai-api/src/lib/agent/agentConfig.ts`：`resolveAgentConfig()` 的 `model`/`subAgentModel` 此前被硬编码强制为 `deepseek-ai/DeepSeek-V4-Flash`，忽略前端 Settings 与 env 传入的值。改为按模型族模糊匹配的白名单：新增 `isDeepSeekV4Flash` / `isMiniMaxM25` / `isAllowedAgentModel`（归一化后子串匹配，不要求与某个供应商的完整 ID 一致），解析顺序 `override.model → env AGENT_MODEL → 默认值`；`subAgentModel` 独立解析。目的是同时支持硅基流动与未来可能更换的供应商（如七牛云）上的同名模型，不需要为每个供应商硬编码 ID。
+- `detectLargeContext()`：MiniMax-M2.5（192K 上下文）纳入大上下文档位（与 GLM 系列同档：summarize 阈值 80、max_tokens 16384、toolResultMaxHistoryChars 20000），目的是减少历史截断、提升长对话回答质量。
+- `pcr-ai-api/.env.example`、`pcr-ai-report/src/App.tsx`：同步更新模型相关注释与 Settings 页「模型」输入框的提示文案，改为准确描述实际允许的两个模型族（此前的示例值 `deepseek-ai/DeepSeek-V3`、`MiniMax/MiniMax-M1` 均不在实际白名单内）。
+- 未改动 `agentLoop.ts` 中已有的 MiniMax `<minimax:tool_call>` 嵌入式工具调用解析逻辑（2026-05-27/29 实现）——此前因模型被锁死从未真正运行，本次是让它第一次生效，代码本身无需改动。
+- Spec：`docs/superpowers/specs/2026-07-11-agent-minimax-m2.5-adaptation-design.md`。
+
+**测试：** `pcr-ai-api` `npm test` 全量通过（新增 agentConfig.test.ts 用例覆盖 MiniMax 直接生效、跨供应商前缀变体、env 覆盖、大上下文检测；`agentLoop.test.ts` 既有 MiniMax 解析用例保持绿）；`npm run typecheck` 通过；`pcr-ai-report` `npm run build` 通过。
+
+---
+
 ## 2026-07-05 — 灰色小字对比度 + 字号微调（全局可读性）
 
 **完成内容：**

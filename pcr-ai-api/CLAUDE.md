@@ -306,6 +306,12 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
    - **前端**：Settings → AI Agent 配置 →「数据安全」分组新增「是否数据脱敏」开关，样式与既有 toggle 一致；详见 **`../pcr-ai-report/CLAUDE.md` §22**。
    - **未纳入**：系统提示词里固定的规则/说明文字不脱敏（只脱敏动态数据，含 `agentPrompt.ts` 里动态拼接的数据库快照 top device 列表）。
 
+24. **Agent 多模型白名单：MiniMax-M2.5（2026-07-11）**：
+   - **`src/lib/agent/agentConfig.ts`**：`resolveAgentConfig()` 此前把 `model`/`subAgentModel` 硬编码为单一值（`ALLOWED_AGENT_MODEL`），忽略 `override.model` 与 `AGENT_MODEL`/`AGENT_SUB_MODEL` env。改为 **`isAllowedAgentModel`**（内部 **`isDeepSeekV4Flash`** / **`isMiniMaxM25`**）按归一化子串（去大小写、去分隔符）匹配"模型族"而非精确字符串，解析顺序 **`override.model` → `env AGENT_MODEL` → 默认 DeepSeek-V4-Flash**（`subAgentModel` 同理独立解析）。这样换供应商（硅基流动 → 七牛云等）时，即使模型 ID 前缀/组织名不同，只要模型名仍含 "DeepSeek-V4-Flash" 或 "MiniMax-M2.5" 即可生效，不需要为每个供应商单独硬编码 ID。
+   - **`detectLargeContext()`**：新增 **`isMiniMaxM25`** 分支，MiniMax-M2.5（192K）与 GLM 大模型同档：`summarize` 阈值 80、`max_tokens` 16384、`toolResultMaxHistoryChars` 20000。
+   - **不改动**：**`agentLoop.ts`** 里 2026-05-27/29 已实现的 MiniMax `<minimax:tool_call>` 嵌入式工具调用解析（`parseMinimaxInvokeBody`、`tryExtractFromMinimaxBuf` 等）——此前因模型被锁死在 DeepSeek 而从未实际运行，本次改动后才真正生效，代码本身未改。
+   - **交接 spec**：[`../docs/superpowers/specs/2026-07-11-agent-minimax-m2.5-adaptation-design.md`](../docs/superpowers/specs/2026-07-11-agent-minimax-m2.5-adaptation-design.md)。回归 **`test/agentConfig.test.ts`**（新增 MiniMax / 跨供应商前缀 / env 覆盖用例）。
+
 ---
 
 ## 12. 硅基流动、CORS 与部署备忘（2026-05 起）
