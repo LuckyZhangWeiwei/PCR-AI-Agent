@@ -311,6 +311,11 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
    - **`detectLargeContext()`**：新增 **`isMiniMaxM25`** 分支，MiniMax-M2.5（192K）与 GLM 大模型同档：`summarize` 阈值 80、`max_tokens` 16384、`toolResultMaxHistoryChars` 20000。
    - **不改动**：**`agentLoop.ts`** 里 2026-05-27/29 已实现的 MiniMax `<minimax:tool_call>` 嵌入式工具调用解析（`parseMinimaxInvokeBody`、`tryExtractFromMinimaxBuf` 等）——此前因模型被锁死在 DeepSeek 而从未实际运行，本次改动后才真正生效，代码本身未改。
    - **交接 spec**：[`../docs/superpowers/specs/2026-07-11-agent-minimax-m2.5-adaptation-design.md`](../docs/superpowers/specs/2026-07-11-agent-minimax-m2.5-adaptation-design.md)。回归 **`test/agentConfig.test.ts`**（新增 MiniMax / 跨供应商前缀 / env 覆盖用例）。
+25. **`aggregate_probe_card_tester_performance` 真实模型联调修复两处（2026-07-11）**：用真实 `Pro/MiniMaxAI/MiniMax-M2.5` + 本地 Dummy 数据跑完整 Agent 对话链路时发现（详见 [`../docs/HANDOFF_AGENT_PROBE_CARD_TESTER_PERFORMANCE.md`](../docs/HANDOFF_AGENT_PROBE_CARD_TESTER_PERFORMANCE.md) §7）：
+   - **①路由抢答（`758c282`）**：「探针卡+最好/最差」类问法命中既有 **`isCardYieldCompareQuestion`**（`agentJbDeterministicReply.ts`，服务于单 lot 两卡对比）的过宽正则，被 **`jbRouteResolver.ts`** 在 LLM 选工具前直发成 **`query_jb_bins`**，新工具永远调不到。新增 **`isCardComboRankingQuestion`** 窄范围排除（出现「组合」，或「机台」与「卡/探针」同现），回归见 **`test/eval/scenarios/routing-golden.ts`**、**`test/agentJbDeterministicReply.test.ts`**。
+   - **②表格转述风险（`31956f1`）**：仅靠 prompt 文字要求"必须原样贴表"约束不住模型，会转述成大白话且出现 pass2/pass3 张冠李戴。仿 **`tryRunDeterministicJbSummary`** 架构新增 **`tryRunDeterministicProbeCardPerfSummary`**（**`agentLoop.ts`**）：总结轮上一工具为 **`aggregate_probe_card_tester_performance`** 时，服务端直出四张 markdown 表 + 复用既有 **`BRIEF_COMMENTARY_SYSTEM`** 单独一轮解读，未新增系统提示词。
+   - **已知未覆盖边界**：`tryRunDeterministicProbeCardPerfSummary` 从工具消息 `content` 字段 `JSON.parse`；若因卡数/lot 数多导致 JSON 超 `toolResultMaxChars` 被截断，会静默回退旧的 LLM 转述路径，不报错——真库大数据量场景待 Cursor 验证（[`../docs/HANDOFF_CURSOR_REALDB_PROBE_CARD_TESTER_PERFORMANCE_2026-07-11.md`](../docs/HANDOFF_CURSOR_REALDB_PROBE_CARD_TESTER_PERFORMANCE_2026-07-11.md) §7）。
+   - 两处修复均只在 Dummy 数据上验证过，真库 + 生产模型组合未测。
 
 ---
 

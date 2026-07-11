@@ -2,8 +2,8 @@
 
 > **执行者：** Claude Code
 > **前置阅读：** `docs/superpowers/specs/2026-07-09-probe-card-tester-performance-ranking-design.md`
-> **分支：** 已合并至 `main`（原 `worktree-feat+probe-card-tester-performance`），commit 范围 `80b6475..8c90f89`
-> **真库验证：** 尚未做——本地全程 `INFCONTROL_LAYER_BINS_DUMMY=true` 开发，任务书见 [`HANDOFF_CURSOR_REALDB_PROBE_CARD_TESTER_PERFORMANCE_2026-07-11.md`](HANDOFF_CURSOR_REALDB_PROBE_CARD_TESTER_PERFORMANCE_2026-07-11.md)
+> **分支：** 已合并至 `main`（原 `worktree-feat+probe-card-tester-performance`），commit 范围 `80b6475..31956f1`
+> **真库验证：** 尚未做——本地全程 `INFCONTROL_LAYER_BINS_DUMMY=true` 开发（含 2026-07-11 真实模型联调），任务书见 [`HANDOFF_CURSOR_REALDB_PROBE_CARD_TESTER_PERFORMANCE_2026-07-11.md`](HANDOFF_CURSOR_REALDB_PROBE_CARD_TESTER_PERFORMANCE_2026-07-11.md)
 
 ## 0. 一眼结论
 
@@ -13,9 +13,11 @@
 | 组合排名 / 探针卡排名 / 置信度档位 | ✅ 已实现 | 见 §4.1-4.3 |
 | 月度良率趋势表 | ✅ 已实现 | 仅 ≥2 个月数据的卡 |
 | 坏 bin Top3 频率表 | ✅ 已实现 | 频率统计，非坐标分布 |
-| `npm test` | ✅ 567/573（567 pass / 2 fail / 4 skip） | 新增 4 个测试文件 + 终审修复追加的 3 个用例全部通过；2 个失败为已知本地预置问题（见下） |
+| `npm test` | ✅ 580/586（580 pass / 2 fail / 4 skip） | 新增/追加测试全部通过；2 个失败为已知本地预置问题（见下） |
 | 终审（opus，全分支 diff） | ✅ Ready to merge: With fixes | Critical 0；Important 2 项已修（良率下限钳制于 0、补齐评估规则 3/4 测试）；Minor 5 项已在 `8c90f89` 一并清理 |
-| 真库回归 | ⏭ 待做 | 见 [`HANDOFF_CURSOR_REALDB_PROBE_CARD_TESTER_PERFORMANCE_2026-07-11.md`](HANDOFF_CURSOR_REALDB_PROBE_CARD_TESTER_PERFORMANCE_2026-07-11.md) |
+| **真实模型联调修复 ①：路由抢答**（2026-07-11，`758c282`） | ✅ 已修复 | MiniMax-M2.5 实测发现「探针卡+最好/最差」类问法被既有 `isCardYieldCompareQuestion` 抢答成 `query_jb_bins`，新工具永远调不到；已加窄范围排除，见 §7 |
+| **真实模型联调修复 ②：表格转述风险**（2026-07-11，`31956f1`） | ✅ 已修复 | prompt 硬规则约束不住模型，改为服务端确定性直出（`tryRunDeterministicProbeCardPerfSummary`），见 §7 |
+| 真库回归（含以上两处修复） | ⏭ 待做 | 见 [`HANDOFF_CURSOR_REALDB_PROBE_CARD_TESTER_PERFORMANCE_2026-07-11.md`](HANDOFF_CURSOR_REALDB_PROBE_CARD_TESTER_PERFORMANCE_2026-07-11.md) |
 
 **关于 2 个失败用例：** `test/jbRouteResolver.test.ts` 的「开关关 → 不调分类器,等于同步结果」与「classifyJbIntent: flag off 时纯正则,flag 来自正则 base」两个 flag-off 用例失败，原因是本地 `pcr-ai-api/runtime-config.json`（被 git 追踪的文件，非本次改动引入）已设 `"jbDeterministicDispatch": true` / `"jbLlmIntentClassifier": true`，这两个用例期望的「flag 关闭」状态实际读到的是共享配置文件里的「开启」值，与 `jbRouteResolver.ts` 是否直连 `process.env` 无关。该问题已在 `docs/HANDOFF_CURSOR_JB_CARD_LISTING_SCOPE_2026-07-10.md` §4「注意」中记录为已知本地预置问题（与 CI/隔离 `RUNTIME_CONFIG_PATH` 无关，可复现绿）。已确认 `pcr-ai-api/runtime-config.json` 自 Task 1（`c44404d`）以来未被本 feature 的任何提交修改（`git diff c44404d^ -- pcr-ai-api/runtime-config.json` 为空），故此失败与本次新增的 `aggregate_probe_card_tester_performance` 功能无关，非回归。
 
@@ -39,6 +41,10 @@
 | `pcr-ai-api/test/agentAggregateProbeCardTesterPerformance.test.ts`（新） | Dummy 模式工具路由测试 |
 | `pcr-ai-api/test/agentToolSchemas.test.ts`（新） | schema 存在性测试 |
 | `pcr-ai-api/test/agentPrompt.test.ts`（新） | classifyIntent + 内容包含测试 |
+| `pcr-ai-api/src/lib/agent/agentJbDeterministicReply.ts` | 2026-07-11 修复：`isCardComboRankingQuestion` 排除组合排名问法 |
+| `pcr-ai-api/src/lib/agent/agentLoop.ts` | 2026-07-11 修复：新增 `tryRunDeterministicProbeCardPerfSummary` |
+| `pcr-ai-api/test/agentJbDeterministicReply.test.ts` | 2026-07-11 新增：路由抢答回归测试 |
+| `pcr-ai-api/test/eval/scenarios/routing-golden.ts` | 2026-07-11 新增：2 条黄金集回归用例 |
 
 对应提交（均在当前分支，`main` 之上）：
 
@@ -51,6 +57,8 @@
 | Task 5 | `eb97f2d` | feat(probe-card-perf): add prompt trigger rules and bad-bin spatial-claim guardrail |
 | Task 6 | `3d7b3d3`/`2e9a5af` | docs(probe-card-perf): add handoff doc + fix leftover `[device]` placeholder |
 | 终审修复 | `8c90f89` | fix(probe-card-perf): address final review findings（良率下限钳制 + 评估规则3/4测试 + 5 项 Minor 清理） |
+| 真实模型修复 ①（§7.1） | `758c282` | fix(agent): probe-card combo phrasing no longer hijacked by card_yield_compare |
+| 真实模型修复 ②（§7.2） | `31956f1` | fix(agent): emit probe-card perf ranking tables verbatim, not LLM prose |
 
 ## 3. 测试
 
@@ -113,6 +121,26 @@ npm ci && npm run build && npm run pm2:reload
 
 这不是遗漏，而是设计文档 §3「样本单位」明确讨论过并采纳的决定：换卡场景下，把坏 die 按实际测试时长归因到当时那张卡，比按整片 wafer 合并更准确地反映"哪张卡在哪个时间段表现如何"。但用户对比两个工具的数字时会看到差异，做真库验证或后续答疑时如果被问起「为什么这个工具算出来的良率和 lot 概况不一样」，可以引用这一条。若后续认为需要与 `query_jb_bins` 口径对齐，需要改成复用 `computeJbYieldMetrics`——这是一次口径变更，需要重新走设计确认，不要直接改。
 
-## 7. 已知限制（v1 范围外，见设计文档 §7）
+## 7. 真实模型联调发现并修复的两个问题（2026-07-11）
+
+上线到 main 后，用真实 SiliconFlow `Pro/MiniMaxAI/MiniMax-M2.5` 模型 + 本地 Dummy 数据（`docs/JBStart.xlsx`，device `WA03P02G`）跑了一遍完整的 Agent 对话链路（不是直接调 `runTool`，是走真模型自然语言路由），发现两个只有「真模型 + 完整对话链路」才会暴露的问题：
+
+### 7.1 路由抢答（commit `758c282`）
+
+问「WA03P02G 这个 device 下最好的探针卡+机台组合是什么，哪张探针卡表现最差」时，服务端在 LLM 还没机会选工具之前，就被既有的 `jbRouteResolver.ts`（`jbDeterministicDispatch` 开关，生产默认 `true`）拦截并直发成了 `query_jb_bins`——根因是这句话同时含有「探针卡」和「最差」，命中了服务于「哪张卡良率更差」这类单 lot 两卡对比问题的 `isCardYieldCompareQuestion` 正则（`agentJbDeterministicReply.ts`）。换一种问法「探针卡表现排名和组合排名」（不含「最好/最差」）则不受影响，能正确路由到新工具——说明问题是这条正则过宽，而不是新工具本身或 prompt 配置有误。
+
+**修复**：在 `isCardYieldCompareQuestion` 里加一条窄范围排除（`isCardComboRankingQuestion`）：句子里出现「组合」，或「机台」与「卡/探针」同时出现时，不再算作 card_yield_compare，转交 LLM 处理。已用 `test/eval/scenarios/routing-golden.ts` 现有的黄金集验证过，没有误伤既有的「哪张卡良率最低」「探针卡哪个最差」等单卡对比问法。
+
+### 7.2 表格转述风险（commit `31956f1`）
+
+即使路由修复后新工具被正确调用，MiniMax-M2.5 仍然把 `comboRankingMarkdown`/`cardRankingMarkdown` 转述成了自己的大白话总结，而不是本工具 hard rule 1 要求的"原样贴表"——转述过程中还曾把 pass3 说成"pass2"（数字本身没错，但转述本身就是风险）。说明仅靠 prompt 文字约束（"必须原样贴表，禁止改写"）管不住模型的转述行为。
+
+**修复**：仿照 `query_jb_bins` 已有的「确定性表直出」架构，新增 `tryRunDeterministicProbeCardPerfSummary`（`agentLoop.ts`）：总结轮如果上一个工具是 `aggregate_probe_card_tester_performance`，直接把它返回的四张 markdown 表通过 SSE 原样吐出，再单独起一轮「仅写解读/建议」的 LLM 调用（复用既有 `BRIEF_COMMENTARY_SYSTEM`，未新增系统提示词）。已用同一句问法重新实测，回复变为「## 实测数据」+ 原样表格 + 「## 分析结论」下的「### 数据解读」「### 专业建议」，与 `query_jb_bins` 的既有输出风格一致。
+
+**已知未覆盖的边界（留给真库验证，见 `HANDOFF_CURSOR_REALDB_PROBE_CARD_TESTER_PERFORMANCE_2026-07-11.md` §7）**：`tryRunDeterministicProbeCardPerfSummary` 从工具消息的 `content` 字段 `JSON.parse`，如果卡数/lot 数很多导致 JSON 超过 `toolResultMaxChars` 被截断，`JSON.parse` 会失败并静默回退到旧的 LLM 转述路径——这个场景 Dummy 的 5 行小样本测不出来，需要真库大数据量验证。
+
+两处修复都只在 Dummy 数据上验证过（§7.1 用 `detectJbReplyMode` 纯函数单测 + 真模型 Dummy 对话验证；§7.2 用真模型 Dummy 对话验证），**真库 + 生产模型的组合尚未验证**。
+
+## 8. 已知限制（v1 范围外，见设计文档 §7）
 
 不做文件上传、不融合 Yield Monitor 数据、不做前端可视化面板、不跨 device 汇总、不做 Tester ANOVA/显著性检验、不做数值置信度分数、不做真正的 Wafer Map 坐标关联。
