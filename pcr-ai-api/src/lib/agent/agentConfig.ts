@@ -14,16 +14,15 @@ export interface AgentConfig {
   /** 每条工具结果写入会话历史时的最大字符数（防止多轮上下文膨胀） */
   toolResultMaxHistoryChars: number;
   /**
-   * 是否为大上下文模型（≥200K token）。
-   * 自动检测 GLM-4.7 / GLM-5.x（Zhipu AI bigmodel.cn）及同等模型；
-   * 为 true 时：历史压缩阈值提高、toolResultMaxHistoryChars 默认值更大。
+   * 是否为大上下文模型（≥190K token）。
+   * 自动检测 GLM-4.7 / GLM-5.x（Zhipu AI bigmodel.cn）、MiniMax-M2.5（192K）
+   * 及同等模型；为 true 时：历史压缩阈值提高、toolResultMaxHistoryChars 默认值更大。
    */
   largeContext: boolean;
 }
 
 const DEFAULT_API_BASE = "https://api.siliconflow.cn/v1";
 const DEFAULT_MODEL = "deepseek-ai/DeepSeek-V4-Flash";
-const DEFAULT_SUB_MODEL = "deepseek-ai/DeepSeek-V4-Flash";
 
 /**
  * 允许的 Agent 主/子模型固定为两个模型族：DeepSeek-V4-Flash、MiniMax-M2.5。
@@ -223,7 +222,7 @@ export function resolveAgentConfig(
   const subAgentModel = resolveAllowedModel(
     override?.subAgentModel,
     process.env.AGENT_SUB_MODEL,
-    DEFAULT_SUB_MODEL
+    model
   );
   const maxRounds = clampMaxRounds(
     override?.maxRounds ?? process.env.AGENT_MAX_ROUNDS

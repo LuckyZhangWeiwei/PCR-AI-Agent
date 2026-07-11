@@ -151,7 +151,16 @@ describe("resolveAgentConfig", () => {
     assert.equal(cfg.model, "MiniMaxAI/MiniMax-M2.5");
   });
 
-  it("validates model and subAgentModel independently", async () => {
+  it("subAgentModel falls back to the resolved main model when omitted", async () => {
+    const { resolveAgentConfig } = await import(
+      "../src/lib/agent/agentConfig.js"
+    );
+    const cfg = resolveAgentConfig({ model: "Pro/MiniMaxAI/MiniMax-M2.5" });
+    assert.equal(cfg.model, "Pro/MiniMaxAI/MiniMax-M2.5");
+    assert.equal(cfg.subAgentModel, "Pro/MiniMaxAI/MiniMax-M2.5");
+  });
+
+  it("subAgentModel falls back to the resolved main model when invalid", async () => {
     const { resolveAgentConfig } = await import(
       "../src/lib/agent/agentConfig.js"
     );
@@ -160,7 +169,19 @@ describe("resolveAgentConfig", () => {
       subAgentModel: "not-a-real-model",
     });
     assert.equal(cfg.model, "Pro/MiniMaxAI/MiniMax-M2.5");
-    assert.equal(cfg.subAgentModel, "deepseek-ai/DeepSeek-V4-Flash");
+    assert.equal(cfg.subAgentModel, "Pro/MiniMaxAI/MiniMax-M2.5");
+  });
+
+  it("subAgentModel can be independently set to a different allowed model than the main model", async () => {
+    const { resolveAgentConfig } = await import(
+      "../src/lib/agent/agentConfig.js"
+    );
+    const cfg = resolveAgentConfig({
+      model: "deepseek-ai/DeepSeek-V4-Flash",
+      subAgentModel: "Pro/MiniMaxAI/MiniMax-M2.5",
+    });
+    assert.equal(cfg.model, "deepseek-ai/DeepSeek-V4-Flash");
+    assert.equal(cfg.subAgentModel, "Pro/MiniMaxAI/MiniMax-M2.5");
   });
 
   it("still falls back to DeepSeek-V4-Flash for an unrecognized model", async () => {
@@ -182,6 +203,22 @@ describe("resolveAgentConfig", () => {
     } finally {
       if (saved !== undefined) process.env.AGENT_MODEL = saved;
       else delete process.env.AGENT_MODEL;
+    }
+  });
+
+  it("reads AGENT_SUB_MODEL from env when override omitted, independent of model", async () => {
+    const saved = process.env.AGENT_SUB_MODEL;
+    process.env.AGENT_SUB_MODEL = "Pro/MiniMaxAI/MiniMax-M2.5";
+    try {
+      const { resolveAgentConfig } = await import(
+        "../src/lib/agent/agentConfig.js"
+      );
+      const cfg = resolveAgentConfig({});
+      assert.equal(cfg.model, "deepseek-ai/DeepSeek-V4-Flash");
+      assert.equal(cfg.subAgentModel, "Pro/MiniMaxAI/MiniMax-M2.5");
+    } finally {
+      if (saved !== undefined) process.env.AGENT_SUB_MODEL = saved;
+      else delete process.env.AGENT_SUB_MODEL;
     }
   });
 });
