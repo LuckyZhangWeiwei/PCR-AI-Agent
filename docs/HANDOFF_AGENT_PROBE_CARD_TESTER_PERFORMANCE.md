@@ -2,7 +2,8 @@
 
 > **执行者：** Claude Code
 > **前置阅读：** `docs/superpowers/specs/2026-07-09-probe-card-tester-performance-ranking-design.md`
-> **分支：** `worktree-feat+probe-card-tester-performance`
+> **分支：** 已合并至 `main`（原 `worktree-feat+probe-card-tester-performance`），commit 范围 `80b6475..8c90f89`
+> **真库验证：** 尚未做——本地全程 `INFCONTROL_LAYER_BINS_DUMMY=true` 开发，任务书见 [`HANDOFF_CURSOR_REALDB_PROBE_CARD_TESTER_PERFORMANCE_2026-07-11.md`](HANDOFF_CURSOR_REALDB_PROBE_CARD_TESTER_PERFORMANCE_2026-07-11.md)
 
 ## 0. 一眼结论
 
@@ -12,8 +13,9 @@
 | 组合排名 / 探针卡排名 / 置信度档位 | ✅ 已实现 | 见 §4.1-4.3 |
 | 月度良率趋势表 | ✅ 已实现 | 仅 ≥2 个月数据的卡 |
 | 坏 bin Top3 频率表 | ✅ 已实现 | 频率统计，非坐标分布 |
-| `npm test` | ✅ 564/570（564 pass / 2 fail / 4 skip） | 新增 4 个测试文件全部通过；2 个失败为已知本地预置问题（见下） |
-| 真库回归 | ⏭ 待做 | 部署后用真实 device 验证 Oracle 路径 COUNT + 全量拉取 |
+| `npm test` | ✅ 567/573（567 pass / 2 fail / 4 skip） | 新增 4 个测试文件 + 终审修复追加的 3 个用例全部通过；2 个失败为已知本地预置问题（见下） |
+| 终审（opus，全分支 diff） | ✅ Ready to merge: With fixes | Critical 0；Important 2 项已修（良率下限钳制于 0、补齐评估规则 3/4 测试）；Minor 5 项已在 `8c90f89` 一并清理 |
+| 真库回归 | ⏭ 待做 | 见 [`HANDOFF_CURSOR_REALDB_PROBE_CARD_TESTER_PERFORMANCE_2026-07-11.md`](HANDOFF_CURSOR_REALDB_PROBE_CARD_TESTER_PERFORMANCE_2026-07-11.md) |
 
 **关于 2 个失败用例：** `test/jbRouteResolver.test.ts` 的「开关关 → 不调分类器,等于同步结果」与「classifyJbIntent: flag off 时纯正则,flag 来自正则 base」两个 flag-off 用例失败，原因是本地 `pcr-ai-api/runtime-config.json`（被 git 追踪的文件，非本次改动引入）已设 `"jbDeterministicDispatch": true` / `"jbLlmIntentClassifier": true`，这两个用例期望的「flag 关闭」状态实际读到的是共享配置文件里的「开启」值，与 `jbRouteResolver.ts` 是否直连 `process.env` 无关。该问题已在 `docs/HANDOFF_CURSOR_JB_CARD_LISTING_SCOPE_2026-07-10.md` §4「注意」中记录为已知本地预置问题（与 CI/隔离 `RUNTIME_CONFIG_PATH` 无关，可复现绿）。已确认 `pcr-ai-api/runtime-config.json` 自 Task 1（`c44404d`）以来未被本 feature 的任何提交修改（`git diff c44404d^ -- pcr-ai-api/runtime-config.json` 为空），故此失败与本次新增的 `aggregate_probe_card_tester_performance` 功能无关，非回归。
 
@@ -47,6 +49,8 @@
 | Task 3 | `1fcb24b` | feat(probe-card-perf): wire aggregate_probe_card_tester_performance agent tool |
 | Task 4 | `8a44b06` | feat(probe-card-perf): add aggregate_probe_card_tester_performance tool schema |
 | Task 5 | `eb97f2d` | feat(probe-card-perf): add prompt trigger rules and bad-bin spatial-claim guardrail |
+| Task 6 | `3d7b3d3`/`2e9a5af` | docs(probe-card-perf): add handoff doc + fix leftover `[device]` placeholder |
+| 终审修复 | `8c90f89` | fix(probe-card-perf): address final review findings（良率下限钳制 + 评估规则3/4测试 + 5 项 Minor 清理） |
 
 ## 3. 测试
 
@@ -57,7 +61,7 @@ npx tsx --test test/probeCardTesterPerformance.test.ts test/agentAggregateProbeC
 npm test
 ```
 
-`npm run typecheck` 与 `npm run build` 均无错误；`npm test` 实测 **46 个 suite 共 570 个测试，564 pass / 2 fail / 4 skip**，4 个新增测试文件（`probeCardTesterPerformance.test.ts`、`agentAggregateProbeCardTesterPerformance.test.ts`、`agentToolSchemas.test.ts`、`agentPrompt.test.ts`）全部通过；2 个失败均为 `test/jbRouteResolver.test.ts` 的 flag-off 用例，属于 §0 所述已知本地预置问题，与本 feature 无关。
+`npm run typecheck` 与 `npm run build` 均无错误；`npm test` 实测 **46 个 suite 共 573 个测试，567 pass / 2 fail / 4 skip**，4 个新增测试文件（`probeCardTesterPerformance.test.ts`、`agentAggregateProbeCardTesterPerformance.test.ts`、`agentToolSchemas.test.ts`、`agentPrompt.test.ts`，含终审修复 `8c90f89` 追加的 3 个用例：良率下限钳制回归测试 + 评估规则 3/4「波动较大，稳定性差」「表现稳定」覆盖）全部通过；2 个失败均为 `test/jbRouteResolver.test.ts` 的 flag-off 用例，属于 §0 所述已知本地预置问题，与本 feature 无关。
 
 ## 4. 手工 Dummy 模式端到端验证（2026-07-10 实测）
 
@@ -101,6 +105,14 @@ npm ci && npm run build && npm run pm2:reload
 - Oracle 路径的 COUNT 查询先执行（可在服务端日志 `logAgentSql` 输出确认），未超 `MEMORY_AGG_ORACLE_MAX_ROWS` 时正常拉全量行
 - 数字与手工核算一致
 
-## 6. 已知限制（v1 范围外，见设计文档 §7）
+完整的真库验证任务书（含 Oracle 路径可用性、行数保护、月度趋势/坏bin频率、Agent 自然语言路由、中断场景良率非负 5 大类问题）见 [`HANDOFF_CURSOR_REALDB_PROBE_CARD_TESTER_PERFORMANCE_2026-07-11.md`](HANDOFF_CURSOR_REALDB_PROBE_CARD_TESTER_PERFORMANCE_2026-07-11.md)。
+
+## 6. 终审发现但非阻塞的口径差异（供后续参考，非 bug）
+
+终审（opus，全分支 diff review）指出：本工具的逐行良率（`rowYieldPct`，每一行 JB 记录独立算一次良率）与全库其它入口的口径不同——`query_jb_bins` 走的 `computeJbYieldMetrics`/`buildSlotYieldSummary` 是按 `(lot, slot, passId)` 分组、取 `MAX(GROSSDIE)`、并对中断 wafer 做前后半段合并（半段良品为 0 时整段丢弃）。这意味着：**同一个 lot，本工具算出的良率数字可能与 `query_jb_bins` 对不上**，且一片发生中途换卡的 wafer 会被本工具当成挂在两张卡下的两个独立样本。
+
+这不是遗漏，而是设计文档 §3「样本单位」明确讨论过并采纳的决定：换卡场景下，把坏 die 按实际测试时长归因到当时那张卡，比按整片 wafer 合并更准确地反映"哪张卡在哪个时间段表现如何"。但用户对比两个工具的数字时会看到差异，做真库验证或后续答疑时如果被问起「为什么这个工具算出来的良率和 lot 概况不一样」，可以引用这一条。若后续认为需要与 `query_jb_bins` 口径对齐，需要改成复用 `computeJbYieldMetrics`——这是一次口径变更，需要重新走设计确认，不要直接改。
+
+## 7. 已知限制（v1 范围外，见设计文档 §7）
 
 不做文件上传、不融合 Yield Monitor 数据、不做前端可视化面板、不跨 device 汇总、不做 Tester ANOVA/显著性检验、不做数值置信度分数、不做真正的 Wafer Map 坐标关联。
