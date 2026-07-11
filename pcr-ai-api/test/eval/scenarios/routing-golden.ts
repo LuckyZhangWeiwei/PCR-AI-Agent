@@ -71,6 +71,16 @@ export const routingGolden: GoldenCase[] = [
     seed: "isProbeCardQuestion variant 哪张探针卡",
   },
   {
+    question: "WA03P02G 这个 device 下最好的探针卡+机台组合是什么，哪张探针卡表现最差",
+    expected: F({ mode: "equipment" }),
+    seed: "REQ-KLWT-019 探针卡+机台组合排名不应被 card_yield_compare 抢答（2026-07-11 real-model 发现：命中 isCardYieldCompareQuestion 的『探针卡…最差』子串，导致 resolveDispatch 直发 query_jb_bins，aggregate_probe_card_tester_performance 永远拿不到轮次）",
+  },
+  {
+    question: "帮我看一下 WA03P02G 的探针卡表现排名和组合排名",
+    expected: F({ mode: "equipment" }),
+    seed: "REQ-KLWT-019 组合排名/表现排名 措辞不应落入 card_yield_compare",
+  },
+  {
     question: "这lot哪些die是嫌疑die",
     expected: F({ mode: "equipment", isDutLevel: true }),
     seed: "equipment DUT bail",

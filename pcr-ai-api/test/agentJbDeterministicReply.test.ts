@@ -164,6 +164,26 @@ describe("agentJbDeterministicReply", () => {
     assert.equal(detectJbReplyMode("DR44436.1W 用几号卡测试的"), "equipment");
   });
 
+  it("探针卡+机台组合排名问法不应被 card_yield_compare 抢答（REQ-KLWT-019 real-model 回归，2026-07-11）", () => {
+    // isCardYieldCompareQuestion 的 `探针卡.*(最好|最差|...)` 正则会命中这类句子，
+    // 导致 resolveDispatch 在 LLM 前直发 query_jb_bins，aggregate_probe_card_tester_performance
+    // 永远拿不到被 LLM 选中的机会（真实 MiniMax-M2.5 模型联调复现，见交接文档）。
+    assert.equal(
+      detectJbReplyMode(
+        "WA03P02G 这个 device 下最好的探针卡+机台组合是什么，哪张探针卡表现最差"
+      ),
+      "equipment"
+    );
+    assert.equal(
+      detectJbReplyMode("帮我看一下 WA03P02G 的探针卡表现排名和组合排名"),
+      "equipment"
+    );
+    // 既有单卡对比问法必须继续命中 card_yield_compare（不能被本次修复误伤）
+    assert.equal(detectJbReplyMode("哪张卡良率最低"), "card_yield_compare");
+    assert.equal(detectJbReplyMode("探针卡哪个最差"), "card_yield_compare");
+    assert.equal(detectJbReplyMode("这两张卡哪张良率更差"), "card_yield_compare");
+  });
+
   it("buildAggregateBinRankingMarkdown from scoped aggregate", () => {
     const md = buildAggregateBinRankingMarkdown(
       JSON.stringify({

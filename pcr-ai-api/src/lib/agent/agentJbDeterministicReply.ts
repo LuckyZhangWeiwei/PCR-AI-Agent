@@ -96,10 +96,22 @@ export function isBinCardAttributionQuestion(text: string): boolean {
   return /哪张.*卡|哪个.*卡|是.*卡|哪块卡|用的.*卡|什么.*卡|属于.*卡|哪张.*探针|哪些.*卡|哪些.*探针|和.*探针.*有关|探针.*有关|卡.*有关|哪些.*channel/i.test(t);
 }
 
+/**
+ * 「探针卡+机台组合」「表现/组合排名」类问法属于跨卡跨机台的组合排名分析
+ * （aggregate_probe_card_tester_performance 的目标场景），不是本模块要抢答的
+ * 单 lot 两张卡良率对比——即使句子里同时出现「探针卡」与「最好/最差」也不能
+ * 算 card_yield_compare，否则 resolveDispatch 会在 LLM 前把它直发成
+ * query_jb_bins，新工具永远选不到（2026-07-11 真实 MiniMax-M2.5 联调复现）。
+ */
+function isCardComboRankingQuestion(text: string): boolean {
+  return /组合|机台.*(?:卡|探针)|(?:卡|探针).*机台/i.test(text);
+}
+
 /** 用户比较两张或多张探针卡的良率/坏 die（哪张更差/更好）。 */
 export function isCardYieldCompareQuestion(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
+  if (isCardComboRankingQuestion(t)) return false;
   if (/哪张.*(良率|yield|更差|更好|最差|最好|最低|最高)|(?:良率|yield).*(哪张|更差|更好|最差)/i.test(t)) {
     return true;
   }
