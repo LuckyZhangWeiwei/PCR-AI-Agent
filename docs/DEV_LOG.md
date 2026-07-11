@@ -2,6 +2,20 @@
 
 ---
 
+## 2026-07-11 — Agent 回答准确性问题清单（会话日志复盘，交接 Cursor）
+
+**完成内容：**
+- 逐条复盘 `pcr-ai-api/session-logs/` 中 2026-07-04～07-11 的真实模型会话（6 个 MiniMax-M2.5 + 十余个 DeepSeek-V4-Flash），对照当前 `main` 代码确认仍会复现，产出 8 项问题的交接文档：[`docs/HANDOFF_CURSOR_AGENT_ACCURACY_2026-07-11.md`](HANDOFF_CURSOR_AGENT_ACCURACY_2026-07-11.md)。
+- **P0（答错/自相矛盾）**：探针卡组合排名四张表无标题、无 pass 分组，同屏出现相互矛盾的排序；JB 分层良率与 DUT 良率表整体良率同屏矛盾（`goodBinsByPassId` 未在 agent B 路打通）；good bin 非 BIN1 的 lot 输出 78 行全 0 DUT 大表（`resolveGoodBinsForPass` 兜底 BIN1 + 呈现层未拦截退化情形）；「good bin 是多少」这类具体字段问句被 lot 概况确定性路由劫持，答非所问。
+- **P1（误导/不一致）**：device 级 lot 列表尾部误挂单 lot 的 DUT 大表；同一问句 3 分钟内两次结果不一致（5 lot vs 4 lot）且标题误带用户未提及的机台；总结解读跨 passId（温度层）直接比较良率、单片样本下因果结论、写出不存在的 pass2。
+- **P2（待回归/体验）**：`query_jb_bins(cardId)` count=0 但 `recentLotsByTestEnd` 有数据导致 125.9s 空转（疑似已被 2026-07-10 `resolveJbListingScope` 修复，需在当前 main 上重放确认）；同一会话内 DUT 大表重复输出两次。
+- 文档标注了 2026-07-11 当天已合入、勿重复修的两项（`758c282` 路由抢答、`31956f1` 表格转述服务端直出），并给出建议实施顺序与完成标准。全部证据来自本地 Dummy 数据，未涉及真库。
+- `CLAUDE.md` 交接索引同步补一行指向该文档。
+
+**测试：** 本次为文档交接，未改动代码，无需跑测试。
+
+---
+
 ## 2026-07-11 — AI Agent 适配 MiniMax-M2.5（多模型白名单 + 大上下文档位）
 
 **完成内容：**
