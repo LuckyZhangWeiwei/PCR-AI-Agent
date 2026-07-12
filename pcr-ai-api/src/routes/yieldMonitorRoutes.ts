@@ -45,24 +45,26 @@ import { clampLimitFromQuery } from "../lib/sqlIdent.js";
 import { parseAggsParam } from "../lib/parseAggsParam.js";
 import { withConnection, withProbeWebConnection } from "../oracle.js";
 import { addDutNumberToYieldMonitorV3Row } from "../lib/yieldTriggerLabelDut.js";
+import { PERIOD_ALARM_TREND_DOCUMENTATION } from "../lib/yieldMonitor/periodAlarmTrend/periodAlarmTrendTypes.js";
+import { parsePeriodAlarmTrendQuery } from "../lib/yieldMonitor/periodAlarmTrend/periodAlarmTrendParse.js";
 import {
-  PERIOD_ALARM_TREND_DOCUMENTATION,
-  aggregatePeriodAlarmTrendDummy,
-  attachPeriodAlarmTopDevices,
-  attachPeriodAlarmTopProbeCards,
-  attachPeriodAlarmTopTesters,
   buildPeriodAlarmJbSlotTuplesSql,
   buildPeriodAlarmTrendSql,
   buildPeriodAlarmTrendTopDevicesSql,
   buildPeriodAlarmTrendTopProbeCardsSql,
   buildPeriodAlarmTrendTopTestersSql,
-  mapPeriodAlarmTrendRows,
-  mergePeriodAlarmJbSlotDenominator,
-  parsePeriodAlarmTrendQuery,
   periodAlarmTrendJbSlotBinds,
   periodAlarmTrendMainBinds,
   periodAlarmTrendTopBinds,
-} from "../lib/yieldMonitorPeriodAlarmTrend.js";
+} from "../lib/yieldMonitor/periodAlarmTrend/periodAlarmTrendSql.js";
+import {
+  aggregatePeriodAlarmTrendDummy,
+  attachPeriodAlarmTopDevices,
+  attachPeriodAlarmTopProbeCards,
+  attachPeriodAlarmTopTesters,
+  mapPeriodAlarmTrendRows,
+  mergePeriodAlarmJbSlotDenominator,
+} from "../lib/yieldMonitor/periodAlarmTrend/periodAlarmTrendAggregate.js";
 
 export const yieldMonitorRouter = Router();
 

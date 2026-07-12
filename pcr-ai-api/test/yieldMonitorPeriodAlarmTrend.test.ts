@@ -1,25 +1,29 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import {
-  aggregatePeriodAlarmTrendDummy,
-  attachPeriodAlarmTopDevices,
-  attachPeriodAlarmTopProbeCards,
-  attachPeriodAlarmTopTesters,
+  parsePeriodAlarmTrendQuery,
+  periodBucketsInRange,
+  recentPeriodBuckets,
+  resolvePeriodAlarmTimeRange,
+} from "../src/lib/yieldMonitor/periodAlarmTrend/periodAlarmTrendParse.js";
+import {
   buildPeriodAlarmJbSlotTuplesSql,
   buildPeriodAlarmTrendSql,
   buildPeriodAlarmTrendTopDevicesSql,
   buildPeriodAlarmTrendTopProbeCardsSql,
   buildPeriodAlarmTrendTopTestersSql,
-  mapPeriodAlarmTrendRows,
-  mergePeriodAlarmJbSlotDenominator,
-  parsePeriodAlarmTrendQuery,
   periodAlarmTrendJbSlotBinds,
   periodAlarmTrendMainBinds,
   periodAlarmTrendTopBinds,
-  periodBucketsInRange,
-  recentPeriodBuckets,
-  resolvePeriodAlarmTimeRange,
-} from "../src/lib/yieldMonitorPeriodAlarmTrend.js";
+} from "../src/lib/yieldMonitor/periodAlarmTrend/periodAlarmTrendSql.js";
+import {
+  aggregatePeriodAlarmTrendDummy,
+  attachPeriodAlarmTopDevices,
+  attachPeriodAlarmTopProbeCards,
+  attachPeriodAlarmTopTesters,
+  mapPeriodAlarmTrendRows,
+  mergePeriodAlarmJbSlotDenominator,
+} from "../src/lib/yieldMonitor/periodAlarmTrend/periodAlarmTrendAggregate.js";
 import { filterYieldMonitorDummyRowsMatchingV3 } from "../src/lib/yieldMonitor/yieldMonitorTriggerDummy.js";
 import { parseBinFromTriggerLabel } from "../src/lib/yieldTriggerLabelBin.js";
 
