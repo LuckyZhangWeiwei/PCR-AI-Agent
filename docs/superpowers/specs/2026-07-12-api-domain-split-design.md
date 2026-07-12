@@ -38,6 +38,7 @@
 3. **按业务域组织，不按技术层**：目录以 Yield Monitor / JB STAR(infcontrol) / 探针卡 / INF 晶圆图 / Agent 核心 划分，与现有 `docs/HANDOFF_*.md`、`test/*.test.ts` 命名里已经隐含的域一致。
 4. **每个文件独立完成、独立验证**：拆完一个文件就跑一次 `npm run typecheck && npm test`，绿了再进入下一个，不积累多文件同时半成品状态。
 5. **不留兼容层**：项目内部代码没有外部消费者，直接改 import 路径到新位置，不做 barrel re-export。
+6. **顺手做函数级可读性改善**：拆分某个域时，如果域内遇到过长（约超过 80–100 行）或嵌套过深的函数，顺手用「提取子函数 + 起清晰的名字」的方式拆开，让人读起来能一眼看出每段在做什么。这是行为不变的纯提取重构（extract function），不是新增一轮独立任务——不单独为此扫描全仓库，只在按第 5 节顺序处理到某个域时，对该域内的函数顺手处理。典型候选：`runAgentLoop`（拆分后仍可能 ~700+ 行）、`buildSystemPrompt`、`buildRecentLotsListingMarkdown`（~330 行）、`serializeJbQueryResultForAgent`、`calculateWafer` 等。
 
 ---
 
@@ -156,7 +157,7 @@ routes/
 
 ## 6. 验证策略
 
-- 每步：`npm run typecheck` + `npm test`（全量 `test/*.test.ts`，约55个文件，覆盖 Dummy 和部分真实路径逻辑）。
+- 每步：`npm run typecheck` + `npm test`（全量 `test/*.test.ts`，约55个文件，覆盖 Dummy 和部分真实路径逻辑）。这也是第 2 节原则 6（函数级提取）的验证手段——提取子函数后跑同一套测试，行为不变则子函数拆分正确。
 - 全部完成后：额外跑一次 `npm run build`（含 `verify-dist-no-undici` 检查，确保拆分没有意外引入新依赖或打破 no-undici 规则）。
 - 全绿后合并回 `main`。
 
@@ -174,4 +175,4 @@ routes/
 
 - `pcr-ai-report` 前端包的任何改动。
 - `docs/HANDOFF_*.md` 历史交接文档的路径更新（视为历史快照，保留原样）。
-- 任何业务逻辑、SQL、响应字段的变更——本次是纯结构重构。
+- 任何业务逻辑、SQL、响应字段的变更——本次是纯结构重构。原则 6 的函数提取同样只做「等价搬移」（extract function，签名和调用点行为不变），不改判断条件、不改计算逻辑。
