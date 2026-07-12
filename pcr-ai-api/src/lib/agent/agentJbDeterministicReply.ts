@@ -220,8 +220,22 @@ export function isCardYieldCompareQuestion(text: string): boolean {
 export function isProbeCardTesterPerformanceQuestion(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
+  if (isCardComboRankingQuestion(t)) return true;
+  // 「用什么/哪个 probecard/探针卡 … 最好/最佳」— 跨 lot 卡排名，非单 lot 卡枚举
+  if (
+    /(?:什么|哪个|哪张|哪种)\s*(?:探针\s*卡|probe\s*card|probecard)/i.test(t) &&
+    /(?:最好|最佳|最差|推荐)/i.test(t)
+  ) {
+    return true;
+  }
+  // 「… probecard/探针卡 测试最好」— 常见口语（探针卡哪个最差 仍走 card_yield_compare）
+  if (
+    /(?:探针\s*卡|probe\s*card|probecard).*(?:测试)?(?:最好|最佳)/i.test(t) &&
+    !/(?:探针\s*卡|probe\s*card|probecard).*?(?:什么|哪个|哪张|哪种).*?(?:最差|更差)/i.test(t)
+  ) {
+    return true;
+  }
   if (isCardYieldCompareQuestion(t) && !isProbeCardComboRankingQuestion(t)) return false;
-  if (isProbeCardComboRankingQuestion(t)) return true;
   if (/探针卡.*(?:表现|组合).*(?:排名|最好|最差)/i.test(t)) return true;
   if (/(?:组合|表现).*(?:排名).*(?:探针卡|机台)/i.test(t)) return true;
   if (/最好的探针卡\+?机台|探针卡\+机台组合/i.test(t)) return true;
@@ -964,6 +978,8 @@ export function detectJbReplyMode(userMessage: string): JbReplyMode {
   // Specific attribution/compare modes take priority over generic equipment check
   if (isBinCardAttributionQuestion(userMessage)) return "bin_card_attribution";
   if (isCardYieldCompareQuestion(userMessage)) return "card_yield_compare";
+  // 跨 lot 探针卡排名（aggregate_probe_card_tester_performance）不能走 equipment 单 lot 卡表
+  if (isProbeCardTesterPerformanceQuestion(userMessage)) return "generic";
   // 多卡「测试情况对比」必须先于 equipment：否则「这4张卡对比」被单 lot 卡表劫持（答非所问）。
   if (isMultiCardComparisonQuestion(userMessage)) return "generic";
   if (isTesterMachineQuestion(userMessage) && isProbeCardQuestion(userMessage)) {

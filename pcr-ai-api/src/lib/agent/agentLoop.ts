@@ -120,7 +120,7 @@ import {
   buildProbeCardPerfSummaryMarkdown,
   type PassGroupResult,
 } from "../probeCardTesterPerformance.js";
-import { buildScopeLabelFromAggregateArgs, findLastToolCallArgs, inferDeviceFromText, inferDeviceFromHistory, inferLotFromHistory, inferRecentMonthsWindow, jbListingScopeLabel, resolveJbListingScope } from "./agentQueryScope.js";
+import { buildScopeLabelFromAggregateArgs, findLastToolCallArgs, inferDeviceFromText, inferDeviceFromHistory, inferLotFromHistory, inferMaskFromText, inferMaskFromHistory, inferRecentMonthsWindow, jbListingScopeLabel, resolveJbListingScope } from "./agentQueryScope.js";
 import { deviceBaseMask } from "../deviceMask.js";
 import {
   buildInfDrawArgsAfterJbLookup,
@@ -1872,6 +1872,7 @@ async function tryRunEquipmentDirectRoute(
   if (!isProbeCardQuestion(userQuestion) && !isTesterMachineQuestion(userQuestion)) {
     return false;
   }
+  if (isProbeCardTesterPerformanceQuestion(userQuestion)) return false;
   if (requiresNewDataQuery(userQuestion)) return false;
   // lot 良率排行需跨 lot 聚合，session 单批 equipment 缓存不能代答（A1-4）。
   if (isLotYieldRankingQuestion(userQuestion)) return false;
@@ -3047,9 +3048,16 @@ async function tryRunProbeCardPerfDirectRoute(
   const history = getHistory(sessionId);
   const device =
     inferDeviceFromText(userQuestion) || inferDeviceFromHistory(history);
-  if (!device) return false;
+  const mask =
+    !device
+      ? inferMaskFromText(userQuestion) || inferMaskFromHistory(history)
+      : undefined;
+  if (!device && !mask) return false;
 
-  const args: Record<string, unknown> = { device };
+  const args: Record<string, unknown> = {};
+  if (device) args["device"] = device;
+  else if (mask) args["mask"] = mask;
+  const scopeLabel = device ?? `mask=${mask}`;
   const window = inferRecentMonthsWindow(userQuestion);
   if (window.testEndFrom) args["testEndFrom"] = window.testEndFrom;
   if (window.testEndTo) args["testEndTo"] = window.testEndTo;
@@ -3064,7 +3072,7 @@ async function tryRunProbeCardPerfDirectRoute(
     args["passId"] = 5;
   }
 
-  emit({ type: "status", message: `正在聚合 ${device} 探针卡+机台组合表现…` });
+  emit({ type: "status", message: `正在聚合 ${scopeLabel} 探针卡+机台组合表现…` });
   emit({ type: "tool_start", name: "aggregate_probe_card_tester_performance", args });
 
   let raw = "";
