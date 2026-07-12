@@ -85,7 +85,10 @@ export function isGoodBinValueQuestion(text: string): boolean {
 export function buildGoodBinValueMarkdown(
   toolPayload: Record<string, unknown>
 ): string | null {
-  const rows = toolPayload["rows"] as Record<string, unknown>[] | undefined;
+  const rows =
+    (toolPayload["rows"] as Record<string, unknown>[] | undefined)?.length
+      ? (toolPayload["rows"] as Record<string, unknown>[])
+      : (toolPayload["_trendRows"] as Record<string, unknown>[] | undefined);
   if (!rows?.length) return null;
 
   const byPass = new Map<number, Map<number, number>>();

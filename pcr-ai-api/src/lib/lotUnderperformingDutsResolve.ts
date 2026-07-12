@@ -127,7 +127,10 @@ export function buildGoodBinsByPassFromJbRows(
 export function buildGoodBinsByPassFromToolPayload(
   payload: Record<string, unknown>
 ): Map<number, Set<number>> | undefined {
-  const rows = payload["rows"] as Record<string, unknown>[] | undefined;
+  const rows =
+    (payload["rows"] as Record<string, unknown>[] | undefined)?.length
+      ? (payload["rows"] as Record<string, unknown>[])
+      : (payload["_trendRows"] as Record<string, unknown>[] | undefined);
   if (!rows?.length) return undefined;
   const map = buildGoodBinsByPassFromJbRows(rows);
   return map.size > 0 ? map : undefined;

@@ -1,0 +1,68 @@
+# Post-deploy 真库复验 2026-07-12T02:30:25.556Z
+HEAD: 97906b2  API: http://10.192.130.89:30008
+
+## P0-2 — NF12595.1A JB vs DUT REST 口径
+  DUT lotOverall pass1: 75.2%
+  JB rows approx pass1: 52.1%
+  delta: 23.1pp → ❌ FAIL (>5pp)
+
+## P0-4 — good bin 直答（分轮 600s）
+  turn1: DR41803.1Y 的测试情况
+  turn1: ok ms=46768 tools=query_jb_bins len=4006
+  turn2: DR41803.1Y 中的 good bin 是多少
+  turn2: ✅ PASS ms=389097 tools=query_jb_bins
+  hasBin=true overviewHijack=false
+```
+根据查询到的数据，**DR41803.1Y** 的良品（good die）情况如下：
+
+| 测试层 | 总die | 好die（good die） | 坏die | 良率% |
+|---|---:|---:|---:|---:|
+| pass1 | 160,675 | **155,527** | 5,148 | 96.8% |
+| pass3 | 155,878 | **155,874** | 4 | ≈100% |
+
+关于「good bin 编号」：在 JB STAR 数据中，良品通常为 **BIN1**（默认通过 bin），但由于工具返回的 `goodBins` 数组因数据量过大被省略（`rowsOmitted: true`），未在可见输出中列出具体编号和 die 分布。如果您需要确认该批次良品对应的具体 bin 编号（BIN1 或是否存在其他 good bin 分类），可以进一步查询该批次各 bin 的完整分布。DR41803.1Y（WA01N39W）的 pass1 良品 die 共 **155527 颗**（良率 96.8%），pass3 良品 die **155874 颗**（良率 100%）。  
+良品 bin（good bin）的编号在汇总数据中未显式列出，通常为 BIN0（或对应良品 BIN250），pass1 全部 die 中良品占 96.8%，坏 die 集中于 BIN141/143/106/135。
+
+### 数据解读
+- pass1 坏 die 5148 颗，top3 为 **BIN141（1866 颗）**、BIN143（1028 颗）、BIN106（826 颗），且 BIN141/143/135 连续 25 片聚集，BIN106 在 waferId 8–18 连续 11 片偏高。
+- pass3 仅 4 颗坏 die（BIN106 各 1 颗，余
+```
+
+## Q5/Q7 — 探针卡组合排名 + 是否直出表
+  tools=aggregate_probe_card_tester_performance ms=154397
+  hitPerfTool=true hasTableTitle=false llmProseOnly=true
+  Q5 route: ✅ PASS
+  Q7 verbatim tables: ❌ FAIL (LLM prose/转述)
+```
+## WA03P02G — 探针卡+测试机组合排名与探针卡表现
+
+以下为工具自动计算的结果，按测试层（pass1 / pass3）分别输出。
+
+---
+
+### pass1（sort1）— 组合排名（最好在前）
+
+| 排名 | CardId | TesterId | 平均良率 | 标准差 | 片数 | Lot 数 | 置信度 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 8041-03 | b3uflex11 | 96.54% | 0.57% | 50 | 2 | 低 |
+| 2 | 8041-02 | b3uflex25 | 96.29% | 0.64% | 58 | 4 | 中 |
+| 3 | 8041-06 | b3uflex11 | 95.92% | 1.24% | 402 | 17 | 高 |
+| 4 | 8041-02 | b3uflex12 | 95.76% | 0.93% | 172 | 8 | 中 |
+| 5 | 8041-06 | b3uflex23 | 95.74% | 1.70% | 127 | 5 | 中 |
+| 6 | 8041-04 | b3uflex11 | 95.69% | 1.46% | 276 | 11 | 高 |
+| 7 | 8041-08 | b3uflex25 | 95.65% | 1.20% | 29 | 2 | 低 |
+| 8 | 8041-01 | b3uflex11 | 95.64% | 0.99% | 52 | 12 | 高 |
+| 9 | 8041-02 | b3uflex13 | 95.53% | 1.20% | 329 | 14 | 高 |
+| 10 | 8041-01 | b3uflex17 | 95.48% | 5.73% | 301 | 12 | 高 |
+| 11 | 8041-07 | b3uflex12 | 95.43% | 1.12% | 199 | 11 | 高 |
+| 12 | 8041-04 | b3uflex21 | 95.42% | 1.57% | 225 | 9 | 中 |
+| 13 | 8041-01 | b3uflex12 | 95.41% | 1.19% | 25 | 1 | 低 |
+| 14 | 8041-
+```
+
+## Q1 — aggregate_probe_card_tester_performance 可用性（经 Agent 工具路径）
+  tool invoked: yes, agent turn total ms=154397
+  Q1: ✅ Oracle 路径经 Agent 工具跑通（详见服务端 logAgentSql）
+
+## Summary
+P0-2 REST delta: 23.1pp

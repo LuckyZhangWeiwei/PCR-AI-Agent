@@ -800,6 +800,17 @@ describe("agentJbDeterministicReply", () => {
     assert.match(md!, /6213/);
   });
 
+  it("buildGoodBinValueMarkdown reads _trendRows when session cache omits rows", () => {
+    const md = buildGoodBinValueMarkdown({
+      lot: "DR41803.1Y",
+      device: "WA01N39W",
+      rowsOmitted: true,
+      _trendRows: [{ PASSID: 1, PASSBIN: "250" }],
+    });
+    assert.ok(md);
+    assert.match(md!, /BIN250/);
+  });
+
   it("detectJbReplyMode routes good bin field ask to good_bin_value", () => {
     assert.equal(detectJbReplyMode("DR41803.1Y 中的 good bin 是多少"), "good_bin_value");
   });

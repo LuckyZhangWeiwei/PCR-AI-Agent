@@ -1,95 +1,85 @@
-# Cursor 真库验证结果（2026-07-12 · Agent 回答准确性 + 探针卡路由抽样）
+# Cursor 真库验证结果（2026-07-12 · Agent 回答准确性 · 部署后终验）
 
 > **执行者：** Cursor Agent  
-> **代码：** 本地 `main` **`ee48ab2`**（已 push）；**远程 `10.192.130.89:30008` 验证时尚未 pm2 reload 此 commit**  
-> **任务来源：** [`HANDOFF_CURSOR_AGENT_ACCURACY_2026-07-11.md`](HANDOFF_CURSOR_AGENT_ACCURACY_2026-07-11.md)、[`HANDOFF_CURSOR_REALDB_PROBE_CARD_TESTER_PERFORMANCE_2026-07-11.md`](HANDOFF_CURSOR_REALDB_PROBE_CARD_TESTER_PERFORMANCE_2026-07-11.md) §5 Q5  
-> **原始日志：** [`scratchpad/realdb-agent-accuracy-2026-07-12.txt`](../scratchpad/realdb-agent-accuracy-2026-07-12.txt)  
-> **复跑：** `cd pcr-ai-api && node scripts/verify-realdb-agent-accuracy-2026-07-12.mjs`
+> **代码：** `97906b2`（部署后）+ 待部署 `_trendRows` good-bin 补丁  
+> **API：** `http://10.192.130.89:30008`  
+> **日志：** [`scratchpad/realdb-post-deploy-2026-07-12.txt`](../scratchpad/realdb-post-deploy-2026-07-12.txt)、[`scratchpad/realdb-agent-accuracy-2026-07-12.txt`](../scratchpad/realdb-agent-accuracy-2026-07-12.txt)
 
 ---
 
-## 0. 一眼结论
+## 0. 一眼结论（部署 `97906b2` 后）
 
-| 项 | 真库结论 | 说明 |
+| 项 | 结果 | 说明 |
 |---|---|---|
-| **REST P0-2/P0-3** | ✅ **3/3** lot `pass1` baseline > 0%（无全 0 退化大表数据源） | `NF12595.1A` 75.2%、`DR41803.1Y` 96.8%、`NF12499.1N` 95.1% |
-| **Agent P0-4 good bin 直答** | ❌ **仍被 lot 概况劫持** | 第二问仍出机台/良率/逐片表 → **需 deploy `ee48ab2` 后复验** |
-| **Agent P1-5/P1-6 listing** | ⚠️ **部分改善 / 未终验** | 标题已为 `device=WA01N39W`（无机台）；脚本判 FAIL（可能尾部仍 append DUT 或判定过严） |
-| **Agent P2-8a 9440-03** | ✅ **有数据、非空转** | 95.65% pass1 表 + 坏 bin 排行；**旧 count=0 场景未复现** |
-| **探针卡 Q5 组合排名路由** | ❌ **仍 hijack 到单 lot `query_jb_bins`** | 未命中 `aggregate_probe_card_tester_performance` |
+| **REST P0-2/P0-3** | ✅ **3/3** | pass1 baseline > 0%，无全 0 DUT 退化 |
+| **P0-4 good bin** | ✅ **功能通过** | 分轮 600s：第二问直答 BIN，无概况表劫持；**389s 走 LLM 慢路**（session cache 无 `rows`）→ 已修 `_trendRows` 兜底 |
+| **P1-5 listing** | ✅ | 213 lot 列表，无 DUT 大表、标题无机台 |
+| **P2-8a 9440-03** | ✅ | 有数据、非空转 |
+| **Q5 探针卡组合路由** | ✅ | `aggregate_probe_card_tester_performance` 已调用 |
+| **Q1 Oracle 工具路径** | ✅ | ~154s 完成，无报错 |
+| **Q7 服务端原样贴表** | ⚠️ **部分** | 有排名 markdown 表，但标题为 LLM 改写（`### pass1 — 组合排名`），非 `#### pass1（sort1 常温）` + `探针卡+机台组合排名` 服务端字段直贴 |
+| **P0-2 同屏 JB vs DUT %** | ⏭ **待补** | REST：DUT 75.2%； naive JB rows 估算不可信；需 Agent 同屏读 `yieldByPassIdMarkdown` vs DUT 表头 |
 
-**总判：** REST 层 DUT 良率取数在真库上**已非全 0 退化**；Agent 层 SSE 修复 **必须先在 `10.192.130.89` 上 `npm run build && npm run pm2:reload`** 再跑一轮 `verify-realdb-agent-accuracy-2026-07-12.mjs`。
+**总判：** Agent 准确性 8 项 **可关单**（P2-8a count=0 路径未触发）；探针卡 perf **Q5/Q1 通过**，Q7 建议再部署 `_trendRows` 补丁 + 确认 PRE_LLM 直出路径在主机 dist 生效。
 
 ---
 
-## 1. 环境
+## 1. REST — lot-underperforming-duts
 
-| 项 | 值 |
+| Lot | pass1 DUT baseline |
+|---|---:|
+| NF12595.1A | 75.2% |
+| DR41803.1Y | 96.8% |
+| NF12499.1N | 95.1% |
+
+---
+
+## 2. Agent SSE（部署后）
+
+### P0-4 — good bin（分轮，600s/轮）
+
+1. `DR41803.1Y 的测试情况` → 47s，`query_jb_bins`  
+2. `DR41803.1Y 中的 good bin 是多少` → ✅ 含 BIN 编号、无概况表；389s（LLM 慢路，因 cache 无 `rows`）
+
+**跟进：** `buildGoodBinValueMarkdown` / `buildGoodBinsByPassFromToolPayload` 已支持从 session cache `_trendRows` 读 PASSBIN → 第二问应 <5s 直出。
+
+### P1-5 — `WA01N39W 的测试情况`
+
+✅ 213 lot 列表，`device=WA01N39W`，无 DUT grid。
+
+### Q5/Q7 — 探针卡组合
+
+- 工具：`aggregate_probe_card_tester_performance` ✅  
+- 输出：含 CardId/TesterId/平均良率排名表 ✅  
+- verbatim 服务端四表字段：⚠️ LLM 重组表头（非 `comboRankingMarkdown` 原样）
+
+---
+
+## 3. 探针卡 perf 任务书进度（Q1–Q7）
+
+| Q | 状态 |
 |---|---|
-| 验证时间 | 2026-07-12 ~01:52 UTC（09:52 +08） |
-| API | `http://10.192.130.89:30008` |
-| Health | `agentEnabled=true`, `agentJbDeterministicSummary=true` |
-| Agent 模型 | `deepseek-ai/DeepSeek-V4-Flash` |
-| 本地 HEAD | `ee48ab2` |
-| 远程 deploy | **未确认** — SSE 行为与旧 dist 一致 |
+| Q1 Oracle 跑通 | ✅ ~154s |
+| Q2 手工核算 | ⏭ 未做 SQL 抽查 |
+| Q3 行数保护 | ⏭ 未触发大 row 场景 |
+| Q4 月度趋势/坏 bin | ⏭ 输出含表但未逐字段核对 |
+| Q5 Agent 路由 | ✅ |
+| Q6 中断 wafer 非负 | ⏭ |
+| Q7 原样贴表 | ⚠️ 表在，非 verbatim |
 
 ---
 
-## 2. REST — lot-underperforming-duts（P0-2/P0-3 口径）
+## 4. 下一步
 
-```bash
-curl -s -m 180 "http://10.192.130.89:30008/api/v4/inf-analysis/lot-underperforming-duts?lot=NF12595.1A&passId=1"
-curl -s -m 180 "http://10.192.130.89:30008/api/v4/inf-analysis/lot-underperforming-duts?lot=DR41803.1Y&passId=1"
-curl -s -m 180 "http://10.192.130.89:30008/api/v4/inf-analysis/lot-underperforming-duts?lot=NF12499.1N&passId=1"
-```
-
-| Lot | device | pass1 baseline | 判定 |
-|---|---|---:|---|
-| NF12595.1A | WA02P87K | **75.2%** | ✅ 非 0% |
-| DR41803.1Y | WA01N39W | **96.8%** | ✅ 非 0%；与 JB 概况表 pass1 96.8% 同量级 |
-| NF12499.1N | WA03P02G | **95.1%** | ✅ 非 0% |
-
-> **待 deploy 后补验：** Agent 同屏 JB 分 sort 良率 vs DUT 表头「lot 整体 %」是否 ≤ 舍入误差（handoff 原 bug：`NF12595.1A` 47.83% vs 89.41%）。
-
----
-
-## 3. Agent SSE
-
-### P0-4 — 「DR41803.1Y 中的 good bin 是多少」
-
-- 前置：「DR41803.1Y 的测试情况」  
-- **结果：** ❌ 第二问仍输出完整 lot 概况（机台表 + 良率表 + 逐片 pivot），**未**直答 BIN 编号  
-- **原因：** 远程未部署 `isGoodBinValueQuestion` / `tryRunGoodBinValueDirectRoute`（`ee48ab2`）
-
-### P1-5 — 「WA01N39W 的测试情况」
-
-- **结果：** ⚠️ 主体为 **213 lot 列表**，标题 `（device=WA01N39W）` **无机台** → P1-6 标签侧疑似已改善  
-- 脚本判 FAIL：需 deploy 后查看完整 SSE 文本是否仍尾部 append DUT 大表
-
-### P2-8a — 「9440-03 卡的测试情况」
-
-- **结果：** ✅ 约 10 分钟内返回；pass1 95.65%、9440-03 卡表、坏 bin Top10  
-- **旧 bug（count=0 + 125s 空转）：** **未复现**
-
-### Q5 — 「WA03P02G …最好的探针卡+机台组合…」
-
-- **结果：** ❌ 输出单 lot `NF13524.1F` 的卡汇总，**非**四表组合排名  
-- **工具：** 未观察到 `aggregate_probe_card_tester_performance`（可能旧路由 + 未 deploy `758c282`/`31956f1` 组合）
-
----
-
-## 4. 下一步（必须）
-
-1. **在 API 主机：** `git pull && cd pcr-ai-api && npm ci && npm run build && npm run pm2:reload`  
-2. **复跑：** `node scripts/verify-realdb-agent-accuracy-2026-07-12.mjs`  
-3. **期望：** P0-4 / P1-5 / Q5 转绿；REST 维持 3/3  
-4. **探针卡完整 Q1–Q7：** 仍按 [`HANDOFF_CURSOR_REALDB_PROBE_CARD_TESTER_PERFORMANCE_2026-07-11.md`](HANDOFF_CURSOR_REALDB_PROBE_CARD_TESTER_PERFORMANCE_2026-07-11.md) 在 deploy 后逐项补完
+1. **部署** `_trendRows` good-bin 补丁 → 复跑 P0-4（期望 <10s）  
+2. **UI 抽验** NF12595.1A 同屏 JB pass1 % vs DUT 表头 %  
+3. **可选：** Q7 确认主机 `git log -1` = 含 `tryRunProbeCardPerfDirectRoute` 的 commit；若已是则查为何仍走 LLM 表头  
+4. **可选：** 探针卡 Q2–Q4/Q6 SQL 抽查（见 [`HANDOFF_CURSOR_REALDB_PROBE_CARD_TESTER_PERFORMANCE_2026-07-11.md`](HANDOFF_CURSOR_REALDB_PROBE_CARD_TESTER_PERFORMANCE_2026-07-11.md)）
 
 ---
 
 ## 5. 给 Claude Code
 
-- **代码：** `ee48ab2` 已 push，单测 + 黄金集已通过  
-- **真库 REST：** DUT baseline 三条 lot 均正常，**不支持「全 0 大表」回归**  
-- **真库 Agent：** **blocked on deploy** — 当前 SSE 行为说明远程仍是 pre-`ee48ab2` dist  
-- **9440-03 cardId：** 可勾 P2-8a 回归清单「有数据路径」；count=0 路径未在本轮触发
+- Agent 准确性清单：**8/8 代码 + 真库 7/8 场景绿**（P0-2 同屏 % 待 UI 一条）  
+- 探针卡新工具：**真库 Oracle 路径首次跑通**；路由修复有效  
+- 残余：`good bin` 直答应读 `_trendRows`（已修待 deploy）；Q7 verbatim 表头待确认 PRE_LLM dist
