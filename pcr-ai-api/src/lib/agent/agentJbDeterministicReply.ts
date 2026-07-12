@@ -7,18 +7,18 @@ import {
   formatLotTesterMarkdown,
   formatTestInterruptCountMarkdown,
   formatSlotYieldInterruptMarkdown,
-} from "./agentJbHistoryCompact.js";
+} from "./jb/agentJbHistoryCompact.js";
 import type {
   CardByPassIdEntry,
   LotTesterEntry,
   RecentLotByTestEndEntry,
   SlotBadBinsCompactEntry,
-} from "./agentJbBinFormat.js";
-import { jbWrappedIsEmptyQuery } from "./agentJbBinFormat.js";
-import type { ClusteredBadBinAlert } from "./agentJbBadBinCluster.js";
+} from "./jb/agentJbBinFormat.js";
+import { jbWrappedIsEmptyQuery } from "./jb/agentJbBinFormat.js";
+import type { ClusteredBadBinAlert } from "./jb/agentJbBadBinCluster.js";
 import type { SlotYieldSummaryEntry, YieldByPassEntry } from "../infcontrol/jbYieldCalc.js";
 import { goodBinIndicesForJbRow, passIdSortLabel } from "../infcontrol/jbYieldCalc.js";
-import { buildBinSlotTrendMarkdownOnDemand } from "./agentJbBinTrend.js";
+import { buildBinSlotTrendMarkdownOnDemand } from "./jb/agentJbBinTrend.js";
 import { getJbToolRawJson } from "./agentJbSessionCache.js";
 import { extractLotFromUserText } from "./tools/agentInfWaferMapTool.js";
 import {

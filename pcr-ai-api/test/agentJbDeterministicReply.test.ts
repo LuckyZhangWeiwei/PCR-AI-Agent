@@ -37,7 +37,7 @@ import {
 } from "../src/lib/agent/agentJbDeterministicReply.js";
 import {
   compactJbCacheForHistory,
-} from "../src/lib/agent/agentJbHistoryCompact.js";
+} from "../src/lib/agent/jb/agentJbHistoryCompact.js";
 import {
   clearJbToolRawJson,
   storeJbToolRawJson,
@@ -46,7 +46,7 @@ import {
   buildJbSessionCacheJson,
   serializeJbQueryResultForAgent,
   wrapJbQueryResultForAgent,
-} from "../src/lib/agent/agentJbBinFormat.js";
+} from "../src/lib/agent/jb/agentJbBinFormat.js";
 
 describe("agentJbDeterministicReply", () => {
   it("equipmentRouteDutLevelBail: DUT/嫌疑die 类问句为 true,纯卡问句为 false", () => {

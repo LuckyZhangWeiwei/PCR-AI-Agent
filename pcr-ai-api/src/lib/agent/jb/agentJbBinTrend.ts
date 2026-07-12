@@ -1,4 +1,4 @@
-// pcr-ai-api/src/lib/agent/agentJbBinTrend.ts
+// pcr-ai-api/src/lib/agent/jb/agentJbBinTrend.ts
 /** 按 slot × pass 的坏 bin 趋势（含 INTERRUPT 前半/后半/合计）。 */
 
 import {
@@ -9,7 +9,7 @@ import {
   splitPassGroupIntoHalves,
   type JbYieldMetrics,
   type SlotYieldSummaryEntry,
-} from "../infcontrol/jbYieldCalc.js";
+} from "../../infcontrol/jbYieldCalc.js";
 
 function formatPct(y: number | null | undefined): string {
   if (y === null || y === undefined || !Number.isFinite(y)) return "—";

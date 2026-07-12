@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { compactJbCacheForHistory } from "../src/lib/agent/agentJbHistoryCompact.js";
+import { compactJbCacheForHistory } from "../src/lib/agent/jb/agentJbHistoryCompact.js";
 
 describe("multiLotListing history compact", () => {
   it("compactJbCacheForHistory keeps recentLotsByTestEnd when over limit", () => {

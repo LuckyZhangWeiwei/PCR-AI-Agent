@@ -13,7 +13,7 @@ import {
   normalizeBinsForAgent,
   serializeJbQueryResultForAgent,
   wrapJbQueryResultForAgent,
-} from "../src/lib/agent/agentJbBinFormat.js";
+} from "../src/lib/agent/jb/agentJbBinFormat.js";
 
 describe("agentJbBinFormat", () => {
   it("enrichInfcontrolLayerBinRowV2 preserves v4 list bins[] (no BIN columns)", () => {

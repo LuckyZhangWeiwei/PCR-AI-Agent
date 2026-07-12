@@ -1,4 +1,4 @@
-// pcr-ai-api/src/lib/agent/agentJbBinFormat.ts
+// pcr-ai-api/src/lib/agent/jb/agentJbBinFormat.ts
 /** Agent 工具回传：与 aggregate_jb_bins 的 bin/count 语义对齐，避免 n/value 被模型对调。 */
 
 import {
@@ -11,7 +11,7 @@ import {
   passNumFromJbRow,
   type LotYieldRankEntry,
   type SlotYieldSummaryEntry,
-} from "../infcontrol/jbYieldCalc.js";
+} from "../../infcontrol/jbYieldCalc.js";
 import {
   formatCardByPassIdMarkdown,
   formatLotYieldOverviewMarkdown,
@@ -21,12 +21,12 @@ import {
   formatSlotYieldPivotMarkdown,
   formatYieldByPassSection,
 } from "./agentJbHistoryCompact.js";
-import { clearJbToolRawJson, storeJbToolRawJson } from "./agentJbSessionCache.js";
-import { multiLotListingFields } from "./agentJbMultiLotListing.js";
+import { clearJbToolRawJson, storeJbToolRawJson } from "../agentJbSessionCache.js";
+import { multiLotListingFields } from "../agentJbMultiLotListing.js";
 import {
   jbYieldCoreFields,
   jbYieldCoreFieldsForSerialize,
-} from "./agentJbYieldCore.js";
+} from "../agentJbYieldCore.js";
 import {
   buildBadBinSlotTrends,
   buildSlotsByPassId,
@@ -40,9 +40,9 @@ import {
 } from "./agentJbBadBinCluster.js";
 import {
   type CardDegradationSignal,
-} from "./agentCrossdomainInsights.js";
+} from "../agentCrossdomainInsights.js";
 
-export { jbYieldCoreFields } from "./agentJbYieldCore.js";
+export { jbYieldCoreFields } from "../agentJbYieldCore.js";
 
 export type AgentJbBinEntry = {
   bin: number;

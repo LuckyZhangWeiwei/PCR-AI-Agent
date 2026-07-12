@@ -25,13 +25,13 @@ import {
   factCheckSummaryText,
   formatFactCheckNote,
 } from "./agentFactChecker.js";
-import { storeJbQuerySessionCache, jbWrappedIsEmptyQuery } from "./agentJbBinFormat.js";
+import { storeJbQuerySessionCache, jbWrappedIsEmptyQuery } from "./jb/agentJbBinFormat.js";
 import {
   compactJbBinsForHistory,
   compactJbCacheForHistory,
   formatLotYieldOverviewMarkdown,
   formatSlotYieldMarkdownFromToolJson,
-} from "./agentJbHistoryCompact.js";
+} from "./jb/agentJbHistoryCompact.js";
 import {
   BRIEF_COMMENTARY_SYSTEM,
   PROBE_CARD_PERF_COMMENTARY_SYSTEM,

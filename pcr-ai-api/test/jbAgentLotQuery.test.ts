@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { buildYieldByPassId } from "../src/lib/infcontrol/jbYieldCalc.js";
-import { wrapJbQueryResultForAgent } from "../src/lib/agent/agentJbBinFormat.js";
+import { wrapJbQueryResultForAgent } from "../src/lib/agent/jb/agentJbBinFormat.js";
 
 /** 25 slot × 3 pass × 4 行/组 = 300 行；TESTEND 越晚越靠前，limit 200 仅含 pass3+pass5。 */
 function mockLot300Rows(): Record<string, unknown>[] {

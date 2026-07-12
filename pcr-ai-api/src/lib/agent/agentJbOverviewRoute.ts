@@ -4,7 +4,7 @@
 
 import type { ChatMessage } from "./agentHistory.js";
 import { extractLotFromUserText, userWantsWaferMapOnly } from "./tools/agentInfWaferMapTool.js";
-import { buildJbSessionCacheJson } from "./agentJbBinFormat.js";
+import { buildJbSessionCacheJson } from "./jb/agentJbBinFormat.js";
 import {
   isGoodBinValueQuestion,
   isLotOverviewQuestion,

@@ -1,4 +1,4 @@
-// pcr-ai-api/src/lib/agent/agentJbHistoryCompact.ts
+// pcr-ai-api/src/lib/agent/jb/agentJbHistoryCompact.ts
 /** query_jb_bins 写入会话历史时的压缩与空总结回退文案。 */
 
 import {
@@ -11,10 +11,10 @@ import {
   type SlotYieldPivot,
   type YieldByPassEntry,
   type YieldInterruptSegment,
-} from "../infcontrol/jbYieldCalc.js";
+} from "../../infcontrol/jbYieldCalc.js";
 import type { CardByPassIdEntry, LotTesterEntry } from "./agentJbBinFormat.js";
-import { multiLotListingFields } from "./agentJbMultiLotListing.js";
-import { jbYieldCoreFields } from "./agentJbYieldCore.js";
+import { multiLotListingFields } from "../agentJbMultiLotListing.js";
+import { jbYieldCoreFields } from "../agentJbYieldCore.js";
 
 function roundYieldPct(v: number | null): number | null {
   if (v === null || !Number.isFinite(v)) return null;

@@ -84,7 +84,7 @@ test("missing device → dutConcentrationMarkdown not attached", async () => {
 
 // ── Final-review C1: dutConcentrationMarkdown must survive the session cache ──
 // snapshot (the deterministic summary reads from the cache, not the live obj).
-import { buildJbSessionCacheJson } from "../src/lib/agent/agentJbBinFormat.js";
+import { buildJbSessionCacheJson } from "../src/lib/agent/jb/agentJbBinFormat.js";
 
 test("C1: attached dutConcentrationMarkdown round-trips through session cache", async () => {
   const wrapped: Record<string, unknown> = {

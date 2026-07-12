@@ -8,7 +8,7 @@ import {
   buildJbSessionCacheJson,
   serializeJbQueryResultForAgent,
   wrapJbQueryResultForAgent,
-} from "../src/lib/agent/agentJbBinFormat.js";
+} from "../src/lib/agent/jb/agentJbBinFormat.js";
 
 describe("agentJbSessionCache", () => {
   it("cache survives aggressive serialize and enables deterministic tables", () => {

@@ -6,7 +6,7 @@ import { buildInfcontrolLayerBinsV3DistinctLotsSql } from "../apiV3ListSql.js";
 import {
   buildRecentLotsByTestEnd,
   type RecentLotByTestEndEntry,
-} from "./agentJbBinFormat.js";
+} from "./jb/agentJbBinFormat.js";
 
 export const JB_DISTINCT_LOTS_TOP = 50;
 

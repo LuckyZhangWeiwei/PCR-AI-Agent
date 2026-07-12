@@ -15,7 +15,7 @@ import {
 import { normalizeInfDrawWaferMapArgs } from "./agentInfWaferMapTool.js";
 import type { ChatMessage } from "../agentHistory.js";
 import { runGetFilterValues } from "./agentFilterValuesTool.js";
-import type { CardByPassIdEntry } from "../agentJbBinFormat.js";
+import type { CardByPassIdEntry } from "../jb/agentJbBinFormat.js";
 import {
   clampToolResultMaxChars,
   DEFAULT_TOOL_RESULT_MAX_CHARS,

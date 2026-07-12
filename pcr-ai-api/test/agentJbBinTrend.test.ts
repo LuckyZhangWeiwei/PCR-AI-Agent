@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import {
   buildSlotsByPassId,
   formatBinSlotTrendMarkdown,
-} from "../src/lib/agent/agentJbBinTrend.js";
-import { wrapJbQueryResultForAgent } from "../src/lib/agent/agentJbBinFormat.js";
+} from "../src/lib/agent/jb/agentJbBinTrend.js";
+import { wrapJbQueryResultForAgent } from "../src/lib/agent/jb/agentJbBinFormat.js";
 
 describe("agentJbBinTrend", () => {
   it("slot 1 pass1 with interrupt still has BIN7 in trend table", () => {

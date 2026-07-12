@@ -27,7 +27,7 @@ import {
 import {
   serializeJbQueryResultForAgent,
   wrapJbQueryResultForAgent,
-} from "../agentJbBinFormat.js";
+} from "../jb/agentJbBinFormat.js";
 import {
   buildDistinctLotsFromMatchingRows,
   fetchOracleDistinctLotsForJb,

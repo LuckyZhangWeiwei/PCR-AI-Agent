@@ -3,12 +3,12 @@ import assert from "node:assert/strict";
 import {
   wrapJbQueryResultForAgent,
   serializeJbQueryResultForAgent,
-} from "../src/lib/agent/agentJbBinFormat.js";
+} from "../src/lib/agent/jb/agentJbBinFormat.js";
 import {
   compactJbBinsForHistory,
   formatSlotYieldInterruptMarkdown,
   formatSlotYieldMarkdownFromToolJson,
-} from "../src/lib/agent/agentJbHistoryCompact.js";
+} from "../src/lib/agent/jb/agentJbHistoryCompact.js";
 
 function mock25SlotRows(): Record<string, unknown>[] {
   const rows: Record<string, unknown>[] = [];

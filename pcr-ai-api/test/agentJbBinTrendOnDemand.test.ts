@@ -1,11 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { buildDeterministicJbTables } from "../src/lib/agent/agentJbDeterministicReply.js";
-import { buildBinSlotTrendMarkdownOnDemand } from "../src/lib/agent/agentJbBinTrend.js";
+import { buildBinSlotTrendMarkdownOnDemand } from "../src/lib/agent/jb/agentJbBinTrend.js";
 import {
   buildJbSessionCacheJson,
   wrapJbQueryResultForAgent,
-} from "../src/lib/agent/agentJbBinFormat.js";
+} from "../src/lib/agent/jb/agentJbBinFormat.js";
 
 describe("agentJbBinTrend on demand", () => {
   it("builds BIN7 trend for all slots when BIN7 not in top-5 precomputed trends", () => {

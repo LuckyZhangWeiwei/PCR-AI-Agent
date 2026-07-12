@@ -15,7 +15,7 @@ import {
   isLotListingQuestion,
   isLotDetailListingQuestion,
 } from "../../../src/lib/agent/agentJbDeterministicReply.js";
-import { formatCardByPassIdMarkdown } from "../../../src/lib/agent/agentJbHistoryCompact.js";
+import { formatCardByPassIdMarkdown } from "../../../src/lib/agent/jb/agentJbHistoryCompact.js";
 import { toolStatusLabel } from "../../../src/lib/agent/agentLoop.js";
 import {
   expectTrue,

@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import {
   buildClusteredBadBinAlerts,
   formatClusteredBadBinAlertsMarkdown,
-} from "../src/lib/agent/agentJbBadBinCluster.js";
-import { wrapJbQueryResultForAgent } from "../src/lib/agent/agentJbBinFormat.js";
+} from "../src/lib/agent/jb/agentJbBadBinCluster.js";
+import { wrapJbQueryResultForAgent } from "../src/lib/agent/jb/agentJbBinFormat.js";
 
 function row(slot: number, bin7: number, passId = 1): Record<string, unknown> {
   return {
