@@ -139,7 +139,36 @@ function fmtPct(n: number): string {
   return `${n.toFixed(2)}%`;
 }
 
-function passTempLabel(passId: number): string {
+/** 组合排名（最好在前）：前三 medal，其余数字。 */
+function comboRankLabel(rank: number): string {
+  if (rank === 1) return "🥇 1";
+  if (rank === 2) return "🥈 2";
+  if (rank === 3) return "🥉 3";
+  return String(rank);
+}
+
+/** 探针卡排名（最差在前）：榜首警示。 */
+function cardRankLabel(rank: number): string {
+  if (rank === 1) return "⚠️ 1";
+  if (rank === 2) return "🔻 2";
+  if (rank === 3) return "🔻 3";
+  return String(rank);
+}
+
+function confidenceLabel(tier: ConfidenceTier): string {
+  if (tier === "高") return "🟢 高";
+  if (tier === "中") return "🟡 中";
+  return "🟠 低";
+}
+
+function assessmentLabel(assessment: string): string {
+  if (assessment.includes("偏低")) return `🔴 ${assessment}`;
+  if (assessment.includes("波动")) return `🟡 ${assessment}`;
+  if (assessment.includes("稳定")) return `🟢 ${assessment}`;
+  return `⚪ ${assessment}`;
+}
+
+export function passTempLabel(passId: number): string {
   if (passId === 1) return "sort1 常温";
   if (passId === 3) return "sort2 高温";
   if (passId === 5) return "sort3 低温";
@@ -148,6 +177,49 @@ function passTempLabel(passId: number): string {
 
 function passGroupHeader(passId: number): string {
   return `#### pass${passId}（${passTempLabel(passId)}）`;
+}
+
+type SummaryGroup = Pick<PassGroupResult, "passId" | "comboRanking" | "cardRanking">;
+
+/** 表格前的「一眼重点」摘要（确定性，非 LLM）。 */
+export function buildProbeCardPerfSummaryMarkdown(
+  groups: SummaryGroup[],
+  device?: string
+): string {
+  if (groups.length === 0) return "";
+  const lines: string[] = [];
+  if (device?.trim()) {
+    lines.push(
+      `> 📌 **Device \`${device.trim()}\`** — 各测试层 **pass 独立排名**，请勿跨 pass1/pass3/pass5 直接比高低。\n`
+    );
+  }
+  for (const g of groups) {
+    const best = g.comboRanking[0];
+    const worstCombo =
+      g.comboRanking.length > 1
+        ? g.comboRanking[g.comboRanking.length - 1]
+        : undefined;
+    const worstCard = g.cardRanking[0];
+    lines.push(`**pass${g.passId}（${passTempLabel(g.passId)}）**`);
+    if (best) {
+      lines.push(
+        `- 🏆 **最佳组合**：\`${best.cardId}\` + \`${best.testerId}\` · **${fmtPct(best.avgYieldPct)}** · ${best.lotCount} lot · ${confidenceLabel(best.confidenceTier)}`
+      );
+    }
+    if (worstCombo && worstCombo !== best) {
+      lines.push(
+        `- 📉 **最差组合**：\`${worstCombo.cardId}\` + \`${worstCombo.testerId}\` · ${fmtPct(worstCombo.avgYieldPct)} · ${confidenceLabel(worstCombo.confidenceTier)}`
+      );
+    }
+    if (worstCard) {
+      lines.push(
+        `- ⚠️ **需关注卡**：\`${worstCard.cardId}\` · ${fmtPct(worstCard.avgYieldPct)} · ${assessmentLabel(worstCard.assessment)}`
+      );
+    }
+    lines.push("");
+  }
+  lines.push("*↓ 详细排名见下方表格*");
+  return lines.join("\n").trim();
 }
 
 /** 内嵌标题；空表 / "(无数据)" 不输出。 */
@@ -314,49 +386,49 @@ export function computeProbeCardTesterPerformance(
     // ── markdown（含 pass 分组 + 表标题，供确定性直出与 LLM 转述共用）──
     const groupHeader = passGroupHeader(passId);
     const comboRankingMarkdown = titledMarkdown(
-      `${groupHeader}\n\n**探针卡+机台组合排名（平均良率降序，最好在前）**`,
+      `${groupHeader}\n\n**🏆 探针卡+机台组合排名**（平均良率降序 · 最好在前）`,
       mdTable(
       ["排名", "CardId", "TesterId", "平均良率", "标准差", "片数", "Lot 数", "置信度"],
       comboRanking.map((r, i) => [
-        String(i + 1),
+        comboRankLabel(i + 1),
         r.cardId,
         r.testerId,
         fmtPct(r.avgYieldPct),
         fmtPct(r.stdDevYieldPct),
         String(r.recordCount),
         String(r.lotCount),
-        r.confidenceTier,
+        confidenceLabel(r.confidenceTier),
       ])
     )
     );
     const cardRankingMarkdown = titledMarkdown(
-      `${groupHeader}\n\n**探针卡排名（平均良率升序，最差在前）**`,
+      `${groupHeader}\n\n**⚠️ 探针卡排名**（平均良率升序 · 最差在前）`,
       mdTable(
       ["排名", "CardId", "平均良率", "标准差", "片数", "Lot 数", "评估", "置信度"],
       cardRanking.map((r, i) => [
-        String(i + 1),
+        cardRankLabel(i + 1),
         r.cardId,
         fmtPct(r.avgYieldPct),
         fmtPct(r.stdDevYieldPct),
         String(r.recordCount),
         String(r.lotCount),
-        r.assessment,
-        r.confidenceTier,
+        assessmentLabel(r.assessment),
+        confidenceLabel(r.confidenceTier),
       ])
     )
     );
     const cardTrendMarkdown =
       cardTrend.length > 0
         ? titledMarkdown(
-            `${groupHeader}\n\n**按卡月度良率走势**`,
+            `${groupHeader}\n\n**📈 按卡月度良率走势**`,
             mdTable(
               ["CardId", "月份", "当月平均良率", "当月样本数"],
               cardTrend.map((r) => [r.cardId, r.month, fmtPct(r.avgYieldPct), String(r.recordCount)])
             )
           )
-        : `${groupHeader}\n\n*月度趋势：每卡不足 2 个月数据，暂无趋势表*`;
+        : `${groupHeader}\n\n*📈 月度趋势：每卡不足 2 个月数据，暂无趋势表*`;
     const cardBadBinMarkdown = titledMarkdown(
-      `${groupHeader}\n\n**按卡坏 bin Top3 频率（仅编号频率统计，非空间分布）**`,
+      `${groupHeader}\n\n**🔬 按卡坏 bin Top3 频率**（编号频率，非空间分布）`,
       mdTable(
       ["CardId", "Top 3 坏 bin"],
       cardBadBin.map((r) => [

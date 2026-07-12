@@ -34,6 +34,7 @@ import {
 } from "./agentJbHistoryCompact.js";
 import {
   BRIEF_COMMENTARY_SYSTEM,
+  PROBE_CARD_PERF_COMMENTARY_SYSTEM,
   buildBriefCommentaryUserMessage,
   buildDeterministicJbTables,
   buildEngineeringContextFromPayload,
@@ -61,6 +62,7 @@ import {
   isTesterMachineQuestion,
   jbReplySkipsCommentaryLlm,
   lotOverviewSkipsCommentaryAfterAlerts,
+  buildDeterministicLotOverviewCommentary,
   parseJbToolPayload,
   payloadCoversMultipleLots,
   resolveJbToolPayload,
@@ -114,6 +116,10 @@ import {
   buildGoodBinsByPassFromToolPayload,
   resolvePassIdsForDutAnalysis,
 } from "../lotUnderperformingDutsResolve.js";
+import {
+  buildProbeCardPerfSummaryMarkdown,
+  type PassGroupResult,
+} from "../probeCardTesterPerformance.js";
 import { buildScopeLabelFromAggregateArgs, findLastToolCallArgs, inferDeviceFromText, inferDeviceFromHistory, inferLotFromHistory, inferRecentMonthsWindow, jbListingScopeLabel, resolveJbListingScope } from "./agentQueryScope.js";
 import { deviceBaseMask } from "../deviceMask.js";
 import {
@@ -1069,11 +1075,16 @@ async function emitDeterministicJbTablesReply(
     // Include ## 分析结论 separator so splitAgentReplyMarkdown always has a clear split point,
     // keeping ### 🔍 警示 / 规律识别 in dataMarkdown (otherwise detachProseAfterMarkdownTables
     // would move the section to commentaryMarkdown where tables are CSS-hidden).
-    const tableOnlyNote =
-      `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n` +
+    const deterministicCommentary = skipCommentaryForAlerts
+      ? buildDeterministicLotOverviewCommentary(payload)
+      : null;
+    const commentaryBody =
+      deterministicCommentary ??
       (skipCommentaryForAlerts
         ? `*以上含服务端警示与规律识别，以及各 DUT 良率（如有）。如需某 BIN 逐片趋势或晶圆图，请继续提问。*`
         : `*以上为服务端实测表。如需某 BIN 逐片趋势或晶圆图，请继续提问。*`);
+    const tableOnlyNote =
+      `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n` + commentaryBody;
     const full = tablesBlock + dutYieldSection + tableOnlyNote;
     emit({ type: "text", delta: tableOnlyNote });
     appendMessages(sessionId, { role: "assistant", content: full });
@@ -2943,9 +2954,22 @@ async function emitDeterministicProbeCardPerfReply(
     }
   }
   if (tableParts.length === 0) return false;
+
+  const summaryGroups: Array<
+    Pick<PassGroupResult, "passId" | "comboRanking" | "cardRanking">
+  > = groups.map((g) => ({
+    passId: Number(g["passId"]),
+    comboRanking:
+      (g["comboRanking"] as PassGroupResult["comboRanking"]) ?? [],
+    cardRanking: (g["cardRanking"] as PassGroupResult["cardRanking"]) ?? [],
+  }));
+  const device = String(payload["device"] ?? "").trim();
+  const summary = buildProbeCardPerfSummaryMarkdown(summaryGroups, device || undefined);
   const tables = tableParts.join("\n\n");
 
-  const tablesBlock = `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${tables}`;
+  const tablesBlock = summary
+    ? `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n### 🎯 一眼重点\n\n${summary}\n\n---\n\n${tables}`
+    : `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${tables}`;
   emit({ type: "status", message: "正在输出服务端探针卡/机台组合排名表…" });
   emitTextInChunks(tablesBlock, emit);
 
@@ -2962,7 +2986,7 @@ async function emitDeterministicProbeCardPerfReply(
     {
       model: agentConfig.subAgentModel,
       messages: [
-        { role: "system", content: BRIEF_COMMENTARY_SYSTEM },
+        { role: "system", content: PROBE_CARD_PERF_COMMENTARY_SYSTEM },
         {
           role: "user",
           content: buildBriefCommentaryUserMessage(userQuestion, tables),

@@ -5,6 +5,8 @@ import {
   median,
   rowYieldPct,
   sampleStdDev,
+  computeProbeCardTesterPerformance,
+  buildProbeCardPerfSummaryMarkdown,
 } from "../src/lib/probeCardTesterPerformance.js";
 
 describe("probeCardTesterPerformance: stats helpers", () => {
@@ -78,8 +80,6 @@ describe("probeCardTesterPerformance: rowYieldPct", () => {
     assert.equal(rowYieldPct(row), 0);
   });
 });
-
-import { computeProbeCardTesterPerformance } from "../src/lib/probeCardTesterPerformance.js";
 
 function jbRow(opts: {
   cardId: string;
@@ -233,16 +233,29 @@ describe("computeProbeCardTesterPerformance: grouping and ranking", () => {
     assert.ok(Math.abs(entry.topBins[0]!.pct - 65) < 1e-6);
   });
 
-  test("markdown tables include pass grouping titles and section headers", () => {
+  test("markdown tables include pass grouping titles, emoji ranks, and section headers", () => {
     const rows = [jbRow({ cardId: "H-01", testerId: "T1", passId: 1, lot: "L1", testEnd: "2026-01-01", grossDie: 100 })];
     const [group] = computeProbeCardTesterPerformance(rows);
     assert.ok(group!.comboRankingMarkdown.includes("H-01"));
     assert.ok(group!.cardRankingMarkdown.includes("H-01"));
     assert.match(group!.comboRankingMarkdown, /#### pass1（sort1 常温）/);
-    assert.match(group!.comboRankingMarkdown, /探针卡\+机台组合排名/);
-    assert.match(group!.cardRankingMarkdown, /探针卡排名（平均良率升序/);
-    assert.match(group!.cardTrendMarkdown, /月度趋势：每卡不足 2 个月/);
+    assert.match(group!.comboRankingMarkdown, /🏆 探针卡\+机台组合排名/);
+    assert.match(group!.comboRankingMarkdown, /🥇 1/);
+    assert.match(group!.cardRankingMarkdown, /⚠️ 探针卡排名/);
+    assert.match(group!.cardTrendMarkdown, /📈 月度趋势：每卡不足 2 个月/);
     assert.doesNotMatch(group!.comboRankingMarkdown, /\(无数据\)/);
+  });
+
+  test("buildProbeCardPerfSummaryMarkdown highlights best and worst per pass", () => {
+    const rows = [
+      jbRow({ cardId: "A-01", testerId: "T1", passId: 1, lot: "L1", testEnd: "2026-01-01", grossDie: 100, badBins: [{ n: 7, value: 1 }] }),
+      jbRow({ cardId: "B-02", testerId: "T2", passId: 1, lot: "L2", testEnd: "2026-01-02", grossDie: 100, badBins: [{ n: 7, value: 30 }] }),
+    ];
+    const [group] = computeProbeCardTesterPerformance(rows);
+    const md = buildProbeCardPerfSummaryMarkdown([group!], "WA03P02G");
+    assert.match(md, /🏆 \*\*最佳组合\*\*/);
+    assert.match(md, /⚠️ \*\*需关注卡\*\*/);
+    assert.match(md, /WA03P02G/);
   });
 
   test("rows with GROSSDIE missing are excluded from all stats", () => {

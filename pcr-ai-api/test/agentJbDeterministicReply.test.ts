@@ -28,6 +28,7 @@ import {
   resolveJbToolPayload,
   shouldAppendUnderperformingDutYield,
   lotOverviewSkipsCommentaryAfterAlerts,
+  buildDeterministicLotOverviewCommentary,
   isGoodBinValueQuestion,
   isProbeCardTesterPerformanceQuestion,
   buildGoodBinValueMarkdown,
@@ -1044,5 +1045,37 @@ describe("lotOverviewSkipsCommentaryAfterAlerts", () => {
       lotOverviewSkipsCommentaryAfterAlerts("equipment", "### 🔍 警示", {}),
       false
     );
+  });
+});
+
+describe("buildDeterministicLotOverviewCommentary", () => {
+  it("emits 数据解读 + 专业建议 from alerts and yieldByPassId", () => {
+    const md = buildDeterministicLotOverviewCommentary({
+      lot: "NF12675.1K",
+      testerByLot: [{ lot: "NF12675.1K", primaryTesterId: "b3j75061", testerIds: ["b3j75061"] }],
+      clusteredBadBinAlerts: [
+        {
+          bin: 5,
+          passId: 4,
+          sortLabel: "pass4",
+          kind: "cluster",
+          slotStart: 1,
+          slotEnd: 6,
+          slots: [1, 2, 3, 4, 5, 6],
+          peakDie: 2073,
+          detail: "test",
+        },
+      ],
+      yieldByPassId: [
+        { passId: 1, sortLabel: "pass1", grossDie: 498425, goodDie: 494228, badDie: 4197, yieldPct: 99.16, slotCount: 25 },
+        { passId: 3, sortLabel: "pass3", grossDie: 494977, goodDie: 493973, badDie: 1004, yieldPct: 99.8, slotCount: 25 },
+        { passId: 4, sortLabel: "pass4", grossDie: 119324, goodDie: 108680, badDie: 10644, yieldPct: 91.08, slotCount: 6 },
+      ],
+    });
+    assert.ok(md?.includes("### 数据解读"), md ?? "");
+    assert.ok(md?.includes("### 专业建议"), md ?? "");
+    assert.ok(md?.includes("BIN5"), md ?? "");
+    assert.match(md ?? "", /pass4.*91\.08%|91\.08%.*pass4/);
+    assert.ok(md?.includes("b3j75061"), md ?? "");
   });
 });
