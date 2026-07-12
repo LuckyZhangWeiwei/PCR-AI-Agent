@@ -20,7 +20,7 @@ import type { SlotYieldSummaryEntry, YieldByPassEntry } from "../infcontrol/jbYi
 import { goodBinIndicesForJbRow, passIdSortLabel } from "../infcontrol/jbYieldCalc.js";
 import { buildBinSlotTrendMarkdownOnDemand } from "./agentJbBinTrend.js";
 import { getJbToolRawJson } from "./agentJbSessionCache.js";
-import { extractLotFromUserText } from "./agentInfWaferMapTool.js";
+import { extractLotFromUserText } from "./tools/agentInfWaferMapTool.js";
 import {
   inferDeviceFromText,
   inferMaskFromText,

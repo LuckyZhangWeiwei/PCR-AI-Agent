@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 process.env["INFCONTROL_LAYER_BINS_DUMMY"] = "true";
 process.env["YIELD_MONITOR_TRIGGERS_DUMMY"] = "true";
 
-import { runTool } from "../src/lib/agent/agentToolHandlers.js";
+import { runTool } from "../src/lib/agent/tools/agentToolHandlers.js";
 
 describe("aggregate_jb_bins scope guard", () => {
   it("rejects aggregate without lot/device/cardId filter", async () => {

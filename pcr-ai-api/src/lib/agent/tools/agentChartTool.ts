@@ -1,7 +1,7 @@
-// pcr-ai-api/src/lib/agent/agentChartTool.ts
+// pcr-ai-api/src/lib/agent/tools/agentChartTool.ts
 
-import type { ChatMessage } from "./agentHistory.js";
-import type { SiteBinPass, SiteBinDutEntry } from "../outputSiteBinByLot.js";
+import type { ChatMessage } from "../agentHistory.js";
+import type { SiteBinPass, SiteBinDutEntry } from "../../outputSiteBinByLot.js";
 
 export interface ChartData {
   labels: string[];

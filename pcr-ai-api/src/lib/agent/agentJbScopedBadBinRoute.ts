@@ -4,7 +4,7 @@
  */
 
 import type { ChatMessage } from "./agentHistory.js";
-import { extractLotFromUserText } from "./agentInfWaferMapTool.js";
+import { extractLotFromUserText } from "./tools/agentInfWaferMapTool.js";
 import { isBadBinRankingQuestion } from "./agentJbDeterministicReply.js";
 import {
   buildScopedBadBinAggregateArgs,

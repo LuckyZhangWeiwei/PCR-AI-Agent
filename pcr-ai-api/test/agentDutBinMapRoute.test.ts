@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { userWantsDutBinRelationMap } from "../src/lib/agent/agentDutBinMapRoute.js";
-import { userWantsWaferMapOnly } from "../src/lib/agent/agentInfWaferMapTool.js";
+import { userWantsWaferMapOnly } from "../src/lib/agent/tools/agentInfWaferMapTool.js";
 
 test("DUT×BIN relation vs plain BIN highlight wafermap", () => {
   const q = "画出 bin15 和 相关dut 的关系 的wafermap";

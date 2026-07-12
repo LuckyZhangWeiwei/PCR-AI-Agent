@@ -16,7 +16,7 @@ import {
   infDrawWaferMapArgsComplete,
   sessionCanDrawWaferMapWithoutJb,
   userWantsWaferMapOnly,
-} from "./agentInfWaferMapTool.js";
+} from "./tools/agentInfWaferMapTool.js";
 import {
   parseJbToolPayload,
   resolveJbToolPayload,

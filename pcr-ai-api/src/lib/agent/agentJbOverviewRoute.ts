@@ -3,7 +3,7 @@
  */
 
 import type { ChatMessage } from "./agentHistory.js";
-import { extractLotFromUserText, userWantsWaferMapOnly } from "./agentInfWaferMapTool.js";
+import { extractLotFromUserText, userWantsWaferMapOnly } from "./tools/agentInfWaferMapTool.js";
 import { buildJbSessionCacheJson } from "./agentJbBinFormat.js";
 import {
   isGoodBinValueQuestion,

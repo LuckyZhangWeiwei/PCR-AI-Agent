@@ -21,8 +21,8 @@ import {
   normalizeGenerateChartArgs,
   resolveGenerateChartData,
   tryParseJsonish,
-} from "../src/lib/agent/agentChartTool.js";
-import { runTool } from "../src/lib/agent/agentToolHandlers.js";
+} from "../src/lib/agent/tools/agentChartTool.js";
+import { runTool } from "../src/lib/agent/tools/agentToolHandlers.js";
 import type { ChatMessage } from "../src/lib/agent/agentHistory.js";
 import { resolveJbRoute } from "../src/lib/agent/jbRouteResolver.js";
 

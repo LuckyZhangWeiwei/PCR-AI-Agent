@@ -3,7 +3,7 @@
  * on follow-up requests (e.g. "同理标出 BIN14").
  */
 
-import type { ChatMessage } from "./agentHistory.js";
+import type { ChatMessage } from "../agentHistory.js";
 import { tryParseJsonish } from "./agentChartTool.js";
 
 export type InfWaferMapContext = {

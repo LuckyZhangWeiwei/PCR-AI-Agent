@@ -1,7 +1,7 @@
 // pcr-ai-api/test/agentTools.chart.test.ts
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { runTool } from "../src/lib/agent/agentToolHandlers.js";
+import { runTool } from "../src/lib/agent/tools/agentToolHandlers.js";
 
 describe("generate_chart tool", () => {
   it("returns a ChartSentinel with __chartOption", async () => {

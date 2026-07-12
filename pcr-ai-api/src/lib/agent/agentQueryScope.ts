@@ -1,6 +1,6 @@
 /** Extract device / tester / time scope from user text + recent tool calls. */
 import type { ChatMessage } from "./agentHistory.js";
-import { extractLotFromUserText } from "./agentInfWaferMapTool.js";
+import { extractLotFromUserText } from "./tools/agentInfWaferMapTool.js";
 import { extractBinFromUserText } from "./agentJbDeterministicReply.js";
 
 export function tryParseToolCallArgs(raw: string): Record<string, unknown> | null {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ChatMessage } from "../src/lib/agent/agentHistory.js";
-import { extractBinNumberFromText } from "../src/lib/agent/agentInfWaferMapTool.js";
+import { extractBinNumberFromText } from "../src/lib/agent/tools/agentInfWaferMapTool.js";
 import { planWaferMapRoute } from "../src/lib/agent/agentWaferMapRoute.js";
 
 const LOT = "DR44117.1Y";

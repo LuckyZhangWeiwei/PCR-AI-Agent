@@ -4,7 +4,7 @@ import test from "node:test";
 process.env["INFCONTROL_LAYER_BINS_DUMMY"] = "true";
 process.env["NODE_ENV"] = "test";
 
-import { runTool } from "../src/lib/agent/agentToolHandlers.js";
+import { runTool } from "../src/lib/agent/tools/agentToolHandlers.js";
 
 test("aggregate_probe_card_tester_performance requires device", async () => {
   const out = await runTool("aggregate_probe_card_tester_performance", {});

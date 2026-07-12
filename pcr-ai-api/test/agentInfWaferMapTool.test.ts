@@ -12,7 +12,7 @@ import {
   parseInfDrawResultText,
   userWantsAllInfLayers,
   userWantsWaferMapOnly,
-} from "../src/lib/agent/agentInfWaferMapTool.js";
+} from "../src/lib/agent/tools/agentInfWaferMapTool.js";
 import type { ChatMessage } from "../src/lib/agent/agentHistory.js";
 
 test("extractBinNumberFromText", () => {

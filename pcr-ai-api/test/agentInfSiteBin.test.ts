@@ -1,7 +1,7 @@
 import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
 import { buildInfLotDir, buildInfPath } from "../src/lib/buildInfPath.js";
-import { runTool } from "../src/lib/agent/agentToolHandlers.js";
+import { runTool } from "../src/lib/agent/tools/agentToolHandlers.js";
 
 describe("buildInfPath", () => {
   it("buildInfLotDir uppercases device and lot", () => {

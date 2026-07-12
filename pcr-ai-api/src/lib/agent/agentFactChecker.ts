@@ -27,7 +27,7 @@
  */
 
 import type { ChatMessage } from "./agentHistory.js";
-import { tryParseJsonish } from "./agentChartTool.js";
+import { tryParseJsonish } from "./tools/agentChartTool.js";
 
 // ── Fact Sheet ────────────────────────────────────────────────────────────────
 

@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 process.env["INFCONTROL_LAYER_BINS_DUMMY"] = "true";
 process.env["SITE_BIN_BY_LOT_DUMMY"] = "true";
 
-import { runTool } from "../src/lib/agent/agentToolHandlers.js";
+import { runTool } from "../src/lib/agent/tools/agentToolHandlers.js";
 
 test("query_lot_dut_bin_agg result is a string and not an error", async () => {
   const out = await runTool("query_lot_dut_bin_agg", { device: "WA10P29E", lot: "DR43782.1A" });
@@ -46,7 +46,7 @@ test("query_lot_dut_bin_agg result includes DUT concentration verdict table for 
 
 // ── Task 5: attachDutConcentrationToJbPayload ────────────────────────────────
 
-import { attachDutConcentrationToJbPayload } from "../src/lib/agent/agentToolHandlers.js";
+import { attachDutConcentrationToJbPayload } from "../src/lib/agent/tools/agentToolHandlers.js";
 
 test("clustered alerts cause DUT concentration to be attached", async () => {
   // BIN98 真实存在于 dummy lot DR43782.1A 的 INF 数据（集中型/疑探针卡）→ 走聚焦路径

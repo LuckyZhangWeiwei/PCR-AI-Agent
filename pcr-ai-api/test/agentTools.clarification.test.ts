@@ -1,7 +1,7 @@
 // pcr-ai-api/test/agentTools.clarification.test.ts
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { runTool } from "../src/lib/agent/agentToolHandlers.js";
+import { runTool } from "../src/lib/agent/tools/agentToolHandlers.js";
 
 describe("ask_clarification tool", () => {
   it("no options: returns sentinel with only __clarification", async () => {

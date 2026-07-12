@@ -12,11 +12,11 @@ import {
   type ToolCall,
 } from "./agentHistory.js";
 import { TOOL_SCHEMAS, INF_TOOL_SCHEMAS } from "./agentToolSchemas.js";
-import { runTool, type ChartSentinel, type ClarificationSentinel } from "./agentToolHandlers.js";
+import { runTool, type ChartSentinel, type ClarificationSentinel } from "./tools/agentToolHandlers.js";
 import { validateAndFixToolArgs } from "./agentToolValidator.js";
 import { buildSystemPrompt, classifyIntent } from "./agentPrompt.js";
 import { fetchOrCacheManifest } from "./agentManifest.js";
-import { buildChartOption, generateChartArgsHaveData, tryParseJsonish } from "./agentChartTool.js";
+import { buildChartOption, generateChartArgsHaveData, tryParseJsonish } from "./tools/agentChartTool.js";
 import { streamSiliconFlow, type CollectedToolCall } from "./agentStream.js";
 import { buildFeedbackInjection } from "./agentFeedback.js";
 import { detectPendingQuery } from "./agentPendingQuery.js";
@@ -128,7 +128,7 @@ import {
   extractLotsFromUserText,
   findJbLotContext,
   infDrawWaferMapArgsComplete,
-} from "./agentInfWaferMapTool.js";
+} from "./tools/agentInfWaferMapTool.js";
 import {
   buildDutBinMapArgsFromSession,
   DUT_BIN_MAP_JB_LOOKUP_NUDGE,

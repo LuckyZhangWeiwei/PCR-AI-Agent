@@ -7,7 +7,7 @@ import {
   extractBinNumberFromText,
   infDrawWaferMapArgsComplete,
   normalizeInfDrawWaferMapArgs,
-} from "./agentInfWaferMapTool.js";
+} from "./tools/agentInfWaferMapTool.js";
 
 /** 「BIN15 与 DUT 关系」类问题（图案图：横线/竖线/白块）。 */
 export function userWantsDutBinRelationMap(text: string): boolean {

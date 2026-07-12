@@ -5,7 +5,7 @@ import test from "node:test";
 process.env["YIELD_MONITOR_TRIGGERS_DUMMY"] = "true";
 process.env["INFCONTROL_LAYER_BINS_DUMMY"] = "true";
 
-import { runGetFilterValues } from "../src/lib/agent/agentFilterValuesTool.js";
+import { runGetFilterValues } from "../src/lib/agent/tools/agentFilterValuesTool.js";
 
 test("yield/probeCard returns distinct list with counts", async () => {
   const raw = await runGetFilterValues({ domain: "yield", field: "probeCard" });
