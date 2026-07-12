@@ -1,4 +1,4 @@
-import { apiManifest } from "./apiManifest.js";
+import { apiManifest } from "./manifest/index.js";
 
 const API_V1_PREFIX = "/api/v1";
 

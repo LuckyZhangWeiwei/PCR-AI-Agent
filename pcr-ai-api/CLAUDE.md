@@ -139,7 +139,7 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 | 层控 v3 | `src/lib/infcontrolLayerBinFilters.ts`、`infcontrolLayerBinDummy.ts`、`infcontrolLayerBinV3Aggregate.ts` |
 | v3 默认一年 **`TESTEND` / `TIME_STAMP`** | **`src/lib/v3DefaultOneYearWindow.ts`**；**`parseInfcontrolLayerBinsV3Query`**、**`parseYieldMonitorTriggerV3Query`**（**`infcontrolLayerBinFilters.ts`**、**`yieldMonitorTriggerFilters.ts`**） |
 | v3 列表 **PROBECARDTYPE** | **`src/lib/probeCardTypeLeadingSegment.ts`**；**`src/routes/api.ts`**（**`enrichInfcontrolLayerBinV3ListRow`**、**`enrichYieldMonitorTriggerV3ListRow`**）；Dummy 写入：**`filterInfcontrolLayerBinV3DummyRowsMatching`**、**`filterYieldMonitorDummyRowsMatchingV3`**；列表截断：**`filterInfcontrolLayerBinV3DummyRows`**、**`filterYieldMonitorDummyRowsV3`** |
-| manifest 静态定义 | `src/lib/apiManifest.ts`；`/api/v3/manifest` 前缀改写 `src/lib/rebaseApiManifest.ts` |
+| manifest 静态定义 | `src/lib/manifest/index.ts`；`/api/v3/manifest` 前缀改写 `src/lib/rebaseApiManifest.ts` |
 | Oracle 连接 | `src/oracle.ts`（`withConnection` / `withProbeWebConnection`） |
 
 ---
@@ -147,7 +147,7 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 ## 7. 机器发现（Agent 工具）
 
 - 联调示例：**`GET http://10.192.130.89:30008/api/v3/manifest`**（**站点根不要**以 `/api/v3` 结尾再拼 path，见 **AI_AGENT_API.md §2.0**）。
-- 实现：`buildManifestResponseJson`，路径来自 **`apiManifest.ts`** 经 **`rebaseApiManifest.ts`** 改写为 `/api/v3/...`。
+- 实现：`buildManifestResponseJson`，路径来自 **`src/lib/manifest/index.ts`** 经 **`rebaseApiManifest.ts`** 改写为 `/api/v3/...`。
 
 ---
 
