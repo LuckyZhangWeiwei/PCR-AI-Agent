@@ -66,6 +66,7 @@ import {
   shouldAppendUnderperformingDutYield,
   isGoodBinValueQuestion,
   buildGoodBinValueMarkdown,
+  isProbeCardTesterPerformanceQuestion,
 } from "./agentJbDeterministicReply.js";
 import {
   buildLotOverviewQueryArgs,
@@ -108,7 +109,7 @@ import {
 } from "./agentUnderperformingDutView.js";
 import type { PassUnderperformingDutsResult } from "../lotUnderperformingDuts.js";
 import { runLotUnderperformingDuts, buildGoodBinsByPassFromToolPayload } from "../lotUnderperformingDutsResolve.js";
-import { buildScopeLabelFromAggregateArgs, findLastToolCallArgs, inferDeviceFromText, inferLotFromHistory, jbListingScopeLabel, resolveJbListingScope } from "./agentQueryScope.js";
+import { buildScopeLabelFromAggregateArgs, findLastToolCallArgs, inferDeviceFromText, inferDeviceFromHistory, inferLotFromHistory, inferRecentMonthsWindow, jbListingScopeLabel, resolveJbListingScope } from "./agentQueryScope.js";
 import { deviceBaseMask } from "../deviceMask.js";
 import {
   buildInfDrawArgsAfterJbLookup,
@@ -2901,31 +2902,16 @@ export function renderAggregateJbBinsResult(
 }
 
 /**
- * 直出 aggregate_probe_card_tester_performance 服务端表 + 单独一轮"仅写解读/建议"的
- * LLM 调用，复用既有 BRIEF_COMMENTARY_SYSTEM 架构。
- *
- * 2026-07-11 真实 MiniMax-M2.5 联调发现：仅在 agentPrompt.ts 里用文字硬规则要求"必须原样
- * 贴表、禁止改写"，模型仍会把 comboRankingMarkdown / cardRankingMarkdown 转述成自己的大白话
- * 总结（且转述时出现过 pass2/pass3 张冠李戴）。与 query_jb_bins 走 `tryRunDeterministicJbSummary`
- * 服务端直出表的理由完全一致：数字必须由服务端保证，不能寄望于 prompt 约束模型的转述行为。
+ * 从 aggregate_probe_card_tester_performance JSON 直出四表 + 解读 LLM（与总结轮共用）。
  */
-async function tryRunDeterministicProbeCardPerfSummary(
+async function emitDeterministicProbeCardPerfReply(
   sessionId: string,
   userQuestion: string,
+  payload: Record<string, unknown>,
   agentConfig: AgentConfig,
   emit: (event: AgentSseEvent) => void
 ): Promise<boolean> {
-  const history = getHistory(sessionId);
-  const lastTool = lastToolMessage(history);
-  if (lastTool?.name !== "aggregate_probe_card_tester_performance") return false;
-
-  let payload: Record<string, unknown> | null = null;
-  try {
-    payload = JSON.parse(String(lastTool.content ?? "")) as Record<string, unknown>;
-  } catch {
-    return false;
-  }
-  const groups = Array.isArray(payload?.["groups"])
+  const groups = Array.isArray(payload["groups"])
     ? (payload["groups"] as Array<Record<string, unknown>>)
     : [];
   if (groups.length === 0) return false;
@@ -2968,7 +2954,6 @@ async function tryRunDeterministicProbeCardPerfSummary(
           content: buildBriefCommentaryUserMessage(userQuestion, tables),
         },
       ],
-      // No tool schemas: commentary is text-only (数据解读 + 专业建议 ≈ 300-600 tokens)
       max_tokens: 1024,
     },
     agentConfig,
@@ -3007,6 +2992,113 @@ async function tryRunDeterministicProbeCardPerfSummary(
   appendMessages(sessionId, { role: "assistant", content: full });
   emit({ type: "done" });
   return true;
+}
+
+/**
+ * 「WA03P02G …最好的探针卡+机台组合…」：PRE_LLM 直调 aggregate_probe_card_tester_performance，
+ * 不依赖 LLM 选工具（真库 DeepSeek 仍常误选 query_jb_bins 单 lot 表）。
+ */
+async function tryRunProbeCardPerfDirectRoute(
+  sessionId: string,
+  userQuestion: string,
+  agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void
+): Promise<boolean> {
+  if (!isProbeCardTesterPerformanceQuestion(userQuestion)) return false;
+
+  const history = getHistory(sessionId);
+  const device =
+    inferDeviceFromText(userQuestion) || inferDeviceFromHistory(history);
+  if (!device) return false;
+
+  const args: Record<string, unknown> = { device };
+  const window = inferRecentMonthsWindow(userQuestion);
+  if (window.testEndFrom) args["testEndFrom"] = window.testEndFrom;
+  if (window.testEndTo) args["testEndTo"] = window.testEndTo;
+  const passIdMatch = userQuestion.match(/\bpass\s*Id\s*[=:]?\s*([135])\b|\bpass\s*([135])\b/i);
+  if (passIdMatch) {
+    args["passId"] = Number(passIdMatch[1] ?? passIdMatch[2]);
+  } else if (/sort\s*1|常温/i.test(userQuestion)) {
+    args["passId"] = 1;
+  } else if (/sort\s*2|高温/i.test(userQuestion)) {
+    args["passId"] = 3;
+  } else if (/sort\s*3|低温/i.test(userQuestion)) {
+    args["passId"] = 5;
+  }
+
+  emit({ type: "status", message: `正在聚合 ${device} 探针卡+机台组合表现…` });
+  emit({ type: "tool_start", name: "aggregate_probe_card_tester_performance", args });
+
+  let raw = "";
+  try {
+    const result = await runTool("aggregate_probe_card_tester_performance", args, {
+      toolResultMaxChars: agentConfig.toolResultMaxChars,
+      history,
+    });
+    raw = typeof result === "string" ? result : JSON.stringify(result);
+    if (raw.startsWith("aggregate_probe_card_tester_performance")) return false;
+    emit({
+      type: "tool_result",
+      name: "aggregate_probe_card_tester_performance",
+      summary: raw.slice(0, 200),
+    });
+    appendMessages(sessionId, {
+      role: "tool",
+      name: "aggregate_probe_card_tester_performance",
+      tool_call_id: `probe_card_perf_${Date.now()}`,
+      content: raw.slice(0, agentConfig.toolResultMaxChars ?? 12000),
+    });
+  } catch {
+    return false;
+  }
+
+  let payload: Record<string, unknown> | null = null;
+  try {
+    payload = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return false;
+  }
+  return emitDeterministicProbeCardPerfReply(
+    sessionId,
+    userQuestion,
+    payload,
+    agentConfig,
+    emit
+  );
+}
+
+/**
+ * 直出 aggregate_probe_card_tester_performance 服务端表 + 单独一轮"仅写解读/建议"的
+ * LLM 调用，复用既有 BRIEF_COMMENTARY_SYSTEM 架构。
+ *
+ * 2026-07-11 真实 MiniMax-M2.5 联调发现：仅在 agentPrompt.ts 里用文字硬规则要求"必须原样
+ * 贴表、禁止改写"，模型仍会把 comboRankingMarkdown / cardRankingMarkdown 转述成自己的大白话
+ * 总结（且转述时出现过 pass2/pass3 张冠李戴）。与 query_jb_bins 走 `tryRunDeterministicJbSummary`
+ * 服务端直出表的理由完全一致：数字必须由服务端保证，不能寄望于 prompt 约束模型的转述行为。
+ */
+async function tryRunDeterministicProbeCardPerfSummary(
+  sessionId: string,
+  userQuestion: string,
+  agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void
+): Promise<boolean> {
+  const history = getHistory(sessionId);
+  const lastTool = lastToolMessage(history);
+  if (lastTool?.name !== "aggregate_probe_card_tester_performance") return false;
+
+  let payload: Record<string, unknown> | null = null;
+  try {
+    payload = JSON.parse(String(lastTool.content ?? "")) as Record<string, unknown>;
+  } catch {
+    return false;
+  }
+  return emitDeterministicProbeCardPerfReply(
+    sessionId,
+    userQuestion,
+    payload,
+    agentConfig,
+    emit
+  );
 }
 
 async function tryRunDeterministicJbSummary(
@@ -3532,6 +3624,7 @@ export async function runAgentLoop(
   const PRE_LLM_DIRECT_ROUTES: Array<typeof tryRunLotListingDirectRoute> = [
     tryRunUnderperformingDutDirectRoute,
     tryRunGoodBinValueDirectRoute,
+    tryRunProbeCardPerfDirectRoute,
     tryRunDutBinAggDirectRoute,
     tryRunBinLotRankingDirectRoute,
     tryRunLotListingDirectRoute,

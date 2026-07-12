@@ -28,6 +28,7 @@ import {
   resolveJbToolPayload,
   shouldAppendUnderperformingDutYield,
   isGoodBinValueQuestion,
+  isProbeCardTesterPerformanceQuestion,
   buildGoodBinValueMarkdown,
   stampFirstTestNote,
   FIRST_TEST_ONLY_NOTE,
@@ -743,6 +744,36 @@ describe("agentJbDeterministicReply", () => {
       }),
       false
     );
+    assert.equal(
+      shouldAppendUnderperformingDutYield("WA01N39W 的测试情况", "lot_overview", {
+        recentLotsByTestEnd: [{ lot: "DR41803.1Y" }, { lot: "DR41542.1H" }],
+        distinctLotCount: 213,
+      }),
+      false
+    );
+  });
+
+  it("isProbeCardTesterPerformanceQuestion detects combo ranking, not single-lot card compare", () => {
+    assert.equal(
+      isProbeCardTesterPerformanceQuestion(
+        "WA03P02G 这个 device 下最好的探针卡+机台组合是什么，哪张探针卡表现最差"
+      ),
+      true
+    );
+    assert.equal(
+      isProbeCardTesterPerformanceQuestion("帮我看一下 WA03P02G 的探针卡表现排名和组合排名"),
+      true
+    );
+    assert.equal(isProbeCardTesterPerformanceQuestion("哪张卡良率最低"), false);
+    assert.equal(isProbeCardTesterPerformanceQuestion("探针卡哪个最差"), false);
+  });
+
+  it("canRunLotOverviewDirectRoute bails on good bin field ask", async () => {
+    const { canRunLotOverviewDirectRoute } = await import(
+      "../src/lib/agent/agentJbOverviewRoute.js"
+    );
+    assert.equal(canRunLotOverviewDirectRoute("DR41803.1Y 中的 good bin 是多少"), false);
+    assert.equal(canRunLotOverviewDirectRoute("DR41803.1Y 的测试情况"), true);
   });
 
   it("isGoodBinValueQuestion detects field ask, excludes confirmation/trend", () => {

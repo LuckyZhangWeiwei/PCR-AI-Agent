@@ -182,8 +182,14 @@ export function isBinCardAttributionQuestion(text: string): boolean {
  * 算 card_yield_compare，否则 resolveDispatch 会在 LLM 前把它直发成
  * query_jb_bins，新工具永远选不到（2026-07-11 真实 MiniMax-M2.5 联调复现）。
  */
-function isCardComboRankingQuestion(text: string): boolean {
+/** 探针卡+机台「组合排名」类问法（aggregate_probe_card_tester_performance 目标场景）。 */
+export function isProbeCardComboRankingQuestion(text: string): boolean {
   return /组合|机台.*(?:卡|探针)|(?:卡|探针).*机台/i.test(text);
+}
+
+/** @deprecated 内部别名，与 isProbeCardComboRankingQuestion 相同 */
+function isCardComboRankingQuestion(text: string): boolean {
+  return isProbeCardComboRankingQuestion(text);
 }
 
 /** 用户比较两张或多张探针卡的良率/坏 die（哪张更差/更好）。 */
@@ -201,6 +207,21 @@ export function isCardYieldCompareQuestion(text: string): boolean {
   if (/探针卡.*(更差|更好|最差|最好|更低|更高|哪.*差|哪.*好)/i.test(t)) {
     return true;
   }
+  return false;
+}
+
+/**
+ * 探针卡/机台组合表现排名类问法 — PRE_LLM 直调 aggregate_probe_card_tester_performance。
+ * 不含单 lot 两张卡良率对比（card_yield_compare）。
+ */
+export function isProbeCardTesterPerformanceQuestion(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (isCardYieldCompareQuestion(t) && !isProbeCardComboRankingQuestion(t)) return false;
+  if (isProbeCardComboRankingQuestion(t)) return true;
+  if (/探针卡.*(?:表现|组合).*(?:排名|最好|最差)/i.test(t)) return true;
+  if (/(?:组合|表现).*(?:排名).*(?:探针卡|机台)/i.test(t)) return true;
+  if (/最好的探针卡\+?机台|探针卡\+机台组合/i.test(t)) return true;
   return false;
 }
 
@@ -1005,6 +1026,7 @@ export function shouldAppendUnderperformingDutYield(
   if (mode === "good_bin_value" || mode === "lot_listing") return false;
   if (isLotListingQuestion(userQuestion)) return false;
   if (payload && payloadCoversMultipleLots(payload)) return false;
+  if (payload && isMaskLevelQuestionOnMultiLotPayload(userQuestion, payload)) return false;
   if (mode === "lot_overview" || mode === "generic") return true;
   return (
     isLotOverviewQuestion(userQuestion) &&

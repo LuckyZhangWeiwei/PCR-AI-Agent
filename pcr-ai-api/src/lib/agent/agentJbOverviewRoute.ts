@@ -6,12 +6,14 @@ import type { ChatMessage } from "./agentHistory.js";
 import { extractLotFromUserText, userWantsWaferMapOnly } from "./agentInfWaferMapTool.js";
 import { buildJbSessionCacheJson } from "./agentJbBinFormat.js";
 import {
+  isGoodBinValueQuestion,
   isLotOverviewQuestion,
   parseJbToolPayload,
 } from "./agentJbDeterministicReply.js";
 import { getJbToolRawJson, storeJbToolRawJson } from "./agentJbSessionCache.js";
 
 export function canRunLotOverviewDirectRoute(userText: string): boolean {
+  if (isGoodBinValueQuestion(userText)) return false;
   if (!isLotOverviewQuestion(userText) || userWantsWaferMapOnly(userText)) {
     return false;
   }
