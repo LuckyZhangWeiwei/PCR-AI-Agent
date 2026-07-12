@@ -2,9 +2,9 @@ import "./loadEnv.js";
 
 import { createApp } from "./app.js";
 import { describeCorsModeForLog } from "./lib/corsConfig.js";
-import { infcontrolLayerBinsUseDummy } from "./lib/infcontrolLayerBinDummy.js";
+import { infcontrolLayerBinsUseDummy } from "./lib/infcontrol/infcontrolLayerBinDummy.js";
 import { listApisForceOracleNoDummy } from "./lib/listDummyRuntime.js";
-import { yieldMonitorTriggersUseDummy } from "./lib/yieldMonitorTriggerDummy.js";
+import { yieldMonitorTriggersUseDummy } from "./lib/yieldMonitor/yieldMonitorTriggerDummy.js";
 import { closeOraclePool, closeProbeWebPool, isOracleThickRuntime } from "./oracle.js";
 
 const port = Number(process.env.PORT) || 30008;

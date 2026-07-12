@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { enrichInfcontrolLayerBinRowV2 } from "../src/lib/passBinSemantics.js";
-import { badDieFromJbRow } from "../src/lib/jbYieldCalc.js";
+import { badDieFromJbRow } from "../src/lib/infcontrol/jbYieldCalc.js";
 import {
   buildTopBadBins,
   buildCardByPassId,

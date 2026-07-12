@@ -11,7 +11,7 @@ import {
   type SlotYieldPivot,
   type YieldByPassEntry,
   type YieldInterruptSegment,
-} from "../jbYieldCalc.js";
+} from "../infcontrol/jbYieldCalc.js";
 import type { CardByPassIdEntry, LotTesterEntry } from "./agentJbBinFormat.js";
 import { multiLotListingFields } from "./agentJbMultiLotListing.js";
 import { jbYieldCoreFields } from "./agentJbYieldCore.js";

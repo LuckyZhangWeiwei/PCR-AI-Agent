@@ -5,7 +5,7 @@ import {
   binDieByHalvesForGroup,
   passIdFromJbRow,
   passIdSortLabel,
-} from "../jbYieldCalc.js";
+} from "../infcontrol/jbYieldCalc.js";
 
 export type ClusteredBadBinAlertKind =
   | "sudden_increase"

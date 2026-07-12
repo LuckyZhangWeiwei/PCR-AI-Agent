@@ -7,7 +7,7 @@
  * - signalStrength：两项均朝退化方向 → strong；一项 → moderate；均稳定 → none
  */
 
-import { buildLotYieldRank } from "../jbYieldCalc.js";
+import { buildLotYieldRank } from "../infcontrol/jbYieldCalc.js";
 
 export type CardDegradationEvidence = {
   lot: string;

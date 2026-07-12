@@ -10,7 +10,7 @@ import {
   resetMaskingDictionaryCacheForTest,
   type MaskingDictionary,
 } from "../src/lib/agent/agentDataMasking.js";
-import { getYieldMonitorTriggerDummyRows } from "../src/lib/yieldMonitorTriggerDummy.js";
+import { getYieldMonitorTriggerDummyRows } from "../src/lib/yieldMonitor/yieldMonitorTriggerDummy.js";
 
 describe("agentDataMasking", () => {
   it("masks a real device value to a DEV_ token and unmasks it back", async () => {

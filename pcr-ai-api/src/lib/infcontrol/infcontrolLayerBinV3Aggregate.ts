@@ -1,5 +1,5 @@
 import type { BindParameters } from "oracledb";
-import { infcontrolLayerBinV3BaseWhereBlock } from "./infcontrolLayerBinPasstypeScope.js";
+import { infcontrolLayerBinV3BaseWhereBlock } from "../infcontrolLayerBinPasstypeScope.js";
 import { parseInfcontrolLayerBinsV3Query } from "./infcontrolLayerBinFilters.js";
 import {
   parseInfcontrolLayerBinAggregateGroupSpec,

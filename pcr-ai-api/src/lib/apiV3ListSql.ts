@@ -1,4 +1,4 @@
-import { INFCONTROL_LAYER_BIN_V2_MAX_TOP } from "./infcontrolLayerBinV2Filters.js";
+import { INFCONTROL_LAYER_BIN_V2_MAX_TOP } from "./infcontrol/infcontrolLayerBinV2Filters.js";
 import { infcontrolLayerBinV3BaseWhereBlock } from "./infcontrolLayerBinPasstypeScope.js";
 
 /** v3 列表 `limit` 上限（与 v2 列表一致） */

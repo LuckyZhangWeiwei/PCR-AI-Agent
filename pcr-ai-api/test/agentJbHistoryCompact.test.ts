@@ -107,7 +107,7 @@ describe("agentJbHistoryCompact", () => {
       },
     ] as Record<string, unknown>[];
     const wrapped = wrapJbQueryResultForAgent(rows);
-    const summary = wrapped.slotYieldSummary as import("../src/lib/jbYieldCalc.js").SlotYieldSummaryEntry[];
+    const summary = wrapped.slotYieldSummary as import("../src/lib/infcontrol/jbYieldCalc.js").SlotYieldSummaryEntry[];
     const md = formatSlotYieldInterruptMarkdown(summary, "NF12773.1H", "DEV");
     assert.ok(md.includes("测试中断"));
     assert.ok(md.includes("| 22 |"));

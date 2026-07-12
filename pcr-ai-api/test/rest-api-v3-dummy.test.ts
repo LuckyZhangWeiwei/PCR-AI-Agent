@@ -33,8 +33,8 @@ describe(
 
       const [{ createApp }, icDummy, yDummy] = await Promise.all([
         import("../src/app.js"),
-        import("../src/lib/infcontrolLayerBinDummy.js"),
-        import("../src/lib/yieldMonitorTriggerDummy.js"),
+        import("../src/lib/infcontrol/infcontrolLayerBinDummy.js"),
+        import("../src/lib/yieldMonitor/yieldMonitorTriggerDummy.js"),
       ]);
 
       icExampleQs = icDummy.getInfcontrolDummyExampleQuery();

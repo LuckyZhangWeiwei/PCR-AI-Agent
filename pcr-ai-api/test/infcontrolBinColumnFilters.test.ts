@@ -8,8 +8,8 @@ import {
 import {
   filterInfcontrolLayerBinV3DummyRows,
   filterInfcontrolLayerBinV3DummyRowsMatching,
-} from "../src/lib/infcontrolLayerBinDummy.js";
-import { parseInfcontrolLayerBinsV3Query } from "../src/lib/infcontrolLayerBinFilters.js";
+} from "../src/lib/infcontrol/infcontrolLayerBinDummy.js";
+import { parseInfcontrolLayerBinsV3Query } from "../src/lib/infcontrol/infcontrolLayerBinFilters.js";
 
 test("parseBinIndexList accepts plain and BIN-prefixed tokens", () => {
   assert.deepEqual(parseBinIndexList("8, 11, 131", "bins"), [8, 11, 131]);

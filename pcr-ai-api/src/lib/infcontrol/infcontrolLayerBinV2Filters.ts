@@ -1,5 +1,5 @@
 import type { BindParameters } from "oracledb";
-import { clampLimit } from "./sqlIdent.js";
+import { clampLimit } from "../sqlIdent.js";
 
 /** 默认 Top；可通过 **`limit`** 查询参数覆盖（见 **`INFCONTROL_LAYER_BIN_V2_MAX_TOP`**） */
 export const INFCONTROL_LAYER_BIN_V2_DEFAULT_TOP = 200;

@@ -1,6 +1,6 @@
 import type { BindParameters } from "oracledb";
 import { parseInfcontrolLayerBinQuery } from "./infcontrolLayerBinFilters.js";
-import { deviceBaseMask } from "./deviceMask.js";
+import { deviceBaseMask } from "../deviceMask.js";
 
 /** 默认返回的分组条数上限 */
 export const INFCONTROL_LAYER_BIN_AGGREGATE_DEFAULT_TOP = 10;

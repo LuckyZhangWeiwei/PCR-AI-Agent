@@ -6,11 +6,11 @@ import { oracleNonEmptyTrimmedColumn } from "../oracleStringSql.js";
 import {
   yieldMonitorTriggersUseDummy,
   getYieldMonitorTriggerDummyRows,
-} from "../yieldMonitorTriggerDummy.js";
+} from "../yieldMonitor/yieldMonitorTriggerDummy.js";
 import {
   infcontrolLayerBinsUseDummy,
   getInfcontrolLayerBinDummyRows,
-} from "../infcontrolLayerBinDummy.js";
+} from "../infcontrol/infcontrolLayerBinDummy.js";
 
 const NXP_TOKEN = "COMPANY_X";
 const NXP_RE = /nxp/gi;

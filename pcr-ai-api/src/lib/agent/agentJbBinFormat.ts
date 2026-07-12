@@ -11,7 +11,7 @@ import {
   passNumFromJbRow,
   type LotYieldRankEntry,
   type SlotYieldSummaryEntry,
-} from "../jbYieldCalc.js";
+} from "../infcontrol/jbYieldCalc.js";
 import {
   formatCardByPassIdMarkdown,
   formatLotYieldOverviewMarkdown,

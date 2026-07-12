@@ -7,11 +7,11 @@ import {
   parseUnderperformingThresholdRatio,
   type PassUnderperformingDutsResult,
 } from "./lotUnderperformingDuts.js";
-import { goodBinIndicesForJbRow } from "./jbYieldCalc.js";
+import { goodBinIndicesForJbRow } from "./infcontrol/jbYieldCalc.js";
 import {
   getInfcontrolLayerBinDummyRows,
   infcontrolLayerBinsUseDummy,
-} from "./infcontrolLayerBinDummy.js";
+} from "./infcontrol/infcontrolLayerBinDummy.js";
 import {
   OutputSiteBinByLotNotFoundError,
   OutputSiteBinByLotValidationError,

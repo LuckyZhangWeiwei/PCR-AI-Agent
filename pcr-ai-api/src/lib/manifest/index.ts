@@ -1,5 +1,5 @@
-import { getInfcontrolDummyExampleQuery } from "../infcontrolLayerBinDummy.js";
-import { getYieldMonitorDummyExampleQuery } from "../yieldMonitorTriggerDummy.js";
+import { getInfcontrolDummyExampleQuery } from "../infcontrol/infcontrolLayerBinDummy.js";
+import { getYieldMonitorDummyExampleQuery } from "../yieldMonitor/yieldMonitorTriggerDummy.js";
 import { infcontrolManifestEndpoints } from "./infcontrolManifestEndpoints.js";
 import { yieldMonitorManifestEndpoints } from "./yieldMonitorManifestEndpoints.js";
 import {

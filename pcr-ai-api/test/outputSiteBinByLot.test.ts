@@ -9,7 +9,7 @@ import {
   validateInfPath,
 } from "../src/lib/outputSiteBinByLot.js";
 import { buildInfLotDir } from "../src/lib/buildInfPath.js";
-import { getInfcontrolLayerBinDummyRows } from "../src/lib/infcontrolLayerBinDummy.js";
+import { getInfcontrolLayerBinDummyRows } from "../src/lib/infcontrol/infcontrolLayerBinDummy.js";
 import {
   parseSiteBinDeviceTopN,
   SITE_BIN_DEVICE_TOP_LOTS_DEFAULT,

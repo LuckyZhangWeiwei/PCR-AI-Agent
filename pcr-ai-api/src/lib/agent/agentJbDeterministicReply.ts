@@ -16,8 +16,8 @@ import type {
 } from "./agentJbBinFormat.js";
 import { jbWrappedIsEmptyQuery } from "./agentJbBinFormat.js";
 import type { ClusteredBadBinAlert } from "./agentJbBadBinCluster.js";
-import type { SlotYieldSummaryEntry, YieldByPassEntry } from "../jbYieldCalc.js";
-import { goodBinIndicesForJbRow, passIdSortLabel } from "../jbYieldCalc.js";
+import type { SlotYieldSummaryEntry, YieldByPassEntry } from "../infcontrol/jbYieldCalc.js";
+import { goodBinIndicesForJbRow, passIdSortLabel } from "../infcontrol/jbYieldCalc.js";
 import { buildBinSlotTrendMarkdownOnDemand } from "./agentJbBinTrend.js";
 import { getJbToolRawJson } from "./agentJbSessionCache.js";
 import { extractLotFromUserText } from "./agentInfWaferMapTool.js";

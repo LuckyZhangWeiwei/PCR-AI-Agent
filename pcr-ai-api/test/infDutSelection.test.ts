@@ -7,7 +7,7 @@ import {
   tryResolveSiteBinByLotDummy,
 } from "../src/lib/outputSiteBinByLotDummy.js";
 import { mergeSiteBinByLotData } from "../src/lib/outputSiteBinByLot.js";
-import { getInfcontrolLayerBinDummyRows } from "../src/lib/infcontrolLayerBinDummy.js";
+import { getInfcontrolLayerBinDummyRows } from "../src/lib/infcontrol/infcontrolLayerBinDummy.js";
 import {
   buildInfDutCtxFromDetailListIndices,
   buildInfDutCtxFromDrillBarKeys,

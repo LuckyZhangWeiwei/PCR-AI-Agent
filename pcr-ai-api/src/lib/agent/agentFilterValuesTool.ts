@@ -4,11 +4,11 @@ import oracledb from "oracledb";
 import {
   yieldMonitorTriggersUseDummy,
   getYieldMonitorTriggerDummyRows,
-} from "../yieldMonitorTriggerDummy.js";
+} from "../yieldMonitor/yieldMonitorTriggerDummy.js";
 import {
   infcontrolLayerBinsUseDummy,
   getInfcontrolLayerBinDummyRows,
-} from "../infcontrolLayerBinDummy.js";
+} from "../infcontrol/infcontrolLayerBinDummy.js";
 import { infcontrolLayerBinV3PasstypeMatches } from "../infcontrolLayerBinPasstypeScope.js";
 import { probeCardTypeLeadingSegment } from "../probeCardTypeLeadingSegment.js";
 import {

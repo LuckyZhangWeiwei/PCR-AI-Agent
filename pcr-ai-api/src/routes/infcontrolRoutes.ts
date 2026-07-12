@@ -6,14 +6,14 @@ import {
   INFCONTROL_LAYER_BIN_TOP,
   parseInfcontrolLayerBinQuery,
   parseInfcontrolLayerBinsV3Query,
-} from "../lib/infcontrolLayerBinFilters.js";
+} from "../lib/infcontrol/infcontrolLayerBinFilters.js";
 import {
   INFCONTROL_LAYER_BIN_V2_BAD_RANK_MAX,
   INFCONTROL_LAYER_BIN_V2_BAD_RANK_MIN,
   INFCONTROL_LAYER_BIN_V2_MAX_TOP,
   parseInfcontrolLayerBinV2BadBinsQuery,
   parseInfcontrolLayerBinV2Query,
-} from "../lib/infcontrolLayerBinV2Filters.js";
+} from "../lib/infcontrol/infcontrolLayerBinV2Filters.js";
 import {
   buildInfcontrolLayerBinV2BadBinTotalsSql,
   rankBadBinTotalsFromAggregateRow,
@@ -34,8 +34,8 @@ import {
   filterInfcontrolLayerBinV3DummyRowsMatching,
   filterInfcontrolLayerDummyRows,
   infcontrolLayerBinsUseDummy,
-} from "../lib/infcontrolLayerBinDummy.js";
-import type { InfcontrolLayerBinDummyRow } from "../lib/infcontrolLayerBinDummy.js";
+} from "../lib/infcontrol/infcontrolLayerBinDummy.js";
+import type { InfcontrolLayerBinDummyRow } from "../lib/infcontrol/infcontrolLayerBinDummy.js";
 import {
   buildInfcontrolLayerBinAggregateGroupParts,
   buildInfcontrolLayerBinAggregateSql,
@@ -43,12 +43,12 @@ import {
   parseInfcontrolLayerBinAggregateGroupSpec,
   parseInfcontrolLayerBinAggregateQuery,
   type InfcontrolLayerBinGroupBy,
-} from "../lib/infcontrolLayerBinAggregate.js";
+} from "../lib/infcontrol/infcontrolLayerBinAggregate.js";
 import { parseAggsParam } from "../lib/parseAggsParam.js";
 import {
   INFCONTROL_V3_AGGREGATE_DOCUMENTATION,
   parseInfcontrolLayerBinsV3AggregateQuery,
-} from "../lib/infcontrolLayerBinV3Aggregate.js";
+} from "../lib/infcontrol/infcontrolLayerBinV3Aggregate.js";
 import {
   enrichInfcontrolLayerBinRow,
   enrichInfcontrolLayerBinRowV2,

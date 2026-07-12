@@ -1,5 +1,5 @@
-import { INFCONTROL_V3_AGGREGATE_DOCUMENTATION } from "./infcontrolLayerBinV3Aggregate.js";
-import { YIELD_MONITOR_V3_AGGREGATE_DOCUMENTATION } from "./yieldMonitorTriggerV3Aggregate.js";
+import { INFCONTROL_V3_AGGREGATE_DOCUMENTATION } from "./infcontrol/infcontrolLayerBinV3Aggregate.js";
+import { YIELD_MONITOR_V3_AGGREGATE_DOCUMENTATION } from "./yieldMonitor/yieldMonitorTriggerV3Aggregate.js";
 
 /** v4 层控聚合 JSON **`documentation`**：在 v3 说明基础上注明「全量行来自与 v4 列表同一 SQL（无 FETCH FIRST），在 Node 内 SUM」。Dummy 与 Oracle 均受 **`MEMORY_AGG_ORACLE_MAX_ROWS`** 约束（超出 **422**）。 */
 export const INFCONTROL_V4_AGGREGATE_DOCUMENTATION =

@@ -119,7 +119,7 @@ import {
 import {
   buildProbeCardPerfSummaryMarkdown,
   type PassGroupResult,
-} from "../probeCardTesterPerformance.js";
+} from "../probeCard/probeCardTesterPerformance.js";
 import { buildScopeLabelFromAggregateArgs, findLastToolCallArgs, inferDeviceFromText, inferDeviceFromHistory, inferLotFromHistory, inferRecentMonthsWindow, jbListingScopeLabel, resolveJbListingScope } from "./agentQueryScope.js";
 import { deviceBaseMask } from "../deviceMask.js";
 import {

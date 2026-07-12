@@ -1,4 +1,4 @@
-import { getYieldMonitorDummyExampleQuery } from "../yieldMonitorTriggerDummy.js";
+import { getYieldMonitorDummyExampleQuery } from "../yieldMonitor/yieldMonitorTriggerDummy.js";
 
 export const yieldMonitorManifestEndpoints = [
   {

@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as XLSX from "xlsx";
-import type { InfcontrolLayerBinDummyRow } from "./infcontrolLayerBinDummy.js";
-import type { YieldMonitorTriggerDummyRow } from "./yieldMonitorTriggerDummy.js";
+import type { InfcontrolLayerBinDummyRow } from "./infcontrol/infcontrolLayerBinDummy.js";
+import type { YieldMonitorTriggerDummyRow } from "./yieldMonitor/yieldMonitorTriggerDummy.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 

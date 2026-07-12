@@ -1,4 +1,4 @@
-import { passIdSortLabel } from "./jbYieldCalc.js";
+import { passIdSortLabel } from "./infcontrol/jbYieldCalc.js";
 import {
   OutputSiteBinByLotValidationError,
   type SiteBinPass,

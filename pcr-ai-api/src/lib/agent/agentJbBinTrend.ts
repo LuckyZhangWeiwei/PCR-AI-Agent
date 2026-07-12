@@ -9,7 +9,7 @@ import {
   splitPassGroupIntoHalves,
   type JbYieldMetrics,
   type SlotYieldSummaryEntry,
-} from "../jbYieldCalc.js";
+} from "../infcontrol/jbYieldCalc.js";
 
 function formatPct(y: number | null | undefined): string {
   if (y === null || y === undefined || !Number.isFinite(y)) return "—";

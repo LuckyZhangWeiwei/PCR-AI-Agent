@@ -4,7 +4,7 @@ import {
   parseYieldMonitorTriggerV3AggregateQuery,
   buildYieldMonitorTriggerV3AggregateSql,
   buildYieldMonitorTriggerV3AggregateSqlWithTotal,
-} from "../src/lib/yieldMonitorTriggerV3Aggregate.js";
+} from "../src/lib/yieldMonitor/yieldMonitorTriggerV3Aggregate.js";
 
 describe("yieldMonitorTriggerV3Aggregate — bin / dutNumber 维度", () => {
   test("parseYieldMonitorTriggerV3AggregateQuery 接受 dimensions=bin", () => {

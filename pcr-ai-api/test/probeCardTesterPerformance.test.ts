@@ -7,7 +7,7 @@ import {
   sampleStdDev,
   computeProbeCardTesterPerformance,
   buildProbeCardPerfSummaryMarkdown,
-} from "../src/lib/probeCardTesterPerformance.js";
+} from "../src/lib/probeCard/probeCardTesterPerformance.js";
 
 describe("probeCardTesterPerformance: stats helpers", () => {
   test("mean of a simple array", () => {

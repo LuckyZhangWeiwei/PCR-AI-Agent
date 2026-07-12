@@ -1,4 +1,4 @@
-import { getInfcontrolDummyExampleQuery } from "../infcontrolLayerBinDummy.js";
+import { getInfcontrolDummyExampleQuery } from "../infcontrol/infcontrolLayerBinDummy.js";
 
 export const infcontrolManifestEndpoints = [
   {

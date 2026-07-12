@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseInf } from "../infParser.js";
-import { infcontrolLayerBinsUseDummy } from "../infcontrolLayerBinDummy.js";
+import { infcontrolLayerBinsUseDummy } from "../infcontrol/infcontrolLayerBinDummy.js";
 import {
   calculateWafer,
   decodePsbn,

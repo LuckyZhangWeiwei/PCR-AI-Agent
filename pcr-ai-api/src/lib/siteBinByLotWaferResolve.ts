@@ -1,7 +1,7 @@
 import fs from "node:fs";
 
 import { buildInfPath } from "./buildInfPath.js";
-import { getInfcontrolLayerBinDummyRows } from "./infcontrolLayerBinDummy.js";
+import { getInfcontrolLayerBinDummyRows } from "./infcontrol/infcontrolLayerBinDummy.js";
 import { listApisForceOracleNoDummy } from "./listDummyRuntime.js";
 import {
   OutputSiteBinByLotNotFoundError,

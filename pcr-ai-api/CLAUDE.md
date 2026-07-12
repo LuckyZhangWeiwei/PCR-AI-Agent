@@ -63,7 +63,7 @@
 
 ## 4. 产量 v3 当前约定（易漏）
 
-以下已在 **`parseYieldMonitorTriggerV3Query`**（`src/lib/yieldMonitorTriggerFilters.ts`）与 Dummy 的 **`filterYieldMonitorDummyRowsMatchingV3`**（`src/lib/yieldMonitorTriggerDummy.ts`）对齐：
+以下已在 **`parseYieldMonitorTriggerV3Query`**（`src/lib/yieldMonitor/yieldMonitorTriggerFilters.ts`）与 Dummy 的 **`filterYieldMonitorDummyRowsMatchingV3`**（`src/lib/yieldMonitor/yieldMonitorTriggerDummy.ts`）对齐：
 
 1. **固定 `TYPE = delta_diff`**  
    - SQL：`UPPER(TRIM(t."TYPE")) = UPPER(:v3_type_scope)`，绑定 `delta_diff`。  
@@ -131,13 +131,13 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 | v4 聚合行上限（Dummy + Oracle） | **`src/lib/memoryAggregateOracleLimits.ts`**；路由 **`api.ts`** **`…/v4/aggregate`** |
 | Oracle 列名大写化（v4 聚合进 FromRows） | **`src/lib/dbRowKeyUpper.ts`** → **`normalizeDbRowKeysUpper`** |
 | v4 聚合说明 JSON | `src/lib/apiV4Docs.ts` |
-| v3 产量筛选 + 固定 TYPE | `src/lib/yieldMonitorTriggerFilters.ts` → `parseYieldMonitorTriggerV3Query`；常量 `YIELD_MONITOR_V3_TYPE_SCOPE` |
-| v3 产量聚合解析 / SQL | `src/lib/yieldMonitorTriggerV3Aggregate.ts`（**`dimensions`** 含 **`probeCardType`** 等） |
-| v3 层控 BIN 聚合 **`groupBy`**（含 **`probeCardType`**）/ UNPIVOT SQL | `src/lib/infcontrolLayerBinAggregate.ts`（v3 路由传 **`v3-hyphen-tokens`**） |
+| v3 产量筛选 + 固定 TYPE | `src/lib/yieldMonitor/yieldMonitorTriggerFilters.ts` → `parseYieldMonitorTriggerV3Query`；常量 `YIELD_MONITOR_V3_TYPE_SCOPE` |
+| v3 产量聚合解析 / SQL | `src/lib/yieldMonitor/yieldMonitorTriggerV3Aggregate.ts`（**`dimensions`** 含 **`probeCardType`** 等） |
+| v3 层控 BIN 聚合 **`groupBy`**（含 **`probeCardType`**）/ UNPIVOT SQL | `src/lib/infcontrol/infcontrolLayerBinAggregate.ts`（v3 路由传 **`v3-hyphen-tokens`**） |
 | v3 列表 SQL 模板 | `src/lib/apiV3ListSql.ts` → `buildYieldMonitorTriggersV3Sql` |
-| 产量 Dummy 加载与筛选 | `src/lib/yieldMonitorTriggerDummy.ts`、`src/lib/dummyRowsFromExcel.ts` |
-| 层控 v3 | `src/lib/infcontrolLayerBinFilters.ts`、`infcontrolLayerBinDummy.ts`、`infcontrolLayerBinV3Aggregate.ts` |
-| v3 默认一年 **`TESTEND` / `TIME_STAMP`** | **`src/lib/v3DefaultOneYearWindow.ts`**；**`parseInfcontrolLayerBinsV3Query`**、**`parseYieldMonitorTriggerV3Query`**（**`infcontrolLayerBinFilters.ts`**、**`yieldMonitorTriggerFilters.ts`**） |
+| 产量 Dummy 加载与筛选 | `src/lib/yieldMonitor/yieldMonitorTriggerDummy.ts`、`src/lib/dummyRowsFromExcel.ts` |
+| 层控 v3 | `src/lib/infcontrol/infcontrolLayerBinFilters.ts`、`infcontrolLayerBinDummy.ts`、`infcontrolLayerBinV3Aggregate.ts` |
+| v3 默认一年 **`TESTEND` / `TIME_STAMP`** | **`src/lib/v3DefaultOneYearWindow.ts`**；**`parseInfcontrolLayerBinsV3Query`**、**`parseYieldMonitorTriggerV3Query`**（**`src/lib/infcontrol/infcontrolLayerBinFilters.ts`**、**`src/lib/yieldMonitor/yieldMonitorTriggerFilters.ts`**） |
 | v3 列表 **PROBECARDTYPE** | **`src/lib/probeCardTypeLeadingSegment.ts`**；**`src/routes/api.ts`**（**`enrichInfcontrolLayerBinV3ListRow`**、**`enrichYieldMonitorTriggerV3ListRow`**）；Dummy 写入：**`filterInfcontrolLayerBinV3DummyRowsMatching`**、**`filterYieldMonitorDummyRowsMatchingV3`**；列表截断：**`filterInfcontrolLayerBinV3DummyRows`**、**`filterYieldMonitorDummyRowsV3`** |
 | manifest 静态定义 | `src/lib/manifest/index.ts`；`/api/v3/manifest` 前缀改写 `src/lib/rebaseApiManifest.ts` |
 | Oracle 连接 | `src/oracle.ts`（`withConnection` / `withProbeWebConnection`） |

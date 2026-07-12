@@ -9,7 +9,7 @@ import {
   buildYieldInterruptSegments,
   computeJbYieldMetrics,
   countTestInterruptEvents,
-} from "../src/lib/jbYieldCalc.js";
+} from "../src/lib/infcontrol/jbYieldCalc.js";
 
 describe("jbYieldCalc", () => {
   it("no interrupt: uses MAX GROSSDIE pool only", () => {

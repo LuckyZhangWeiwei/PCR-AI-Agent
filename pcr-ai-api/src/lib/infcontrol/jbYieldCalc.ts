@@ -6,7 +6,7 @@
  *   - 整片正片（顶层 grossDie/yieldPct）：上半段 good=0 → 仅下半段；上半段 good>0 → 上下半段合并。
  */
 
-import { parsePassBinHyphenGoodBins } from "./passBinSemantics.js";
+import { parsePassBinHyphenGoodBins } from "../passBinSemantics.js";
 
 export const JB_HARD_GOOD_BIN = 1;
 

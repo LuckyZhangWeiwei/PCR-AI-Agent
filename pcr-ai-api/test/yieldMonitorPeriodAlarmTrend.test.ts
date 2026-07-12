@@ -20,7 +20,7 @@ import {
   recentPeriodBuckets,
   resolvePeriodAlarmTimeRange,
 } from "../src/lib/yieldMonitorPeriodAlarmTrend.js";
-import { filterYieldMonitorDummyRowsMatchingV3 } from "../src/lib/yieldMonitorTriggerDummy.js";
+import { filterYieldMonitorDummyRowsMatchingV3 } from "../src/lib/yieldMonitor/yieldMonitorTriggerDummy.js";
 import { parseBinFromTriggerLabel } from "../src/lib/yieldTriggerLabelBin.js";
 
 describe("yieldMonitorPeriodAlarmTrend", () => {
