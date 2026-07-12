@@ -17,6 +17,7 @@ import type {
 import { jbWrappedIsEmptyQuery } from "./agentJbBinFormat.js";
 import type { ClusteredBadBinAlert } from "./agentJbBadBinCluster.js";
 import type { SlotYieldSummaryEntry } from "../jbYieldCalc.js";
+import { goodBinIndicesForJbRow } from "../jbYieldCalc.js";
 import { buildBinSlotTrendMarkdownOnDemand } from "./agentJbBinTrend.js";
 import { getJbToolRawJson } from "./agentJbSessionCache.js";
 import { extractLotFromUserText } from "./agentInfWaferMapTool.js";
@@ -56,6 +57,7 @@ export type JbReplyMode =
   | "per_slot_bin_ranking"
   | "card_test_overview"
   | "card_dut_question"
+  | "good_bin_value"
   | "generic";
 
 /** Yield Monitor 侧 lot 条目（合并进 lot 列表表）。 */
@@ -64,6 +66,83 @@ export type YmLotListingEntry = {
   device?: string;
   testEnd?: string | null;
 };
+
+/** 用户问「good bin / 良品 bin 是多少」（具体字段问句，非 lot 概况）。 */
+export function isGoodBinValueQuestion(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (!/(?:good\s*bin|goodbin|良品\s*bin)/i.test(t)) return false;
+  if (!/(?:是多少|哪个|什么|几号|多少|哪一个)/i.test(t)) return false;
+  // 「BIN55 是 good bin 吗」类确认问法 → 不走直答（勿把「是多少」里的「是」误判为确认）
+  if (/(?:是|是否|算|属于)(?!多少).{0,16}(?:good\s*bin|goodbin|良品\s*bin)/i.test(t)) return false;
+  if (/(?:good\s*bin|goodbin|良品\s*bin).{0,8}(?:吗\s*$|吗？|吗\?)/i.test(t)) return false;
+  // 趋势/数量变化类 → 放行 LLM
+  if (/趋势|走势|变化|分布/i.test(t)) return false;
+  return true;
+}
+
+/** 从 query_jb_bins payload 直出良品 bin 编号 + die 数（按 pass 分组）。 */
+export function buildGoodBinValueMarkdown(
+  toolPayload: Record<string, unknown>
+): string | null {
+  const rows = toolPayload["rows"] as Record<string, unknown>[] | undefined;
+  if (!rows?.length) return null;
+
+  const byPass = new Map<number, Map<number, number>>();
+  for (const row of rows) {
+    const passId = Number(row["PASSID"] ?? row["passId"]);
+    if (!Number.isInteger(passId)) continue;
+    const goodBins = row["goodBins"] as
+      | Array<{ bin?: number; dieCount?: number; n?: number; value?: number }>
+      | undefined;
+    if (goodBins?.length) {
+      for (const g of goodBins) {
+        const bin = Number(g.bin ?? g.n);
+        const die = Number(g.dieCount ?? g.value ?? 0);
+        if (!Number.isInteger(bin) || die <= 0) continue;
+        let passMap = byPass.get(passId);
+        if (!passMap) {
+          passMap = new Map();
+          byPass.set(passId, passMap);
+        }
+        passMap.set(bin, (passMap.get(bin) ?? 0) + die);
+      }
+      continue;
+    }
+    for (const n of goodBinIndicesForJbRow(row)) {
+      let passMap = byPass.get(passId);
+      if (!passMap) {
+        passMap = new Map();
+        byPass.set(passId, passMap);
+      }
+      if (!passMap.has(n)) passMap.set(n, 0);
+    }
+  }
+
+  if (byPass.size === 0) return null;
+
+  const lot = String(toolPayload["lot"] ?? "").trim();
+  const device = String(toolPayload["device"] ?? "").trim();
+  const lotTag = lot ? `Lot ${lot}${device && device !== "—" ? `（${device}）` : ""}` : "本批";
+  const lines: string[] = [`**${lotTag} 良品 bin**`, ""];
+
+  for (const passId of [...byPass.keys()].sort((a, b) => a - b)) {
+    const bins = byPass.get(passId)!;
+    const entries = [...bins.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0]);
+    lines.push(`### pass${passId}`);
+    if (entries.every(([, die]) => die <= 0)) {
+      lines.push(`良品 bin 编号：${entries.map(([b]) => `BIN${b}`).join("、")}（payload 未含 die 计数）`);
+    } else {
+      lines.push("| 良品 bin | die 数 |");
+      lines.push("|---:|---:|");
+      for (const [bin, die] of entries) {
+        lines.push(`| BIN${bin} | ${die} |`);
+      }
+    }
+    lines.push("");
+  }
+  return lines.join("\n").trim();
+}
 
 /** 用户问在哪台机台/测试机测（JB testerId / YM hostname）。 */
 export function isTesterMachineQuestion(text: string): boolean {
@@ -821,7 +900,8 @@ export function jbReplySkipsCommentaryLlm(mode: JbReplyMode): boolean {
     mode === "bin_card_attribution" ||
     mode === "lot_yield_ranking" ||
     mode === "lot_listing" ||
-    mode === "card_dut_question"
+    mode === "card_dut_question" ||
+    mode === "good_bin_value"
     // "per_slot_bin_ranking" 已移出：50 行跨片数据 LLM 最有价值（BIN 规律/异常片/pass 对比）
     // "card_yield_compare" 不跳过：LLM 需要推断「哪张卡更差」
   );
@@ -860,6 +940,7 @@ export function detectJbReplyMode(userMessage: string): JbReplyMode {
   if (isCardTestOverviewQuestion(userMessage)) return "card_test_overview";
   // 单片问题必须在 lot_overview 之前检查，避免「第二片的测试情况」触发 lot_overview
   if (isSingleSlotQuestion(userMessage)) return "single_slot";
+  if (isGoodBinValueQuestion(userMessage)) return "good_bin_value";
   if (isLotOverviewQuestion(userMessage)) return "lot_overview";
   return "generic";
 }
@@ -918,8 +999,12 @@ export function resolveJbToolPayload(
 /** lot 概况类问题末尾是否应补各 DUT 良率表（与 mode 解耦，避免 equipment 误判漏 DUT）。 */
 export function shouldAppendUnderperformingDutYield(
   userQuestion: string,
-  mode: string
+  mode: string,
+  payload?: Record<string, unknown>
 ): boolean {
+  if (mode === "good_bin_value" || mode === "lot_listing") return false;
+  if (isLotListingQuestion(userQuestion)) return false;
+  if (payload && payloadCoversMultipleLots(payload)) return false;
   if (mode === "lot_overview" || mode === "generic") return true;
   return (
     isLotOverviewQuestion(userQuestion) &&
@@ -1180,11 +1265,7 @@ export function buildRecentLotsListingMarkdown(
     ? `（${ctx.scopeLabel}）`
     : (() => {
         const scopeDevice = String(toolPayload["device"] ?? "").trim();
-        const scopeTester = String(toolPayload["testerId"] ?? "").trim();
-        const scopeParts = [
-          scopeDevice ? `device=${scopeDevice}` : "",
-          scopeTester ? `机台=${scopeTester}` : "",
-        ].filter(Boolean);
+        const scopeParts = [scopeDevice ? `device=${scopeDevice}` : ""].filter(Boolean);
         return scopeParts.length ? `（${scopeParts.join("，")}）` : "";
       })();
 
@@ -1748,7 +1829,18 @@ export function buildDeterministicJbTables(
     return buildLotOverviewTablesMarkdown(toolPayload);
   }
 
+  if (mode === "good_bin_value") {
+    const gb = buildGoodBinValueMarkdown(toolPayload);
+    if (gb?.trim()) return gb;
+    return null;
+  }
+
   if (mode === "generic") {
+    if (isGoodBinValueQuestion(userMessage)) {
+      const gb = buildGoodBinValueMarkdown(toolPayload);
+      if (gb?.trim()) return gb;
+      return null;
+    }
     // 问题中含明确卡号（dddd-dd/ddd）或 DUT/触点关键词时，
     // 缓存的 lotOverview 几乎必然是错误 lot 的数据——直接返回 null，
     // 让 LLM 在总结轮从原始工具 JSON 作答（总结轮禁止再调工具）。
@@ -2454,6 +2546,10 @@ export const BRIEF_COMMENTARY_SYSTEM =
   "术语：JB 字段 slot = waferId（第几片 wafer，对用户写 waferId）；INF 字段 dut = 探针卡触点（对用户写 DUT，勿写 site）。" +
   "用户消息含【实测数据表】，表中数字为最终结论，禁止修改、平均或合并 sort/半片。\n\n" +
   "⚠️ 本次调用无工具可用，**禁止输出任何工具调用格式**（含 <tool_call>、<｜tool▁、JSON function call 等）；直接输出纯文字。\n\n" +
+  "**pass / 温度层硬规则（违反即错误）**\n" +
+  "1. 不同 passId/sort（pass1=常温 sort1、pass3=高温 sort2、pass5=低温 sort3）之间**禁止**直接比较良率高低或合并排名；「最好/最差」必须**按 pass 分别**陈述。\n" +
+  "2. 只允许出现数据中实际存在的 passId（1/3/5 → pass1/pass3/pass5），**禁止**写 pass2/pass4 等不存在的层。\n" +
+  "3. 单 lot/单片/单样本禁止下「更稳定」「工艺差异导致」等因果或统计结论，只可陈述数字并注明样本量。\n\n" +
   "**输出格式（严格遵守）**\n" +
   "- 只输出下方两个小节，不加任何前言、不复述题目、不重新画表格\n" +
   "- **绝对禁止 markdown 表格**（`| col |` 形式）；绝对禁止重复粘贴上方数据\n" +

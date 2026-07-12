@@ -186,6 +186,28 @@ describe("buildGoodBinsByPassFromJbRows", () => {
     assert.ok(map.has(1), "passId 1 must be present even though PASSBIN only ever said BIN1");
     assert.deepEqual([...map.get(1)!], [1]);
   });
+
+  test("agent-formatted rows with goodBins array (BIN250) are recognized", () => {
+    const map = buildGoodBinsByPassFromJbRows([
+      { PASSID: 1, goodBins: [{ bin: 250, dieCount: 6213, isGoodBin: true }] },
+    ]);
+    assert.deepEqual([...map.get(1)!].sort((a, b) => a - b), [1, 250]);
+  });
+
+  test("BIN250 goodBinsByPassId yields non-zero lot yield (WA01N39W-style)", () => {
+    const p = pass(1, [
+      { bin: "bin250", duts: [{ dut: 0, dieCount: 20 }, { dut: 1, dieCount: 18 }] },
+      { bin: "bin7", duts: [{ dut: 0, dieCount: 2 }, { dut: 1, dieCount: 2 }] },
+    ]);
+    const with250 = computeUnderperformingDutsForPass(p, {
+      goodBinsByPassId: new Map([[1, new Set([250])]]),
+    });
+    assert.ok((with250.baseline?.yieldPct ?? 0) > 0, "BIN250 must count as good die");
+    const bin1Only = computeUnderperformingDutsForPass(p, {
+      goodBinsByPassId: new Map([[1, new Set([1])]]),
+    });
+    assert.equal(bin1Only.baseline?.yieldPct, 0);
+  });
 });
 
 describe("GET /inf-analysis/lot-underperforming-duts route", () => {

@@ -139,6 +139,24 @@ function fmtPct(n: number): string {
   return `${n.toFixed(2)}%`;
 }
 
+function passTempLabel(passId: number): string {
+  if (passId === 1) return "sort1 常温";
+  if (passId === 3) return "sort2 高温";
+  if (passId === 5) return "sort3 低温";
+  return `pass${passId}`;
+}
+
+function passGroupHeader(passId: number): string {
+  return `#### pass${passId}（${passTempLabel(passId)}）`;
+}
+
+/** 内嵌标题；空表 / "(无数据)" 不输出。 */
+function titledMarkdown(sectionTitle: string, tableBody: string): string {
+  const body = tableBody.trim();
+  if (!body || body === "(无数据)") return "";
+  return `${sectionTitle}\n\n${body}`;
+}
+
 function mdTable(headers: string[], rows: string[][]): string {
   if (rows.length === 0) return "(无数据)";
   const head = `| ${headers.join(" | ")} |`;
@@ -293,8 +311,11 @@ export function computeProbeCardTesterPerformance(
     }
     cardBadBin.sort((a, b) => a.cardId.localeCompare(b.cardId));
 
-    // ── markdown ──
-    const comboRankingMarkdown = mdTable(
+    // ── markdown（含 pass 分组 + 表标题，供确定性直出与 LLM 转述共用）──
+    const groupHeader = passGroupHeader(passId);
+    const comboRankingMarkdown = titledMarkdown(
+      `${groupHeader}\n\n**探针卡+机台组合排名（平均良率降序，最好在前）**`,
+      mdTable(
       ["排名", "CardId", "TesterId", "平均良率", "标准差", "片数", "Lot 数", "置信度"],
       comboRanking.map((r, i) => [
         String(i + 1),
@@ -306,8 +327,11 @@ export function computeProbeCardTesterPerformance(
         String(r.lotCount),
         r.confidenceTier,
       ])
+    )
     );
-    const cardRankingMarkdown = mdTable(
+    const cardRankingMarkdown = titledMarkdown(
+      `${groupHeader}\n\n**探针卡排名（平均良率升序，最差在前）**`,
+      mdTable(
       ["排名", "CardId", "平均良率", "标准差", "片数", "Lot 数", "评估", "置信度"],
       cardRanking.map((r, i) => [
         String(i + 1),
@@ -319,17 +343,27 @@ export function computeProbeCardTesterPerformance(
         r.assessment,
         r.confidenceTier,
       ])
+    )
     );
-    const cardTrendMarkdown = mdTable(
-      ["CardId", "月份", "当月平均良率", "当月样本数"],
-      cardTrend.map((r) => [r.cardId, r.month, fmtPct(r.avgYieldPct), String(r.recordCount)])
-    );
-    const cardBadBinMarkdown = mdTable(
+    const cardTrendMarkdown =
+      cardTrend.length > 0
+        ? titledMarkdown(
+            `${groupHeader}\n\n**按卡月度良率走势**`,
+            mdTable(
+              ["CardId", "月份", "当月平均良率", "当月样本数"],
+              cardTrend.map((r) => [r.cardId, r.month, fmtPct(r.avgYieldPct), String(r.recordCount)])
+            )
+          )
+        : `${groupHeader}\n\n*月度趋势：每卡不足 2 个月数据，暂无趋势表*`;
+    const cardBadBinMarkdown = titledMarkdown(
+      `${groupHeader}\n\n**按卡坏 bin Top3 频率（仅编号频率统计，非空间分布）**`,
+      mdTable(
       ["CardId", "Top 3 坏 bin"],
       cardBadBin.map((r) => [
         r.cardId,
         r.topBins.map((b) => `BIN${b.bin} (${b.pct.toFixed(2)}%)`).join(", "),
       ])
+    )
     );
 
     return {

@@ -82,7 +82,7 @@ test("formatAllDutsHighlightMarkdown: DUT数 >30 时一行并排 3 个 DUT，按
   assert.match(firstBodyLine!, /DUT0 .* DUT1 .* DUT2 /);
 });
 
-test("formatAllDutsHighlightMarkdown: 整体良率0% 退化 → 异常提示，非「全部达标」", () => {
+test("formatAllDutsHighlightMarkdown: 整体良率0% 退化 → 异常提示，非「全部达标」，且无表体", () => {
   const zero = pass({
     lotGoodDie: 0,
     baseline: { method: "lotOverall", yieldPct: 0, thresholdPct: 0, thresholdRatio: 0.75 },
@@ -96,6 +96,17 @@ test("formatAllDutsHighlightMarkdown: 整体良率0% 退化 → 异常提示，�
   assert.match(md, /⚠️ 整体良率 0%/);
   assert.doesNotMatch(md, /全部达标/);
   assert.doesNotMatch(md, /🔴/); // 退化时不误标红
+  assert.doesNotMatch(md, /\| DUT \| 良率%/); // 不出大表
+});
+
+test("buildUnderperformingDutScatterOptions: 退化 pass（整体良率 0%）跳过", () => {
+  const zero = pass({
+    lotGoodDie: 0,
+    baseline: { method: "lotOverall", yieldPct: 0, thresholdPct: 0, thresholdRatio: 0.75 },
+    allDuts: [{ dut: 0, goodDie: 0, totalDie: 26, yieldPct: 0 }],
+    underperformingDuts: [],
+  });
+  assert.equal(buildUnderperformingDutScatterOptions([zero]).length, 0);
 });
 
 test("buildUnderperformingDutScatterOptions: 三色带 + 平均/阈值 markLine", () => {

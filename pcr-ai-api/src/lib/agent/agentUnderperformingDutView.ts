@@ -62,10 +62,16 @@ export function formatAllDutsHighlightMarkdown(
     if (hasRed) legendParts.push(`低于阈值 ${RED_DOT} 标注`);
     if (hasYellow) legendParts.push(`低于平均 ${YELLOW_DOT} 标注`);
     const header = degenerate
-      ? `### ${pass.sortLabel} — ⚠️ 整体良率 0%（无良品 die 落入良品 bin），无法按相对阈值判别；疑该测试层非完整 TEST 层或良品 bin 非 BIN1，请核对 pass/bin 口径`
+      ? `### ${pass.sortLabel} — ⚠️ 整体良率 0%（无良品 die 落入良品 bin），无法按相对阈值判别；疑该测试层非完整 TEST 层或良品 bin 口径未对齐，请核对 pass/bin 口径`
       : `### ${pass.sortLabel} — lot 整体 ${avg}% · 阈值 ${threshold}%（${
           legendParts.length > 0 ? legendParts.join(" · ") : "全部达标"
         }）`;
+
+    // 退化：只出警告行，不输出 78 行全 0 大表（口径异常时的呈现兜底）。
+    if (degenerate) {
+      blocks.push(header);
+      continue;
+    }
 
     // 多列表格：DUT 数超过阈值时每行并排多个 DUT（缩短长列表行数），否则每行一个。
     const dutsPerRow = rows.length > DUTS_PER_ROW_THRESHOLD ? DUTS_PER_ROW_WIDE : 1;
@@ -101,6 +107,7 @@ export function buildUnderperformingDutScatterOptions(
   const out: PassScatterOption[] = [];
   for (const pass of passResults) {
     if (!pass.baseline || pass.allDuts.length === 0) continue;
+    if (pass.baseline.yieldPct <= 0) continue; // 退化 pass 不出散点图
     const avg = pass.baseline.yieldPct;
     const threshold = pass.baseline.thresholdPct;
     const duts = [...pass.allDuts].sort((a, b) => a.dut - b.dut);

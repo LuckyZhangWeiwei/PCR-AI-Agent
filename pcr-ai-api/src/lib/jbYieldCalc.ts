@@ -64,6 +64,16 @@ export function goodBinIndicesForJbRow(row: Record<string, unknown>): Set<number
     if (!Number.isInteger(n) || n < 0 || n > 255) continue;
     if (c.isGoodBin === true || c.isGood === true) good.add(n);
   }
+  // Agent 格式化行（formatJbRowsForAgent）：bins[] 已拆成 goodBins / badBins
+  const agentGood = row.goodBins ?? row.goodbins;
+  if (Array.isArray(agentGood)) {
+    for (const cell of agentGood) {
+      if (cell == null || typeof cell !== "object") continue;
+      const c = cell as { bin?: number; n?: number };
+      const n = Number(c.bin ?? c.n);
+      if (Number.isInteger(n) && n >= 0 && n <= 255) good.add(n);
+    }
+  }
   return good;
 }
 

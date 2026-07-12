@@ -27,6 +27,8 @@ import {
   isCardTypeLevelOverviewQuestion,
   resolveJbToolPayload,
   shouldAppendUnderperformingDutYield,
+  isGoodBinValueQuestion,
+  buildGoodBinValueMarkdown,
   stampFirstTestNote,
   FIRST_TEST_ONLY_NOTE,
 } from "../src/lib/agent/agentJbDeterministicReply.js";
@@ -735,6 +737,40 @@ describe("agentJbDeterministicReply", () => {
       shouldAppendUnderperformingDutYield("6081-03 测试过什么lot", "lot_listing"),
       false
     );
+    assert.equal(
+      shouldAppendUnderperformingDutYield("WA01N39W 的测试情况", "generic", {
+        recentLotsByTestEnd: [{ lot: "DR41803.1Y" }, { lot: "DR41542.1H" }],
+      }),
+      false
+    );
+  });
+
+  it("isGoodBinValueQuestion detects field ask, excludes confirmation/trend", () => {
+    assert.equal(isGoodBinValueQuestion("DR41803.1Y 中的 good bin 是多少"), true);
+    assert.equal(isGoodBinValueQuestion("良品 bin 是哪个"), true);
+    assert.equal(isGoodBinValueQuestion("BIN55 是 good bin 吗"), false);
+    assert.equal(isGoodBinValueQuestion("good bin 数量趋势"), false);
+    assert.equal(isGoodBinValueQuestion("DR41803.1Y 的测试情况"), false);
+  });
+
+  it("buildGoodBinValueMarkdown aggregates goodBins by pass", () => {
+    const md = buildGoodBinValueMarkdown({
+      lot: "DR41803.1Y",
+      device: "WA01N39W",
+      rows: [
+        {
+          PASSID: 1,
+          goodBins: [{ bin: 250, dieCount: 6213, isGoodBin: true }],
+        },
+      ],
+    });
+    assert.ok(md);
+    assert.match(md!, /BIN250/);
+    assert.match(md!, /6213/);
+  });
+
+  it("detectJbReplyMode routes good bin field ask to good_bin_value", () => {
+    assert.equal(detectJbReplyMode("DR41803.1Y 中的 good bin 是多少"), "good_bin_value");
   });
 
   it("buildDeterministicJbTables picks bin trend markdown", () => {

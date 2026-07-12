@@ -11,7 +11,7 @@
 
 ## 待办
 
-- [ ] **【待 Cursor】Agent 回答准确性 8 项修复** — 探针卡四表无标题/无 pass 分组、JB vs DUT 表良率同屏矛盾（`goodBinsByPassId` 未打通）、good bin≠BIN1 全 0 大表、「good bin 是多少」被概况表劫持、lot 列表误挂单 lot DUT 表、listing scope 误带机台致结果不一致、解读跨温度层对比/写出 pass2、cardId count=0 回归。任务书：[`HANDOFF_CURSOR_AGENT_ACCURACY_2026-07-11.md`](HANDOFF_CURSOR_AGENT_ACCURACY_2026-07-11.md) — 2026-07-11 交接
+- [ ] **【待 Cursor】Agent 回答准确性 8 项修复** — ✅ **代码已合入工作区（2026-07-12）**；P0-1～P1-7 已修，P2-8a/真库待复验。见 [`HANDOFF_CURSOR_AGENT_ACCURACY_2026-07-11.md`](HANDOFF_CURSOR_AGENT_ACCURACY_2026-07-11.md) — 待 commit + dummy 冒烟 + 真库
 - ✅ **灰色小字对比度 + 字号微调** — `--muted`/`--dimmed`（`index.css` dark/light）+ `chartTheme.ts` `axisColor` 提高对比度；所有引用这两个 token 的灰色小字字号统一 +1px。`tsc -b --noEmit` 通过；未做浏览器实测。 — 2026-07-05 完成
 - ✅ **light/dark 主题切换：终审 3 项收尾** — `TreeTable.tsx` 主题化（`--dim-*`/`--fg-rgb`/`--text`/`--muted`/`--dimmed` 替换全部硬编码颜色）+ `InfDutDistPanel.tsx` tooltip hover 行文字 `#fff`→`var(--text)`（light 下可读）+ `index.html` head 内同步读 `localStorage` 设 `data-theme`（消除刷新闪深色）。`npm run build` 通过、grep 无残留硬编码色。分支 `feat/jb-route-resolver` 内 worktree `light-mode-theme` 提交。 — 2026-07-04 完成
 - ✅ **first-test 数据脚注 + 会话保存按钮** — 需求1：服务端数据表末尾统一标注「所有数据只包含 first test，不包含 Auto retest」（`FIRST_TEST_ONLY_NOTE` + 幂等 `stampFirstTestNote`，各确定性数据块 stamp）；需求2：AI 聊天工具栏加「⤓ 保存」按钮，导出会话为 Markdown（仅问答，排除工具/图表/内部信息，`utils/exportSession.ts`）。后端 474 pass/0 fail、前端 build 通过。 — 2026-07-02 完成

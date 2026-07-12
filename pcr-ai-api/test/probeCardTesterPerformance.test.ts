@@ -233,11 +233,16 @@ describe("computeProbeCardTesterPerformance: grouping and ranking", () => {
     assert.ok(Math.abs(entry.topBins[0]!.pct - 65) < 1e-6);
   });
 
-  test("markdown tables are non-empty strings containing cardId", () => {
+  test("markdown tables include pass grouping titles and section headers", () => {
     const rows = [jbRow({ cardId: "H-01", testerId: "T1", passId: 1, lot: "L1", testEnd: "2026-01-01", grossDie: 100 })];
     const [group] = computeProbeCardTesterPerformance(rows);
     assert.ok(group!.comboRankingMarkdown.includes("H-01"));
     assert.ok(group!.cardRankingMarkdown.includes("H-01"));
+    assert.match(group!.comboRankingMarkdown, /#### pass1（sort1 常温）/);
+    assert.match(group!.comboRankingMarkdown, /探针卡\+机台组合排名/);
+    assert.match(group!.cardRankingMarkdown, /探针卡排名（平均良率升序/);
+    assert.match(group!.cardTrendMarkdown, /月度趋势：每卡不足 2 个月/);
+    assert.doesNotMatch(group!.comboRankingMarkdown, /\(无数据\)/);
   });
 
   test("rows with GROSSDIE missing are excluded from all stats", () => {

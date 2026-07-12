@@ -265,8 +265,7 @@ export function resolveJbListingScope(
 
   const device =
     inferDeviceFromText(userQuestion) || inferDeviceFromHistory(history);
-  const testerId =
-    inferTesterIdFromText(userQuestion) || inferTesterFromHistory(history);
+  const testerId = inferTesterIdFromText(userQuestion);
   const tstype =
     device || testerId
       ? undefined

@@ -123,6 +123,16 @@ export function buildGoodBinsByPassFromJbRows(
   return byPass;
 }
 
+/** 从 query_jb_bins 工具 payload（含 formatJbRowsForAgent 后的 rows）提取良品 bin。 */
+export function buildGoodBinsByPassFromToolPayload(
+  payload: Record<string, unknown>
+): Map<number, Set<number>> | undefined {
+  const rows = payload["rows"] as Record<string, unknown>[] | undefined;
+  if (!rows?.length) return undefined;
+  const map = buildGoodBinsByPassFromJbRows(rows);
+  return map.size > 0 ? map : undefined;
+}
+
 export async function fetchJbTestRowsForLot(
   device: string,
   lot: string,
@@ -365,6 +375,8 @@ export async function runLotUnderperformingDuts(params: {
   thresholdRatio?: number;
   testEndWindow?: SiteBinTestEndWindow;
   includeMarkdown?: boolean;
+  /** Agent B 路：优先使用 query_jb_bins payload 已解析的 JB 良品 bin（含 bins[].isGoodBin）。 */
+  goodBinsByPassId?: Map<number, Set<number>>;
 }): Promise<LotUnderperformingDutsResponse> {
   const lotTrimmed = params.lot.trim();
   if (!lotTrimmed) {
@@ -389,7 +401,8 @@ export async function runLotUnderperformingDuts(params: {
   });
 
   const jbRows = await fetchJbTestRowsForLot(device, lot, passIds);
-  const goodBinsByPassId = buildGoodBinsByPassFromJbRows(jbRows);
+  const goodBinsByPassId =
+    params.goodBinsByPassId ?? buildGoodBinsByPassFromJbRows(jbRows);
 
   const passResults = computeUnderperformingDutsForPasses(fetched.passes, {
     thresholdRatio,

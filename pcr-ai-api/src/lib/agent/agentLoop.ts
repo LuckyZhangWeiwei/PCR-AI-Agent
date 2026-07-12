@@ -64,6 +64,8 @@ import {
   payloadCoversMultipleLots,
   resolveJbToolPayload,
   shouldAppendUnderperformingDutYield,
+  isGoodBinValueQuestion,
+  buildGoodBinValueMarkdown,
 } from "./agentJbDeterministicReply.js";
 import {
   buildLotOverviewQueryArgs,
@@ -105,7 +107,7 @@ import {
   formatAllDutsHighlightMarkdown,
 } from "./agentUnderperformingDutView.js";
 import type { PassUnderperformingDutsResult } from "../lotUnderperformingDuts.js";
-import { runLotUnderperformingDuts } from "../lotUnderperformingDutsResolve.js";
+import { runLotUnderperformingDuts, buildGoodBinsByPassFromToolPayload } from "../lotUnderperformingDutsResolve.js";
 import { buildScopeLabelFromAggregateArgs, findLastToolCallArgs, inferDeviceFromText, inferLotFromHistory, jbListingScopeLabel, resolveJbListingScope } from "./agentQueryScope.js";
 import { deviceBaseMask } from "../deviceMask.js";
 import {
@@ -1044,7 +1046,7 @@ async function emitDeterministicJbTablesReply(
 
   // B 路 best-effort：lot 概况末尾补「各 DUT 良率」高亮表 + 散点图（失败/无数据静默跳过）
   let dutYieldSection = "";
-  if (shouldAppendUnderperformingDutYield(userQuestion, mode)) {
+  if (shouldAppendUnderperformingDutYield(userQuestion, mode, payload)) {
     dutYieldSection = await tryAppendUnderperformingDutSection(
       payload,
       emit,
@@ -2174,6 +2176,73 @@ async function tryRunUnderperformingDutDirectRoute(
 }
 
 /**
+ * 「DR41803.1Y 中的 good bin 是多少」：从 JB payload 直出良品 bin，不走 lot 概况表。
+ */
+async function tryRunGoodBinValueDirectRoute(
+  sessionId: string,
+  userQuestion: string,
+  agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void
+): Promise<boolean> {
+  if (!isGoodBinValueQuestion(userQuestion)) return false;
+  const lot = extractLotFromUserText(userQuestion);
+  if (!lot) return false;
+
+  let payload = getCachedJbPayloadForLot(sessionId, lot);
+  if (!payload) {
+    const queryArgs = buildLotOverviewQueryArgs(lot);
+    emit({ type: "status", message: `正在查询 ${lot} JB STAR 良品 bin…` });
+    emit({ type: "tool_start", name: "query_jb_bins", args: queryArgs });
+    let jbCacheForHistory: string | undefined;
+    try {
+      const toolResult = await runTool("query_jb_bins", queryArgs, {
+        toolResultMaxChars: agentConfig.toolResultMaxChars,
+        history: getHistory(sessionId),
+        onJbBinsWrapped: (wrapped) => {
+          jbCacheForHistory = storeJbQuerySessionCache(sessionId, wrapped);
+        },
+      });
+      const rawContent =
+        typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult);
+      const historyContent = toolResultForHistory(
+        "query_jb_bins",
+        rawContent,
+        agentConfig.toolResultMaxHistoryChars,
+        agentConfig.toolResultMaxChars,
+        jbCacheForHistory
+      );
+      emit({
+        type: "tool_result",
+        name: "query_jb_bins",
+        summary: historyContent.slice(0, 200),
+      });
+      const callId = `jb_goodbin_${Date.now()}`;
+      appendMessages(sessionId, {
+        role: "tool",
+        name: "query_jb_bins",
+        tool_call_id: callId,
+        content: historyContent,
+      });
+      payload =
+        (jbCacheForHistory ? parseJbToolPayload(jbCacheForHistory) : null) ??
+        resolveJbToolPayload(sessionId, historyContent);
+    } catch {
+      return false;
+    }
+  }
+
+  const md = payload ? buildGoodBinValueMarkdown(payload) : null;
+  if (!md?.trim()) return false;
+
+  const block = stampFirstTestNote(`${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${md}`);
+  emit({ type: "status", message: "正在输出良品 bin…" });
+  emitTextInChunks(block, emit);
+  appendMessages(sessionId, { role: "assistant", content: block });
+  emit({ type: "done" });
+  return true;
+}
+
+/**
  * B 路：JB lot 概况末尾 best-effort 补「各 DUT 良率」高亮表 + 散点图。
  * payload 缺 lot/device 或 INF 失败 → 返回 "" 静默跳过（不阻塞主概况）。
  * 返回追加的 markdown（供调用方并入持久化的 assistant 内容）。
@@ -2208,7 +2277,12 @@ export async function tryAppendUnderperformingDutSection(
   // best-effort 整节：取数 + 格式化 + emit 全包在 try 内，任何异常都静默跳过、返回 ""，
   // 绝不打断已流出的主概况（本函数在 emitDeterministicJbTablesReply 主表之后调用）。
   try {
-    const resp = await runLotUnderperformingDuts({ lot, device });
+    const goodBinsByPassId = buildGoodBinsByPassFromToolPayload(payload);
+    const resp = await runLotUnderperformingDuts({
+      lot,
+      device,
+      ...(goodBinsByPassId ? { goodBinsByPassId } : {}),
+    });
     const passes = resp.passes ?? [];
     const md = formatAllDutsHighlightMarkdown(passes, resp.lot, resp.device);
     if (!md.trim()) return "";
@@ -3457,6 +3531,7 @@ export async function runAgentLoop(
   // 按 mode 路由会把门槛不满足的问句误路由;有序 runner 列表才是真正等价的声明式形式。
   const PRE_LLM_DIRECT_ROUTES: Array<typeof tryRunLotListingDirectRoute> = [
     tryRunUnderperformingDutDirectRoute,
+    tryRunGoodBinValueDirectRoute,
     tryRunDutBinAggDirectRoute,
     tryRunBinLotRankingDirectRoute,
     tryRunLotListingDirectRoute,

@@ -24,6 +24,8 @@
 
 ## P0-1 探针卡组合排名四张表无标题、无 pass 分组，"(无数据)" 裸行直出
 
+**状态：✅ Cursor 已修（2026-07-12，工作区待 commit）** — `probeCardTesterPerformance.ts` 四 markdown 字段内嵌 `#### pass{n}（sort… 温度）` + 表标题；空表/`(无数据)` 不输出；月度趋势不足 2 月改一行说明。
+
 **证据**：`session-logs/minimax-test-bef05547-*.md`（两处修复合入**之后**的最新会话）。
 问「WA03P02G 这个 device 下最好的探针卡+机台组合是什么，哪张探针卡表现最差」，`## 实测数据` 下直出 8 张表 + 2 行裸 `(无数据)`，**没有任何表标题、没有 pass1/pass3 分组标题**。用户无法分辨哪张是组合排名、哪张是卡排名、哪组属于哪个 pass。
 
@@ -49,6 +51,8 @@
 
 ## P0-2 同屏两个矛盾的「整体良率」：JB 口径 47.83% vs DUT 表 89.41%
 
+**状态：✅ Cursor 已修（2026-07-12，工作区待 commit）** — B 路 `tryAppendUnderperformingDutSection` 从 query_jb_bins payload 提取 `goodBinsByPassId`（含 `goodBins[]` / `bins[].isGoodBin`）传入 `runLotUnderperformingDuts`；`jbYieldCalc.goodBinIndicesForJbRow` 可读 agent 格式化行的 `goodBins` 数组。
+
 **证据**：`session-logs/8e98720b-*.md`。问「NF12595.1A 的测试情况」：
 - 「分测试层（sort）批次良率」表：pass1 良率 **47.83%**（JB：1154 总 die / 602 坏 die）；
 - 尾部追加的「🔬 各 DUT 良率」表：`pass1 — lot 整体 89.41% · 阈值 67.06%`。
@@ -64,6 +68,8 @@
 ---
 
 ## P0-3 good bin 非 BIN1 的 lot：78 行全 0 DUT 大表仍然直出
+
+**状态：✅ Cursor 已修（2026-07-12，工作区待 commit）** — 口径随 P0-2；呈现层 `formatAllDutsHighlightMarkdown` 退化时只出警告行、不出表体/散点图。
 
 **证据**：`session-logs/f704996d-*.md`、`d7346963-*.md`、`f16ea547-*.md`、`4649d88f-*.md` 共 4 个会话。
 device WA01N39W 各 lot（良品 bin 实际是 **BIN250**，JB 明确给出 goodDie 6213/BIN250），DUT 表输出：
@@ -87,6 +93,8 @@ device WA01N39W 各 lot（良品 bin 实际是 **BIN250**，JB 明确给出 good
 
 ## P0-4 「good bin 是多少」被 lot 概况表劫持，答非所问
 
+**状态：✅ Cursor 已修（2026-07-12，工作区待 commit）** — `isGoodBinValueQuestion` + `good_bin_value` mode + `tryRunGoodBinValueDirectRoute` + `buildGoodBinValueMarkdown`；黄金集零回退已复验。
+
 **证据**：`session-logs/f704996d-*.md` 第 3 轮。问「**DR41803.1Y 中的 good bin 是多少**」，直出整套 lot 概况（机台表 + 探针卡表 + 良率表 + 全 0 DUT 大表），从头到尾没答 good bin。用户**原句重问第二遍**，才走 LLM 路径答出「BIN250，6213 颗」（第 4 轮回答本身是对的）。
 
 **根因**：「good bin / 良品 bin 是多少」这类**具体字段问句**命中了 lot 概况确定性路由（问句含 lot 号 → `lot_overview`/`generic` 直出），没有更窄的谓词先行拦截。
@@ -103,6 +111,8 @@ device WA01N39W 各 lot（良品 bin 实际是 **BIN250**，JB 明确给出 good
 
 ## P1-5 device 级「测试情况」的 lot 列表尾部误挂单 lot 的 DUT 大表
 
+**状态：✅ Cursor 已修（2026-07-12，工作区待 commit）** — `shouldAppendUnderperformingDutYield` 对 `lot_listing` / `isLotListingQuestion` / `payloadCoversMultipleLots` bail。
+
 **证据**：`session-logs/f704996d-*.md`、`4649d88f-*.md` 第 1 轮。问「WA01N39W 的测试情况」（device 级），主体是正确的多 lot 列表，但尾部凭空追加了**最新单个 lot（DR41803.1Y）的 78 行 DUT 表**（还是 P0-3 的全 0 退化表）。多 lot 问题挂单 lot 明细，答非所问。
 
 **根因**：[`agentJbDeterministicReply.ts:919-928`](../pcr-ai-api/src/lib/agent/agentJbDeterministicReply.ts) `shouldAppendUnderperformingDutYield` 对 `mode === "generic"` 一律放行，device 级列表回复走 generic 时也被追加。
@@ -114,6 +124,8 @@ device WA01N39W 各 lot（良品 bin 实际是 **BIN250**，JB 明确给出 good
 ---
 
 ## P1-6 同一问题 3 分钟内两次结果不一致（5 lot vs 4 lot），列表标题误带机台
+
+**状态：✅ Cursor 已修（2026-07-12，工作区待 commit）** — `resolveJbListingScope` 不再从 history 推断 tester（仅用户句中 explicit）；`buildRecentLotsListingMarkdown` fallback 标签不再读 payload.testerId。
 
 **证据**：`4649d88f-*.md`（11:00，5 个 lot，含最新 DR41542.1H）vs `f704996d-*.md`（11:03，**只剩 4 个 lot，丢了 DR41542.1H**）。同一问句「WA01N39W 的测试情况」。且两次标题都是：
 
@@ -134,6 +146,8 @@ device WA01N39W 各 lot（良品 bin 实际是 **BIN250**，JB 明确给出 good
 ---
 
 ## P1-7 总结解读跨温度层（passId）直接对比「最好/最差」，甚至下因果结论
+
+**状态：✅ Cursor 已修（2026-07-12，工作区待 commit）** — `BRIEF_COMMENTARY_SYSTEM` 增补 pass/温度层三条硬规则。
 
 **证据**：
 - `minimax-test-bef05547`（修复后）：解读写「最佳组合为 8041-03 配 b3uflex25（99.79%）；最差为 8041-02 配 b3uflex13（95.46%）」——前者是 **pass3（高温）**、后者是 **pass1（常温）**，跨温度直接排名。
@@ -157,10 +171,14 @@ P0-1 的表标题带上温度语义后，模型犯错空间也会同步缩小。
 
 ### 8a. `query_jb_bins(cardId)` 返回 count=0 但 `recentLotsByTestEnd` 有 lot，随后 125.9s 空转
 
+**状态：⏭ 未在本轮复验** — 2026-07-10 `resolveJbListingScope`（cardId 优先）可能已覆盖；需真库重放「9440-03 卡的测试情况」。
+
 **证据**：`session-logs/8e98720b-*.md` 第 2 轮。问「9440-03 卡的测试情况」：`query_jb_bins(cardId:"9440-03")` 返回 `count:0, passIdsPresent:[]` 但 `recentLotsByTestEnd` 含 NF12595.1A（该卡明明测过 slot9）；模型接着又发起一次 device 查询也是 0 行，全程 **125.9s**。
 2026-07-10 的 [`HANDOFF_CURSOR_JB_CARD_LISTING_SCOPE_2026-07-10.md`](HANDOFF_CURSOR_JB_CARD_LISTING_SCOPE_2026-07-10.md)（`resolveJbListingScope`，cardId 优先）**可能已覆盖**此场景——请先在当前 main 上重放该问句：已修则在该 handoff 的回归清单里勾掉；未修则排查 cardId 查询谓词为何 0 行（大小写/TRIM/时间窗）。
 
 ### 8b. 同一会话同一 lot 的 DUT 大表重复输出两次
+
+**状态：⏭ 观察（P0-4 + P1-5 修完后应自然消失，未单独加 session 去重兜底）
 
 **证据**：`f704996d-*.md`：第 1 轮（device 测试情况）与第 3 轮（good bin 问句被劫持）各输出一遍 DR41803.1Y 的 78 行 DUT 表。P0-4 + P1-5 修复后此场景自然消失；如仍想兜底，可在 `tryAppendUnderperformingDutSection` 里记录 session 内已输出过的 `(lot, pass)`，重复时改为一行「（各 DUT 良率表见上文，如需重发请说明）」。**优先级最低，前两项修完先观察。**
 
@@ -181,8 +199,11 @@ P0-1 的表标题带上温度语义后，模型犯错空间也会同步缩小。
 
 ## 完成标准
 
-- [ ] `npm run typecheck` + `npm test` 全绿（含新增用例）
-- [ ] 黄金集路由零回退（`routing-golden`，涉及 P0-4）
-- [ ] 本地 dummy 冒烟：本文各条目「验收」问句逐条过
-- [ ] 更新本文件：每条目标注 ✅/⏭ 与 commit hash
-- [ ] 真库注意：P0-2/P0-3 的 goodBins 口径与 P2-8a 需要真库复验（本轮全部证据来自本地 Dummy）
+- [x] `npm run typecheck` 通过
+- [x] 相关新增/改动用例全绿（`agentJbDeterministicReply` / `agentUnderperformingDutView` / `lotUnderperformingDuts` / `probeCardTesterPerformance` / `agentEval` 黄金集）
+- [ ] `npm test` **全量**全绿 — 仍有 **5 个已知本地预置失败**（`jbRouteResolver`×2 因 `runtime-config.json` flag 开；`agentLoop` semantic dispatch×1；`agentStream`×2），与本次改动无关
+- [x] 黄金集路由零回退（`routing-golden`，P0-4）
+- [ ] 本地 dummy 冒烟：各条目验收问句逐条人工过（待部署前）
+- [x] 更新本文件：每条目标注 ✅/⏭
+- [ ] commit hash（工作区已改，**待用户 commit**）
+- [ ] 真库复验：P0-2/P0-3 goodBins 口径、P2-8a cardId count=0
