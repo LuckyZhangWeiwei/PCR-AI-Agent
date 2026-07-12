@@ -4,7 +4,7 @@
  * hover tooltips, legend, and statistics sidebar.
  */
 
-import type { DieEntry } from "./infWaferMap.js";
+import type { DieEntry } from "./infWaferMapGeometry.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 

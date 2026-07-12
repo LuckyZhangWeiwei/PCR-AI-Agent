@@ -5,18 +5,20 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { parseInf } from "../src/lib/infParser.js";
 import {
+  decodePsbn,
+  findPsbn,
+  findAllSmWaferPasses,
+  infNotchAngleToSvg,
+  readDieGeometry,
+} from "../src/lib/infWaferMap/infWaferMapGeometry.js";
+import {
   buildPassIdWaferMapSpecs,
   buildStandardWaferMapPassSpecs,
   buildWaferMapPassSpecs,
-  decodePsbn,
   describePassLayer,
-  findPsbn,
   findSegmentedPassLayers,
   getDiesForWaferMapSpec,
-  infNotchAngleToSvg,
-  readDieGeometry,
-} from "../src/lib/infWaferMap.js";
-import { findAllSmWaferPasses } from "../src/lib/infWaferMap.js";
+} from "../src/lib/infWaferMap/infWaferMapPassSpecs.js";
 
 const fixture = path.join(
   path.dirname(fileURLToPath(import.meta.url)),

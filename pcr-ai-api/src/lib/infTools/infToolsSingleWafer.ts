@@ -4,20 +4,21 @@
  */
 
 import {
-  getDiesForPassId,
-  getDiesForWaferMapSpec,
-  buildWaferMapPassSpecs,
   findAllSmWaferPasses,
   findSmWaferPassesForId,
   buildDieMapForSmWaferPass,
   buildDieMapForFinalFlow,
-  computeSiteStats,
-  buildAsciiMap,
   readPossibleDieCoords,
   countPossibleDie,
   type DieEntry,
-} from "../infWaferMap.js";
-import { generateWaferMapHtml, generateDutBinMapHtml, type WaferMapPass } from "../infWaferMapHtml.js";
+} from "../infWaferMap/infWaferMapGeometry.js";
+import {
+  getDiesForPassId,
+  getDiesForWaferMapSpec,
+  buildWaferMapPassSpecs,
+} from "../infWaferMap/infWaferMapPassSpecs.js";
+import { computeSiteStats, buildAsciiMap } from "../infWaferMap/infWaferMapCalculate.js";
+import { generateWaferMapHtml, generateDutBinMapHtml, type WaferMapPass } from "../infWaferMap/infWaferMapHtml.js";
 import { detectClusters, classifyClusterShapes } from "./infClusterDetector.js";
 import {
   loadInfWafer,

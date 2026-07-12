@@ -3,8 +3,8 @@
  * Port of ClusterDetector.cs from WaferMind.Tools.Inf.
  */
 
-import type { DieEntry } from "../infWaferMap.js";
-import { euclidean } from "../infWaferMap.js";
+import type { DieEntry } from "../infWaferMap/infWaferMapGeometry.js";
+import { euclidean } from "../infWaferMap/infWaferMapCalculate.js";
 
 export type ClusterResult = {
   clusterId: number;

@@ -8,13 +8,13 @@ import { fileURLToPath } from "node:url";
 import { parseInf } from "../infParser.js";
 import { infcontrolLayerBinsUseDummy } from "../infcontrol/infcontrolLayerBinDummy.js";
 import {
-  calculateWafer,
   decodePsbn,
   findPsbn,
-  getDiesForPassId,
   type DieEntry,
   type WaferResult,
-} from "../infWaferMap.js";
+} from "../infWaferMap/infWaferMapGeometry.js";
+import { getDiesForPassId } from "../infWaferMap/infWaferMapPassSpecs.js";
+import { calculateWafer } from "../infWaferMap/infWaferMapCalculate.js";
 import { buildInfPath, buildInfLotDir } from "../buildInfPath.js";
 import { listWaferInfPathsInLotDir } from "../outputSiteBinByLot.js";
 import type { InfBlock } from "../infParser.js";

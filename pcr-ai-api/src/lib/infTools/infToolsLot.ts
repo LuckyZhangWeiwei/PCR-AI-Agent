@@ -6,18 +6,18 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
-  getDiesForPassId,
   buildDieMapForFinalFlow,
   readPossibleDieCoords,
   type DieEntry,
   type WaferResult,
-} from "../infWaferMap.js";
+} from "../infWaferMap/infWaferMapGeometry.js";
+import { getDiesForPassId } from "../infWaferMap/infWaferMapPassSpecs.js";
 import {
   generateWaferMapHtml,
   generateLotHeatmapHtml,
   generateSlotTrendHtml,
   type WaferMapPass,
-} from "../infWaferMapHtml.js";
+} from "../infWaferMap/infWaferMapHtml.js";
 import { detectClusters } from "./infClusterDetector.js";
 import {
   loadLotWafers,
