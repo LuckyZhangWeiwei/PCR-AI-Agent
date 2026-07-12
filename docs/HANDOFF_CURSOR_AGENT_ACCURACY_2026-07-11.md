@@ -205,5 +205,6 @@ P0-1 的表标题带上温度语义后，模型犯错空间也会同步缩小。
 - [x] 黄金集路由零回退（`routing-golden`，P0-4）
 - [ ] 本地 dummy 冒烟：各条目验收问句逐条人工过（待部署前）
 - [x] 更新本文件：每条目标注 ✅/⏭
-- [ ] commit hash（工作区已改，**待用户 commit**）
-- [ ] 真库复验：P0-2/P0-3 goodBins 口径、P2-8a cardId count=0
+- [x] commit **`ee48ab2`** 已 push
+- [x] 真库 REST 初验 — 见 [`HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-07-12_AGENT_ACCURACY.md`](HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-07-12_AGENT_ACCURACY.md)
+- [ ] 真库 Agent SSE — **待远程 pm2 reload `ee48ab2` 后复验**（本轮 1/4 SSE pass，blocked on deploy）

@@ -1,0 +1,150 @@
+# Agent accuracy + probe-card perf 真库验证 2026-07-12T01:52:08.818Z
+本地 repo HEAD: ee48ab2（远程是否 pm2 reload 此 commit 需对照行为）
+API: http://10.192.130.89:30008
+Agent model: deepseek-ai/DeepSeek-V4-Flash
+
+Health: {"status":"ok","service":"pcr-ai-api","agentEnabled":true,"agentJbDeterministicSummary":true,"agentJbCacheVersion":6}
+
+## REST — lot-underperforming-duts 与 JB 良率对齐（P0-2/P0-3）
+
+### Lot NF12595.1A
+  device=WA02P87K probeCardType=9440
+  DUT pass1 lotOverall yieldPct=75.2
+  ✅ pass1 baseline > 0%
+
+### Lot DR41803.1Y
+  device=WA01N39W probeCardType=6081
+  DUT pass1 lotOverall yieldPct=96.8
+  ✅ pass1 baseline > 0%
+
+### Lot NF12499.1N
+  device=WA03P02G probeCardType=8041
+  DUT pass1 lotOverall yieldPct=95.1
+  ✅ pass1 baseline > 0%
+
+REST 抽样: 3/3 lot pass1 baseline>0%
+
+## Agent SSE 场景
+
+### P0-4-goodbin session=v-acc-P0-4-goodbin-e7d4c6d2-cc25-4f59-80b9-cab1be77847a
+FAIL
+```
+## 实测数据
+
+**DR41803.1Y** 测试机台
+
+| 批次 lot | 机台 TESTERID | 本批出现过的机台 |
+|---|---|---|
+| DR41803.1Y | b3j75051 | b3j75051, b3j75053 |
+
+**各测试层探针卡**
+
+| 测试层 | passId | 卡号 | 同层中途换卡 |
+|---|---:|---|---|
+| pass1 | 1 | 6081-04 | 否 |
+| pass3 | 3 | 6081-06 | 否 |
+
+**分测试层（sort）批次良率**
+
+| 测试层 | passId | 片数 | 总die | 坏die | 良率% |
+|---|---:|---:|---:|---:|---:|
+| pass1 | 1 | 25 | 160675 | 5148 | 96.8% |
+| pass3 | 3 | 25 | 155878 | 4 | 100% |
+
+**DR41803.1Y**（WA01N39W） 各片良率（按测试层分列）
+
+| Slot | pass1 良率% | pass3 良率% | 坏die合计 |
+|---:|---:|---:|---:|
+| 1 | 96.17% | 100% | 246 |
+| 2 | 95.95% | 100% | 260 |
+| 3 | 96.95% | 10
+```
+
+### P1-5-device-listing session=v-acc-P1-5-device-listing-f7edf4d3-64f9-4724-b645-19b3d26c7283
+FAIL
+```
+## 实测数据
+
+**测试 lot 列表（device=WA01N39W）（共 213 个 lot，下表列前 50 个）**
+
+| # | Lot | Device | 测试结束 | 片数 | 数据来源 |
+|---:|---|---|---|---:|---|
+| 1 | DR43143.1R | WA01N39W | 2026-07-12 | 25 | JB STAR |
+| 2 | DR43140.1N | WA01N39W | 2026-07-12 | 25 | JB STAR |
+| 3 | DR43370.1W | WA01N39W | 2026-07-12 | 18 | JB STAR |
+| 4 | DR43145.1A | WA01N39W | 2026-07-11 | 18 | JB STAR |
+| 5 | DR43594.1X | WA01N39W | 2026-07-11 | 3 | JB STAR |
+| 6 | DR43366.1A | WA01N39W | 2026-07-11 | 21 | JB STAR |
+| 7 | DR43363.1Y | WA
+```
+
+### P2-8a-cardId session=v-acc-P2-8a-cardId-08bc5b6c-54a9-47de-b214-4f2b816101c1
+PASS
+```
+好的，我来查一下这张卡在 JB STAR 和 Yield Monitor 两侧的测试情况。
+
+## 实测数据
+
+**分测试层（sort）批次良率**
+
+| 测试层 | passId | 片数 | 总die | 坏die | 良率% |
+|---|---:|---:|---:|---:|---:|
+| pass1 | 1 | 9 | 10368 | 451 | 95.65% |
+
+**各测试层探针卡**
+
+| 测试层 | passId | 卡号 | 同层中途换卡 |
+|---|---:|---|---|
+| pass1 | 1 | 9440-03 | 否 |
+
+**探针卡 9440-03 坏 die 排行（lot TR24425.1A）**
+
+| BIN | 坏 die 颗数 |
+|---|---|
+| BIN6 | 100 |
+| BIN4 | 76 |
+| BIN13 | 62 |
+| BIN8 | 49 |
+| BIN3 | 38 |
+| BIN10 | 30 |
+| BIN111 | 28 |
+| BIN9 | 18 |
+| BIN5 | 13 |
+| BIN14 | 10 |
+
+```
+
+### Q5-probe-card-combo session=v-acc-Q5-probe-card-combo-797ae5bb-f3de-4a40-86e7-08f70364906f
+FAIL
+```
+## 实测数据
+
+**各探针卡坏 die 汇总（lot NF13524.1F）**
+
+| 探针卡 (CARDID) | 总坏 die 颗数 | 主要坏 BIN（前 3） |
+|---|---|---|
+| 8041-04 | 169 | BIN40×83, BIN175×40, BIN6×36 |
+
+**各测试层探针卡**
+
+| 测试层 | passId | 卡号 | 同层中途换卡 |
+|---|---:|---|---|
+| pass3 | 3 | 8041-04 | 否 |
+
+> *所有数据只包含 first test，不包含 Auto retest*
+
+## 分析结论
+
+### 数据解读
+本批次仅一张探针卡8041-04用于pass3，总坏die 169颗，关键坏BIN为BIN40（83颗，占比49%），其次BIN175（40颗）和BIN6（36颗），无其他卡或片间对比，机台b3uflex21且未中途换卡。
+
+### 专业建议
+1. **Wafer Test**：查pass3中BIN40对应测试项（DC/AC参数），判定tester稳定性或工艺偏移；对比同device其他lot pass3的BIN40比例排除机台系统性。
+2. **Probe Card**：检视8041-04针痕一致性与针压记录，BIN175/6偏高可能暗示接触问题；检查清卡周期及overdrive设定对高坏
+```
+
+## Summary
+REST baseline>0%: 3/3
+Agent SSE: 1/4 passed
+
+Note: Agent B 路 goodBins payload 修复需远程 pm2 reload 至 commit ee48ab2 后完全生效。
