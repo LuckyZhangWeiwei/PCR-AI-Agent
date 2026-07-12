@@ -914,6 +914,24 @@ export function isSlotPassYieldQuestion(text: string): boolean {
   return false;
 }
 
+/**
+ * lot 概况已含服务端「警示 / 规律识别」时跳过慢 LLM 解读。
+ * 典型路径：测试情况 → JB 表 + DUT 追加后总耗时易超客户端超时；规律节已含工程提示。
+ */
+export function lotOverviewSkipsCommentaryAfterAlerts(
+  mode: JbReplyMode,
+  tablesMarkdown: string,
+  payload: Record<string, unknown>
+): boolean {
+  if (mode !== "lot_overview") return false;
+  if (tablesMarkdown.includes("### 🔍 警示") || tablesMarkdown.includes("### 警示")) {
+    return true;
+  }
+  const clusterMd = payload["clusteredBadBinAlertsMarkdown"];
+  if (typeof clusterMd === "string" && clusterMd.trim()) return true;
+  return false;
+}
+
 /** 服务端表已覆盖用户问题时，不再调 LLM 解读（避免超时）。lot_overview / per_slot_bin_ranking / bad_bin_ranking 需要工程分析，不在此列。 */
 export function jbReplySkipsCommentaryLlm(mode: JbReplyMode): boolean {
   return (

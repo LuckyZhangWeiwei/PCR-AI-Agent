@@ -60,6 +60,7 @@ import {
   isBinCardAttributionQuestion,
   isTesterMachineQuestion,
   jbReplySkipsCommentaryLlm,
+  lotOverviewSkipsCommentaryAfterAlerts,
   parseJbToolPayload,
   payloadCoversMultipleLots,
   resolveJbToolPayload,
@@ -108,7 +109,11 @@ import {
   formatAllDutsHighlightMarkdown,
 } from "./agentUnderperformingDutView.js";
 import type { PassUnderperformingDutsResult } from "../lotUnderperformingDuts.js";
-import { runLotUnderperformingDuts, buildGoodBinsByPassFromToolPayload } from "../lotUnderperformingDutsResolve.js";
+import {
+  runLotUnderperformingDuts,
+  buildGoodBinsByPassFromToolPayload,
+  resolvePassIdsForDutAnalysis,
+} from "../lotUnderperformingDutsResolve.js";
 import { buildScopeLabelFromAggregateArgs, findLastToolCallArgs, inferDeviceFromText, inferDeviceFromHistory, inferLotFromHistory, inferRecentMonthsWindow, jbListingScopeLabel, resolveJbListingScope } from "./agentQueryScope.js";
 import { deviceBaseMask } from "../deviceMask.js";
 import {
@@ -1030,9 +1035,14 @@ async function emitDeterministicJbTablesReply(
   if (!tables?.trim()) return false;
 
   const mode = decision.mode;
+  const skipCommentaryForAlerts = lotOverviewSkipsCommentaryAfterAlerts(
+    mode,
+    tables,
+    payload
+  );
   const withCommentary =
     options?.withCommentaryLlm ??
-    !jbReplySkipsCommentaryLlm(mode);
+    (!jbReplySkipsCommentaryLlm(mode) && !skipCommentaryForAlerts);
 
   const tablesBlock = stampFirstTestNote(`${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${tables}`);
   emit({ type: "status", message: "正在输出服务端预计算表…" });
@@ -1061,7 +1071,9 @@ async function emitDeterministicJbTablesReply(
     // would move the section to commentaryMarkdown where tables are CSS-hidden).
     const tableOnlyNote =
       `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n` +
-      `*以上为服务端实测表。如需某 BIN 逐片趋势或晶圆图，请继续提问。*`;
+      (skipCommentaryForAlerts
+        ? `*以上含服务端警示与规律识别，以及各 DUT 良率（如有）。如需某 BIN 逐片趋势或晶圆图，请继续提问。*`
+        : `*以上为服务端实测表。如需某 BIN 逐片趋势或晶圆图，请继续提问。*`);
     const full = tablesBlock + dutYieldSection + tableOnlyNote;
     emit({ type: "text", delta: tableOnlyNote });
     appendMessages(sessionId, { role: "assistant", content: full });
@@ -2279,9 +2291,11 @@ export async function tryAppendUnderperformingDutSection(
   // 绝不打断已流出的主概况（本函数在 emitDeterministicJbTablesReply 主表之后调用）。
   try {
     const goodBinsByPassId = buildGoodBinsByPassFromToolPayload(payload);
+    const passIds = resolvePassIdsForDutAnalysis(undefined, payload);
     const resp = await runLotUnderperformingDuts({
       lot,
       device,
+      passIds,
       ...(goodBinsByPassId ? { goodBinsByPassId } : {}),
     });
     const passes = resp.passes ?? [];

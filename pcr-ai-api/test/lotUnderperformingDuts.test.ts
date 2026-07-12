@@ -13,6 +13,7 @@ import {
   resolveDeviceForLot,
   resolveProbeCardTypeForLot,
   buildGoodBinsByPassFromJbRows,
+  resolvePassIdsForDutAnalysis,
 } from "../src/lib/lotUnderperformingDutsResolve.js";
 
 function pass(passId: number, bins: SiteBinPass["bins"]): SiteBinPass {
@@ -269,4 +270,12 @@ describe("GET /inf-analysis/lot-underperforming-duts route", () => {
 
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
+});
+
+test("resolvePassIdsForDutAnalysis: passIdsPresent overrides default 1/3/5", () => {
+  assert.deepEqual(resolvePassIdsForDutAnalysis(undefined, { passIdsPresent: [1, 3, 4] }), [
+    1, 3, 4,
+  ]);
+  assert.deepEqual(resolvePassIdsForDutAnalysis([3, 1]), [1, 3]);
+  assert.deepEqual(resolvePassIdsForDutAnalysis(), [1, 3, 5]);
 });

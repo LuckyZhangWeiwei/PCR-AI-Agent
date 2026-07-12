@@ -370,6 +370,31 @@ export async function fetchLotSiteBinPasses(params: {
   };
 }
 
+const DEFAULT_DUT_PASS_IDS = [1, 3, 5];
+
+/**
+ * DUT 良率取数 pass 列表：显式参数优先；否则读 query_jb_bins 的 passIdsPresent
+ *（避免 lot 仅有 pass4 等非常规层时误查默认 pass5）。
+ */
+export function resolvePassIdsForDutAnalysis(
+  explicit?: number[],
+  jbPayload?: Record<string, unknown>
+): number[] {
+  if (explicit?.length) {
+    return [...new Set(explicit.map((p) => Math.round(p)))]
+      .filter((p) => Number.isFinite(p) && p > 0)
+      .sort((a, b) => a - b);
+  }
+  const present = jbPayload?.["passIdsPresent"];
+  if (Array.isArray(present) && present.length > 0) {
+    const ids = present
+      .map((p) => (typeof p === "number" ? Math.round(p) : Number(p)))
+      .filter((p) => Number.isFinite(p) && p > 0);
+    if (ids.length > 0) return [...new Set(ids)].sort((a, b) => a - b);
+  }
+  return DEFAULT_DUT_PASS_IDS;
+}
+
 export async function runLotUnderperformingDuts(params: {
   lot: string;
   device?: string;
@@ -388,7 +413,7 @@ export async function runLotUnderperformingDuts(params: {
 
   const thresholdRatio =
     params.thresholdRatio ?? parseUnderperformingThresholdRatio(undefined);
-  const passIds = params.passIds ?? [1, 3, 5];
+  const passIds = resolvePassIdsForDutAnalysis(params.passIds);
 
   const { device, lot, deviceResolvedFromJb } = await resolveDeviceLotFromQuery(
     lotTrimmed,

@@ -27,6 +27,7 @@ import {
   isCardTypeLevelOverviewQuestion,
   resolveJbToolPayload,
   shouldAppendUnderperformingDutYield,
+  lotOverviewSkipsCommentaryAfterAlerts,
   isGoodBinValueQuestion,
   isProbeCardTesterPerformanceQuestion,
   buildGoodBinValueMarkdown,
@@ -1016,5 +1017,32 @@ describe("stampFirstTestNote", () => {
   });
   it("空串原样返回，不加脚注", () => {
     assert.equal(stampFirstTestNote(""), "");
+  });
+});
+
+describe("lotOverviewSkipsCommentaryAfterAlerts", () => {
+  it("lot_overview + 警示节 → skip LLM commentary", () => {
+    assert.equal(
+      lotOverviewSkipsCommentaryAfterAlerts(
+        "lot_overview",
+        "overview\n\n### 🔍 警示 / 规律识别\n\n| BIN |",
+        {}
+      ),
+      true
+    );
+    assert.equal(
+      lotOverviewSkipsCommentaryAfterAlerts("lot_overview", "overview only", {
+        clusteredBadBinAlertsMarkdown: "| BIN | pass1 |",
+      }),
+      true
+    );
+    assert.equal(
+      lotOverviewSkipsCommentaryAfterAlerts("lot_overview", "overview only", {}),
+      false
+    );
+    assert.equal(
+      lotOverviewSkipsCommentaryAfterAlerts("equipment", "### 🔍 警示", {}),
+      false
+    );
   });
 });
