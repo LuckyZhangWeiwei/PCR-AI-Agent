@@ -103,7 +103,7 @@ export const yieldMonitorManifestEndpoints = [
         "object (echo of applied filters plus limit; always includes typeScope: 'delta_diff' — server-fixed TYPE filter)",
       count: "number",
       rows:
-        "array of row objects (all DB columns plus dutNumber: number | null — DUT id parsed from TRIGGER_LABEL when it contains 'on dut# …', else null; plus PROBECARDTYPE: string | null — leading segment of PROBECARD before first hyphen)",
+        "array of row objects (all DB columns plus dutNumber: number | null — DUT id parsed from TRIGGER_LABEL when it contains “on dut# …”, else null; plus PROBECARDTYPE: string | null — leading segment of PROBECARD before first hyphen)",
     },
     example:
       "/api/v1/yield-monitor-triggers/v3?device=WA03P02G&timeStampBegin=2026-05-13T00:00:00.000Z&timeStampEnd=2026-05-13T23:59:59.999Z&limit=200",

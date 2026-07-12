@@ -22,4 +22,14 @@ export const apiManifest = {
     ...yieldMonitorManifestEndpoints,
   ],
   deprecatedEndpoints: [...deprecatedManifestEndpoints],
+  errorShape: {
+    error: "human-readable message",
+    code: "machine-stable code (e.g. VALIDATION_ERROR, ORACLE_QUERY_FAILED)",
+    detail: "optional extra context",
+  },
+  tracing: {
+    requestHeader: "X-Request-Id",
+    responseHeader: "X-Request-Id",
+    note: "Echo client id or server-generated UUID for log correlation.",
+  },
 } as const;
