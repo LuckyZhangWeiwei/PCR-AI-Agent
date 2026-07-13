@@ -103,13 +103,16 @@ type OracleMapRow = {
 
 /**
  * Fetch bin×DUT map from Oracle (INFCONTROL ⋈ INFLAYERMAP ⋈ INFLAYERBINLIST).
- * Multiple PASSNUM rows for the same PASSID are merged (legacy VB loop behavior).
+ * Without `keynumber`: all matching rows for the slot are merged (legacy VB loop).
+ * With `keynumber`: only that JB layer row (one KEYNUMBER).
  */
 export async function fetchSiteBinByLotFromOracle(params: {
   device: string;
   lot: string;
   slot: number;
   passIds: number[];
+  /** JB 明细一行 = 一个 KEYNUMBER；指定时只取该层 map，不合并同 slot 其它层。 */
+  keynumber?: number;
 }): Promise<SiteBinByLotData> {
   const passIds = [...new Set(params.passIds)].sort((a, b) => a - b);
   if (passIds.length === 0) return { passes: [] };
@@ -122,6 +125,14 @@ export async function fetchSiteBinByLotFromOracle(params: {
   };
   for (let i = 0; i < passIds.length; i++) {
     binds[`pass${i}`] = passIds[i]!;
+  }
+
+  const keynumberClause =
+    params.keynumber !== undefined && Number.isFinite(params.keynumber)
+      ? "  AND ic.KEYNUMBER = :keynumber\n"
+      : "";
+  if (keynumberClause) {
+    binds.keynumber = params.keynumber!;
   }
 
   const sql = `
@@ -141,7 +152,7 @@ WHERE UPPER(TRIM(ic.DEVICE)) = UPPER(:device)
   AND ic.SLOT = :slot
   AND lb.PASSID IN (${passPlaceholders.join(", ")})
   AND UPPER(TRIM(lb.PASSTYPE)) LIKE 'TEST%'
-ORDER BY lb.PASSID, lb.PASSNUM
+${keynumberClause}ORDER BY lb.PASSID, lb.PASSNUM
 `.trim();
 
   const rows = await withConnection(async (conn) => {

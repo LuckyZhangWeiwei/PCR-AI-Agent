@@ -626,7 +626,7 @@ function wafersFetchKey(wafers: InfDutWaferSpec[]): string {
   return wafers
     .map(
       (w) =>
-        `${w.device}|${w.lot}|${w.slot}|${[...w.passIds].sort((a, b) => a - b).join(",")}`
+        `${w.device}|${w.lot}|${w.slot}|${w.keynumber ?? ""}|${[...w.passIds].sort((a, b) => a - b).join(",")}`
     )
     .join(";");
 }
@@ -669,10 +669,14 @@ export function InfDutDistPanel({
         const results = await Promise.all(
           wafers.map((w) => {
             const infPath = buildInfPath(w.device, w.lot, w.slot);
-            return apiGetJson<SiteBinByLotResponse>(apiBase, SITE_BIN_BY_LOT_PATH, {
+            const params: Record<string, string> = {
               infPath,
               passId: w.passIds.join(","),
-            });
+            };
+            if (w.keynumber !== undefined) {
+              params.keynumber = String(w.keynumber);
+            }
+            return apiGetJson<SiteBinByLotResponse>(apiBase, SITE_BIN_BY_LOT_PATH, params);
           })
         );
         if (cancelled) return;

@@ -12,6 +12,8 @@ export type InfDutWaferSpec = {
   slot: number;
   passIds: number[];
   probeCardType: string;
+  /** JB 明细行 KEYNUMBER；有值时 site-bin-bylot 按层取 map，不合并同 slot 其它层。 */
+  keynumber?: number;
 };
 
 export type InfDutAnchor =
@@ -87,7 +89,10 @@ export function waferSpecFromJbRow(row: InfcontrolLayerBinV3Row): InfDutWaferSpe
   const passId = Number(row.PASSID);
   const passIds = Number.isFinite(passId) ? [passId] : [1, 3, 5];
   const probeCardType = probeCardTypeFromJbRow(row);
-  return { device, lot, slot, passIds, probeCardType };
+  const kn = Number(row.KEYNUMBER);
+  const keynumber =
+    Number.isFinite(kn) && kn > 0 ? Math.trunc(kn) : undefined;
+  return { device, lot, slot, passIds, probeCardType, keynumber };
 }
 
 export function sameDeviceLot(
@@ -110,7 +115,7 @@ export function canJoinDutSelectionGroup(
   return Boolean(anchor.probeCardType) && anchor.probeCardType === candidate.probeCardType;
 }
 
-/** Detail table: multi-row selection (same Device + LOT, or same Device + ProbeCardType across LOTs). */
+/** Detail table: multi-row selection — each row is one JB layer; overlay only when multiple selected. */
 export function buildInfDutCtxFromDetailListIndices(
   indices: Iterable<number>,
   listRows: InfcontrolLayerBinV3Row[] | undefined,
@@ -119,7 +124,7 @@ export function buildInfDutCtxFromDetailListIndices(
   const indexList = [...indices];
   if (indexList.length === 0 || !listRows?.length) return null;
 
-  const waferMap = new Map<string, InfDutWaferSpec>();
+  const wafers: InfDutWaferSpec[] = [];
   const goodBinNumbers = new Set<number>([HARD_GOOD_BIN]);
   const lots = new Set<string>();
   let device = "";
@@ -139,7 +144,7 @@ export function buildInfDutCtxFromDetailListIndices(
       return null;
     }
     lots.add(spec.lot);
-    mergePassIdsIntoMap(waferMap, spec);
+    wafers.push(spec);
     for (const n of collectGoodBinNumbersFromJbRow(row)) goodBinNumbers.add(n);
     const extra = goodBinNumbersFromDetailRow(
       row as unknown as Record<string, unknown>
@@ -147,11 +152,12 @@ export function buildInfDutCtxFromDetailListIndices(
     if (extra) for (const n of extra) goodBinNumbers.add(n);
   }
 
-  const wafers = [...waferMap.values()].sort((a, b) => a.slot - b.slot);
   if (!wafers.length || !device || !lot) return null;
 
-  const slots = wafers.map((w) => w.slot).join(", ");
+  const slots = [...new Set(wafers.map((w) => w.slot))].sort((a, b) => a - b).join(", ");
   const lotLabel = lots.size > 1 ? `${lots.size} 个 LOT` : `LOT ${lot}`;
+  const layerLabel =
+    wafers.length === 1 ? "1 层" : `${wafers.length} 层（叠加）`;
   return {
     wafers,
     device,
@@ -159,7 +165,7 @@ export function buildInfDutCtxFromDetailListIndices(
     goodBinNumbers,
     detailListIndices: indexList,
     anchor,
-    selectionSummary: `${wafers.length} 片 · ${lotLabel} · Slot ${slots}`,
+    selectionSummary: `${layerLabel} · ${lotLabel} · Slot ${slots}`,
   };
 }
 

@@ -312,6 +312,49 @@ describe("GET /inf-analysis/site-bin-bylot route", () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
+  test("200 dummy keynumber returns layer-scaled dieCount", async () => {
+    process.env.NODE_ENV = "test";
+    const { createApp } = await import("../src/app.js");
+    const { createServer } = await import("node:http");
+    const app = createApp();
+    const server = createServer(app);
+    await new Promise<void>((resolve, reject) => {
+      server.listen(0, "127.0.0.1", () => resolve());
+      server.on("error", reject);
+    });
+    const addr = server.address() as import("node:net").AddressInfo;
+    const base = `http://127.0.0.1:${addr.port}/api/v1`;
+    const q1 = new URLSearchParams({
+      infPath: SITE_BIN_BY_LOT_DUMMY_CANONICAL_INF_PATH,
+      passId: "1",
+      keynumber: "1001",
+    });
+    const q2 = new URLSearchParams({
+      infPath: SITE_BIN_BY_LOT_DUMMY_CANONICAL_INF_PATH,
+      passId: "1",
+      keynumber: "1002",
+    });
+
+    const r1 = await fetch(`${base}/inf-analysis/site-bin-bylot?${q1}`);
+    const r2 = await fetch(`${base}/inf-analysis/site-bin-bylot?${q2}`);
+    assert.equal(r1.status, 200);
+    assert.equal(r2.status, 200);
+    const b1 = (await r1.json()) as {
+      keynumber: number;
+      passes: { bins: { duts: { dieCount: number }[] }[] }[];
+    };
+    const b2 = (await r2.json()) as {
+      passes: { bins: { duts: { dieCount: number }[] }[] }[];
+    };
+    assert.equal(b1.keynumber, 1001);
+    const die1 = b1.passes[0]?.bins[0]?.duts[0]?.dieCount ?? 0;
+    const die2 = b2.passes[0]?.bins[0]?.duts[0]?.dieCount ?? 0;
+    assert.ok(die1 > 0 && die2 > 0);
+    assert.notEqual(die1, die2);
+
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
   test("200 legacy lot aggregation without probeCardType (directory scan)", async () => {
     process.env.NODE_ENV = "test";
     const { createApp } = await import("../src/app.js");

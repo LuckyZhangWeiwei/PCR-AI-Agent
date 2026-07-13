@@ -1773,7 +1773,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
             onClick={() => setShowDetail((s) => !s)}
           >
             <span style={{ fontSize: 10, opacity: 0.6 }}>{showDetail ? "▼" : "▶"}</span>
-            共 {list?.count ?? 0} 条（含 PROBECARDTYPE / Yield%）· 勾选多行叠加 DUT 分布（须同一 Device + LOT，或同一 Device + 相同探针卡类型）
+            共 {list?.count ?? 0} 条（含 PROBECARDTYPE / Yield%）· 勾选一行看该层 DUT×BIN；多行叠加（须同一 Device + LOT，或同一 Device + 相同探针卡类型）
             {detailSelectedListIndices.size > 0 ? (
               <span style={{ marginLeft: 8, color: "var(--accent)" }}>
                 已选 {detailSelectedListIndices.size} 行
@@ -1793,7 +1793,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
               {Array.from(detailSelectedListIndices).sort().map((idx) => {
                 const row = detailRows[idx];
                 if (!row) return null;
-                const label = `${row.LOT} / slot ${row.SLOT} / ${row.CARDID}`;
+                const label = `${row.LOT} / slot ${row.SLOT} / ${row.CARDID} / ${row["Yield%"]}`;
                 return (
                   <div
                     key={idx}

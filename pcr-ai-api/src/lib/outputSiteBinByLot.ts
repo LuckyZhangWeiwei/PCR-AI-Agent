@@ -18,6 +18,10 @@ import {
   type SiteBinWaferRef,
 } from "./siteBinByLotWaferResolve.js";
 import type { SiteBinTestEndWindow } from "./siteBinByLotTestEndWindow.js";
+import {
+  siteBinByLotUseDummy,
+  tryResolveSiteBinByLotDummy,
+} from "./outputSiteBinByLotDummy.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -45,6 +49,30 @@ export class OutputSiteBinByLotValidationError extends Error {
 export class OutputSiteBinByLotNotFoundError extends Error {
   readonly statusCode = 404;
   readonly code = "LOT_INF_NOT_FOUND";
+}
+
+export type RunSiteBinForWaferOpts = {
+  /** JB 明细行 KEYNUMBER：按层取 Oracle map，不用 INF 整片合并图。 */
+  keynumber?: number;
+};
+
+/** Optional `keynumber` / `key_number` for single-wafer layer-scoped DUT×BIN. */
+export function parseOptionalKeynumber(raw: unknown): number | undefined {
+  const s =
+    typeof raw === "string"
+      ? raw
+      : Array.isArray(raw) && typeof raw[0] === "string"
+      ? raw[0]
+      : "";
+  const t = s.trim();
+  if (!t) return undefined;
+  const n = Number(t);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) {
+    throw new OutputSiteBinByLotValidationError(
+      "Invalid query parameter: keynumber (must be a positive integer)"
+    );
+  }
+  return n;
 }
 
 function resolvePerlScriptPath(): string {
@@ -317,12 +345,56 @@ async function runPerlForWafers(
 
 /**
  * Single wafer: Perl/INF first; on missing/unreadable/Perl failure → Oracle map fallback.
+ * With `keynumber`: skip INF (iBinCodeLast 为整片合并态)，直接 Oracle 按 KEYNUMBER 取该层 map。
  */
 export async function runSiteBinForWafer(
   device: string,
   wafer: SiteBinWaferRef,
-  passIds: number[]
+  passIds: number[],
+  opts?: RunSiteBinForWaferOpts
 ): Promise<RunSiteBinWaferResult> {
+  const keynumber = opts?.keynumber;
+  const layerScoped =
+    keynumber !== undefined && Number.isFinite(keynumber) && keynumber > 0;
+
+  if (layerScoped) {
+    const notices: string[] = [
+      `Layer-scoped map for KEYNUMBER=${keynumber} (JB detail row; not merged wafer map)`,
+    ];
+    if (siteBinByLotUseDummy()) {
+      const dummyData = tryResolveSiteBinByLotDummy(
+        wafer.infPath,
+        passIds,
+        keynumber
+      );
+      if (dummyData !== null) {
+        return { data: dummyData, source: "inf", notices };
+      }
+    }
+    if (!oracleMapFallbackEnabled()) {
+      throw new InfSiteBinUnavailableError(
+        wafer.infPath,
+        "Layer-scoped site-bin requires Oracle map fallback (SITE_BIN_ORACLE_FALLBACK) when INF dummy is off"
+      );
+    }
+    const dev =
+      device.trim() || parseInfWaferCoordsFromPath(wafer.infPath)?.device || "";
+    if (!dev) {
+      throw new InfSiteBinUnavailableError(
+        wafer.infPath,
+        "Cannot resolve device for layer-scoped Oracle map (pass device= or use standard infPath layout)"
+      );
+    }
+    const data = await fetchSiteBinByLotFromOracle({
+      device: dev,
+      lot: wafer.lot,
+      slot: wafer.slot,
+      passIds,
+      keynumber,
+    });
+    return { data, source: "oracle", notices };
+  }
+
   const notices: string[] = [];
   const readable = await infPathReadable(wafer.infPath);
 

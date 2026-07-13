@@ -5,6 +5,7 @@ import {
   InfSiteBinUnavailableError,
   OutputSiteBinByLotNotFoundError,
   OutputSiteBinByLotValidationError,
+  parseOptionalKeynumber,
   parsePassIdsFromQuery,
   runOutputSiteBinByLotForDevice,
   runOutputSiteBinByLotForLot,
@@ -373,8 +374,12 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
 
   // ── single wafer ──────────────────────────────────────────────────────────
   let infPath: string;
+  let keynumber: number | undefined;
   try {
     infPath = validateInfPath(firstQueryString(infRaw));
+    keynumber = parseOptionalKeynumber(
+      req.query.keynumber ?? req.query.key_number
+    );
   } catch (e) {
     if (e instanceof OutputSiteBinByLotValidationError) {
       return sendAgentError(res, 400, e.code, e.message);
@@ -383,12 +388,13 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
   }
 
   try {
-    const dummyData = tryResolveSiteBinByLotDummy(infPath, passIds);
+    const dummyData = tryResolveSiteBinByLotDummy(infPath, passIds, keynumber);
     if (dummyData !== null) {
       return res.json({
         meta: { apiVersion: "1", requestId: reqId(req), summary: SITE_BIN_BY_LOT_SUMMARY },
         infPath,
         passIds,
+        ...(keynumber !== undefined ? { keynumber } : {}),
         ...dummyData,
       });
     }
@@ -408,13 +414,15 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
     const { data, source, notices } = await runSiteBinForWafer(
       deviceForWafer,
       { lot: coords.lot, slot: coords.slot, infPath },
-      passIds
+      passIds,
+      { keynumber }
     );
 
     return res.json({
       meta: { apiVersion: "1", requestId: reqId(req), summary: SITE_BIN_BY_LOT_SUMMARY },
       infPath,
       passIds,
+      ...(keynumber !== undefined ? { keynumber } : {}),
       mapSource: source,
       ...(notices.length > 0 ? { notices } : {}),
       ...data,
