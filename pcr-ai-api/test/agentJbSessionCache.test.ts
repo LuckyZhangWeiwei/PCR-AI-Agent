@@ -1,9 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import {
-  buildDeterministicJbTables,
-  parseJbToolPayload,
-} from "../src/lib/agent/agentJbDeterministicReply.js";
+import { buildDeterministicJbTables } from "../src/lib/agent/jb/agentJbOverviewMarkdown.js";
+import { parseJbToolPayload } from "../src/lib/agent/jb/agentJbPayloadResolve.js";
 import {
   buildJbSessionCacheJson,
   serializeJbQueryResultForAgent,

@@ -14,7 +14,7 @@ import {
   isCardYieldCompareQuestion,
   isLotListingQuestion,
   isLotDetailListingQuestion,
-} from "../../../src/lib/agent/agentJbDeterministicReply.js";
+} from "../../../src/lib/agent/jb/agentJbQuestionClassifiers.js";
 import { formatCardByPassIdMarkdown } from "../../../src/lib/agent/jb/agentJbHistoryCompact.js";
 import { toolStatusLabel } from "../../../src/lib/agent/agentLoop.js";
 import {

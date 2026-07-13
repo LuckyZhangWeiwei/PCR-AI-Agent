@@ -1,6 +1,6 @@
 // src/lib/agent/jbIntentClassifier.ts
 import type { AgentConfig } from "./agentConfig.js";
-import { type JbReplyMode } from "./agentJbDeterministicReply.js";
+import { type JbReplyMode } from "./jb/agentJbQuestionClassifiers.js";
 import { type JbRouteParams } from "./jbRouteResolver.js";
 
 const VALID_MODES: ReadonlySet<string> = new Set([

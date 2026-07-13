@@ -11,13 +11,13 @@ import {
   buildBriefCommentaryUserMessage,
   buildDeterministicJbTables,
   buildEngineeringContextFromPayload,
-  detectJbReplyMode,
   DETERMINISTIC_TABLES_HEADER,
-} from "../dist/lib/agent/agentJbDeterministicReply.js";
+} from "../dist/lib/agent/jb/agentJbOverviewMarkdown.js";
+import { detectJbReplyMode } from "../dist/lib/agent/jb/agentJbQuestionClassifiers.js";
 import {
   buildJbSessionCacheJson,
   wrapJbQueryResultForAgent,
-} from "../dist/lib/agent/agentJbBinFormat.js";
+} from "../dist/lib/agent/jb/agentJbBinFormat.js";
 
 const API_BASE = (process.env.PCR_API_BASE || "http://10.192.130.89:30008").replace(
   /\/$/,

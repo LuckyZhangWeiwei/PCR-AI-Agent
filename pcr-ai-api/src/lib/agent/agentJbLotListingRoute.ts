@@ -4,7 +4,7 @@
  */
 
 import type { ChatMessage } from "./agentHistory.js";
-import { isLotListingQuestion } from "./agentJbDeterministicReply.js";
+import { isLotListingQuestion } from "./jb/agentJbQuestionClassifiers.js";
 import {
   buildAggregateJbBinsScopeArgs,
   buildLotListingQueryArgs,

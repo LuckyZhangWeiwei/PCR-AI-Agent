@@ -8,8 +8,8 @@ import { buildJbSessionCacheJson } from "./jb/agentJbBinFormat.js";
 import {
   isGoodBinValueQuestion,
   isLotOverviewQuestion,
-  parseJbToolPayload,
-} from "./agentJbDeterministicReply.js";
+} from "./jb/agentJbQuestionClassifiers.js";
+import { parseJbToolPayload } from "./jb/agentJbPayloadResolve.js";
 import { getJbToolRawJson, storeJbToolRawJson } from "./agentJbSessionCache.js";
 
 export function canRunLotOverviewDirectRoute(userText: string): boolean {

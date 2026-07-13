@@ -8,7 +8,7 @@ import { extractLotFromUserText } from "./tools/agentInfWaferMapTool.js";
 import {
   extractBinFromUserText,
   isBinLotRankingQuestion,
-} from "./agentJbDeterministicReply.js";
+} from "./jb/agentJbQuestionClassifiers.js";
 import {
   buildBinLotRankingAggregateArgs,
   inferDeviceFromHistory,

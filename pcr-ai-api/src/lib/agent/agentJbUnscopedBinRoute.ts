@@ -15,7 +15,7 @@ import {
   isBadBinRankingQuestion,
   isBinCardAttributionQuestion,
   isBinLotRankingQuestion,
-} from "./agentJbDeterministicReply.js";
+} from "./jb/agentJbQuestionClassifiers.js";
 import {
   inferDeviceFromHistory,
   inferDeviceFromText,

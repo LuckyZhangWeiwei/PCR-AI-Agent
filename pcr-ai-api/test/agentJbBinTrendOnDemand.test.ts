@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { buildDeterministicJbTables } from "../src/lib/agent/agentJbDeterministicReply.js";
+import { buildDeterministicJbTables } from "../src/lib/agent/jb/agentJbOverviewMarkdown.js";
 import { buildBinSlotTrendMarkdownOnDemand } from "../src/lib/agent/jb/agentJbBinTrend.js";
 import {
   buildJbSessionCacheJson,

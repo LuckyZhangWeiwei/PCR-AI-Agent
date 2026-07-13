@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { extractJbRouteParams, resolveJbRoute, resolveJbRouteAsync, classifyJbIntent } from "../src/lib/agent/jbRouteResolver.js";
-import { detectJbReplyMode } from "../src/lib/agent/agentJbDeterministicReply.js";
+import { detectJbReplyMode } from "../src/lib/agent/jb/agentJbQuestionClassifiers.js";
 
 test("extractJbRouteParams pulls focusBin and lot", () => {
   const p = extractJbRouteParams("NF13322.1J 哪片 bin79 最多");

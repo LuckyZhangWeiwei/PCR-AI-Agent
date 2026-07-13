@@ -4,13 +4,13 @@ import {
   isLotOverviewQuestion,
   jbReplySkipsCommentaryLlm,
   detectJbReplyMode,
-} from "../src/lib/agent/agentJbDeterministicReply.js";
+} from "../src/lib/agent/jb/agentJbQuestionClassifiers.js";
 import {
   canRunLotOverviewDirectRoute,
   jbPayloadMatchesLot,
   lotOverviewNeedsJbRecovery,
 } from "../src/lib/agent/agentJbOverviewRoute.js";
-import { buildLotOverviewTablesMarkdown } from "../src/lib/agent/agentJbDeterministicReply.js";
+import { buildLotOverviewTablesMarkdown } from "../src/lib/agent/jb/agentJbOverviewMarkdown.js";
 
 test("DR44117.1Y 整体的测试情况 is lot overview", () => {
   const q = "DR44117.1Y 整体的测试情况";

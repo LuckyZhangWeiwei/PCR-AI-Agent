@@ -20,7 +20,7 @@ import {
 import {
   parseJbToolPayload,
   resolveJbToolPayload,
-} from "./agentJbDeterministicReply.js";
+} from "./jb/agentJbPayloadResolve.js";
 
 export type WaferMapRoutePhase = "user_turn" | "after_jb_bins";
 

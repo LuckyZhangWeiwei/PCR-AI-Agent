@@ -14,7 +14,7 @@ import {
 import { detectPendingQuery } from "../src/lib/agent/agentPendingQuery.js";
 import { canRunLotListingDirectRoute } from "../src/lib/agent/agentJbLotListingRoute.js";
 import { canRunScopedBadBinDirectRoute } from "../src/lib/agent/agentJbScopedBadBinRoute.js";
-import { isBadBinRankingQuestion } from "../src/lib/agent/agentJbDeterministicReply.js";
+import { isBadBinRankingQuestion } from "../src/lib/agent/jb/agentJbQuestionClassifiers.js";
 
 describe("agentQueryScope", () => {
   it("inferTesterIdFromText maps UFLEX 24 to b3uflex24", () => {

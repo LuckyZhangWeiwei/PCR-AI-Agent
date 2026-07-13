@@ -1,4 +1,4 @@
-import type { JbReplyMode } from "../../../src/lib/agent/agentJbDeterministicReply.js";
+import type { JbReplyMode } from "../../../src/lib/agent/jb/agentJbQuestionClassifiers.js";
 
 export interface GoldenCase {
   question: string;

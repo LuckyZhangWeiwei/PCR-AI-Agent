@@ -19,7 +19,7 @@ import {
   isLotListingQuestion,
   isLotOverviewQuestion,
   isProbeCardQuestion,
-} from "./agentJbDeterministicReply.js";
+} from "./jb/agentJbQuestionClassifiers.js";
 import {
   buildAggregateJbBinsScopeArgs,
   buildJbScopeArgs,

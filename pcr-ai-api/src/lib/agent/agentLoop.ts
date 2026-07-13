@@ -33,44 +33,52 @@ import {
   formatSlotYieldMarkdownFromToolJson,
 } from "./jb/agentJbHistoryCompact.js";
 import {
-  BRIEF_COMMENTARY_SYSTEM,
-  PROBE_CARD_PERF_COMMENTARY_SYSTEM,
-  buildBriefCommentaryUserMessage,
-  buildDeterministicJbTables,
-  buildEngineeringContextFromPayload,
-  buildAggregateBinRankingMarkdown,
-  buildBinCardAggregateMarkdown,
-  buildBinDeviceAggregateMarkdown,
-  buildBinFocusedLotRankingMarkdown,
-  DETERMINISTIC_DATA_SECTION_TITLE,
-  DETERMINISTIC_COMMENTARY_SECTION_TITLE,
-  stampFirstTestNote,
   extractBinFromUserText,
   extractSlotFromUserText,
-  extractYmLotsFromHistory,
   isLotListingQuestion,
   isSingleWaferDieClusterQuestion,
   isCardTypeLevelOverviewQuestion,
   isLotOverviewQuestion,
   isLotDetailListingQuestion,
   isLotYieldRankingQuestion,
-  buildLotListingContext,
-  inferLotListingPresentation,
   isPerSlotBadBinRankingQuestion,
   isProbeCardQuestion,
   isBinCardAttributionQuestion,
   isTesterMachineQuestion,
   jbReplySkipsCommentaryLlm,
   lotOverviewSkipsCommentaryAfterAlerts,
-  buildDeterministicLotOverviewCommentary,
-  parseJbToolPayload,
   payloadCoversMultipleLots,
+  isGoodBinValueQuestion,
+  isProbeCardTesterPerformanceQuestion,
+} from "./jb/agentJbQuestionClassifiers.js";
+import {
+  extractYmLotsFromHistory,
+  buildLotListingContext,
+  inferLotListingPresentation,
+} from "./jb/agentJbListingMarkdown.js";
+import {
+  buildAggregateBinRankingMarkdown,
+  buildBinCardAggregateMarkdown,
+  buildBinDeviceAggregateMarkdown,
+  buildBinFocusedLotRankingMarkdown,
+} from "./jb/agentJbRankingMarkdown.js";
+import {
+  BRIEF_COMMENTARY_SYSTEM,
+  PROBE_CARD_PERF_COMMENTARY_SYSTEM,
+  buildBriefCommentaryUserMessage,
+  buildDeterministicJbTables,
+  buildEngineeringContextFromPayload,
+  DETERMINISTIC_DATA_SECTION_TITLE,
+  DETERMINISTIC_COMMENTARY_SECTION_TITLE,
+  stampFirstTestNote,
+  buildDeterministicLotOverviewCommentary,
+} from "./jb/agentJbOverviewMarkdown.js";
+import {
+  parseJbToolPayload,
   resolveJbToolPayload,
   shouldAppendUnderperformingDutYield,
-  isGoodBinValueQuestion,
   buildGoodBinValueMarkdown,
-  isProbeCardTesterPerformanceQuestion,
-} from "./agentJbDeterministicReply.js";
+} from "./jb/agentJbPayloadResolve.js";
 import {
   buildLotOverviewQueryArgs,
   canRunLotOverviewDirectRoute,
@@ -1856,7 +1864,7 @@ export function equipmentRouteCrossLotBail(text: string): boolean {
   return false;
 }
 
-export { equipmentRouteDutLevelBail } from "./agentJbDeterministicReply.js";
+export { equipmentRouteDutLevelBail } from "./jb/agentJbQuestionClassifiers.js";
 
 /**
  * 探针卡 / 机台 直连路由：用户追问 "probecard是什么" 等时，直接从 session 缓存输出

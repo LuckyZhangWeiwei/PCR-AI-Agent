@@ -1,18 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildBriefCommentaryUserMessage,
-  buildAggregateBinRankingMarkdown,
-  buildBinCardAggregateMarkdown,
-  buildBinDeviceAggregateMarkdown,
-  buildBinFocusedLotRankingMarkdown,
-  buildDeterministicJbTables,
-  buildEngineeringContextFromPayload,
-  buildRecentLotsListingMarkdown,
   detectJbReplyMode,
   equipmentRouteDutLevelBail,
   extractBinFromUserText,
-  extractYmLotsFromHistory,
   isBinTrendQuestion,
   isInterruptCountQuestion,
   isLotListingQuestion,
@@ -25,16 +16,33 @@ import {
   isSlotPassYieldQuestion,
   isSingleWaferDieClusterQuestion,
   isCardTypeLevelOverviewQuestion,
-  resolveJbToolPayload,
-  shouldAppendUnderperformingDutYield,
   lotOverviewSkipsCommentaryAfterAlerts,
-  buildDeterministicLotOverviewCommentary,
   isGoodBinValueQuestion,
   isProbeCardTesterPerformanceQuestion,
-  buildGoodBinValueMarkdown,
+} from "../src/lib/agent/jb/agentJbQuestionClassifiers.js";
+import {
+  buildRecentLotsListingMarkdown,
+  extractYmLotsFromHistory,
+} from "../src/lib/agent/jb/agentJbListingMarkdown.js";
+import {
+  buildAggregateBinRankingMarkdown,
+  buildBinCardAggregateMarkdown,
+  buildBinDeviceAggregateMarkdown,
+  buildBinFocusedLotRankingMarkdown,
+} from "../src/lib/agent/jb/agentJbRankingMarkdown.js";
+import {
+  buildBriefCommentaryUserMessage,
+  buildDeterministicJbTables,
+  buildEngineeringContextFromPayload,
+  buildDeterministicLotOverviewCommentary,
   stampFirstTestNote,
   FIRST_TEST_ONLY_NOTE,
-} from "../src/lib/agent/agentJbDeterministicReply.js";
+} from "../src/lib/agent/jb/agentJbOverviewMarkdown.js";
+import {
+  resolveJbToolPayload,
+  shouldAppendUnderperformingDutYield,
+  buildGoodBinValueMarkdown,
+} from "../src/lib/agent/jb/agentJbPayloadResolve.js";
 import {
   compactJbCacheForHistory,
 } from "../src/lib/agent/jb/agentJbHistoryCompact.js";

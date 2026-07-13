@@ -5,7 +5,7 @@
 
 import type { ChatMessage } from "./agentHistory.js";
 import { extractLotFromUserText, userWantsWaferMapOnly } from "./tools/agentInfWaferMapTool.js";
-import { isLotOverviewQuestion } from "./agentJbDeterministicReply.js";
+import { isLotOverviewQuestion } from "./jb/agentJbQuestionClassifiers.js";
 import {
   inferDeviceFromText,
   inferMaskFromText,

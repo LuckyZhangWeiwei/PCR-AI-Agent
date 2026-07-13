@@ -5,12 +5,14 @@
  *   node scripts/simulate-jb-bin7-agent.mjs
  *   node scripts/simulate-jb-bin7-agent.mjs "NF12316.1X 中 每一片的 yield"
  */
-import { buildDeterministicJbTables, detectJbReplyMode, extractBinFromUserText, resolveJbToolPayload } from "../dist/lib/agent/agentJbDeterministicReply.js";
+import { buildDeterministicJbTables } from "../dist/lib/agent/jb/agentJbOverviewMarkdown.js";
+import { detectJbReplyMode, extractBinFromUserText } from "../dist/lib/agent/jb/agentJbQuestionClassifiers.js";
+import { resolveJbToolPayload } from "../dist/lib/agent/jb/agentJbPayloadResolve.js";
 import {
   buildJbSessionCacheJson,
   wrapJbQueryResultForAgent,
-} from "../dist/lib/agent/agentJbBinFormat.js";
-import { compactJbCacheForHistory } from "../dist/lib/agent/agentJbHistoryCompact.js";
+} from "../dist/lib/agent/jb/agentJbBinFormat.js";
+import { compactJbCacheForHistory } from "../dist/lib/agent/jb/agentJbHistoryCompact.js";
 import { storeJbToolRawJson, clearJbToolRawJson } from "../dist/lib/agent/agentJbSessionCache.js";
 
 const USER_QUESTION =

@@ -9,23 +9,21 @@
  *   PCR_API_BASE  默认 http://10.192.130.89:30008（拉 Oracle 实测行）
  */
 import { randomUUID } from "node:crypto";
-import {
-  buildDeterministicJbTables,
-  detectJbReplyMode,
-  resolveJbToolPayload,
-} from "../dist/lib/agent/agentJbDeterministicReply.js";
+import { buildDeterministicJbTables } from "../dist/lib/agent/jb/agentJbOverviewMarkdown.js";
+import { detectJbReplyMode } from "../dist/lib/agent/jb/agentJbQuestionClassifiers.js";
+import { resolveJbToolPayload } from "../dist/lib/agent/jb/agentJbPayloadResolve.js";
 import {
   buildJbSessionCacheJson,
   storeJbQuerySessionCache,
   wrapJbQueryResultForAgent,
-} from "../dist/lib/agent/agentJbBinFormat.js";
+} from "../dist/lib/agent/jb/agentJbBinFormat.js";
 import { enrichInfcontrolLayerBinRowV2 } from "../dist/lib/passBinSemantics.js";
-import { compactJbCacheForHistory } from "../dist/lib/agent/agentJbHistoryCompact.js";
+import { compactJbCacheForHistory } from "../dist/lib/agent/jb/agentJbHistoryCompact.js";
 import {
   clearJbToolRawJson,
   getJbToolRawJson,
 } from "../dist/lib/agent/agentJbSessionCache.js";
-import { runGetFilterValues } from "../dist/lib/agent/agentFilterValuesTool.js";
+import { runGetFilterValues } from "../dist/lib/agent/tools/agentFilterValuesTool.js";
 
 const API_BASE = (process.env.PCR_API_BASE || "http://10.192.130.89:30008").replace(
   /\/$/,

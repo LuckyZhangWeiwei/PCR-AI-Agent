@@ -5,7 +5,7 @@ import {
   extractSlotFromUserText,
   extractJbIntentFlags,
   isLotOverviewQuestion,
-} from "./agentJbDeterministicReply.js";
+} from "./jb/agentJbQuestionClassifiers.js";
 import { extractLotFromUserText } from "./tools/agentInfWaferMapTool.js";
 import { inferMaskFromText } from "./agentQueryScope.js";
 import { callJbIntentClassifier, type ChatFn } from "./jbIntentClassifier.js";
