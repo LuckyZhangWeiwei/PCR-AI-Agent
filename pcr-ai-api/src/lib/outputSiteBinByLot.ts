@@ -52,9 +52,51 @@ export class OutputSiteBinByLotNotFoundError extends Error {
 }
 
 export type RunSiteBinForWaferOpts = {
-  /** JB 明细行 KEYNUMBER：按层取 Oracle map，不用 INF 整片合并图。 */
+  /** JB 明细行 KEYNUMBER（可选，与 testEnd 联用）。 */
   keynumber?: number;
+  /** JB 明细行 PASSNUM。 */
+  passNum?: number;
+  /** JB 明细行 TESTEND（ISO）；有值时按该层 map 取数，不合并同 slot 其它层。 */
+  testEnd?: string;
 };
+
+/** Optional `passNum` / `pass_num` for layer-scoped DUT×BIN. */
+export function parseOptionalPassNum(raw: unknown): number | undefined {
+  const s =
+    typeof raw === "string"
+      ? raw
+      : Array.isArray(raw) && typeof raw[0] === "string"
+      ? raw[0]
+      : "";
+  const t = s.trim();
+  if (!t) return undefined;
+  const n = Number(t);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) {
+    throw new OutputSiteBinByLotValidationError(
+      "Invalid query parameter: passNum (must be a positive integer)"
+    );
+  }
+  return n;
+}
+
+/** Optional `testEnd` / `test_end` — exact JB layer TESTEND (ISO). */
+export function parseOptionalLayerTestEnd(raw: unknown): Date | undefined {
+  const s =
+    typeof raw === "string"
+      ? raw
+      : Array.isArray(raw) && typeof raw[0] === "string"
+      ? raw[0]
+      : "";
+  const t = s.trim();
+  if (!t) return undefined;
+  const d = new Date(t);
+  if (Number.isNaN(d.getTime())) {
+    throw new OutputSiteBinByLotValidationError(
+      "Invalid query parameter: testEnd (must be ISO date-time)"
+    );
+  }
+  return d;
+}
 
 /** Optional `keynumber` / `key_number` for single-wafer layer-scoped DUT×BIN. */
 export function parseOptionalKeynumber(raw: unknown): number | undefined {
@@ -345,7 +387,7 @@ async function runPerlForWafers(
 
 /**
  * Single wafer: Perl/INF first; on missing/unreadable/Perl failure → Oracle map fallback.
- * With `keynumber`: skip INF (iBinCodeLast 为整片合并态)，直接 Oracle 按 KEYNUMBER 取该层 map。
+ * With `testEnd`（明细行一层）：跳过 INF 整片合并图，Oracle 按 KEYNUMBER+PASSNUM+TESTEND 取该层 map。
  */
 export async function runSiteBinForWafer(
   device: string,
@@ -354,18 +396,26 @@ export async function runSiteBinForWafer(
   opts?: RunSiteBinForWaferOpts
 ): Promise<RunSiteBinWaferResult> {
   const keynumber = opts?.keynumber;
+  const passNum = opts?.passNum;
+  const testEnd = opts?.testEnd?.trim();
+  const testEndDate = testEnd ? new Date(testEnd) : undefined;
   const layerScoped =
-    keynumber !== undefined && Number.isFinite(keynumber) && keynumber > 0;
+    Boolean(testEnd) &&
+    testEndDate !== undefined &&
+    !Number.isNaN(testEndDate.getTime());
 
   if (layerScoped) {
     const notices: string[] = [
-      `Layer-scoped map for KEYNUMBER=${keynumber} (JB detail row; not merged wafer map)`,
+      `Layer-scoped map for TESTEND=${testEnd}` +
+        (keynumber !== undefined ? ` KEYNUMBER=${keynumber}` : "") +
+        (passNum !== undefined ? ` PASSNUM=${passNum}` : ""),
     ];
     if (siteBinByLotUseDummy()) {
       const dummyData = tryResolveSiteBinByLotDummy(
         wafer.infPath,
         passIds,
-        keynumber
+        keynumber,
+        testEnd
       );
       if (dummyData !== null) {
         return { data: dummyData, source: "inf", notices };
@@ -391,6 +441,8 @@ export async function runSiteBinForWafer(
       slot: wafer.slot,
       passIds,
       keynumber,
+      passNum,
+      testEnd: testEndDate,
     });
     return { data, source: "oracle", notices };
   }

@@ -211,6 +211,7 @@ export type InfcontrolLayerBinV3Row = {
   PROBE?: string;
   GROSSDIE?: number;
   PASSID?: number;
+  PASSNUM?: number;
   SESSIONNUMBER?: string;
   TESTSTART?: string;
   TESTEND?: string;

@@ -626,7 +626,7 @@ function wafersFetchKey(wafers: InfDutWaferSpec[]): string {
   return wafers
     .map(
       (w) =>
-        `${w.device}|${w.lot}|${w.slot}|${w.keynumber ?? ""}|${[...w.passIds].sort((a, b) => a - b).join(",")}`
+        `${w.device}|${w.lot}|${w.slot}|${w.keynumber ?? ""}|${w.passNum ?? ""}|${w.testEnd ?? ""}|${[...w.passIds].sort((a, b) => a - b).join(",")}`
     )
     .join(";");
 }
@@ -675,6 +675,12 @@ export function InfDutDistPanel({
             };
             if (w.keynumber !== undefined) {
               params.keynumber = String(w.keynumber);
+            }
+            if (w.passNum !== undefined) {
+              params.passNum = String(w.passNum);
+            }
+            if (w.testEnd) {
+              params.testEnd = w.testEnd;
             }
             return apiGetJson<SiteBinByLotResponse>(apiBase, SITE_BIN_BY_LOT_PATH, params);
           })

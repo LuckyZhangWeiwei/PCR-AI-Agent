@@ -103,22 +103,24 @@ type OracleMapRow = {
 
 /**
  * Fetch bin×DUT map from Oracle (INFCONTROL ⋈ INFLAYERMAP ⋈ INFLAYERBINLIST).
- * Without `keynumber`: all matching rows for the slot are merged (legacy VB loop).
- * With `keynumber`: only that JB layer row (one KEYNUMBER).
+ * Without layer keys: all matching rows for the slot are merged (legacy VB loop).
+ * With `testEnd` (+ optional keynumber / passNum): one INFLAYERBINLIST layer row only.
  */
 export async function fetchSiteBinByLotFromOracle(params: {
   device: string;
   lot: string;
   slot: number;
   passIds: number[];
-  /** JB 明细一行 = 一个 KEYNUMBER；指定时只取该层 map，不合并同 slot 其它层。 */
+  /** JB 明细一行；与 passNum / testEnd 联用精确定位 INFLAYERBINLIST 行。 */
   keynumber?: number;
+  passNum?: number;
+  testEnd?: Date;
 }): Promise<SiteBinByLotData> {
   const passIds = [...new Set(params.passIds)].sort((a, b) => a - b);
   if (passIds.length === 0) return { passes: [] };
 
   const passPlaceholders = passIds.map((_, i) => `:pass${i}`);
-  const binds: Record<string, string | number> = {
+  const binds: Record<string, string | number | Date> = {
     device: params.device.trim(),
     lot: params.lot.trim(),
     slot: params.slot,
@@ -127,12 +129,18 @@ export async function fetchSiteBinByLotFromOracle(params: {
     binds[`pass${i}`] = passIds[i]!;
   }
 
-  const keynumberClause =
-    params.keynumber !== undefined && Number.isFinite(params.keynumber)
-      ? "  AND ic.KEYNUMBER = :keynumber\n"
-      : "";
-  if (keynumberClause) {
-    binds.keynumber = params.keynumber!;
+  const extraClauses: string[] = [];
+  if (params.keynumber !== undefined && Number.isFinite(params.keynumber)) {
+    extraClauses.push("  AND ic.KEYNUMBER = :keynumber");
+    binds.keynumber = params.keynumber;
+  }
+  if (params.passNum !== undefined && Number.isFinite(params.passNum)) {
+    extraClauses.push("  AND lb.PASSNUM = :passNum");
+    binds.passNum = params.passNum;
+  }
+  if (params.testEnd !== undefined && !Number.isNaN(params.testEnd.getTime())) {
+    extraClauses.push("  AND lb.TESTEND = :testEnd");
+    binds.testEnd = params.testEnd;
   }
 
   const sql = `
@@ -152,7 +160,8 @@ WHERE UPPER(TRIM(ic.DEVICE)) = UPPER(:device)
   AND ic.SLOT = :slot
   AND lb.PASSID IN (${passPlaceholders.join(", ")})
   AND UPPER(TRIM(lb.PASSTYPE)) LIKE 'TEST%'
-${keynumberClause}ORDER BY lb.PASSID, lb.PASSNUM
+${extraClauses.join("\n")}
+ORDER BY lb.PASSID, lb.PASSNUM
 `.trim();
 
   const rows = await withConnection(async (conn) => {

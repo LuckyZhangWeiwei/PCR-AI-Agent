@@ -12,8 +12,12 @@ export type InfDutWaferSpec = {
   slot: number;
   passIds: number[];
   probeCardType: string;
-  /** JB 明细行 KEYNUMBER；有值时 site-bin-bylot 按层取 map，不合并同 slot 其它层。 */
+  /** JB 明细 KEYNUMBER（v3 列表返回后填入）。 */
   keynumber?: number;
+  /** JB 明细 PASSNUM。 */
+  passNum?: number;
+  /** JB 明细 TESTEND（ISO）；site-bin-bylot 按层取 map 的主键。 */
+  testEnd?: string;
 };
 
 export type InfDutAnchor =
@@ -92,7 +96,12 @@ export function waferSpecFromJbRow(row: InfcontrolLayerBinV3Row): InfDutWaferSpe
   const kn = Number(row.KEYNUMBER);
   const keynumber =
     Number.isFinite(kn) && kn > 0 ? Math.trunc(kn) : undefined;
-  return { device, lot, slot, passIds, probeCardType, keynumber };
+  const pn = Number((row as { PASSNUM?: number }).PASSNUM);
+  const passNum =
+    Number.isFinite(pn) && pn > 0 ? Math.trunc(pn) : undefined;
+  const testEndRaw = String(row.TESTEND ?? "").trim();
+  const testEnd = testEndRaw || undefined;
+  return { device, lot, slot, passIds, probeCardType, keynumber, passNum, testEnd };
 }
 
 export function sameDeviceLot(

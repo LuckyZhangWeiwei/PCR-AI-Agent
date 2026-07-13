@@ -11,6 +11,7 @@ function infcontrolLayerBinsV3SelectList(tInf: string, tLb: string): string {
     (_, i) => `    ${tLb}.BIN${i + 1}`
   ).join(",\n");
   return `
+    ${tInf}.KEYNUMBER,
     ${tInf}.DEVICE,
     ${tInf}.LOT,
     ${tInf}.SLOT,

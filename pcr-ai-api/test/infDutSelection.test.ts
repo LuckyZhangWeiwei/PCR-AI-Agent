@@ -11,6 +11,7 @@ import { getInfcontrolLayerBinDummyRows } from "../src/lib/infcontrolLayerBinDum
 import {
   buildInfDutCtxFromDetailListIndices,
   buildInfDutCtxFromDrillBarKeys,
+  waferSpecFromJbRow,
 } from "../../pcr-ai-report/src/utils/infDutSelection.js";
 import { mergeSiteBinPasses } from "../../pcr-ai-report/src/utils/mergeSiteBinPasses.js";
 
@@ -74,7 +75,19 @@ test("buildInfDutCtxFromDetailListIndices keeps same slot rows as separate layer
   assert.ok(ctx);
   assert.equal(ctx!.wafers.length, 2);
   assert.equal(ctx!.wafers[0]!.slot, ctx!.wafers[1]!.slot);
-  assert.notEqual(ctx!.wafers[0]!.keynumber, ctx!.wafers[1]!.keynumber);
+  assert.notEqual(ctx!.wafers[0]!.testEnd, ctx!.wafers[1]!.testEnd);
+});
+
+test("waferSpecFromJbRow carries keynumber passNum testEnd for layer fetch", () => {
+  const rows = getInfcontrolLayerBinDummyRows().filter(
+    (r) => String(r.PASSTYPE).trim() === "TEST"
+  );
+  const row = rows[0]!;
+  const spec = waferSpecFromJbRow(row as never);
+  assert.ok(spec);
+  assert.ok(spec!.keynumber && spec!.keynumber > 0);
+  assert.ok(spec!.passNum && spec!.passNum > 0);
+  assert.ok(spec!.testEnd);
 });
 
 test("mergeSiteBinPasses matches mergeSiteBinByLotData (report client vs API)", () => {

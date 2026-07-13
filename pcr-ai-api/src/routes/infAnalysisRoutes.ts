@@ -6,6 +6,8 @@ import {
   OutputSiteBinByLotNotFoundError,
   OutputSiteBinByLotValidationError,
   parseOptionalKeynumber,
+  parseOptionalLayerTestEnd,
+  parseOptionalPassNum,
   parsePassIdsFromQuery,
   runOutputSiteBinByLotForDevice,
   runOutputSiteBinByLotForLot,
@@ -375,11 +377,15 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
   // ── single wafer ──────────────────────────────────────────────────────────
   let infPath: string;
   let keynumber: number | undefined;
+  let passNum: number | undefined;
+  let testEnd: Date | undefined;
   try {
     infPath = validateInfPath(firstQueryString(infRaw));
     keynumber = parseOptionalKeynumber(
       req.query.keynumber ?? req.query.key_number
     );
+    passNum = parseOptionalPassNum(req.query.passNum ?? req.query.pass_num);
+    testEnd = parseOptionalLayerTestEnd(req.query.testEnd ?? req.query.test_end);
   } catch (e) {
     if (e instanceof OutputSiteBinByLotValidationError) {
       return sendAgentError(res, 400, e.code, e.message);
@@ -388,13 +394,20 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
   }
 
   try {
-    const dummyData = tryResolveSiteBinByLotDummy(infPath, passIds, keynumber);
+    const dummyData = tryResolveSiteBinByLotDummy(
+      infPath,
+      passIds,
+      keynumber,
+      testEnd?.toISOString()
+    );
     if (dummyData !== null) {
       return res.json({
         meta: { apiVersion: "1", requestId: reqId(req), summary: SITE_BIN_BY_LOT_SUMMARY },
         infPath,
         passIds,
         ...(keynumber !== undefined ? { keynumber } : {}),
+        ...(passNum !== undefined ? { passNum } : {}),
+        ...(testEnd !== undefined ? { testEnd: testEnd.toISOString() } : {}),
         ...dummyData,
       });
     }
@@ -415,7 +428,11 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
       deviceForWafer,
       { lot: coords.lot, slot: coords.slot, infPath },
       passIds,
-      { keynumber }
+      {
+        keynumber,
+        passNum,
+        testEnd: testEnd?.toISOString(),
+      }
     );
 
     return res.json({
@@ -423,6 +440,8 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
       infPath,
       passIds,
       ...(keynumber !== undefined ? { keynumber } : {}),
+      ...(passNum !== undefined ? { passNum } : {}),
+      ...(testEnd !== undefined ? { testEnd: testEnd.toISOString() } : {}),
       mapSource: source,
       ...(notices.length > 0 ? { notices } : {}),
       ...data,
