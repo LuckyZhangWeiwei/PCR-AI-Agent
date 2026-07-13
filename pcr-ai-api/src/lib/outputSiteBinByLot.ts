@@ -65,6 +65,15 @@ export type RunSiteBinForWaferOpts = {
 
 /** Optional `passNum` / `pass_num` for layer-scoped DUT×BIN. */
 export function parseOptionalPassNum(raw: unknown): number | undefined {
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  if (typeof raw === "number") {
+    if (!Number.isFinite(raw) || !Number.isInteger(raw) || raw <= 0) {
+      throw new OutputSiteBinByLotValidationError(
+        "Invalid query parameter: passNum (must be a positive integer)"
+      );
+    }
+    return raw;
+  }
   const s =
     typeof raw === "string"
       ? raw
@@ -103,6 +112,15 @@ export function parseOptionalLayerTestEnd(raw: unknown): Date | undefined {
 
 /** Optional `keynumber` / `key_number` for single-wafer layer-scoped DUT×BIN. */
 export function parseOptionalKeynumber(raw: unknown): number | undefined {
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  if (typeof raw === "number") {
+    if (!Number.isFinite(raw) || !Number.isInteger(raw) || raw <= 0) {
+      throw new OutputSiteBinByLotValidationError(
+        "Invalid query parameter: keynumber (must be a positive integer)"
+      );
+    }
+    return raw;
+  }
   const s =
     typeof raw === "string"
       ? raw

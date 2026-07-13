@@ -576,6 +576,11 @@ describe("GET /inf-analysis/site-bin-bylot route", () => {
     };
     assert.equal(body.layerCount, 2);
     assert.equal(body.layers.length, 2);
+    const withLayer = body.layers.find(
+      (l: { testEnd?: string }) => l.testEnd === "2099-01-01T00:00:00.000Z"
+    ) as { keynumber?: number; passNum?: number } | undefined;
+    assert.ok(withLayer);
+    assert.equal(withLayer.keynumber, 2);
     assert.ok(body.passes.length > 0);
     const mergedDie = body.passes[0]!.bins.reduce(
       (s, b) => s + b.duts.reduce((t, d) => t + d.dieCount, 0),
@@ -594,6 +599,45 @@ describe("GET /inf-analysis/site-bin-bylot route", () => {
     }, 0);
     assert.equal(mergedDie, sumLayers);
 
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  test("POST layers echoes numeric keynumber and passNum from JSON body", async () => {
+    process.env.NODE_ENV = "test";
+    const { createApp } = await import("../src/app.js");
+    const { createServer } = await import("node:http");
+    const app = createApp();
+    const server = createServer(app);
+    await new Promise<void>((resolve, reject) => {
+      server.listen(0, "127.0.0.1", () => resolve());
+      server.on("error", reject);
+    });
+    const addr = server.address() as import("node:net").AddressInfo;
+    const base = `http://127.0.0.1:${addr.port}/api/v1`;
+    const r = await fetch(`${base}/inf-analysis/site-bin-bylot/layers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        layers: [
+          {
+            infPath: SITE_BIN_BY_LOT_DUMMY_CANONICAL_INF_PATH,
+            device: "WA03P02G",
+            passIds: [1],
+            keynumber: 99,
+            passNum: 2,
+            testEnd: "2099-06-01T12:00:00.000Z",
+          },
+        ],
+      }),
+    });
+    assert.equal(r.status, 200);
+    const body = (await r.json()) as {
+      layers: { keynumber?: number; passNum?: number; testEnd?: string }[];
+    };
+    assert.equal(body.layers.length, 1);
+    assert.equal(body.layers[0]!.keynumber, 99);
+    assert.equal(body.layers[0]!.passNum, 2);
+    assert.equal(body.layers[0]!.testEnd, "2099-06-01T12:00:00.000Z");
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 });

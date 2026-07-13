@@ -680,26 +680,58 @@ function waferToLayerRequest(w: InfDutWaferSpec): {
   return req;
 }
 
+function layerTestEndMs(raw: string | undefined): number | null {
+  if (!raw) return null;
+  const ms = Date.parse(raw);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function findBatchLayerForWafer(
+  batch: SiteBinLayersBatchResponse,
+  w: InfDutWaferSpec,
+  index: number
+): SiteBinLayersBatchResponse["layers"][number] | undefined {
+  const byIndex = batch.layers[index];
+  if (byIndex) {
+    const infPath = buildInfPath(w.device, w.lot, w.slot);
+    const te = layerTestEndMs(w.testEnd);
+    const layerTe = layerTestEndMs(byIndex.testEnd);
+    if (
+      byIndex.infPath === infPath &&
+      (te === null || layerTe === null || te === layerTe)
+    ) {
+      return byIndex;
+    }
+  }
+  const infPath = buildInfPath(w.device, w.lot, w.slot);
+  const te = layerTestEndMs(w.testEnd);
+  return batch.layers.find((l) => {
+    if (l.infPath !== infPath) return false;
+    const layerTe = layerTestEndMs(l.testEnd);
+    if (te !== null && layerTe !== null && te !== layerTe) return false;
+    return true;
+  });
+}
+
 function storeBatchLayersInCache(
   cache: Map<string, SiteBinByLotResponse>,
   missing: InfDutWaferSpec[],
   batch: SiteBinLayersBatchResponse
 ): void {
-  for (const w of missing) {
-    const infPath = buildInfPath(w.device, w.lot, w.slot);
-    const layer = batch.layers.find(
-      (l) =>
-        l.infPath === infPath &&
-        (l.testEnd ?? "") === (w.testEnd ?? "") &&
-        l.keynumber === w.keynumber &&
-        l.passNum === w.passNum
+  if (batch.layers.length !== missing.length) {
+    throw new Error(
+      `批量 DUT×BIN 层数不符: 请求 ${missing.length}，响应 ${batch.layers.length}`
     );
+  }
+  for (let i = 0; i < missing.length; i++) {
+    const w = missing[i]!;
+    const layer = findBatchLayerForWafer(batch, w, i);
     if (!layer) {
       throw new Error(
         `批量 DUT×BIN 响应缺少层: slot ${w.slot} testEnd=${w.testEnd ?? ""}`
       );
     }
-    cache.set(infDutWaferCacheKey(w), layerResponseFromBatchItem(layer));
+    cache.set(infDutWaferCacheKey(w), layerResponseFromBatchItem(layer, w));
   }
 }
 
@@ -716,7 +748,8 @@ async function fetchLayersBatch(
 }
 
 function layerResponseFromBatchItem(
-  layer: SiteBinLayersBatchResponse["layers"][number]
+  layer: SiteBinLayersBatchResponse["layers"][number],
+  wafer?: InfDutWaferSpec
 ): SiteBinByLotResponse {
   return {
     meta: { apiVersion: "1", requestId: "", summary: "" },
@@ -724,9 +757,9 @@ function layerResponseFromBatchItem(
     passIds: layer.passIds,
     passes: layer.passes,
     mapSource: layer.mapSource,
-    keynumber: layer.keynumber,
-    passNum: layer.passNum,
-    testEnd: layer.testEnd,
+    keynumber: layer.keynumber ?? wafer?.keynumber,
+    passNum: layer.passNum ?? wafer?.passNum,
+    testEnd: layer.testEnd ?? wafer?.testEnd,
   };
 }
 
