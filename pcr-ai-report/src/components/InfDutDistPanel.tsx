@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ECharts } from "echarts";
 import type { EChartsOption } from "echarts";
-import { apiGetJson, apiPostJson } from "../api/client";
-import { SITE_BIN_BY_LOT_LAYERS_PATH, SITE_BIN_BY_LOT_PATH } from "../api/paths";
+import { apiPostJson } from "../api/client";
+import { SITE_BIN_BY_LOT_LAYERS_PATH } from "../api/paths";
 import type { SiteBinByLotResponse, SiteBinLayersBatchResponse, SiteBinPass } from "../api/types";
 import { DarkChart } from "./DarkChart";
 import { buildInfPath } from "../utils/buildInfPath";
@@ -680,25 +680,27 @@ function waferToLayerRequest(w: InfDutWaferSpec): {
   return req;
 }
 
-async function fetchSingleLayerSiteBin(
-  apiBase: string,
-  w: InfDutWaferSpec
-): Promise<SiteBinByLotResponse> {
-  const infPath = buildInfPath(w.device, w.lot, w.slot);
-  const params: Record<string, string> = {
-    infPath,
-    device: w.device,
-    passId: w.passIds.join(","),
-  };
-  if (w.keynumber !== undefined) params.keynumber = String(w.keynumber);
-  if (w.passNum !== undefined) params.passNum = String(w.passNum);
-  if (w.testEnd) params.testEnd = w.testEnd;
-  return apiGetJson<SiteBinByLotResponse>(
-    apiBase,
-    SITE_BIN_BY_LOT_PATH,
-    params,
-    { cache: "no-store" }
-  );
+function storeBatchLayersInCache(
+  cache: Map<string, SiteBinByLotResponse>,
+  missing: InfDutWaferSpec[],
+  batch: SiteBinLayersBatchResponse
+): void {
+  for (const w of missing) {
+    const infPath = buildInfPath(w.device, w.lot, w.slot);
+    const layer = batch.layers.find(
+      (l) =>
+        l.infPath === infPath &&
+        (l.testEnd ?? "") === (w.testEnd ?? "") &&
+        l.keynumber === w.keynumber &&
+        l.passNum === w.passNum
+    );
+    if (!layer) {
+      throw new Error(
+        `批量 DUT×BIN 响应缺少层: slot ${w.slot} testEnd=${w.testEnd ?? ""}`
+      );
+    }
+    cache.set(infDutWaferCacheKey(w), layerResponseFromBatchItem(layer));
+  }
 }
 
 async function fetchLayersBatch(
@@ -778,30 +780,10 @@ export function InfDutDistPanel({
         const cache = layerCacheRef.current;
         const missing = wafers.filter((w) => !cache.has(infDutWaferCacheKey(w)));
 
-        if (missing.length === 1) {
-          const w = missing[0]!;
-          const single = await fetchSingleLayerSiteBin(apiBase, w);
-          if (cancelled) return;
-          cache.set(infDutWaferCacheKey(w), single);
-        } else if (missing.length > 1) {
+        if (missing.length > 0) {
           const batch = await fetchLayersBatch(apiBase, missing);
           if (cancelled) return;
-          for (const w of missing) {
-            const infPath = buildInfPath(w.device, w.lot, w.slot);
-            const layer = batch.layers.find(
-              (l) =>
-                l.infPath === infPath &&
-                (l.testEnd ?? "") === (w.testEnd ?? "") &&
-                l.keynumber === w.keynumber &&
-                l.passNum === w.passNum
-            );
-            if (!layer) {
-              throw new Error(
-                `批量 DUT×BIN 响应缺少层: slot ${w.slot} testEnd=${w.testEnd ?? ""}`
-              );
-            }
-            cache.set(infDutWaferCacheKey(w), layerResponseFromBatchItem(layer));
-          }
+          storeBatchLayersInCache(cache, missing, batch);
         }
 
         const results = wafers.map((w) => {
