@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildSystemPrompt, classifyIntent } from "../src/lib/agent/agentPrompt.js";
+import { buildSystemPrompt } from "../src/lib/agent/prompt/agentPrompt.js";
+import { classifyIntent } from "../src/lib/agent/prompt/agentPromptIntent.js";
 
 test("classifyIntent: combo/trend/bad-bin questions route to card_probe", () => {
   assert.equal(classifyIntent("这个device下最好的探针卡+机台组合是什么"), "card_probe");

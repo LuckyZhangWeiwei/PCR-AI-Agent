@@ -5,7 +5,7 @@
  * brain picks the right intent / pending tool / scope args BEFORE the LLM runs.
  */
 
-import { classifyIntent } from "../../../src/lib/agent/agentPrompt.js";
+import { classifyIntent } from "../../../src/lib/agent/prompt/agentPromptIntent.js";
 import { buildJbScopeArgs } from "../../../src/lib/agent/agentQueryScope.js";
 import { detectPendingQuery } from "../../../src/lib/agent/agentPendingQuery.js";
 import { canRunLotListingDirectRoute } from "../../../src/lib/agent/agentJbLotListingRoute.js";

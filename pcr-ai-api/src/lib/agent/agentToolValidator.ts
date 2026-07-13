@@ -4,7 +4,7 @@
  * Catches and auto-corrects high-frequency argument errors BEFORE runTool().
  *
  * ──────────────────────────────────────────────────────────────────────────────
- * ARCHITECTURAL NOTE — prefer adding rules HERE over adding rules in agentPrompt.ts.
+ * ARCHITECTURAL NOTE — prefer adding rules HERE over adding rules in prompt/agentPrompt.ts.
  *
  * The prompt is a human-readable instruction document; it cannot enforce invariants.
  * Every new prohibition in the prompt is a debt item: the LLM may ignore it, and

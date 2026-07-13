@@ -14,7 +14,8 @@ import {
 import { TOOL_SCHEMAS, INF_TOOL_SCHEMAS } from "./agentToolSchemas.js";
 import { runTool, type ChartSentinel, type ClarificationSentinel } from "./tools/agentToolHandlers.js";
 import { validateAndFixToolArgs } from "./agentToolValidator.js";
-import { buildSystemPrompt, classifyIntent } from "./agentPrompt.js";
+import { buildSystemPrompt } from "./prompt/agentPrompt.js";
+import { classifyIntent } from "./prompt/agentPromptIntent.js";
 import { fetchOrCacheManifest } from "./agentManifest.js";
 import { buildChartOption, generateChartArgsHaveData, tryParseJsonish } from "./tools/agentChartTool.js";
 import { streamSiliconFlow, type CollectedToolCall } from "./agentStream.js";
@@ -1768,7 +1769,7 @@ const DUT_YIELD_CHART_NUDGE =
 /**
  * 首轮（非 awaitingSummary）用户问题里能否识别出 device / lot / cardId 之一。
  * 用于事后检测「模型只说了要查、却没真正调用工具」——若问题里有明确实体，
- * 正常应该立即触发工具调用（见 agentPrompt.ts 硬规则），没调用大概率是模型违反了该规则。
+ * 正常应该立即触发工具调用（见 prompt/agentPrompt.ts 硬规则），没调用大概率是模型违反了该规则。
  */
 export function questionHasIdentifiableToolScope(userQuestion: string): boolean {
   return (
@@ -1780,7 +1781,7 @@ export function questionHasIdentifiableToolScope(userQuestion: string): boolean 
 
 /**
  * 模型在首轮只承诺"马上查"却没有真正调用任何工具时的纠正提示（一轮内最多用一次）。
- * 与 agentPrompt.ts:208/259 的硬规则同义，用代码兜底——避免完全依赖模型遵守文字规则。
+ * 与 prompt/agentPrompt.ts:211/261 的硬规则同义，用代码兜底——避免完全依赖模型遵守文字规则。
  */
 const ANNOUNCEMENT_WITHOUT_ACTION_NUDGE =
   "你上一条回复只说明了要查询（如「马上查」「现在查询」之类），但没有真正调用任何工具。" +
@@ -3117,7 +3118,7 @@ async function tryRunProbeCardPerfDirectRoute(
  * 直出 aggregate_probe_card_tester_performance 服务端表 + 单独一轮"仅写解读/建议"的
  * LLM 调用，复用既有 BRIEF_COMMENTARY_SYSTEM 架构。
  *
- * 2026-07-11 真实 MiniMax-M2.5 联调发现：仅在 agentPrompt.ts 里用文字硬规则要求"必须原样
+ * 2026-07-11 真实 MiniMax-M2.5 联调发现：仅在 prompt/agentPrompt.ts 里用文字硬规则要求"必须原样
  * 贴表、禁止改写"，模型仍会把 comboRankingMarkdown / cardRankingMarkdown 转述成自己的大白话
  * 总结（且转述时出现过 pass2/pass3 张冠李戴）。与 query_jb_bins 走 `tryRunDeterministicJbSummary`
  * 服务端直出表的理由完全一致：数字必须由服务端保证，不能寄望于 prompt 约束模型的转述行为。
@@ -4185,7 +4186,7 @@ export async function runAgentLoop(
     }
 
     if (finishReason !== "tool_calls" || toolCalls.length === 0) {
-      // 首轮模型只承诺"马上查"却未真正调用工具(见 agentPrompt.ts 硬规则)——
+      // 首轮模型只承诺"马上查"却未真正调用工具(见 prompt/agentPrompt.ts 硬规则)——
       // 代码兜底重试一次:不落盘这条未完成的文字,加强系统提示后重新请求,而不是把
       // "确认性文字"当成最终答案直接结束整轮对话。
       if (
