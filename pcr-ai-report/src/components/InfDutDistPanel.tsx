@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ECharts } from "echarts";
 import type { EChartsOption } from "echarts";
-import { apiGetJson } from "../api/client";
-import { SITE_BIN_BY_LOT_PATH } from "../api/paths";
-import type { SiteBinByLotResponse, SiteBinPass } from "../api/types";
+import { apiGetJson, apiPostJson } from "../api/client";
+import { SITE_BIN_BY_LOT_LAYERS_PATH, SITE_BIN_BY_LOT_PATH } from "../api/paths";
+import type { SiteBinByLotResponse, SiteBinLayersBatchResponse, SiteBinPass } from "../api/types";
 import { DarkChart } from "./DarkChart";
 import { buildInfPath } from "../utils/buildInfPath";
 import {
@@ -15,6 +15,7 @@ import {
 } from "../utils/infGoodBins";
 import { mergeSiteBinPasses } from "../utils/mergeSiteBinPasses";
 import type { InfDutWaferSpec } from "../utils/infDutSelection";
+import { infDutWaferCacheKey } from "../utils/infDutSelection";
 import {
   baseChartOption,
   getChartPalette,
@@ -650,12 +651,81 @@ function buildDutChartOption(
 }
 
 function wafersFetchKey(wafers: InfDutWaferSpec[]): string {
-  return wafers
-    .map(
-      (w) =>
-        `${w.device}|${w.lot}|${w.slot}|${w.keynumber ?? ""}|${w.passNum ?? ""}|${w.testEnd ?? ""}|${[...w.passIds].sort((a, b) => a - b).join(",")}`
-    )
-    .join(";");
+  return wafers.map(infDutWaferCacheKey).join(";");
+}
+
+function waferToLayerRequest(w: InfDutWaferSpec): {
+  infPath: string;
+  device: string;
+  passIds: number[];
+  keynumber?: number;
+  passNum?: number;
+  testEnd?: string;
+} {
+  const req: {
+    infPath: string;
+    device: string;
+    passIds: number[];
+    keynumber?: number;
+    passNum?: number;
+    testEnd?: string;
+  } = {
+    infPath: buildInfPath(w.device, w.lot, w.slot),
+    device: w.device,
+    passIds: w.passIds,
+  };
+  if (w.keynumber !== undefined) req.keynumber = w.keynumber;
+  if (w.passNum !== undefined) req.passNum = w.passNum;
+  if (w.testEnd) req.testEnd = w.testEnd;
+  return req;
+}
+
+async function fetchSingleLayerSiteBin(
+  apiBase: string,
+  w: InfDutWaferSpec
+): Promise<SiteBinByLotResponse> {
+  const infPath = buildInfPath(w.device, w.lot, w.slot);
+  const params: Record<string, string> = {
+    infPath,
+    device: w.device,
+    passId: w.passIds.join(","),
+  };
+  if (w.keynumber !== undefined) params.keynumber = String(w.keynumber);
+  if (w.passNum !== undefined) params.passNum = String(w.passNum);
+  if (w.testEnd) params.testEnd = w.testEnd;
+  return apiGetJson<SiteBinByLotResponse>(
+    apiBase,
+    SITE_BIN_BY_LOT_PATH,
+    params,
+    { cache: "no-store" }
+  );
+}
+
+async function fetchLayersBatch(
+  apiBase: string,
+  wafers: InfDutWaferSpec[]
+): Promise<SiteBinLayersBatchResponse> {
+  return apiPostJson<SiteBinLayersBatchResponse>(
+    apiBase,
+    SITE_BIN_BY_LOT_LAYERS_PATH,
+    { layers: wafers.map(waferToLayerRequest) },
+    { cache: "no-store" }
+  );
+}
+
+function layerResponseFromBatchItem(
+  layer: SiteBinLayersBatchResponse["layers"][number]
+): SiteBinByLotResponse {
+  return {
+    meta: { apiVersion: "1", requestId: "", summary: "" },
+    infPath: layer.infPath,
+    passIds: layer.passIds,
+    passes: layer.passes,
+    mapSource: layer.mapSource,
+    keynumber: layer.keynumber,
+    passNum: layer.passNum,
+    testEnd: layer.testEnd,
+  };
 }
 
 export function InfDutDistPanel({
@@ -679,6 +749,12 @@ export function InfDutDistPanel({
   } | null>(null);
 
   const waferKey = wafersFetchKey(wafers);
+  const layerCacheRef = useRef(new Map<string, SiteBinByLotResponse>());
+  const apiBaseRef = useRef(apiBase);
+  if (apiBaseRef.current !== apiBase) {
+    apiBaseRef.current = apiBase;
+    layerCacheRef.current.clear();
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -699,31 +775,43 @@ export function InfDutDistPanel({
 
     void (async () => {
       try {
-        const results = await Promise.all(
-          wafers.map((w) => {
+        const cache = layerCacheRef.current;
+        const missing = wafers.filter((w) => !cache.has(infDutWaferCacheKey(w)));
+
+        if (missing.length === 1) {
+          const w = missing[0]!;
+          const single = await fetchSingleLayerSiteBin(apiBase, w);
+          if (cancelled) return;
+          cache.set(infDutWaferCacheKey(w), single);
+        } else if (missing.length > 1) {
+          const batch = await fetchLayersBatch(apiBase, missing);
+          if (cancelled) return;
+          for (const w of missing) {
             const infPath = buildInfPath(w.device, w.lot, w.slot);
-            const params: Record<string, string> = {
-              infPath,
-              device: w.device,
-              passId: w.passIds.join(","),
-            };
-            if (w.keynumber !== undefined) {
-              params.keynumber = String(w.keynumber);
-            }
-            if (w.passNum !== undefined) {
-              params.passNum = String(w.passNum);
-            }
-            if (w.testEnd) {
-              params.testEnd = w.testEnd;
-            }
-            return apiGetJson<SiteBinByLotResponse>(
-              apiBase,
-              SITE_BIN_BY_LOT_PATH,
-              params,
-              { cache: "no-store" }
+            const layer = batch.layers.find(
+              (l) =>
+                l.infPath === infPath &&
+                (l.testEnd ?? "") === (w.testEnd ?? "") &&
+                l.keynumber === w.keynumber &&
+                l.passNum === w.passNum
             );
-          })
-        );
+            if (!layer) {
+              throw new Error(
+                `批量 DUT×BIN 响应缺少层: slot ${w.slot} testEnd=${w.testEnd ?? ""}`
+              );
+            }
+            cache.set(infDutWaferCacheKey(w), layerResponseFromBatchItem(layer));
+          }
+        }
+
+        const results = wafers.map((w) => {
+          const hit = cache.get(infDutWaferCacheKey(w));
+          if (!hit) {
+            throw new Error(`DUT×BIN 缓存未命中: slot ${w.slot}`);
+          }
+          return hit;
+        });
+
         if (cancelled) return;
         for (let i = 0; i < results.length; i++) {
           const layerErr = validateLayerSiteBinResponse(wafers[i]!, results[i]!);

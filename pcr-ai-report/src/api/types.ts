@@ -292,3 +292,21 @@ export type SiteBinByLotResponse = {
   testEnd?: string;
   notices?: string[];
 };
+
+/** POST site-bin-bylot/layers 批量分层响应 */
+export type SiteBinLayersBatchResponse = {
+  meta: { apiVersion: string; requestId: string; summary: string };
+  layerCount: number;
+  mapSources?: Array<"inf" | "oracle">;
+  layers: Array<{
+    infPath: string;
+    passIds: number[];
+    mapSource?: "inf" | "oracle";
+    keynumber?: number;
+    passNum?: number;
+    testEnd?: string;
+    passes: SiteBinPass[];
+  }>;
+  passes: SiteBinPass[];
+  notices?: string[];
+};

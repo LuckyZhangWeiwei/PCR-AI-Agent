@@ -37,6 +37,11 @@ export type InfDutSelectionCtx = {
   selectionSummary: string;
 };
 
+/** 单片/单层 site-bin 缓存与请求去重键（与 InfDutDistPanel wafersFetchKey 一致）。 */
+export function infDutWaferCacheKey(w: InfDutWaferSpec): string {
+  return `${w.device}|${w.lot}|${w.slot}|${w.keynumber ?? ""}|${w.passNum ?? ""}|${w.testEnd ?? ""}|${[...w.passIds].sort((a, b) => a - b).join(",")}`;
+}
+
 export function collectGoodBinNumbersForWafers(
   rows: InfcontrolLayerBinV3Row[] | undefined,
   wafers: InfDutWaferSpec[]

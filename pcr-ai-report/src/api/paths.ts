@@ -23,6 +23,10 @@ export const YIELD_PERIOD_ALARM_TREND_PATH =
 /** INF wafer pass × bin × DUT distribution — uses v1 path (stable across API_PREFIX changes) */
 export const SITE_BIN_BY_LOT_PATH = "/api/v1/inf-analysis/site-bin-bylot";
 
+/** 明细多选：一次 HTTP 批量拉多层 site-bin map */
+export const SITE_BIN_BY_LOT_LAYERS_PATH =
+  "/api/v1/inf-analysis/site-bin-bylot/layers";
+
 /** Lot 低良率 DUT 筛选（v4 INF 分析） */
 export const LOT_UNDERPERFORMING_DUTS_PATH =
   "/api/v4/inf-analysis/lot-underperforming-duts";

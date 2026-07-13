@@ -9,13 +9,16 @@ import {
   parseOptionalLayerTestEnd,
   parseOptionalPassNum,
   parsePassIdsFromQuery,
+  parseSiteBinLayersBody,
   runOutputSiteBinByLotForDevice,
   runOutputSiteBinByLotForLot,
   runOutputSiteBinByLotForLotByDirectory,
   runSiteBinForWafer,
+  runSiteBinForWaferLayers,
   SITE_BIN_BY_LOT_DEVICE_AGG_SUMMARY,
   SITE_BIN_BY_LOT_LOT_AGG_SUMMARY,
   SITE_BIN_BY_LOT_LOT_DIR_AGG_SUMMARY,
+  SITE_BIN_LAYERS_BATCH_SUMMARY,
   SITE_BIN_BY_LOT_SUMMARY,
   validateDeviceLot,
   validateInfPath,
@@ -459,5 +462,56 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
     const code = statusCode === 504 ? "PERL_SCRIPT_TIMEOUT" : "PERL_EXEC_FAILED";
     const error = statusCode === 504 ? "Perl script execution timed out" : "Failed to execute Perl script";
     return sendAgentError(res, statusCode, code, error, detail);
+  }
+});
+
+/**
+ * 明细多选 DUT×BIN：一次请求拉多层 Oracle map，服务端合并后返回。
+ * POST body: `{ layers: [{ infPath, device, passIds, testEnd?, keynumber?, passNum? }, ...] }`
+ */
+infAnalysisRouter.post("/inf-analysis/site-bin-bylot/layers", async (req, res) => {
+  let layers;
+  try {
+    layers = parseSiteBinLayersBody(req.body);
+  } catch (e) {
+    if (e instanceof OutputSiteBinByLotValidationError) {
+      return sendAgentError(res, 400, e.code, e.message);
+    }
+    throw e;
+  }
+
+  try {
+    const { layerCount, layers: layerResults, data, notices } =
+      await runSiteBinForWaferLayers(layers);
+    const mapSources = [...new Set(layerResults.map((l) => l.mapSource))];
+    return res.json({
+      meta: {
+        apiVersion: "1",
+        requestId: reqId(req),
+        summary: SITE_BIN_LAYERS_BATCH_SUMMARY,
+      },
+      layerCount,
+      mapSources,
+      layers: layerResults.map((l) => ({
+        infPath: l.infPath,
+        passIds: l.passIds,
+        mapSource: l.mapSource,
+        passes: l.passes,
+        ...(l.keynumber !== undefined ? { keynumber: l.keynumber } : {}),
+        ...(l.passNum !== undefined ? { passNum: l.passNum } : {}),
+        ...(l.testEnd ? { testEnd: l.testEnd } : {}),
+      })),
+      ...(notices.length > 0 ? { notices } : {}),
+      ...data,
+    });
+  } catch (e) {
+    if (e instanceof InfSiteBinUnavailableError) {
+      return sendAgentError(res, 404, "LOT_INF_NOT_FOUND", e.message);
+    }
+    if (e instanceof OutputSiteBinByLotValidationError) {
+      return sendAgentError(res, 400, e.code, e.message);
+    }
+    const detail = e instanceof Error ? e.message : String(e);
+    return sendAgentError(res, 502, "SITE_BIN_LAYERS_BATCH_FAILED", detail);
   }
 });
