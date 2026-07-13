@@ -1,13 +1,13 @@
-// pcr-ai-api/src/lib/agent/agentStream.ts
+// pcr-ai-api/src/lib/agent/core/agentStream.ts
 import https from "node:https";
-import type { AgentConfig } from "./agentConfig.js";
-import { getConfig } from "../runtimeConfig.js";
+import type { AgentConfig } from "../agentConfig.js";
+import { getConfig } from "../../runtimeConfig.js";
 import {
   loadMaskingDictionary,
   createStreamUnmasker,
   type MaskingDictionary,
   type StreamUnmasker,
-} from "./agentDataMasking.js";
+} from "../agentDataMasking.js";
 
 export type StreamChunk =
   | { type: "delta"; text: string }

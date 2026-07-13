@@ -9,7 +9,7 @@
 import {
   isLastToolEmptyResult,
   historyAwaitingToolSummary,
-} from "../../../src/lib/agent/agentLoop.js";
+} from "../../../src/lib/agent/core/agentToolStatus.js";
 import type { ChatMessage } from "../../../src/lib/agent/agentHistory.js";
 import { expectTrue, expectFalse, type EvalScenario } from "../evalTypes.js";
 

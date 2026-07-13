@@ -1,6 +1,6 @@
-// pcr-ai-api/src/lib/agent/agentLoop.ts
-import type { AgentConfig } from "./agentConfig.js";
-import { getConfig } from "../runtimeConfig.js";
+// pcr-ai-api/src/lib/agent/core/agentLoop.ts
+import type { AgentConfig } from "../agentConfig.js";
+import { getConfig } from "../../runtimeConfig.js";
 import {
   getHistory,
   appendMessages,
@@ -10,29 +10,29 @@ import {
   getSummary,
   type ChatMessage,
   type ToolCall,
-} from "./agentHistory.js";
+} from "../agentHistory.js";
 import { TOOL_SCHEMAS, INF_TOOL_SCHEMAS } from "./agentToolSchemas.js";
-import { runTool, type ChartSentinel, type ClarificationSentinel } from "./tools/agentToolHandlers.js";
-import { validateAndFixToolArgs } from "./agentToolValidator.js";
-import { buildSystemPrompt } from "./prompt/agentPrompt.js";
-import { classifyIntent } from "./prompt/agentPromptIntent.js";
-import { fetchOrCacheManifest } from "./agentManifest.js";
-import { buildChartOption, generateChartArgsHaveData, tryParseJsonish } from "./tools/agentChartTool.js";
+import { runTool, type ChartSentinel, type ClarificationSentinel } from "../tools/agentToolHandlers.js";
+import { validateAndFixToolArgs } from "../agentToolValidator.js";
+import { buildSystemPrompt } from "../prompt/agentPrompt.js";
+import { classifyIntent } from "../prompt/agentPromptIntent.js";
+import { fetchOrCacheManifest } from "../agentManifest.js";
+import { buildChartOption, generateChartArgsHaveData, tryParseJsonish } from "../tools/agentChartTool.js";
 import { streamSiliconFlow, type CollectedToolCall } from "./agentStream.js";
-import { buildFeedbackInjection } from "./agentFeedback.js";
-import { detectPendingQuery } from "./agentPendingQuery.js";
+import { buildFeedbackInjection } from "../agentFeedback.js";
+import { detectPendingQuery } from "../agentPendingQuery.js";
 import {
   buildFactSheetFromHistory,
   factCheckSummaryText,
   formatFactCheckNote,
-} from "./agentFactChecker.js";
-import { storeJbQuerySessionCache, jbWrappedIsEmptyQuery } from "./jb/agentJbBinFormat.js";
+} from "../agentFactChecker.js";
+import { storeJbQuerySessionCache, jbWrappedIsEmptyQuery } from "../jb/agentJbBinFormat.js";
 import {
   compactJbBinsForHistory,
   compactJbCacheForHistory,
   formatLotYieldOverviewMarkdown,
   formatSlotYieldMarkdownFromToolJson,
-} from "./jb/agentJbHistoryCompact.js";
+} from "../jb/agentJbHistoryCompact.js";
 import {
   extractBinFromUserText,
   extractSlotFromUserText,
@@ -51,18 +51,15 @@ import {
   payloadCoversMultipleLots,
   isGoodBinValueQuestion,
   isProbeCardTesterPerformanceQuestion,
-} from "./jb/agentJbQuestionClassifiers.js";
+} from "../jb/agentJbQuestionClassifiers.js";
 import {
   extractYmLotsFromHistory,
   buildLotListingContext,
   inferLotListingPresentation,
-} from "./jb/agentJbListingMarkdown.js";
+} from "../jb/agentJbListingMarkdown.js";
 import {
   buildAggregateBinRankingMarkdown,
-  buildBinCardAggregateMarkdown,
-  buildBinDeviceAggregateMarkdown,
-  buildBinFocusedLotRankingMarkdown,
-} from "./jb/agentJbRankingMarkdown.js";
+} from "../jb/agentJbRankingMarkdown.js";
 import {
   BRIEF_COMMENTARY_SYSTEM,
   PROBE_CARD_PERF_COMMENTARY_SYSTEM,
@@ -73,88 +70,101 @@ import {
   DETERMINISTIC_COMMENTARY_SECTION_TITLE,
   stampFirstTestNote,
   buildDeterministicLotOverviewCommentary,
-} from "./jb/agentJbOverviewMarkdown.js";
+} from "../jb/agentJbOverviewMarkdown.js";
 import {
   parseJbToolPayload,
   resolveJbToolPayload,
   shouldAppendUnderperformingDutYield,
   buildGoodBinValueMarkdown,
-} from "./jb/agentJbPayloadResolve.js";
+} from "../jb/agentJbPayloadResolve.js";
 import {
   buildLotOverviewQueryArgs,
   canRunLotOverviewDirectRoute,
   getCachedJbPayloadForLot,
   LOT_OVERVIEW_JB_NUDGE,
   lotOverviewNeedsJbRecovery,
-} from "./agentJbOverviewRoute.js";
+} from "../agentJbOverviewRoute.js";
 import {
   canRunLotListingDirectRoute,
   lotListingAggregateArgsFromUser,
   lotListingNeedsJbRecovery,
   lotListingQueryArgsFromUser,
-} from "./agentJbLotListingRoute.js";
+} from "../agentJbLotListingRoute.js";
 import {
   canRunScopedBadBinDirectRoute,
   scopedBadBinAggregateArgsFromUser,
   scopedBadBinNeedsAggregateRecovery,
-} from "./agentJbScopedBadBinRoute.js";
+} from "../agentJbScopedBadBinRoute.js";
 import {
   binLotRankingAggregateArgsFromUser,
   canRunBinLotRankingDirectRoute,
-} from "./agentJbBinLotRankingRoute.js";
+} from "../agentJbBinLotRankingRoute.js";
 import {
   canRunMaskScopeDirectRoute,
   maskScopeFilterValuesArgs,
   maskScopeJbQueryArgs,
-} from "./agentJbMaskScopeRoute.js";
+} from "../agentJbMaskScopeRoute.js";
 import {
   buildUnscopedBinClarifyMessage,
   canRunUnscopedBinClarify,
-} from "./agentJbUnscopedBinRoute.js";
+} from "../agentJbUnscopedBinRoute.js";
 import {
   canRunUnderperformingDutDirectRoute,
   underperformingDutArgsFromText,
-} from "./agentUnderperformingDutRoute.js";
+} from "../agentUnderperformingDutRoute.js";
 import {
-  buildUnderperformingDutScatterOptions,
   formatAllDutsHighlightMarkdown,
-} from "./agentUnderperformingDutView.js";
-import type { PassUnderperformingDutsResult } from "../lotUnderperformingDuts.js";
+} from "../agentUnderperformingDutView.js";
 import {
   runLotUnderperformingDuts,
-  buildGoodBinsByPassFromToolPayload,
-  resolvePassIdsForDutAnalysis,
-} from "../lotUnderperformingDutsResolve.js";
+} from "../../lotUnderperformingDutsResolve.js";
 import {
   buildProbeCardPerfSummaryMarkdown,
   type PassGroupResult,
-} from "../probeCard/probeCardTesterPerformance.js";
-import { buildScopeLabelFromAggregateArgs, findLastToolCallArgs, inferDeviceFromText, inferDeviceFromHistory, inferLotFromHistory, inferRecentMonthsWindow, jbListingScopeLabel, resolveJbListingScope } from "./agentQueryScope.js";
-import { deviceBaseMask } from "../deviceMask.js";
+} from "../../probeCard/probeCardTesterPerformance.js";
+import { buildScopeLabelFromAggregateArgs, findLastToolCallArgs, inferDeviceFromText, inferDeviceFromHistory, inferLotFromHistory, inferRecentMonthsWindow, jbListingScopeLabel, resolveJbListingScope } from "../agentQueryScope.js";
 import {
   buildInfDrawArgsAfterJbLookup,
   extractLotFromUserText,
-  extractLotsFromUserText,
   findJbLotContext,
   infDrawWaferMapArgsComplete,
-} from "./tools/agentInfWaferMapTool.js";
+} from "../tools/agentInfWaferMapTool.js";
 import {
   buildDutBinMapArgsFromSession,
   DUT_BIN_MAP_JB_LOOKUP_NUDGE,
   sessionCanDrawDutBinMap,
   userWantsDutBinRelationMap,
-} from "./agentDutBinMapRoute.js";
+} from "../agentDutBinMapRoute.js";
 import {
   getJbToolRawJson,
-} from "./agentJbSessionCache.js";
+} from "../agentJbSessionCache.js";
 import {
   planWaferMapRoute,
   WAFER_MAP_JB_LOOKUP_NUDGE,
   type WaferMapRoutePlan,
-} from "./agentWaferMapRoute.js";
-import { resolveJbRoute, resolveJbRouteAsync } from "./jbRouteResolver.js";
-import { resolveDispatch } from "./agentSemanticDispatchTable.js";
-import type { DispatchResult } from "./agentSemanticDispatchTable.js";
+} from "../agentWaferMapRoute.js";
+import { resolveJbRoute, resolveJbRouteAsync } from "../jbRouteResolver.js";
+// ── Extracted sibling modules (split from the original agentLoop.ts) ──────────
+import { createDeepSeekFilter } from "./agentEmbeddedToolParsing.js";
+import {
+  isLastToolEmptyResult,
+  toolStatusLabel,
+  historyAwaitingToolSummary,
+} from "./agentToolStatus.js";
+import {
+  isDutBinConcentrationQuestion,
+  questionHasIdentifiableToolScope,
+  requiresNewDataQuery,
+  cachedJbScopeMismatchReason,
+  equipmentRouteCrossLotBail,
+  isCardProbeTestQuestion,
+} from "../dispatch/agentQuestionHeuristics.js";
+import { tryRunSemanticDispatchDirectRoute } from "../dispatch/agentSemanticDispatch.js";
+import {
+  tryEmitUnderperformingDutScatter,
+  tryAppendUnderperformingDutSection,
+} from "../tools/agentToolUnderperformingDutsRender.js";
+import { renderAggregateJbBinsResult } from "../render/agentAggregateBinsRender.js";
 
 export type AgentSseEvent =
   | { type: "text"; delta: string }
@@ -169,505 +179,6 @@ export type AgentSseEvent =
 // toolResultMaxChars so accumulated history stays manageable across multi-turn sessions.
 // runTool always returns a string, so the cap must be applied explicitly (the JSON.stringify
 // branch below was dead code before this fix).
-
-// ─── DeepSeek / reasoning stream filter ─────────────────────────────────────
-// DeepSeek V3 via SiliconFlow sometimes puts its native function-call tokens
-// directly in the content stream rather than in the structured tool_calls field.
-// Reasoning models may also embed , <redacted_reasoning>, or
-// <think> … </…> inside content (should use reasoning_content, but not always).
-// SiliconFlow / DeepSeek may also emit DSML-style tool markup in content:
-//   <｜DSML｜tool_calls> … <｜DSML｜invoke name="…"> … </｜DSML｜tool_calls>
-// The tokens use both ASCII | and fullwidth ｜ (U+FF5C) and ▁ (U+2581).
-//   <｜tool▁sep｜>     — separates function name from args
-//   <｜tool▁call▁end｜> — ends a single call
-//   <｜tool▁calls▁end｜> — ends the call block
-// This filter intercepts the stream, suppresses these tokens from the UI,
-// and recovers CollectedToolCall objects for normal execution.
-
-const DS_START_RE = /(?:function)?<[|｜]tool[_▁]/;
-const DSML_START_RE = /<[|｜]DSML[|｜]/;
-const DSML_CALLS_END_RE = /<\/[|｜]DSML[|｜]tool_calls>/;
-const DSML_INVOKE_RE = /<[|｜]DSML[|｜]invoke\s+name="([^"]+)"/i;
-const DSML_PARAM_RE =
-  /<[|｜]DSML[|｜]parameter\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/[|｜]DSML[|｜]parameter>/gi;
-const DS_SEP_RE = /<[|｜]tool[_▁]sep[|｜]>/;
-const DS_CALL_END_RE = /<[|｜]tool[_▁]call[_▁]end[|｜]>/;
-const DS_CALLS_END_RE = /<[|｜]tool[_▁]calls[_▁]end[|｜]>/g;
-const REASONING_OPEN_RE =
-  /<(think|redacted_reasoning|redacted_thinking)\b[^>]*>/i;
-const REASONING_CLOSE_RE =
-  /<\/(think|redacted_reasoning|redacted_thinking)\s*>/i;
-/** Keep tail while inside reasoning so a split closing tag is not lost. */
-const REASONING_CLOSE_LOOKAHEAD = 32;
-/** Drop a trailing partial reasoning / DSML open at stream end. */
-const REASONING_PARTIAL_OPEN_TAIL_RE =
-  /<(?:\/)?(?:think|redacted_reasoning|redacted_thinking)\b[^>]*$/i;
-const DSML_PARTIAL_OPEN_TAIL_RE = /<[|｜]DSML[|｜][^>]*$/i;
-
-// MiniMax 2.5 embeds tool calls as <minimax:tool_call>…</minimax:tool_call>
-// in the content stream instead of using structured tool_calls.
-const MINIMAX_START_RE = /<minimax:tool_call\b/i;
-const MINIMAX_END_RE = /<\/minimax:tool_call>/i;
-const MINIMAX_INVOKE_RE = /<invoke\s+name="([^"]+)"/i;
-const MINIMAX_PARAM_RE =
-  /<parameter\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/parameter>/gi;
-const MINIMAX_PARTIAL_OPEN_TAIL_RE = /<(?:\/)?minimax:[^>]*$/i;
-const INVOKE_STANDALONE_RE = /<invoke\s+name="/i;
-const INVOKE_END_RE = /<\/invoke>/i;
-/** MiniMax 偶发：仅有 invoke 尾 + 关闭标签，无开头 `<minimax:tool_call>` */
-const ORPHAN_INVOKE_ARG_TAIL_RE =
-  /(?:^|[\s\S]*?)(?:<invoke[\s\S]*)?(?:[A-Za-z_]\w*\s*:\s*(?:"[^"]*"|\d+)\s*,?\s*)+\}?\s*<\/invoke>\s*<\/minimax:tool_call>\s*$/i;
-
-// GLM 5.x (e.g. zai-org/GLM-5.1 via SiliconFlow) embeds tool calls as:
-//   <tool_call>generate_chart<arg_key>chartType</arg_key><arg_value>pie</arg_value>…</tool_call>
-// Require a letter/underscore immediately after the tag so that literal `<tool_call>` in
-// model prose (code examples, error messages) is not mistaken for an actual tool invocation.
-const GLM_TOOL_CALL_START_RE = /<tool_call>[a-zA-Z_]/;
-const GLM_TOOL_CALL_END_RE = /<\/tool_call>/i;
-const GLM_ARG_KEY_RE = /<arg_key>([\s\S]*?)<\/arg_key>/gi;
-const GLM_ARG_VALUE_RE = /<arg_value>([\s\S]*?)<\/arg_value>/gi;
-const GLM_PARTIAL_OPEN_TAIL_RE = /<(?:\/)?(?:tool_call|arg_key|arg_value)[^>]*$/i;
-const ORPHAN_GLM_TOOL_CALL_TAIL_RE =
-  /<tool_call>[\s\S]*?<\/tool_call>\s*$/i;
-
-/** Parse GLM `<tool_call>name<arg_key>…</arg_key><arg_value>…</arg_value>…</tool_call>`. */
-export function parseGlmToolCallBody(block: string): {
-  name: string;
-  args: Record<string, unknown>;
-} {
-  const inner = block
-    .replace(/^<tool_call>/i, "")
-    .replace(/<\/tool_call>\s*$/i, "")
-    .trim();
-  const firstArgKey = inner.search(/<arg_key>/i);
-  const name = (
-    firstArgKey >= 0 ? inner.slice(0, firstArgKey) : inner.replace(/<[\s\S]*$/, "")
-  ).trim();
-
-  // Match each <arg_key>…</arg_key> paired with the <arg_value>…</arg_value> that follows it,
-  // avoiding the positional-zip misalignment that occurs when value content contains XML-like tags.
-  const args: Record<string, unknown> = {};
-  const pairRe = /<arg_key>([\s\S]*?)<\/arg_key>[\s\S]*?<arg_value>([\s\S]*?)<\/arg_value>/gi;
-  let km: RegExpExecArray | null;
-  while ((km = pairRe.exec(inner)) !== null) {
-    const key = km[1].trim();
-    if (!key) continue;
-    const raw = km[2].trim();
-    if (raw.startsWith("{") || raw.startsWith("[")) {
-      try {
-        args[key] = JSON.parse(raw) as unknown;
-        continue;
-      } catch {
-        /* keep string */
-      }
-    }
-    args[key] = raw;
-  }
-  return { name, args };
-}
-
-function stripOrphanGlmToolMarkupTail(text: string): string {
-  if (ORPHAN_GLM_TOOL_CALL_TAIL_RE.test(text)) {
-    return text.replace(ORPHAN_GLM_TOOL_CALL_TAIL_RE, "").trimEnd();
-  }
-  const openIdx = text.lastIndexOf("<tool_call>");
-  if (openIdx >= 0 && !GLM_TOOL_CALL_END_RE.test(text.slice(openIdx))) {
-    return text.slice(0, openIdx).trimEnd();
-  }
-  return text;
-}
-
-function pushGlmToolCall(
-  calls: CollectedToolCall[],
-  block: string,
-  idx: number
-): number {
-  const { name, args } = parseGlmToolCallBody(block);
-  if (!name) return idx;
-  calls.push({
-    index: idx,
-    id: `glm_embedded_${idx}`,
-    name,
-    args: JSON.stringify(args),
-  });
-  return idx + 1;
-}
-
-/** Parse `<parameter>` tags or JSON / loose key:value body inside `<invoke>`. */
-export function parseMinimaxInvokeBody(block: string): Record<string, string> {
-  const args: Record<string, string> = {};
-  let pm: RegExpExecArray | null;
-  MINIMAX_PARAM_RE.lastIndex = 0;
-  while ((pm = MINIMAX_PARAM_RE.exec(block)) !== null) {
-    args[pm[1]] = pm[2].trim();
-  }
-  if (Object.keys(args).length > 0) return args;
-
-  const body = block
-    .replace(/^[\s\S]*?<invoke[^>]*>/i, "")
-    .replace(/<\/invoke>[\s\S]*$/i, "")
-    .trim();
-  if (!body) return args;
-
-  try {
-    const parsed = JSON.parse(body) as Record<string, unknown>;
-    for (const [k, v] of Object.entries(parsed)) {
-      if (v == null) continue;
-      args[k] = typeof v === "string" ? v : String(v);
-    }
-    return args;
-  } catch {
-    const looseRe = /([A-Za-z_]\w*)\s*:\s*("([^"]*)"|(\d+(?:\.\d+)?))/g;
-    let m: RegExpExecArray | null;
-    while ((m = looseRe.exec(body)) !== null) {
-      args[m[1]] = m[3] ?? m[4] ?? "";
-    }
-  }
-  return args;
-}
-
-function stripOrphanToolMarkupTail(text: string): string {
-  text = stripOrphanGlmToolMarkupTail(text);
-  if (ORPHAN_INVOKE_ARG_TAIL_RE.test(text)) {
-    return text.replace(ORPHAN_INVOKE_ARG_TAIL_RE, "").trimEnd();
-  }
-  const closeIdx = text.lastIndexOf("</minimax:tool_call>");
-  if (closeIdx < 0) return text;
-  const minimaxOpen = text.lastIndexOf("<minimax:tool_call", closeIdx);
-  const invokeOpen = text.lastIndexOf("<invoke", closeIdx);
-  const start =
-    minimaxOpen >= 0
-      ? minimaxOpen
-      : invokeOpen >= 0 && invokeOpen < closeIdx
-        ? invokeOpen
-        : -1;
-  if (start >= 0) return text.slice(0, start).trimEnd();
-  return text.slice(0, closeIdx).replace(/<\/invoke>\s*$/i, "").trimEnd();
-}
-
-function pushMinimaxInvokeCall(
-  calls: CollectedToolCall[],
-  block: string,
-  idx: number
-): number {
-  const invokeMatch = MINIMAX_INVOKE_RE.exec(block);
-  if (!invokeMatch) return idx;
-  const args = parseMinimaxInvokeBody(block);
-  calls.push({
-    index: idx,
-    id: `minimax_embedded_${idx}`,
-    name: invokeMatch[1],
-    args: JSON.stringify(args),
-  });
-  return idx + 1;
-}
-
-interface FilteredEmitter {
-  /** Feed a raw text delta from the LLM stream. */
-  push(delta: string): void;
-  /** Call after streaming ends — flushes buffered text and returns embedded calls. */
-  finalize(): CollectedToolCall[];
-  /** Clean text accumulated for history recording (no DeepSeek tokens). */
-  cleanText: string;
-}
-
-function createDeepSeekFilter(
-  outerEmit: (event: AgentSseEvent) => void
-): FilteredEmitter {
-  let pending = "";      // text awaiting token-detection scan
-  let inToken = false;   // inside embedded tool / DSML markup
-  let tokenKind: "deepseek" | "dsml" | "minimax" | "glm" = "deepseek";
-  let inReasoning = false;
-  let tokenBuf = "";     // accumulates token content while inToken
-  const calls: CollectedToolCall[] = [];
-  let callIdx = 0;
-  let cleanText = "";
-
-  const LOOKAHEAD = 32; // ≥ "<｜DSML｜tool_calls>" prefix
-
-  function flushPending(force = false): void {
-    if (inToken) return;
-    pending = stripOrphanToolMarkupTail(pending);
-    const safeLen = force ? pending.length : Math.max(0, pending.length - LOOKAHEAD);
-    if (safeLen > 0) {
-      const safe = pending.slice(0, safeLen);
-      cleanText += safe;
-      outerEmit({ type: "text", delta: safe });
-      pending = pending.slice(safeLen);
-    }
-  }
-
-  function tryExtractFromDsmlBuf(): void {
-    const endMatch = DSML_CALLS_END_RE.exec(tokenBuf);
-    if (!endMatch) return;
-
-    const block = tokenBuf.slice(0, endMatch.index);
-    tokenBuf = tokenBuf.slice(endMatch.index + endMatch[0].length);
-
-    const invokeMatch = DSML_INVOKE_RE.exec(block);
-    if (invokeMatch) {
-      const fnName = invokeMatch[1];
-      const args: Record<string, string> = {};
-      let pm: RegExpExecArray | null;
-      DSML_PARAM_RE.lastIndex = 0;
-      while ((pm = DSML_PARAM_RE.exec(block)) !== null) {
-        args[pm[1]] = pm[2].trim();
-      }
-      calls.push({
-        index: callIdx,
-        id: `dsml_embedded_${callIdx}`,
-        name: fnName,
-        args: JSON.stringify(args),
-      });
-      callIdx++;
-    }
-
-    tokenBuf = tokenBuf.trim();
-    if (DSML_START_RE.test(tokenBuf.slice(0, 24))) {
-      tryExtractFromDsmlBuf();
-    } else if (!tokenBuf) {
-      inToken = false;
-    } else {
-      inToken = false;
-      pending = tokenBuf;
-      tokenBuf = "";
-      scanForTokens();
-    }
-  }
-
-  function tryExtractFromGlmBuf(): void {
-    const endMatch = GLM_TOOL_CALL_END_RE.exec(tokenBuf);
-    if (!endMatch) return;
-
-    const block = tokenBuf.slice(0, endMatch.index + endMatch[0].length);
-    tokenBuf = tokenBuf.slice(endMatch.index + endMatch[0].length).trim();
-
-    callIdx = pushGlmToolCall(calls, block, callIdx);
-
-    if (!tokenBuf) {
-      inToken = false;
-    } else if (GLM_TOOL_CALL_START_RE.test(tokenBuf.slice(0, 16))) {
-      tryExtractFromGlmBuf();
-    } else {
-      inToken = false;
-      pending = tokenBuf;
-      tokenBuf = "";
-      scanForTokens();
-    }
-  }
-
-  function tryExtractFromMinimaxBuf(): void {
-    const endMatch = MINIMAX_END_RE.exec(tokenBuf);
-    if (!endMatch) {
-      // MiniMax 有时无外层 minimax:tool_call，仅 </invoke> 闭合
-      const invokeEnd = INVOKE_END_RE.exec(tokenBuf);
-      if (invokeEnd && INVOKE_STANDALONE_RE.test(tokenBuf)) {
-        const block = tokenBuf.slice(0, invokeEnd.index + invokeEnd[0].length);
-        tokenBuf = tokenBuf.slice(invokeEnd.index + invokeEnd[0].length).trim();
-        callIdx = pushMinimaxInvokeCall(calls, block, callIdx);
-        if (!tokenBuf) {
-          inToken = false;
-        } else {
-          scanForTokens();
-        }
-      }
-      return;
-    }
-
-    const block = tokenBuf.slice(0, endMatch.index);
-    tokenBuf = tokenBuf.slice(endMatch.index + endMatch[0].length).trim();
-
-    callIdx = pushMinimaxInvokeCall(calls, block, callIdx);
-
-    if (!tokenBuf) {
-      inToken = false;
-    } else if (MINIMAX_START_RE.test(tokenBuf.slice(0, 24))) {
-      tryExtractFromMinimaxBuf();
-    } else {
-      inToken = false;
-      pending = tokenBuf;
-      tokenBuf = "";
-      scanForTokens();
-    }
-  }
-
-  function tryExtractFromTokenBuf(): void {
-    const endMatch = DS_CALL_END_RE.exec(tokenBuf);
-    if (!endMatch) return; // token not complete yet
-
-    const callContent = tokenBuf.slice(0, endMatch.index);
-    const after = tokenBuf.slice(endMatch.index + endMatch[0].length);
-
-    const sepMatch = DS_SEP_RE.exec(callContent);
-    if (sepMatch) {
-      const afterSep = callContent.slice(sepMatch.index + sepMatch[0].length);
-      const nlIdx = afterSep.indexOf("\n\n");
-      if (nlIdx !== -1) {
-        const fnName = afterSep.slice(0, nlIdx).trim();
-        let args = afterSep.slice(nlIdx + 2).trim();
-        // Strip any markdown code fence artifacts
-        args = args.replace(/^```[a-z]*\s*/i, "").replace(/\s*```\s*$/m, "").trim();
-        if (fnName) {
-          calls.push({ index: callIdx, id: `ds_embedded_${callIdx}`, name: fnName, args });
-          callIdx++;
-        }
-      }
-    }
-
-    // Strip all-calls-end tokens from remainder
-    tokenBuf = after.replace(DS_CALLS_END_RE, "").trim();
-
-    // Check for another call immediately following
-    if (DS_START_RE.test(tokenBuf.slice(0, 20))) {
-      tryExtractFromTokenBuf();
-    } else if (!tokenBuf) {
-      inToken = false;
-    } else {
-      // Unexpected remainder — emit it as text
-      inToken = false;
-      pending = tokenBuf;
-      tokenBuf = "";
-      scanForTokens();
-    }
-  }
-
-  function scanForTokens(): void {
-    if (inReasoning) {
-      const closeMatch = REASONING_CLOSE_RE.exec(pending);
-      if (closeMatch) {
-        pending = pending.slice(closeMatch.index + closeMatch[0].length);
-        inReasoning = false;
-        scanForTokens();
-        return;
-      }
-      if (pending.length > REASONING_CLOSE_LOOKAHEAD) {
-        pending = pending.slice(-REASONING_CLOSE_LOOKAHEAD);
-      }
-      return;
-    }
-
-    if (inToken) return;
-
-    const reasoningMatch = REASONING_OPEN_RE.exec(pending);
-    const dsmlMatch = DSML_START_RE.exec(pending);
-    const dsToolMatch = DS_START_RE.exec(pending);
-    const minimaxMatch = MINIMAX_START_RE.exec(pending);
-    const glmMatch = GLM_TOOL_CALL_START_RE.exec(pending);
-    const invokeStandaloneMatch = INVOKE_STANDALONE_RE.exec(pending);
-
-    let matchIndex = -1;
-    let matchKind: "reasoning" | "tool" | null = null;
-    if (reasoningMatch) {
-      matchIndex = reasoningMatch.index;
-      matchKind = "reasoning";
-    }
-    if (dsmlMatch && (matchKind === null || dsmlMatch.index < matchIndex)) {
-      matchIndex = dsmlMatch.index;
-      matchKind = "tool";
-      tokenKind = "dsml";
-    }
-    if (
-      dsToolMatch &&
-      (matchKind === null || dsToolMatch.index < matchIndex)
-    ) {
-      matchIndex = dsToolMatch.index;
-      matchKind = "tool";
-      tokenKind = "deepseek";
-    }
-    if (minimaxMatch && (matchKind === null || minimaxMatch.index < matchIndex)) {
-      matchIndex = minimaxMatch.index;
-      matchKind = "tool";
-      tokenKind = "minimax";
-    }
-    if (glmMatch && (matchKind === null || glmMatch.index < matchIndex)) {
-      matchIndex = glmMatch.index;
-      matchKind = "tool";
-      tokenKind = "glm";
-    }
-    if (
-      invokeStandaloneMatch &&
-      (matchKind === null || invokeStandaloneMatch.index < matchIndex)
-    ) {
-      matchIndex = invokeStandaloneMatch.index;
-      matchKind = "tool";
-      tokenKind = "minimax";
-    }
-
-    if (matchKind === null) {
-      flushPending();
-      return;
-    }
-
-    if (matchIndex > 0) {
-      const before = pending.slice(0, matchIndex);
-      cleanText += before;
-      outerEmit({ type: "text", delta: before });
-      pending = pending.slice(matchIndex);
-    }
-
-    if (matchKind === "reasoning") {
-      const openMatch = REASONING_OPEN_RE.exec(pending);
-      if (!openMatch) {
-        flushPending();
-        return;
-      }
-      pending = pending.slice(openMatch[0].length);
-      inReasoning = true;
-      scanForTokens();
-      return;
-    }
-
-    inToken = true;
-    tokenBuf = pending;
-    pending = "";
-    if (tokenKind === "dsml") tryExtractFromDsmlBuf();
-    else if (tokenKind === "minimax") tryExtractFromMinimaxBuf();
-    else if (tokenKind === "glm") tryExtractFromGlmBuf();
-    else tryExtractFromTokenBuf();
-  }
-
-  return {
-    push(delta: string): void {
-      if (inToken) {
-        tokenBuf += delta;
-        if (tokenKind === "dsml") tryExtractFromDsmlBuf();
-        else if (tokenKind === "minimax") tryExtractFromMinimaxBuf();
-        else if (tokenKind === "glm") tryExtractFromGlmBuf();
-        else tryExtractFromTokenBuf();
-      } else {
-        pending += delta;
-        scanForTokens();
-      }
-    },
-    finalize(): CollectedToolCall[] {
-      if (inReasoning) {
-        pending = "";
-        inReasoning = false;
-      }
-      // Stream ended mid-token: recover invoke from partial MiniMax buffer when possible.
-      if (inToken) {
-        if (tokenKind === "minimax" && tokenBuf && INVOKE_STANDALONE_RE.test(tokenBuf)) {
-          callIdx = pushMinimaxInvokeCall(calls, tokenBuf, callIdx);
-        } else if (tokenKind === "glm" && tokenBuf && GLM_TOOL_CALL_START_RE.test(tokenBuf)) {
-          callIdx = pushGlmToolCall(calls, tokenBuf, callIdx);
-        } else if (tokenKind === "deepseek" && tokenBuf) {
-          pending = tokenBuf;
-        }
-        tokenBuf = "";
-        inToken = false;
-        tokenKind = "deepseek";
-      }
-      pending = pending
-        .replace(REASONING_PARTIAL_OPEN_TAIL_RE, "")
-        .replace(DSML_PARTIAL_OPEN_TAIL_RE, "")
-        .replace(MINIMAX_PARTIAL_OPEN_TAIL_RE, "")
-        .replace(GLM_PARTIAL_OPEN_TAIL_RE, "");
-      flushPending(true);
-      return calls;
-    },
-    get cleanText() { return cleanText; },
-  };
-}
 
 /**
  * Calls the LLM to produce a compact Chinese summary of the given older
@@ -717,18 +228,7 @@ async function summarizeHistory(
   return summary.trim();
 }
 
-/** Test helper: run stream deltas through the same UI filter as runAgentLoop. */
-export function filterAgentStreamTextForUi(deltas: string[]): string {
-  const parts: string[] = [];
-  const filter = createDeepSeekFilter((event) => {
-    if (event.type === "text") parts.push(event.delta);
-  });
-  for (const delta of deltas) filter.push(delta);
-  filter.finalize();
-  return parts.join("");
-}
-
-function lastToolMessage(history: ChatMessage[]): ChatMessage | undefined {
+export function lastToolMessage(history: ChatMessage[]): ChatMessage | undefined {
   for (let i = history.length - 1; i >= 0; i--) {
     if (history[i].role === "tool") return history[i];
   }
@@ -762,7 +262,7 @@ function lastUserMessageText(
   return fallback.trim();
 }
 
-function emitTextInChunks(text: string, emit: (event: AgentSseEvent) => void): void {
+export function emitTextInChunks(text: string, emit: (event: AgentSseEvent) => void): void {
   const size = 500;
   for (let i = 0; i < text.length; i += size) {
     emit({ type: "text", delta: text.slice(i, i + size) });
@@ -967,7 +467,7 @@ function cleanStreamErrorMessage(raw: string): string {
 }
 
 /** 直出 JB 服务端表；可选跳过解读 LLM（lot 概况等）。 */
-async function emitDeterministicJbTablesReply(
+export async function emitDeterministicJbTablesReply(
   sessionId: string,
   userQuestion: string,
   payload: Record<string, unknown>,
@@ -1670,23 +1170,6 @@ async function tryRunBinLotRankingDirectRoute(
 }
 
 /**
- * 用户是否在问 lot 级 DUT×BIN 集中度（DUT/触点/探针 级，非卡级归因）。
- * - DUT 级意图（dut/触点/探针）→ P-F（query_lot_dut_bin_agg 单 lot DUT 集中度），
- *   即便同时问"哪张卡"也以 DUT 集中度作答（如 P-F 的
- *   "哪个卡 哪个dut 测试出的 bin79 最多"）。
- * - 纯卡级归因（"BINnn 集中在哪张卡"，无 dut）→ 让给 bin_card_attribution 语义派发
- *   （aggregate_jb_bins groupBy:bin,cardId），勿被 P-F 用 history primary lot 抢成
- *   单 lot DUT 集中度（A1-2 误路由根因）。
- */
-export function isDutBinConcentrationQuestion(text: string): boolean {
-  const focusBin = extractBinFromUserText(text);
-  if (focusBin == null) return false;
-  if (/(dut|触点|探针)/i.test(text)) return true;
-  if (/(卡|card)/i.test(text)) return !isBinCardAttributionQuestion(text);
-  return false;
-}
-
-/**
  * 「哪个卡/哪个 DUT 测出 BIN79 最多」：首轮直连 query_lot_dut_bin_agg（P-F）。
  */
 async function tryRunDutBinAggDirectRoute(
@@ -1767,19 +1250,6 @@ const DUT_YIELD_CHART_NUDGE =
   "**禁止调用 `inf_draw_wafer_map`**（那是 die 坐标空间图，无法展示每 DUT 良率统计柱状）。";
 
 /**
- * 首轮（非 awaitingSummary）用户问题里能否识别出 device / lot / cardId 之一。
- * 用于事后检测「模型只说了要查、却没真正调用工具」——若问题里有明确实体，
- * 正常应该立即触发工具调用（见 prompt/agentPrompt.ts 硬规则），没调用大概率是模型违反了该规则。
- */
-export function questionHasIdentifiableToolScope(userQuestion: string): boolean {
-  return (
-    Boolean(extractLotFromUserText(userQuestion)) ||
-    Boolean(inferDeviceFromText(userQuestion)) ||
-    isCardProbeTestQuestion(userQuestion)
-  );
-}
-
-/**
  * 模型在首轮只承诺"马上查"却没有真正调用任何工具时的纠正提示（一轮内最多用一次）。
  * 与 prompt/agentPrompt.ts:211/261 的硬规则同义，用代码兜底——避免完全依赖模型遵守文字规则。
  */
@@ -1796,76 +1266,6 @@ function isTestItemMappingQuestion(text: string): boolean {
   if (!/\bbin\s*\d{1,3}\b/i.test(text)) return false;
   return /测试项|test\s*item|什么测试|哪个测试项|哪种测试|测试内容|测试名称|失效.*测试|测试.*失效|bin.*是什么测试/i.test(text);
 }
-
-/**
- * 判断用户是否在请求跨批次/多 lot/时间范围的新数据查询。
- * 此类问题不能用 session 缓存（单批次数据）直接作答。
- */
-export function requiresNewDataQuery(text: string): boolean {
-  // 跨 tester / 机台 比较
-  if (/不同.*(tester|机台|测试机)/i.test(text)) return true;
-  // 多批次列表
-  if (/(各批次|所有批次|多批次|批次.*列表|列表.*批次)/i.test(text)) return true;
-  // 时间范围 + 批次
-  if (/(三周|一个月|两个月|三个月|过去\s*\d+\s*(天|周|月)|最近\s*\d+\s*(天|周|月)).*(批次|lot)/i.test(text)) return true;
-  // 消息中含 2 个以上明确的 lot ID（如 DR45487.1K、DR45246.1N...）
-  const lots = text.match(/\b[A-Z]{2}\d{5}\.\d[A-Z]\b/g) ?? [];
-  if (lots.length >= 2) return true;
-  return false;
-}
-
-const QUESTION_MASK_TOKEN_RE = /\b([A-Z]\d{2}[A-Z])\b/g;
-const QUESTION_LOT_TOKEN_RE = /\b[A-Z]{2}\d{4,5}\.\d[A-Z]?\w*/g;
-
-/**
- * 缓存 JB payload 的产品/批次是否与当前问题不一致——一致才允许直接吐缓存 equipment 表。
- * 返回不一致原因（用于日志），一致返回 null。
- * 防止「N55Z bin35 哪张卡」被上一题 P11C 的 TR21697.1K 缓存张冠李戴回答。
- */
-export function cachedJbScopeMismatchReason(
-  payload: Record<string, unknown>,
-  userQuestion: string
-): string | null {
-  const q = userQuestion.toUpperCase();
-  const device = String(payload["device"] ?? "").trim();
-  const payloadMask = deviceBaseMask(device); // 缓存产品 mask（device base 末 4 位）
-
-  // 问题里出现的 mask token 与缓存产品 mask 不一致
-  if (payloadMask) {
-    for (const m of q.matchAll(QUESTION_MASK_TOKEN_RE)) {
-      if (m[1] && m[1] !== payloadMask) {
-        return `问题含 mask=${m[1]}，与缓存产品 mask=${payloadMask}（device=${device}）不一致`;
-      }
-    }
-  }
-
-  // 问题里出现的 lot 与缓存 lot（primary + recentLotsByTestEnd）都不匹配
-  const cachedLots = new Set<string>();
-  const primaryLot = String(payload["lot"] ?? "").trim().toUpperCase();
-  if (primaryLot) cachedLots.add(primaryLot);
-  const recent = payload["recentLotsByTestEnd"];
-  if (Array.isArray(recent)) {
-    for (const r of recent) {
-      const l = String((r as Record<string, unknown>)?.["lot"] ?? "").trim().toUpperCase();
-      if (l) cachedLots.add(l);
-    }
-  }
-  const lotsInQ = [...q.matchAll(QUESTION_LOT_TOKEN_RE)].map((m) => m[0]);
-  if (lotsInQ.length > 0 && cachedLots.size > 0 && !lotsInQ.some((l) => cachedLots.has(l))) {
-    return `问题含 lot=${lotsInQ.join(",")}，与缓存 lot=${[...cachedLots].join(",")} 不一致`;
-  }
-  return null;
-}
-
-/** 跨多 lot 的「哪个/分析」类问题：缓存只含单批，不能代表整组，禁用 equipment 直连。 */
-export function equipmentRouteCrossLotBail(text: string): boolean {
-  if (/\d+\s*个\s*(lot|批次)/i.test(text)) return true;
-  if (/(请分析|分析).*(哪个|哪些|哪几)/i.test(text)) return true;
-  if (/(哪个|哪些).*(lot|批次).*(有关|相关|问题|可能|异常)/i.test(text)) return true;
-  return false;
-}
-
-export { equipmentRouteDutLevelBail } from "./jb/agentJbQuestionClassifiers.js";
 
 /**
  * 探针卡 / 机台 直连路由：用户追问 "probecard是什么" 等时，直接从 session 缓存输出
@@ -1948,196 +1348,6 @@ async function tryRunPerSlotBinRankingDirectRoute(
   return emitDeterministicJbTablesReply(sessionId, userQuestion, payload, agentConfig, emit);
 }
 
-type LotYieldRankEntry = {
-  lot: string;
-  device: string;
-  yieldPct: number | null;
-  worstSlot: number | null;
-  worstPassId: number | null;
-  testEnd: string | null;
-};
-
-function lotYieldRankingTopN(userQuestion: string): number {
-  const nMatch = userQuestion.match(/top\s*(\d+)|(\d+)\s*个/i);
-  return nMatch
-    ? Math.min(Math.max(1, Number(nMatch[1] ?? nMatch[2])), 50)
-    : 5;
-}
-
-/** 合并多 lot query_jb_bins 的 lotYieldRankByTestEnd（A1-4 多 lot 良率排行）。 */
-function mergeLotYieldRankingPayloads(
-  payloads: Record<string, unknown>[]
-): Record<string, unknown> {
-  const base = { ...payloads[0]! };
-  const byLot = new Map<string, LotYieldRankEntry>();
-  for (const p of payloads) {
-    const rank = p["lotYieldRankByTestEnd"] as LotYieldRankEntry[] | undefined;
-    for (const e of rank ?? []) {
-      if (!e.lot || e.yieldPct == null) continue;
-      const prev = byLot.get(e.lot);
-      if (!prev || (e.testEnd ?? "") >= (prev.testEnd ?? "")) {
-        byLot.set(e.lot, e);
-      }
-    }
-  }
-  base["lotYieldRankByTestEnd"] = [...byLot.values()].sort((a, b) =>
-    (b.testEnd ?? "").localeCompare(a.testEnd ?? "")
-  );
-  return base;
-}
-
-async function enrichLotYieldRankingPayload(
-  sessionId: string,
-  userQuestion: string,
-  basePayload: Record<string, unknown>,
-  scopeArgs: Record<string, unknown>,
-  agentConfig: AgentConfig,
-  emit: (event: AgentSseEvent) => void
-): Promise<Record<string, unknown>> {
-  const wantN = lotYieldRankingTopN(userQuestion);
-  const rank = basePayload["lotYieldRankByTestEnd"] as LotYieldRankEntry[] | undefined;
-  const recent = basePayload["recentLotsByTestEnd"] as Array<{ lot?: string }> | undefined;
-  const validRank = (rank ?? []).filter((e) => e.yieldPct != null);
-
-  if (!recent || recent.length <= 1) return basePayload;
-  if (validRank.length >= wantN && validRank.length >= 2) return basePayload;
-
-  const lotsToFetch = recent
-    .slice(0, Math.max(wantN + 2, 8))
-    .map((e) => String(e.lot ?? "").trim())
-    .filter(Boolean);
-  const primaryLot = String(basePayload["lot"] ?? "").trim();
-  const mergedPayloads: Record<string, unknown>[] = [basePayload];
-
-  for (const lot of lotsToFetch) {
-    if (lot === primaryLot && validRank.some((r) => r.lot === lot)) continue;
-    const lotArgs: Record<string, unknown> = {
-      lot,
-      limit: 200,
-      testEndFrom: scopeArgs["testEndFrom"] ?? "2020-01-01",
-    };
-    emit({ type: "status", message: `正在查询 ${lot} 良率…` });
-    emit({ type: "tool_start", name: "query_jb_bins", args: lotArgs });
-    try {
-      let lotCache: string | undefined;
-      const result = await runTool("query_jb_bins", lotArgs, {
-        toolResultMaxChars: agentConfig.toolResultMaxChars,
-        history: getHistory(sessionId),
-        onJbBinsWrapped: (wrapped) => {
-          lotCache = storeJbQuerySessionCache(sessionId, wrapped);
-        },
-      });
-      const raw = typeof result === "string" ? result : JSON.stringify(result);
-      const historyContent = toolResultForHistory(
-        "query_jb_bins",
-        raw,
-        agentConfig.toolResultMaxHistoryChars,
-        agentConfig.toolResultMaxChars,
-        lotCache
-      );
-      emit({
-        type: "tool_result",
-        name: "query_jb_bins",
-        summary: historyContent.slice(0, 200),
-      });
-      appendMessages(sessionId, {
-        role: "tool",
-        name: "query_jb_bins",
-        tool_call_id: `yield_rank_${lot}_${Date.now()}`,
-        content: historyContent,
-      });
-      const p =
-        (lotCache ? parseJbToolPayload(lotCache) : null) ??
-        parseJbToolPayload(historyContent);
-      if (p) mergedPayloads.push(p);
-    } catch {
-      /* skip lot */
-    }
-  }
-
-  if (mergedPayloads.length <= 1) return basePayload;
-  return mergeLotYieldRankingPayloads(mergedPayloads);
-}
-
-/**
- * 阶段三：决策驱动确定性派发（dark-launch，flag `JB_DETERMINISTIC_DISPATCH=true` 才生效）。
- * 对 `resolveDispatch` 返回高置信 plan 的跨实体 mode 在 LLM 前服务端直发查询与渲染。
- * 查询失败 / 渲染为空 → return false 交回 LLM，绝不 dead-end。
- */
-export async function tryRunSemanticDispatchDirectRoute(
-  sessionId: string,
-  userQuestion: string,
-  agentConfig: AgentConfig,
-  emit: (event: AgentSseEvent) => void
-): Promise<boolean> {
-  if (!getConfig().jbDeterministicDispatch) return false; // dark-launch
-
-  const history = getHistory(sessionId);
-  const lastToolName = lastToolMessage(history)?.name;
-  const decision = await resolveJbRouteAsync(
-    userQuestion, { lastToolName }, agentConfig, undefined, history
-  );
-  const plan: DispatchResult | null = resolveDispatch(decision, userQuestion, history);
-  if (!plan) return false; // 低置信 / 不在派发表 → 交 LLM
-
-  emit({ type: "status", message: "正在按意图直发查询…" });
-  emit({ type: "tool_start", name: plan.queryTool, args: plan.args });
-  let raw = "";
-  let jbCache: string | undefined;
-  try {
-    const result = await runTool(plan.queryTool, plan.args, {
-      toolResultMaxChars: agentConfig.toolResultMaxChars,
-      history,
-      onJbBinsWrapped: (wrapped) => { jbCache = storeJbQuerySessionCache(sessionId, wrapped); },
-    });
-    raw = typeof result === "string" ? result : JSON.stringify(result);
-    emit({ type: "tool_result", name: plan.queryTool, summary: raw.slice(0, 200) });
-    appendMessages(sessionId, {
-      role: "tool", name: plan.queryTool,
-      tool_call_id: `jb_dispatch_${Date.now()}`,
-      content: raw.slice(0, agentConfig.toolResultMaxChars ?? 12000),
-    });
-  } catch {
-    return false; // 查询失败 → 落回 LLM（不 dead-end）
-  }
-
-  if (plan.renderKind === "aggregate") {
-    const scopeLabel = buildScopeLabelFromAggregateArgs(plan.args);
-    const rendered = renderAggregateJbBinsResult(raw, userQuestion, scopeLabel);
-    if (!rendered?.table?.trim()) return false; // 渲染空 → 落回 LLM
-    const block = stampFirstTestNote(
-      (rendered.withDataTitle ? `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n` : "") +
-        rendered.table +
-        (rendered.commentaryNote
-          ? `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n${rendered.commentaryNote}`
-          : "")
-    );
-    emitTextInChunks(block, emit);
-    appendMessages(sessionId, { role: "assistant", content: block });
-    emit({ type: "done" });
-    return true;
-  }
-
-  // renderKind === "emitTables": 解析 payload → emitDeterministicJbTablesReply
-  let payload =
-    (jbCache ? parseJbToolPayload(jbCache) : null) ??
-    resolveJbToolPayload(sessionId, raw);
-  if (!payload) return false;
-
-  if (decision.mode === "lot_yield_ranking") {
-    payload = await enrichLotYieldRankingPayload(
-      sessionId,
-      userQuestion,
-      payload,
-      plan.args,
-      agentConfig,
-      emit
-    );
-  }
-
-  return emitDeterministicJbTablesReply(sessionId, userQuestion, payload, agentConfig, emit);
-}
-
 /**
  * A2-4 兜底：bin 归因/排行类问句带无法识别的疑似 scope token（如 ZZZZZ），
  * 且无任何可解析 scope 时，直接澄清而非交 LLM 空转（250s idle 超时）。
@@ -2158,16 +1368,6 @@ async function tryRunUnscopedBinClarifyDirectRoute(
   appendMessages(sessionId, { role: "assistant", content: msg });
   emit({ type: "done" });
   return true;
-}
-
-/** 每个有 baseline 的 pass emit 一张 DUT 良率散点图（供直连路由与 LLM 工具路径复用）。 */
-export function tryEmitUnderperformingDutScatter(
-  passes: PassUnderperformingDutsResult[],
-  emit: (event: AgentSseEvent) => void
-): void {
-  for (const s of buildUnderperformingDutScatterOptions(passes)) {
-    emit({ type: "chart", option: s.option });
-  }
 }
 
 /**
@@ -2275,62 +1475,6 @@ async function tryRunGoodBinValueDirectRoute(
   return true;
 }
 
-/**
- * B 路：JB lot 概况末尾 best-effort 补「各 DUT 良率」高亮表 + 散点图。
- * payload 缺 lot/device 或 INF 失败 → 返回 "" 静默跳过（不阻塞主概况）。
- * 返回追加的 markdown（供调用方并入持久化的 assistant 内容）。
- */
-export async function tryAppendUnderperformingDutSection(
-  payload: Record<string, unknown>,
-  emit: (event: AgentSseEvent) => void,
-  userQuestion?: string
-): Promise<string> {
-  const lotInQ = userQuestion ? extractLotFromUserText(userQuestion) : undefined;
-  let lot = String(payload["lot"] ?? "").trim();
-  let device = String(payload["device"] ?? "").trim();
-
-  if (lotInQ) {
-    const qLot = lotInQ.trim();
-    if (!lot || lot.toUpperCase() !== qLot.toUpperCase()) {
-      lot = qLot;
-      const recent = payload["recentLotsByTestEnd"] as
-        | Array<{ lot?: string; device?: string }>
-        | undefined;
-      const hit = recent?.find(
-        (e) => String(e.lot ?? "").trim().toUpperCase() === qLot.toUpperCase()
-      );
-      if (hit?.device) device = String(hit.device).trim();
-    }
-  }
-  // device 可能是确定性层的占位符 "—"（见 agentJbDeterministicReply）→ 视为无 device，
-  // 避免拿占位符去跑一次注定失败的慢 INF 取数。
-  if (!lot || !device || device === "—") return "";
-
-  emit({ type: "status", message: "正在补充各 DUT 良率分析（较慢）…" });
-  // best-effort 整节：取数 + 格式化 + emit 全包在 try 内，任何异常都静默跳过、返回 ""，
-  // 绝不打断已流出的主概况（本函数在 emitDeterministicJbTablesReply 主表之后调用）。
-  try {
-    const goodBinsByPassId = buildGoodBinsByPassFromToolPayload(payload);
-    const passIds = resolvePassIdsForDutAnalysis(undefined, payload);
-    const resp = await runLotUnderperformingDuts({
-      lot,
-      device,
-      passIds,
-      ...(goodBinsByPassId ? { goodBinsByPassId } : {}),
-    });
-    const passes = resp.passes ?? [];
-    const md = formatAllDutsHighlightMarkdown(passes, resp.lot, resp.device);
-    if (!md.trim()) return "";
-
-    const section = `\n\n### 🔬 各 DUT 良率（低于阈值 🔴）\n\n${md}`;
-    emit({ type: "text", delta: section });
-    tryEmitUnderperformingDutScatter(passes, emit);
-    return section;
-  } catch {
-    return ""; // best-effort：失败静默跳过
-  }
-}
-
 /** 从 query_lot_dut_bin_agg 结果中提取 DUT 分布，直接 emit bar chart。 */
 function tryEmitDutBinBarChart(
   rawContent: string,
@@ -2378,11 +1522,6 @@ function tryEmitTopBinBarChart(
     emit({ type: "chart", option });
   } catch { return false; }
   return true;
-}
-
-/** 检测用户是否在询问特定探针卡（格式如 6045-10）的测试情况。 */
-function isCardProbeTestQuestion(userText: string): boolean {
-  return /\b\d{4}-\d{2}\b/.test(userText);
 }
 
 /**
@@ -2779,162 +1918,6 @@ function findLastAggregateJbBinsArgs(
   return findLastToolCallArgs(history, "aggregate_jb_bins");
 }
 
-function buildMultiLotBinTable(content: string): string | null {
-  let agg: Record<string, unknown>;
-  try { agg = JSON.parse(content) as Record<string, unknown>; } catch { return null; }
-  const groups = agg["groups"] as Array<Record<string, unknown>> | undefined;
-  if (!groups?.length) return null;
-
-  // Detect cross-lot: groups contain 'lot' with multiple distinct values
-  const lotOrder: string[] = [];
-  const lotBins = new Map<string, Array<{ bin: string; count: number }>>();
-  for (const g of groups) {
-    const lot = String(g["lot"] ?? "").trim();
-    if (!lot) continue;
-    const binRaw = g["bin"] ?? g["BIN"];
-    const bin = `BIN${String(binRaw ?? "").trim()}`;
-    const count = Number(g["count"] ?? g["COUNT"] ?? 0);
-    if (!lotBins.has(lot)) { lotBins.set(lot, []); lotOrder.push(lot); }
-    if (binRaw && count > 0) lotBins.get(lot)!.push({ bin, count });
-  }
-  if (lotBins.size <= 1) return null; // single-lot: let normal path handle
-
-  // Sort lots by total bad die DESC
-  const lotTotals = new Map<string, number>();
-  for (const [lot, bins] of lotBins) lotTotals.set(lot, bins.reduce((s, b) => s + b.count, 0));
-  const sortedLots = [...lotOrder].sort((a, b) => (lotTotals.get(b) ?? 0) - (lotTotals.get(a) ?? 0));
-
-  const lines = [
-    `**各批次主要坏 BIN（共 ${lotBins.size} 个批次，按坏 die 总量排列）**`,
-    "",
-    "| Lot | TOP 1 BIN（颗数）| TOP 2 BIN（颗数）| TOP 3 BIN（颗数）| 坏 die 合计 |",
-    "|---|---|---|---|---:|",
-  ];
-  for (const lot of sortedLots) {
-    const bins = (lotBins.get(lot) ?? []).slice(0, 3);
-    while (bins.length < 3) bins.push({ bin: "—", count: 0 });
-    const cells = bins.map(b => b.count > 0 ? `${b.bin}（${b.count}）` : "—");
-    lines.push(`| ${lot} | ${cells.join(" | ")} | ${lotTotals.get(lot) ?? 0} |`);
-  }
-  // 诊断：暴露排序基准（绝对坏 die 总量），供真库核对「测试最差」口径是否应改用良率%。
-  console.warn(
-    `[multiLotBinTable] 按坏die总量降序 ${sortedLots.length} lot：` +
-      sortedLots.map((l) => `${l}=${lotTotals.get(l) ?? 0}`).join(", ")
-  );
-  // 口径脚注：坏 die 多 ≠ 良率低（大片/大批自然坏 die 多），避免把绝对量当「最差」。
-  lines.push(
-    "",
-    "*注：本表按各 lot「坏 die 总量」降序（良品 bin 已在聚合中扣除）；坏 die 绝对量受片数/总 die 影响，" +
-      "并不等价于良率最低。判定「测试最差」请以各 lot 良率% 复核（对目标 lot 调 query_jb_bins(lot) 看 yieldByPassId）。*"
-  );
-  return lines.join("\n");
-}
-
-/**
- * aggregate_jb_bins 结果 → 选出唯一应直出的渲染表（单一真相源）。
- *
- * 此前这条「binLot → multiLot → binCard → binDevice → binRank」选择链被**复制**在
- * tryRunDeterministicJbSummary（emit SSE）与 jbBinsYieldFallbackMessage（返字符串）两处，
- * 任何新增/修复都要改两遍（B1/B3 即如此）——典型「打地鼠」。这里收敛为一处，两个站点
- * 各自按返回值做自己的输出（SSE / 字符串），新增渲染分支只改这一个函数。
- *
- * 返回 null 表示无可直出表（交回上层）。`withDataTitle=false` 用于 multiLot 表
- * （自带表头，不加「## 实测数据」标题）；`statusMessage` 为空时调用方不发 status。
- */
-export interface AggregateJbBinsRender {
-  table: string;
-  commentaryNote: string;
-  statusMessage: string;
-  withDataTitle: boolean;
-}
-
-export function renderAggregateJbBinsResult(
-  aggContent: string,
-  userQuestion: string,
-  scopeLabel: string | undefined
-): AggregateJbBinsRender | null {
-  const focusBin = extractBinFromUserText(userQuestion);
-  const namedLots = extractLotsFromUserText(userQuestion);
-
-  // 用户问「哪个 lot BINnn 最多」: 按指定 bin 在各 lot 的颗数排序（含卡），须在 multiLotBinTable
-  // 之前判断——后者按「坏die总量」排序会把该 bin 少但总坏die多的 lot 误排第一。
-  // 点名多个 lot（B3）时仅保留这些 lot 并对缺失者补 0 行。
-  const binLotTable = buildBinFocusedLotRankingMarkdown(
-    aggContent,
-    focusBin,
-    scopeLabel,
-    namedLots
-  );
-  if (binLotTable?.trim()) {
-    return {
-      table: binLotTable,
-      commentaryNote:
-        `*以上按 BIN${focusBin} 在各 lot 的坏 die 颗数降序（非坏die总量口径）。` +
-        `如需某 lot 逐片分布，请追问「<lot> 哪片 BIN${focusBin} 最多」。*`,
-      statusMessage: "正在输出指定 BIN 的各 lot 排行…",
-      withDataTitle: true,
-    };
-  }
-
-  const multiLot = buildMultiLotBinTable(aggContent);
-  if (multiLot?.trim()) {
-    return {
-      table: multiLot,
-      commentaryNote: "如需深入分析某批次，请告知批次号（如上表第1行）。",
-      statusMessage: "", // multiLot 表自带表头与口径脚注，summary 站原本不发 status
-      withDataTitle: false,
-    };
-  }
-
-  // groupBy:"bin,cardId" → 卡归属表（用户问「集中在哪张卡」）。须在 bin-only 排行前判断，
-  // 否则 buildAggregateBinRankingMarkdown 会丢掉 cardId 列、渲染成重复 BIN 行。
-  const binCardTable = buildBinCardAggregateMarkdown(
-    aggContent,
-    scopeLabel,
-    focusBin
-  );
-  if (binCardTable?.trim()) {
-    return {
-      table: binCardTable,
-      commentaryNote:
-        `*以上为范围内 BIN×探针卡 坏 die 汇总（良品 bin 已扣除）。卡级已定位；DUT 级归属需 INF DUT map，` +
-        `可继续追问「lot <号> wafer <片号> BIN<n> 的 DUT 分布」。*`,
-      statusMessage: "正在输出 BIN×探针卡 归属表…",
-      withDataTitle: true,
-    };
-  }
-
-  // groupBy:"device,bin" → BIN×device 表（用户「把 device 也要列出来」）。须在 bin-only 排行前判断，
-  // 否则 buildAggregateBinRankingMarkdown 会丢掉 device 列、跨 device 求和（见 B1）。
-  const binDeviceTable = buildBinDeviceAggregateMarkdown(
-    aggContent,
-    scopeLabel,
-    focusBin
-  );
-  if (binDeviceTable?.trim()) {
-    return {
-      table: binDeviceTable,
-      commentaryNote:
-        `*以上为范围内 BIN×device 坏 die 汇总（良品 bin 已扣除）。如需定位到具体批次，` +
-        `请问「哪个 lot 的 BIN<n> 最多」（按 bin+lot 排行）。*`,
-      statusMessage: "正在输出 BIN×device 汇总表…",
-      withDataTitle: true,
-    };
-  }
-
-  const binRank = buildAggregateBinRankingMarkdown(aggContent, scopeLabel);
-  if (binRank?.trim()) {
-    return {
-      table: binRank,
-      commentaryNote: "*以上为范围内坏 BIN 按 dieCount 降序汇总。*",
-      statusMessage: "正在输出坏 BIN 排行表…",
-      withDataTitle: true,
-    };
-  }
-
-  return null;
-}
-
 /**
  * 从 aggregate_probe_card_tester_performance JSON 直出四表 + 解读 LLM（与总结轮共用）。
  */
@@ -3279,7 +2262,7 @@ function chartToolFallbackMessage(toolMsg: ChatMessage): string {
   return `图表生成未完成：${c.slice(0, 200)}`;
 }
 
-function toolResultForHistory(
+export function toolResultForHistory(
   toolName: string,
   rawContent: string,
   maxHistoryChars: number,
@@ -3338,43 +2321,6 @@ function jbBinsYieldFallbackMessage(
     }
   }
   return formatSlotYieldMarkdownFromToolJson(String(toolMsg.content ?? ""));
-}
-
-/**
- * Returns true if the last tool call returned empty / zero-result data.
- * Used to inject a natural-language fallback instruction into the summary nudge
- * so the LLM knows to say "no data found" instead of outputting nothing.
- */
-export function isLastToolEmptyResult(lastTool: ChatMessage | undefined): boolean {
-  if (!lastTool) return false;
-  const c = tryParseJsonish(String(lastTool.content ?? ""));
-  if (!c || typeof c !== "object" || Array.isArray(c)) return false;
-  const p = c as Record<string, unknown>;
-  if (Array.isArray(p["values"]) && (p["values"] as unknown[]).length === 0) return true;
-  if (p["count"] === 0) return true;
-  if (typeof p["totalRowsMatching"] === "number" && p["totalRowsMatching"] === 0) return true;
-  return false;
-}
-
-// 面向用户的工具中文标签——状态提示里不暴露内部函数名（query_jb_bins 等）。
-const TOOL_STATUS_LABELS: Record<string, string> = {
-  query_yield_triggers: "良率监控查询",
-  aggregate_yield_triggers: "良率监控统计",
-  query_jb_bins: "JB 测试数据查询",
-  aggregate_jb_bins: "JB BIN 聚合统计",
-  get_filter_values: "可选值查询",
-  query_lot_dut_bin_agg: "DUT×BIN 聚合",
-  query_lot_underperforming_duts: "Lot 低良率 DUT",
-  query_inf_site_bin_by_dut: "DUT 分布查询",
-  inf_draw_wafer_map: "绘制晶圆图",
-  inf_draw_dut_bin_map: "DUT×BIN 晶圆图",
-  generate_chart: "生成图表",
-  ask_clarification: "请求澄清",
-};
-
-/** 把内部工具名映射为面向用户的中文标签；未知工具回退为通用「数据查询」。 */
-export function toolStatusLabel(name: string): string {
-  return TOOL_STATUS_LABELS[name] ?? "数据查询";
 }
 
 /** 总结轮 LLM 空输出时：直出服务端表（无解读），避免「模型未返回分析结论」。 */
@@ -3443,47 +2389,6 @@ function mergeStructuredWithEmbedded(
       args: emb.args,
     };
   });
-}
-
-/** True when the last history turn is tool output awaiting a text summary. */
-export function historyAwaitingToolSummary(history: ChatMessage[]): boolean {
-  if (history.length === 0) return false;
-  const last = history[history.length - 1];
-  if (last.role !== "tool") return false;
-  // If the only data-fetch result so far is a single get_filter_values with
-  // empty values, don't force summary yet — let the model query another domain.
-  if (last.name === "get_filter_values") {
-    const parsed = tryParseJsonish(String(last.content ?? ""));
-    const values = parsed &&
-      typeof parsed === "object" &&
-      !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)["values"]
-      : undefined;
-    if (Array.isArray(values) && values.length === 0) {
-      // Look back past the assistant(tool_calls) turn to find the previous tool message.
-      // If it was also an empty get_filter_values, both domains came back empty → force summary.
-      let prevToolIdx = -1;
-      for (let i = history.length - 2; i >= 0; i--) {
-        if (history[i].role === "tool") { prevToolIdx = i; break; }
-        if (history[i].role === "user") break;
-      }
-      if (prevToolIdx < 0) return false; // first empty result → give one more round
-      const prevMsg = history[prevToolIdx];
-      if (prevMsg.name !== "get_filter_values") return false; // different tool before → keep going
-      const prevParsed = tryParseJsonish(String(prevMsg.content ?? ""));
-      const prevValues = prevParsed &&
-        typeof prevParsed === "object" &&
-        !Array.isArray(prevParsed)
-        ? (prevParsed as Record<string, unknown>)["values"]
-        : undefined;
-      if (
-        !Array.isArray(prevValues) ||
-        prevValues.length > 0
-      ) return false; // previous result had data → keep going
-      return true; // two consecutive empty get_filter_values → force summary
-    }
-  }
-  return true;
 }
 
 // ── Tool schema selector ───────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 import { mkdir, writeFile, appendFile, access } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AgentSseEvent } from "./agentLoop.js";
+import type { AgentSseEvent } from "./core/agentLoop.js";
 
 function resolveLogDir(): string {
   const env = process.env["SESSION_LOG_DIR"];

@@ -71,7 +71,7 @@ test("streamSiliconFlow masks NXP in the outbound request body when dataMaskingE
     `data: [DONE]\n\n`;
   const mock = mockStreamedResponse(sse);
   try {
-    const { streamSiliconFlow } = await import("../src/lib/agent/agentStream.js");
+    const { streamSiliconFlow } = await import("../src/lib/agent/core/agentStream.js");
     const { resolveAgentConfig } = await import("../src/lib/agent/agentConfig.js");
     const config = resolveAgentConfig({
       apiKey: "sk-test",
@@ -104,7 +104,7 @@ test("streamSiliconFlow unmasks a COMPANY_X token back to NXP in streamed text b
     `data: [DONE]\n\n`;
   const mock = mockStreamedResponse(sse);
   try {
-    const { streamSiliconFlow } = await import("../src/lib/agent/agentStream.js");
+    const { streamSiliconFlow } = await import("../src/lib/agent/core/agentStream.js");
     const { resolveAgentConfig } = await import("../src/lib/agent/agentConfig.js");
     const config = resolveAgentConfig({
       apiKey: "sk-test",

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import https from "node:https";
 import test from "node:test";
-import { streamSiliconFlow, type StreamChunk } from "../src/lib/agent/agentStream.js";
+import { streamSiliconFlow, type StreamChunk } from "../src/lib/agent/core/agentStream.js";
 
 test("streamSiliconFlow emits an error when the upstream request never responds", async (t) => {
   const originalRequest = https.request;

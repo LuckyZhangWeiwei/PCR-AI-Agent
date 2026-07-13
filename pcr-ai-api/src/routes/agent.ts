@@ -2,7 +2,7 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { resolveAgentConfig, type AgentConfig } from "../lib/agent/agentConfig.js";
-import { runAgentLoop, type AgentSseEvent } from "../lib/agent/agentLoop.js";
+import { runAgentLoop, type AgentSseEvent } from "../lib/agent/core/agentLoop.js";
 import { saveFeedback, type FeedbackRecord } from "../lib/agent/agentFeedback.js";
 import { sendAgentError } from "../lib/agentResponse.js";
 import { SessionLogger } from "../lib/agent/sessionLogger.js";

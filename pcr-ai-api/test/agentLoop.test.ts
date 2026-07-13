@@ -2,19 +2,23 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   filterAgentStreamTextForUi,
-  historyAwaitingToolSummary,
   parseGlmToolCallBody,
   parseMinimaxInvokeBody,
+} from "../src/lib/agent/core/agentEmbeddedToolParsing.js";
+import { historyAwaitingToolSummary } from "../src/lib/agent/core/agentToolStatus.js";
+import {
   cachedJbScopeMismatchReason,
   equipmentRouteCrossLotBail,
-  equipmentRouteDutLevelBail,
   isDutBinConcentrationQuestion,
   questionHasIdentifiableToolScope,
-  renderAggregateJbBinsResult,
-  tryRunSemanticDispatchDirectRoute,
+} from "../src/lib/agent/dispatch/agentQuestionHeuristics.js";
+import { equipmentRouteDutLevelBail } from "../src/lib/agent/jb/agentJbQuestionClassifiers.js";
+import { renderAggregateJbBinsResult } from "../src/lib/agent/render/agentAggregateBinsRender.js";
+import { tryRunSemanticDispatchDirectRoute } from "../src/lib/agent/dispatch/agentSemanticDispatch.js";
+import {
   tryEmitUnderperformingDutScatter,
   tryAppendUnderperformingDutSection,
-} from "../src/lib/agent/agentLoop.js";
+} from "../src/lib/agent/tools/agentToolUnderperformingDutsRender.js";
 import {
   buildDutShareChartData,
   inferGenerateChartArgsFromHistory,

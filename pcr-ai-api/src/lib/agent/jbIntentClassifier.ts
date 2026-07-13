@@ -23,7 +23,7 @@ const SYSTEM = `你是测试数据问句的意图分类器。仅输出 JSON:{"mo
   [...VALID_MODES].join(",") + `。多卡对比/模糊/跨实体一律 mode=generic。isMultiCardCompare:对比≥2张卡;isMultiLotCompare:对比/枚举多个lot;isDutLevel:问dut/嫌疑die。`;
 
 async function defaultChat(prompt: string, agentConfig: AgentConfig): Promise<string> {
-  const { streamSiliconFlow } = await import("./agentStream.js");
+  const { streamSiliconFlow } = await import("./core/agentStream.js");
   let out = "";
   await streamSiliconFlow(
     { model: agentConfig.subAgentModel, messages: [
