@@ -197,7 +197,7 @@ npm run docs:api-v3    # build + 重写 docs/API_V3.md（改 apiV3ListSql / yiel
 - [ ] 未误改 **`dist` / production** 下 Dummy 关闭语义（`listDummyRuntime.ts`）。  
 - [ ] 若动 **硅基流动 / CORS**：见 **§12**；密钥仅 **`.env`**，勿硬编码。  
 - [ ] 若升级 **`oracledb`**：须评估 **§8.1**（6.x 与 **Instant Client 18.1+**）；勿在未升级客户端时升到 6.x。  
-- [ ] 若动 **site-bin-bylot**：同步 **`output_site_bin_bylot.pl`**、**`outputSiteBinByLot.ts`**、**`infAnalysisRoutes.ts`**、**`apiManifest.ts`**；服务器需 Perl + INFAnalysis；**`infPath` 须在 API 主机可读**。若做报表/Agent：读 **[`../docs/SITE_BIN_BY_LOT_INTEGRATION.md`](../docs/SITE_BIN_BY_LOT_INTEGRATION.md)**。
+- [ ] 若动 **site-bin-bylot**：同步 **`output_site_bin_bylot.pl`**、**`outputSiteBinByLot.ts`**、**`infAnalysisRoutes.ts`**、**`manifest/infcontrolManifestEndpoints.ts`**；服务器需 Perl + INFAnalysis；**`infPath` 须在 API 主机可读**。若做报表/Agent：读 **[`../docs/SITE_BIN_BY_LOT_INTEGRATION.md`](../docs/SITE_BIN_BY_LOT_INTEGRATION.md)**。
 
 ---
 
