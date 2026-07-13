@@ -37,25 +37,6 @@ export type InfDutSelectionCtx = {
   selectionSummary: string;
 };
 
-function waferSpecKey(w: InfDutWaferSpec): string {
-  return `${w.device}|${w.lot}|${w.slot}`;
-}
-
-function mergePassIdsIntoMap(
-  map: Map<string, InfDutWaferSpec>,
-  spec: InfDutWaferSpec
-): void {
-  const key = waferSpecKey(spec);
-  const existing = map.get(key);
-  if (!existing) {
-    map.set(key, { ...spec, passIds: [...spec.passIds] });
-    return;
-  }
-  const set = new Set(existing.passIds);
-  for (const p of spec.passIds) set.add(p);
-  existing.passIds = [...set].sort((a, b) => a - b);
-}
-
 export function collectGoodBinNumbersForWafers(
   rows: InfcontrolLayerBinV3Row[] | undefined,
   wafers: InfDutWaferSpec[]
@@ -215,29 +196,30 @@ function rowMatchesBinFilter(
   return false;
 }
 
-function resolveDeviceLotFromListRows(
+/** JB 明细行 → 每层独立 wafer（同 slot 不同 TESTEND 不合并）。 */
+function resolveWaferSpecsFromListRows(
   rows: InfcontrolLayerBinV3Row[] | undefined,
   slot: number,
   binFilter: string | undefined,
-  requiredLot: string
-): Pick<InfDutWaferSpec, "device" | "lot" | "passIds"> | null {
-  if (!rows?.length) return null;
+  requiredLot: string,
+  goodBinNumbers?: Set<number>
+): InfDutWaferSpec[] {
+  if (!rows?.length) return [];
   const binToken = binFilter ? normalizeBinToken(binFilter) : undefined;
   const lotNeed = requiredLot.trim();
+  const specs: InfDutWaferSpec[] = [];
   for (const r of rows) {
     if (Number(r.SLOT) !== slot) continue;
     if (lotNeed && String(r.LOT ?? "").trim() !== lotNeed) continue;
     if (!rowMatchesBinFilter(r, binToken)) continue;
-    const device = String(r.DEVICE ?? "").trim();
-    const lot = String(r.LOT ?? "").trim();
-    if (!device || !lot) continue;
-    const passIds =
-      r.PASSID !== undefined && r.PASSID !== null && Number.isFinite(Number(r.PASSID))
-        ? [Number(r.PASSID)]
-        : [1, 3, 5];
-    return { device, lot, passIds };
+    const spec = waferSpecFromJbRow(r);
+    if (!spec) continue;
+    specs.push(spec);
+    if (goodBinNumbers) {
+      for (const n of collectGoodBinNumbersFromJbRow(r)) goodBinNumbers.add(n);
+    }
   }
-  return null;
+  return specs;
 }
 
 export function buildInfDutCtxFromDrillBarKeys(
@@ -270,33 +252,43 @@ export function buildInfDutCtxFromDrillBarKeys(
       ? opts.parentDimVal.trim()
       : opts.formDevice.trim();
 
-  const waferMap = new Map<string, InfDutWaferSpec>();
+  const wafers: InfDutWaferSpec[] = [];
+  const goodBinNumbers = new Set<number>([HARD_GOOD_BIN]);
   const keys = [...opts.selectedKeys];
   if (keys.length === 0) return null;
 
   for (const key of keys) {
     const slot = parseSlotFromDrillClick(key, opts.drillGroups);
     if (slot === null) continue;
-    const fromList = resolveDeviceLotFromListRows(
+    const fromList = resolveWaferSpecsFromListRows(
       opts.listRows,
       slot,
       binFilter,
-      lot
+      lot,
+      goodBinNumbers
     );
-    let device = deviceHint || fromList?.device || "";
+    if (fromList.length > 0) {
+      wafers.push(...fromList);
+      continue;
+    }
+    const device = deviceHint;
     if (!device) continue;
-    const passIds =
-      fromList?.passIds ??
-      (opts.formPassId ? [Number(opts.formPassId)] : [1, 3, 5]);
-    mergePassIdsIntoMap(waferMap, { device, lot, slot, passIds, probeCardType: "" });
+    const passIds = opts.formPassId ? [Number(opts.formPassId)] : [1, 3, 5];
+    const fallback = { device, lot, slot, passIds, probeCardType: "" };
+    wafers.push(fallback);
+    for (const n of collectGoodBinNumbersForWafers(opts.listRows, [fallback])) {
+      goodBinNumbers.add(n);
+    }
   }
 
-  const wafers = [...waferMap.values()].sort((a, b) => a.slot - b.slot);
   if (!wafers.length) return null;
 
   const device = wafers[0]!.device;
-  const goodBinNumbers = collectGoodBinNumbersForWafers(opts.listRows, wafers);
-  const slots = wafers.map((w) => w.slot).join(", ");
+  const slots = [...new Set(wafers.map((w) => w.slot))]
+    .sort((a, b) => a - b)
+    .join(", ");
+  const layerLabel =
+    wafers.length === 1 ? "1 层" : `${wafers.length} 层（叠加）`;
 
   return {
     wafers,
@@ -305,6 +297,6 @@ export function buildInfDutCtxFromDrillBarKeys(
     goodBinNumbers,
     focusBin,
     anchor: opts.anchor,
-    selectionSummary: `${wafers.length} 片 · Slot ${slots}`,
+    selectionSummary: `${layerLabel} · Slot ${slots}`,
   };
 }

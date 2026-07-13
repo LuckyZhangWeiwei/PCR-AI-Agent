@@ -131,6 +131,37 @@ test("dummy per-slot infPath scales dieCount; two-slot client merge matches serv
   assert.equal(dut7.dieCount, 2 * slotA + 2 * Number(slotB));
 });
 
+test("buildInfDutCtxFromDrillBarKeys keeps same slot rows as separate layers", () => {
+  const rows = getInfcontrolLayerBinDummyRows().filter(
+    (r) => String(r.PASSTYPE).trim() === "TEST"
+  );
+  const base = rows[0]!;
+  const lot = String(base.LOT).trim();
+  const slot = Number(base.SLOT);
+  const twin = {
+    ...base,
+    KEYNUMBER: Number(base.KEYNUMBER) + 9002,
+    TESTEND: "2099-12-31T00:00:00.000Z",
+  };
+  const extended = [...rows, twin] as typeof rows;
+  const ctx = buildInfDutCtxFromDrillBarKeys({
+    parentDimKey: "lot",
+    parentDimVal: lot,
+    subDim: "slot",
+    selectedKeys: [`Slot ${slot}`],
+    drillGroups: [{ key: `Slot ${slot}`, count: 1, parts: { slot: String(slot) } }],
+    formLot: lot,
+    formDevice: String(base.DEVICE),
+    formPassId: "",
+    listRows: extended as never,
+    anchor: { source: "lotYield" },
+  });
+  assert.ok(ctx);
+  assert.equal(ctx!.wafers.length, 2);
+  assert.equal(ctx!.wafers[0]!.slot, ctx!.wafers[1]!.slot);
+  assert.notEqual(ctx!.wafers[0]!.testEnd, ctx!.wafers[1]!.testEnd);
+});
+
 test("buildInfDutCtxFromDrillBarKeys uses query lot and slot subDim", () => {
   const rows = getInfcontrolLayerBinDummyRows();
   const row = rows.find((r) => String(r.PASSTYPE).trim() === "TEST");
