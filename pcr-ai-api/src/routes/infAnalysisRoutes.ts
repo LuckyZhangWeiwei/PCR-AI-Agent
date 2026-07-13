@@ -2,14 +2,14 @@ import type { Request, Response } from "express";
 import { Router } from "express";
 import { sendAgentError } from "../lib/agentResponse.js";
 import {
+  InfSiteBinUnavailableError,
   OutputSiteBinByLotNotFoundError,
   OutputSiteBinByLotValidationError,
   parsePassIdsFromQuery,
-  parseSiteBinByLotJson,
-  runOutputSiteBinByLot,
   runOutputSiteBinByLotForDevice,
   runOutputSiteBinByLotForLot,
   runOutputSiteBinByLotForLotByDirectory,
+  runSiteBinForWafer,
   SITE_BIN_BY_LOT_DEVICE_AGG_SUMMARY,
   SITE_BIN_BY_LOT_LOT_AGG_SUMMARY,
   SITE_BIN_BY_LOT_LOT_DIR_AGG_SUMMARY,
@@ -17,6 +17,7 @@ import {
   validateDeviceLot,
   validateInfPath,
 } from "../lib/outputSiteBinByLot.js";
+import { parseInfWaferCoordsFromPath } from "../lib/buildInfPath.js";
 import {
   tryResolveSiteBinByLotDummy,
   tryResolveSiteBinByLotDummyForDevice,
@@ -392,34 +393,36 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
       });
     }
 
-    const result = await runOutputSiteBinByLot(infPath, passIds);
-    if (result.exitCode !== 0) {
-      const detail = [result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n---\n");
+    const coords = parseInfWaferCoordsFromPath(infPath);
+    if (!coords) {
       return sendAgentError(
-        res, 502, "PERL_SCRIPT_FAILED",
-        `Perl script exited with code ${result.exitCode}`,
-        detail || undefined
+        res,
+        400,
+        "VALIDATION_ERROR",
+        "infPath must match .../{DEVICE}/{LOT}/r_1-{slot} (required for Oracle map fallback)"
       );
     }
+    const deviceOpt = firstQueryString(req.query.device).trim();
+    const deviceForWafer = deviceOpt || coords.device;
 
-    let data;
-    try {
-      data = parseSiteBinByLotJson(result.stdout);
-    } catch (e) {
-      if (e instanceof OutputSiteBinByLotValidationError) {
-        return sendAgentError(res, 502, "PERL_OUTPUT_PARSE_FAILED", e.message);
-      }
-      throw e;
-    }
+    const { data, source, notices } = await runSiteBinForWafer(
+      deviceForWafer,
+      { lot: coords.lot, slot: coords.slot, infPath },
+      passIds
+    );
 
     return res.json({
       meta: { apiVersion: "1", requestId: reqId(req), summary: SITE_BIN_BY_LOT_SUMMARY },
       infPath,
       passIds,
+      mapSource: source,
+      ...(notices.length > 0 ? { notices } : {}),
       ...data,
-      ...(result.stderr.trim() !== "" ? { stderr: result.stderr } : {}),
     });
   } catch (e) {
+    if (e instanceof InfSiteBinUnavailableError) {
+      return sendAgentError(res, 404, "LOT_INF_NOT_FOUND", e.message);
+    }
     const statusCode =
       e && typeof e === "object" && "statusCode" in e &&
       typeof (e as { statusCode: unknown }).statusCode === "number"

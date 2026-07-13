@@ -4,7 +4,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-import { buildInfDeviceDir, buildInfLotDir } from "./buildInfPath.js";
+import { buildInfDeviceDir, buildInfLotDir, parseInfWaferCoordsFromPath } from "./buildInfPath.js";
+import {
+  fetchSiteBinByLotFromOracle,
+  infPathReadable,
+  OracleMapFallbackNotFoundError,
+  oracleMapFallbackEnabled,
+  type RunSiteBinWaferResult,
+  type SiteBinWaferSource,
+} from "./infOracleMapFallback.js";
 import {
   resolveSiteBinWafersWithSkips,
   type SiteBinWaferRef,
@@ -233,6 +241,8 @@ export type RunOutputSiteBinByLotAggregateResult = {
   selectedLots?: string[];
   topN?: number;
   skippedInfPaths: string[];
+  /** INF 不可读但 Oracle map 回退成功的路径 */
+  oracleFallbackPaths?: string[];
   data: SiteBinByLotData;
   stderrParts: string[];
 };
@@ -259,29 +269,138 @@ function assertWaferCountWithinLimit(
 }
 
 async function runPerlForWafers(
+  device: string,
   wafers: SiteBinWaferRef[],
   passIds: number[]
-): Promise<{ data: SiteBinByLotData; stderrParts: string[] }> {
+): Promise<{
+  data: SiteBinByLotData;
+  stderrParts: string[];
+  oracleFallbackPaths: string[];
+  skippedInfPaths: string[];
+}> {
   const chunks: SiteBinByLotData[] = [];
   const stderrParts: string[] = [];
+  const oracleFallbackPaths: string[] = [];
+  const skippedInfPaths: string[] = [];
 
-  for (const { infPath } of wafers) {
-    const result = await runOutputSiteBinByLot(infPath, passIds);
-    if (result.exitCode !== 0) {
-      const detail = [result.stderr.trim(), result.stdout.trim()]
-        .filter(Boolean)
-        .join("\n---\n");
-      const err = new Error(
-        `Perl script failed for ${infPath} (exit ${result.exitCode})${detail ? `: ${detail}` : ""}`
-      );
-      (err as { statusCode?: number }).statusCode = 502;
-      throw err;
+  for (const wafer of wafers) {
+    try {
+      const { data, source, notices } = await runSiteBinForWafer(device, wafer, passIds);
+      chunks.push(data);
+      for (const n of notices) stderrParts.push(n);
+      if (source === "oracle") oracleFallbackPaths.push(wafer.infPath);
+    } catch (e) {
+      if (e instanceof InfSiteBinUnavailableError || e instanceof OracleMapFallbackNotFoundError) {
+        skippedInfPaths.push(wafer.infPath);
+        stderrParts.push(
+          `${wafer.infPath}: ${e instanceof Error ? e.message : String(e)}`
+        );
+        continue;
+      }
+      throw e;
     }
-    chunks.push(parseSiteBinByLotJson(result.stdout));
-    if (result.stderr.trim()) stderrParts.push(`${infPath}:\n${result.stderr.trim()}`);
   }
 
-  return { data: mergeSiteBinByLotData(chunks), stderrParts };
+  if (chunks.length === 0) {
+    throw new OutputSiteBinByLotNotFoundError(
+      `No wafer data from INF or Oracle for ${wafers.length} wafer(s)`
+    );
+  }
+
+  return {
+    data: mergeSiteBinByLotData(chunks),
+    stderrParts,
+    oracleFallbackPaths,
+    skippedInfPaths,
+  };
+}
+
+/**
+ * Single wafer: Perl/INF first; on missing/unreadable/Perl failure → Oracle map fallback.
+ */
+export async function runSiteBinForWafer(
+  device: string,
+  wafer: SiteBinWaferRef,
+  passIds: number[]
+): Promise<RunSiteBinWaferResult> {
+  const notices: string[] = [];
+  const readable = await infPathReadable(wafer.infPath);
+
+  if (readable) {
+    const result = await runOutputSiteBinByLot(wafer.infPath, passIds);
+    if (result.exitCode === 0) {
+      try {
+        return {
+          data: parseSiteBinByLotJson(result.stdout),
+          source: "inf",
+          notices,
+        };
+      } catch {
+        notices.push(
+          `${wafer.infPath}: Perl JSON parse failed; trying Oracle fallback`
+        );
+      }
+    } else {
+      const detail = [result.stderr.trim(), result.stdout.trim()]
+        .filter(Boolean)
+        .join(" ");
+      notices.push(
+        `${wafer.infPath}: Perl failed (exit ${result.exitCode})${detail ? `: ${detail.slice(0, 200)}` : ""}; trying Oracle fallback`
+      );
+    }
+  } else {
+    notices.push(`${wafer.infPath}: INF not readable; trying Oracle fallback`);
+  }
+
+  if (!oracleMapFallbackEnabled()) {
+    throw new InfSiteBinUnavailableError(
+      wafer.infPath,
+      "INF unavailable and Oracle map fallback is disabled (SITE_BIN_ORACLE_FALLBACK=false or site-bin dummy mode)"
+    );
+  }
+
+  const dev = device.trim() || parseInfWaferCoordsFromPath(wafer.infPath)?.device || "";
+  if (!dev) {
+    throw new InfSiteBinUnavailableError(
+      wafer.infPath,
+      "Cannot resolve device for Oracle map fallback (pass device= or use standard infPath layout)"
+    );
+  }
+
+  try {
+    const data = await fetchSiteBinByLotFromOracle({
+      device: dev,
+      lot: wafer.lot,
+      slot: wafer.slot,
+      passIds,
+    });
+    return { data, source: "oracle" as SiteBinWaferSource, notices };
+  } catch (e) {
+    if (e instanceof OracleMapFallbackNotFoundError) {
+      throw new InfSiteBinUnavailableError(wafer.infPath, e.message);
+    }
+    throw e;
+  }
+}
+
+export class InfSiteBinUnavailableError extends Error {
+  readonly infPath: string;
+  constructor(infPath: string, message: string) {
+    super(message);
+    this.name = "InfSiteBinUnavailableError";
+    this.infPath = infPath;
+  }
+}
+
+function appendOracleFallbackStderr(
+  stderrParts: string[],
+  oracleFallbackPaths: string[]
+): void {
+  if (oracleFallbackPaths.length > 0) {
+    stderrParts.push(
+      `Oracle map fallback for ${oracleFallbackPaths.length} wafer(s) (INF missing/unreadable):\n${oracleFallbackPaths.join("\n")}`
+    );
+  }
 }
 
 /**
@@ -311,14 +430,17 @@ export async function runOutputSiteBinByLotForLotByDirectory(
     slot,
     infPath,
   }));
-  const { data, stderrParts } = await runPerlForWafers(wafers, passIds);
+  const { data, stderrParts, oracleFallbackPaths, skippedInfPaths: runSkipped } =
+    await runPerlForWafers(device, wafers, passIds);
+  appendOracleFallbackStderr(stderrParts, oracleFallbackPaths);
 
   return {
     aggregateScope: "lot",
     lotDir,
     waferCount: wafers.length,
     waferSlots: wafers.map((w) => w.slot),
-    skippedInfPaths: [],
+    skippedInfPaths: runSkipped,
+    ...(oracleFallbackPaths.length > 0 ? { oracleFallbackPaths } : {}),
     data,
     stderrParts,
   };
@@ -334,7 +456,7 @@ export async function runOutputSiteBinByLotForLot(
   passIds: number[],
   testEndWindow: SiteBinTestEndWindow
 ): Promise<RunOutputSiteBinByLotAggregateResult> {
-  const { wafers, skippedInfPaths, probeCardType: pct } =
+  const { wafers, skippedInfPaths: resolveSkipped, probeCardType: pct } =
     await resolveSiteBinWafersWithSkips({
     device,
     lot,
@@ -350,10 +472,13 @@ export async function runOutputSiteBinByLotForLot(
     { jbTimeFiltered: true }
   );
 
-  const { data, stderrParts } = await runPerlForWafers(wafers, passIds);
+  const { data, stderrParts, oracleFallbackPaths, skippedInfPaths: runSkipped } =
+    await runPerlForWafers(device, wafers, passIds);
+  appendOracleFallbackStderr(stderrParts, oracleFallbackPaths);
+  const skippedInfPaths = [...new Set([...resolveSkipped, ...runSkipped])];
   if (skippedInfPaths.length > 0) {
     stderrParts.push(
-      `Skipped ${skippedInfPaths.length} INF path(s) (JB match but not readable):\n${skippedInfPaths.join("\n")}`
+      `Skipped ${skippedInfPaths.length} wafer(s) (INF and Oracle map fallback unavailable):\n${skippedInfPaths.join("\n")}`
     );
   }
 
@@ -365,6 +490,7 @@ export async function runOutputSiteBinByLotForLot(
     waferCount: wafers.length,
     waferSlots: wafers.map((w) => w.slot),
     skippedInfPaths,
+    ...(oracleFallbackPaths.length > 0 ? { oracleFallbackPaths } : {}),
     data,
     stderrParts,
   };
@@ -380,7 +506,7 @@ export async function runOutputSiteBinByLotForDevice(
   topN: number,
   probeCardType?: string
 ): Promise<RunOutputSiteBinByLotAggregateResult> {
-  const { wafers, skippedInfPaths, probeCardType: pct, selectedLots } =
+  const { wafers, skippedInfPaths: resolveSkipped, probeCardType: pct, selectedLots } =
     await resolveSiteBinWafersWithSkips({
     device,
     probeCardType,
@@ -396,10 +522,13 @@ export async function runOutputSiteBinByLotForDevice(
     { jbTimeFiltered: true }
   );
 
-  const { data, stderrParts } = await runPerlForWafers(wafers, passIds);
+  const { data, stderrParts, oracleFallbackPaths, skippedInfPaths: runSkipped } =
+    await runPerlForWafers(device, wafers, passIds);
+  appendOracleFallbackStderr(stderrParts, oracleFallbackPaths);
+  const skippedInfPaths = [...new Set([...resolveSkipped, ...runSkipped])];
   if (skippedInfPaths.length > 0) {
     stderrParts.push(
-      `Skipped ${skippedInfPaths.length} INF path(s) (JB match but not readable):\n${skippedInfPaths.join("\n")}`
+      `Skipped ${skippedInfPaths.length} wafer(s) (INF and Oracle map fallback unavailable):\n${skippedInfPaths.join("\n")}`
     );
   }
 
@@ -415,6 +544,7 @@ export async function runOutputSiteBinByLotForDevice(
     waferSlots: wafers.map((w) => w.slot),
     waferLots: [...lotSet].sort((a, b) => a.localeCompare(b)),
     skippedInfPaths,
+    ...(oracleFallbackPaths.length > 0 ? { oracleFallbackPaths } : {}),
     data,
     stderrParts,
   };
