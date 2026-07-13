@@ -285,4 +285,10 @@ export type SiteBinByLotResponse = {
   infPath: string;
   passIds: number[];
   passes: SiteBinPass[];
+  /** inf = Perl/INF 整片；oracle = 分层或 fallback 库表 map */
+  mapSource?: "inf" | "oracle";
+  keynumber?: number;
+  passNum?: number;
+  testEnd?: string;
+  notices?: string[];
 };

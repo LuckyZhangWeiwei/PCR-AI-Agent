@@ -6,7 +6,13 @@ import { SITE_BIN_BY_LOT_PATH } from "../api/paths";
 import type { SiteBinByLotResponse, SiteBinPass } from "../api/types";
 import { DarkChart } from "./DarkChart";
 import { buildInfPath } from "../utils/buildInfPath";
-import { filterSiteBinPassBadOnly, goodBinNumbersKey, normalizeGoodBinSet, isGoodBinLabel } from "../utils/infGoodBins";
+import {
+  filterSiteBinPassBadOnlyNonZero,
+  goodBinNumbersKey,
+  normalizeGoodBinSet,
+  isGoodBinLabel,
+  siteBinPassBadDieTotal,
+} from "../utils/infGoodBins";
 import { mergeSiteBinPasses } from "../utils/mergeSiteBinPasses";
 import type { InfDutWaferSpec } from "../utils/infDutSelection";
 import {
@@ -39,7 +45,28 @@ function filterPassBadBinsOnly(
   pass: SiteBinPass,
   goodBinNumbers: ReadonlySet<number> | undefined
 ): SiteBinPass {
-  return filterSiteBinPassBadOnly(pass, goodBinNumbers);
+  return filterSiteBinPassBadOnlyNonZero(pass, goodBinNumbers);
+}
+
+function validateLayerSiteBinResponse(
+  wafer: InfDutWaferSpec,
+  res: SiteBinByLotResponse
+): string | null {
+  if (!wafer.testEnd) return null;
+  if (res.mapSource !== "oracle") {
+    return (
+      `分层 DUT×BIN 未生效（mapSource=${res.mapSource ?? "未知"}，整片 INF 合并图会把多层 bin 叠在一起）。` +
+      "请确认 API 已 pm2 reload，报表 dist 已重新 build 发布，并对页面 Ctrl+F5 强刷。"
+    );
+  }
+  if (res.testEnd && wafer.testEnd) {
+    const a = new Date(res.testEnd).getTime();
+    const b = new Date(wafer.testEnd).getTime();
+    if (Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) > 1000) {
+      return `TESTEND 不一致：明细 ${wafer.testEnd}，API 返回 ${res.testEnd}`;
+    }
+  }
+  return null;
 }
 
 function dutSeriesDieCount(value: unknown): number {
@@ -646,6 +673,10 @@ export function InfDutDistPanel({
   const [error, setError] = useState<string | null>(null);
   const [mergedPasses, setMergedPasses] = useState<SiteBinPass[] | null>(null);
   const [fetchPaths, setFetchPaths] = useState<string[]>([]);
+  const [fetchMeta, setFetchMeta] = useState<{
+    mapSources: string[];
+    badDieTotal: number;
+  } | null>(null);
 
   const waferKey = wafersFetchKey(wafers);
 
@@ -656,12 +687,14 @@ export function InfDutDistPanel({
       setError(null);
       setMergedPasses(null);
       setFetchPaths([]);
+      setFetchMeta(null);
       return;
     }
 
     setLoading(true);
     setError(null);
     setMergedPasses(null);
+    setFetchMeta(null);
     setFetchPaths(wafers.map((w) => buildInfPath(w.device, w.lot, w.slot)));
 
     void (async () => {
@@ -671,6 +704,7 @@ export function InfDutDistPanel({
             const infPath = buildInfPath(w.device, w.lot, w.slot);
             const params: Record<string, string> = {
               infPath,
+              device: w.device,
               passId: w.passIds.join(","),
             };
             if (w.keynumber !== undefined) {
@@ -682,12 +716,34 @@ export function InfDutDistPanel({
             if (w.testEnd) {
               params.testEnd = w.testEnd;
             }
-            return apiGetJson<SiteBinByLotResponse>(apiBase, SITE_BIN_BY_LOT_PATH, params);
+            return apiGetJson<SiteBinByLotResponse>(
+              apiBase,
+              SITE_BIN_BY_LOT_PATH,
+              params,
+              { cache: "no-store" }
+            );
           })
         );
         if (cancelled) return;
+        for (let i = 0; i < results.length; i++) {
+          const layerErr = validateLayerSiteBinResponse(wafers[i]!, results[i]!);
+          if (layerErr) {
+            setError(layerErr);
+            setMergedPasses(null);
+            setFetchMeta(null);
+            return;
+          }
+        }
         const passes = mergeSiteBinPasses(results.map((r) => r.passes));
+        const mapSources = [
+          ...new Set(results.map((r) => r.mapSource ?? "unknown")),
+        ];
+        let badDieTotal = 0;
+        for (const pass of passes) {
+          badDieTotal += siteBinPassBadDieTotal(pass, goodBinNumbers);
+        }
         setMergedPasses(passes);
+        setFetchMeta({ mapSources, badDieTotal });
         setError(null);
       } catch (e: unknown) {
         if (!cancelled) {
@@ -711,11 +767,17 @@ export function InfDutDistPanel({
   const meta =
     selectionSummary ??
     `LOT ${lot} · ${wafers.length} 片 · Device ${device}`;
+  const sourceLabel = fetchMeta
+    ? ` · 数据源 ${fetchMeta.mapSources.join("+")} · 不良 die ${fetchMeta.badDieTotal}`
+    : "";
 
   return (
     <div className="inf-dut-dist-panel">
       <div className="inf-dut-dist-panel-meta">
-        <span className="muted small">{meta}</span>
+        <span className="muted small">
+          {meta}
+          {sourceLabel}
+        </span>
         <button
           type="button"
           className="chip inf-dut-dist-panel-dismiss"
