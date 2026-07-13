@@ -142,17 +142,17 @@ All API calls are read-only GETs. The frontend never writes to the backend.
 
 ### AI Agent loop (`pcr-ai-api/src/lib/agent/`)
 
-The agent is a ReAct loop in `agentLoop.ts` (max `agentConfig.maxRounds` rounds, default 5). Understanding the summary-round invariant is essential before touching this code:
+The agent is a ReAct loop in `agent/core/agentLoop.ts` (max `agentConfig.maxRounds` rounds, default 5). Understanding the summary-round invariant is essential before touching this code:
 
 **Normal round**: history does NOT end with `role: "tool"` → request is sent with full `TOOL_SCHEMAS` and `tool_choice: "auto"`. Model may call tools or produce text.
 
-**Summary round** (`historyAwaitingToolSummary(history) === true`): last history entry is `role: "tool"` → request is sent **without** tool schema, with `SUMMARIZE_NUDGE` appended to system prompt. The model must conclude.
+**Summary round** (`historyAwaitingToolSummary(history) === true`, in `agent/core/agentToolStatus.ts`): last history entry is `role: "tool"` → request is sent **without** tool schema, with `SUMMARIZE_NUDGE` appended to system prompt. The model must conclude.
 
-In the summary round the guard (`agentLoop.ts`) enforces:
+In the summary round the guard (`agent/core/agentLoop.ts`) enforces:
 - **Data-fetch tools** (`query_*`, `aggregate_*`, `get_filter_values`, `query_inf_site_bin_by_dut`) — **blocked**. Structured `tool_calls` are discarded; embedded calls with no text trigger an error.
 - **Conclusion tools** (`generate_chart`, `ask_clarification`) — **allowed**. Embedded calls are merged into `toolCalls` and executed normally.
 - **Partial text + blocked embedded call** — emits `done` with the partial text (not an error), so the user sees whatever analysis the model produced before it tried to re-query.
 
-`createDeepSeekFilter` (inline in `agentLoop.ts`) strips embedded tool markup (GLM `<tool_call>`, MiniMax `<minimax:tool_call>`, DSML `<｜DSML｜tool_calls>`, DeepSeek `<｜tool▁`) from the streamed text before it reaches the UI. It also parses those embedded calls so they can be executed like structured `tool_calls`.
+`createDeepSeekFilter` (in `agent/core/agentEmbeddedToolParsing.ts`, exported as `filterAgentStreamTextForUi`) strips embedded tool markup (GLM `<tool_call>`, MiniMax `<minimax:tool_call>`, DSML `<｜DSML｜tool_calls>`, DeepSeek `<｜tool▁`) from the streamed text before it reaches the UI. It also parses those embedded calls so they can be executed like structured `tool_calls`.
 
-Key files: `agentLoop.ts` (ReAct loop + filter) → `agentToolHandlers.ts` (tool dispatch) → `agentStream.ts` (SiliconFlow SSE with idle timeout) → `agentPrompt.ts` (system prompt + domain rules) → `agentToolSchemas.ts` (tool JSON schemas).
+Key files: `agent/core/agentLoop.ts` (ReAct loop) → `agent/tools/agentToolHandlers.ts` (tool dispatch) → `agent/core/agentStream.ts` (SiliconFlow SSE with idle timeout) → `agent/prompt/agentPrompt.ts` (system prompt + domain rules) → `agent/core/agentToolSchemas.ts` (tool JSON schemas). Question heuristics and semantic dispatch live in `agent/dispatch/`; aggregate-result rendering in `agent/render/`.
