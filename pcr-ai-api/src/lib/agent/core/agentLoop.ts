@@ -2530,13 +2530,292 @@ function getSummaryContext(history: ChatMessage[]): SummaryContext {
   return "jb";
 }
 
-export async function runAgentLoop(
+/**
+ * Execute one round's tool calls, then append their results to history.
+ * Same-pool tools run sequentially; cross-pool tools run concurrently.
+ * SSE events (tool_start / tool_result / chart / clarification) are emitted as each
+ * tool completes; tool messages are appended in original tool_calls order afterward so
+ * the next LLM round sees a consistent sequence regardless of execution order.
+ *
+ * Parallelism is safe because:
+ *   • "probeweb" (withProbeWebConnection) and "main" (withConnection) are
+ *     independent Oracle pools — concurrent use does not exceed per-pool limits.
+ *   • "perl" tools invoke Perl scripts with no Oracle dependency.
+ *   • "pure" tools (generate_chart, ask_clarification) are in-process only.
+ *   Tools within the same group always run sequentially (pool constraint).
+ * Behavior-identical to the inline tool-execution phase it replaces.
+ */
+async function executeRoundToolCalls(
+  sessionId: string,
+  agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void,
+  toolCalls: CollectedToolCall[],
+  assistantToolCalls: ToolCall[],
+  round: number,
+  userQuestion: string
+): Promise<void> {
+  type ToolRunResult = { historyContent: string; callId: string; toolName: string };
+  const toolRunResults: ToolRunResult[] = new Array(toolCalls.length);
+
+  type ToolSlot = {
+    tc: CollectedToolCall;
+    tcIdx: number;
+    parsedArgs: Record<string, unknown>;
+    callId: string;
+  };
+  const resourceGroups = new Map<ToolResourceGroup, ToolSlot[]>();
+  for (let tcIdx = 0; tcIdx < toolCalls.length; tcIdx++) {
+    const tc = toolCalls[tcIdx];
+    let parsedArgs: Record<string, unknown> = {};
+    try {
+      parsedArgs = JSON.parse(tc.args || "{}") as Record<string, unknown>;
+    } catch {
+      parsedArgs = {};
+    }
+    const callId = assistantToolCalls[tcIdx]?.id ?? `call_${round}_${tc.index}`;
+    const group = getToolResourceGroup(tc.name);
+    if (!resourceGroups.has(group)) resourceGroups.set(group, []);
+    resourceGroups.get(group)!.push({ tc, tcIdx, parsedArgs, callId });
+  }
+
+  await Promise.all(
+    Array.from(resourceGroups.values()).map(async (slots) => {
+      for (const { tc, tcIdx, parsedArgs, callId } of slots) {
+        // Auto-correct known arg mistakes before execution (prefer rules here
+        // over prompt rules — see agentToolValidator.ts for the rationale).
+        const { args: fixedArgs, notes: validatorNotes } = validateAndFixToolArgs(
+          tc.name, parsedArgs, userQuestion
+        );
+        if (validatorNotes.length > 0) {
+          // Transparently log what was fixed; parsedArgs in tool_start shows the FIXED args
+          // so the LLM history reflects what was actually executed.
+          console.log(`[validator] ${tc.name}: ${validatorNotes.join("; ")}`);
+        }
+
+        emit({ type: "tool_start", name: tc.name, args: fixedArgs });
+        emit({ type: "status", message: `正在${toolStatusLabel(tc.name)}…` });
+
+        let historyContent: string;
+        let jbCacheForHistory: string | undefined;
+        try {
+          const toolResult = await runTool(tc.name, fixedArgs, {
+            toolResultMaxChars: agentConfig.toolResultMaxChars,
+            history: getHistory(sessionId),
+            onJbBinsWrapped: (wrapped) => {
+              jbCacheForHistory = storeJbQuerySessionCache(sessionId, wrapped);
+            },
+            onUnderperformingDuts: (passes) => {
+              tryEmitUnderperformingDutScatter(passes, emit);
+            },
+          });
+          if (
+            typeof toolResult === "object" &&
+            toolResult !== null &&
+            "__chartOption" in toolResult
+          ) {
+            emit({ type: "chart", option: (toolResult as ChartSentinel).__chartOption });
+            historyContent = "[图表已生成]";
+          } else if (
+            typeof toolResult === "object" &&
+            toolResult !== null &&
+            "__clarification" in toolResult
+          ) {
+            const question = (toolResult as ClarificationSentinel).__clarification;
+            const clarOptions = (toolResult as ClarificationSentinel).__clarification_options;
+            emit({ type: "clarification", question, ...(clarOptions ? { options: clarOptions } : {}) });
+            historyContent = `[已向用户提问：${question}]`;
+          } else {
+            const rawContent =
+              typeof toolResult === "string"
+                ? toolResult
+                : JSON.stringify(toolResult);
+            historyContent = toolResultForHistory(
+              tc.name,
+              rawContent,
+              agentConfig.toolResultMaxHistoryChars,
+              agentConfig.toolResultMaxChars,
+              jbCacheForHistory
+            );
+          }
+        } catch (err) {
+          historyContent = `工具执行失败: ${err instanceof Error ? err.message : String(err)}`;
+        }
+
+        emit({ type: "tool_result", name: tc.name, summary: historyContent.slice(0, 200) });
+        toolRunResults[tcIdx] = { historyContent, callId, toolName: tc.name };
+      }
+    })
+  );
+
+  // Append tool messages in original order (tool_call_id must align with
+  // the assistant's tool_calls sequence for all LLM providers)
+  for (const result of toolRunResults) {
+    appendMessages(sessionId, {
+      role: "tool",
+      tool_call_id: result.callId,
+      name: result.toolName,
+      content: result.historyContent,
+    });
+  }
+}
+
+/**
+ * Summary-round touchdown branch: JB result gave device/lot, but touch counts live
+ * in per-wafer INF files. When the user named a slot, run `inf_touch_analysis` and
+ * emit the per-DUT analysis; otherwise emit guidance asking which slots to query.
+ * Always finishes the turn (emits `done`); the caller returns immediately after.
+ * Behavior-identical to the inline `else if` branch it replaces.
+ */
+async function runTouchdownSummaryReply(
+  sessionId: string,
+  userQuestion: string,
+  lastTool: ChatMessage,
+  emit: (event: AgentSseEvent) => void
+): Promise<void> {
+  const jbPayload = resolveJbToolPayload(sessionId, String(lastTool.content ?? ""));
+  const lot = jbPayload ? String(jbPayload["lot"] ?? "") : "";
+  const device = jbPayload ? String(jbPayload["device"] ?? "") : "";
+  const slotSet = new Set<number>();
+  if (jbPayload) {
+    const summary = (jbPayload["slotYieldSummary"] as Array<{ slot: number }> | undefined) ?? [];
+    summary.forEach((r) => slotSet.add(r.slot));
+  }
+  const slots = [...slotSet].sort((a, b) => a - b);
+
+  // 用户问题中已包含 slot 编号时，直接调 inf_touch_analysis，跳过引导轮
+  const specifiedSlot = extractSlotFromUserText(userQuestion);
+  if (specifiedSlot != null && device && lot) {
+    emit({ type: "status", message: `正在查询 slot ${specifiedSlot} 的 touchdown 数据…` });
+    try {
+      const touchRaw = await runTool("inf_touch_analysis", { device, lot, slot: specifiedSlot });
+      if (typeof touchRaw === "string") {
+        const td = tryParseJsonish(touchRaw) as Record<string, unknown> | null;
+        if (td && !td["note"]) {
+          const totalDies = Number(td["total_dies"] ?? 0);
+          const withData = Number(td["dies_with_touch_data"] ?? 0);
+          const maxTouch = Number(td["max_touch"] ?? 0);
+          const avgTouch = Number(td["avg_touch"] ?? 0);
+          const highTouchCount = Number(td["high_touch_count"] ?? 0);
+          const minTh = Number(td["min_touch_threshold"] ?? 2);
+          const siteStats = (td["site_stats"] as Array<{ site: number; die_count: number; avg_touch: number; max_touch: number }> | undefined) ?? [];
+          const byTouch = (td["by_touch_count"] as Array<{ touch_count: number; die_count: number; good_count: number; bad_count: number; yield: number }> | undefined) ?? [];
+          const highPct = totalDies > 0 ? ((highTouchCount / totalDies) * 100).toFixed(1) : "0.0";
+
+          const lines: string[] = [
+            `**lot ${lot}**（${device}）**slot ${specifiedSlot} Touchdown（探针接触次数）分析**`,
+            "",
+            `- 总 die 数：${totalDies}，有接触数据：${withData}`,
+            `- 平均接触次数：**${avgTouch.toFixed(2)}**，最大接触次数：**${maxTouch}**`,
+            `- 高接触（≥${minTh}次）die 数：**${highTouchCount}**（占 ${highPct}%）`,
+          ];
+
+          if (byTouch.length > 0) {
+            lines.push("", "**接触次数分布**", "");
+            lines.push("| 接触次数 | die数 | 良品 | 坏品 | 良率% |");
+            lines.push("|---:|---:|---:|---:|---:|");
+            for (const r of byTouch) {
+              lines.push(`| ${r.touch_count} | ${r.die_count} | ${r.good_count} | ${r.bad_count} | ${(r.yield * 100).toFixed(1)}% |`);
+            }
+          }
+
+          if (siteStats.length > 0) {
+            lines.push("", "**各 DUT（site）接触次数**（按平均次数降序）", "");
+            lines.push("| DUT | die数 | 平均接触次数 | 最大接触次数 |");
+            lines.push("|---:|---:|---:|---:|");
+            for (const s of siteStats) {
+              lines.push(`| DUT${s.site} | ${s.die_count} | ${s.avg_touch.toFixed(2)} | ${s.max_touch} |`);
+            }
+          }
+
+          const highDuts = siteStats.filter((s) => s.avg_touch >= minTh);
+          if (highDuts.length > 0) {
+            lines.push("", `> ⚠ 高接触 DUT：${highDuts.map((s) => `DUT${s.site}（平均 ${s.avg_touch.toFixed(1)} 次）`).join("、")}，建议优先检查这些位号针尖状态。`);
+          }
+
+          const msg = lines.join("\n");
+          emitTextInChunks(msg, emit);
+          appendMessages(sessionId, { role: "assistant", content: msg });
+          emit({ type: "done" });
+          return;
+        }
+        // td["note"] 表示无数据，fall through to guidance
+      }
+    } catch {
+      // inf_touch_analysis 调用失败，fall through to guidance
+    }
+  }
+
+  const slotHint = slots.length > 0
+    ? `，共 ${slots.length} 片（slot ${slots[0]}–${slots[slots.length - 1]}）`
+    : "";
+  const deviceHint = device ? `（${device}）` : "";
+  const msg = [
+    `已查询到 lot **${lot}**${deviceHint}${slotHint}。`,
+    "",
+    "**Touchdown（探针接触次数）** 记录在各片 wafer 的 INF 文件中，需逐片调用 `inf_touch_analysis` 查询，无法一次性返回全部片数据。",
+    "",
+    "请告知需要查哪几片（如「第1片」「slot 3、5、12」），我将逐片列出各 DUT 的平均接触次数统计。",
+  ].join("\n");
+  emitTextInChunks(msg, emit);
+  appendMessages(sessionId, { role: "assistant", content: msg });
+  emit({ type: "done" });
+}
+
+/**
+ * Summary-round final user-turn nudge, keyed by {@link SummaryContext}.
+ * `emptyResultHint` is appended verbatim (empty string when tools returned data).
+ * Behavior-identical to the inline object literal it replaces.
+ */
+function buildSummaryUserNudge(
+  summaryCtx: SummaryContext,
+  emptyResultHint: string
+): ChatMessage {
+  return {
+    role: "user",
+    content:
+      summaryCtx === "dual_source"
+        ? "请立即用中文给出分析结论。\n" +
+          "要求：\n" +
+          "1. 不要调用工具；不要画 markdown 表格\n" +
+          "2. 分「### YM 侧（Yield Monitor 报警）」「### JB 侧（JB STAR 测试）」「### 综合结论」三节，每节 ≤ 3 句\n" +
+          "3. 各节只引用本节工具数据；禁止跨节混用\n" +
+          "4. 【链接必须保留】若工具返回了晶圆图/热力图链接（[点击...查看](...) 格式），必须原样复制到回复第一行，不得省略" +
+          emptyResultHint
+        : summaryCtx === "generic"
+        ? "请立即用中文给出分析结论，分「### 数据摘要」「### 主要发现」「### 建议」三节输出。\n" +
+          "要求：\n" +
+          "1. 不要调用工具；不要 markdown 表格\n" +
+          "2. 每节 ≤ 3 条，只引用工具返回的数据，禁止编造\n" +
+          "3. 禁止引用本次问题以外的 lot/卡号/device 数据\n" +
+          "4. 【链接必须保留】若工具返回了晶圆图/热力图链接（[点击...查看](...) 格式），必须原样复制到回复第一行，不得省略" +
+          emptyResultHint
+        : "请立即用中文给出分析结论。\n" +
+          "要求：\n" +
+          "1. 不要调用工具\n" +
+          "2. 不要画 markdown 表格（`| col |`）\n" +
+          "3. 不要逐行复述数据表——只点明异常/对比，引导用户看表\n" +
+          "4. 数据解读 3 句以内；专业建议恰好 3 条，每条 1 句\n" +
+          "5. 各 pass 良率独立报告，禁止合并为「整体良率」\n" +
+          "6. 【链接必须保留】若工具返回了晶圆图/热力图链接（[点击...查看](...) 格式），必须原样复制到回复第一行，不得省略" +
+          emptyResultHint,
+  };
+}
+
+/**
+ * Pre-loop setup phase for {@link runAgentLoop}: record the user turn, roll up
+ * old history into a summary when needed, and fetch the API manifest (timeout-capped).
+ * Behavior-identical to the code inlined at the top of the loop before this split.
+ */
+async function prepareRunAgentLoopContext(
   message: string,
   sessionId: string,
   agentConfig: AgentConfig,
   emit: (event: AgentSseEvent) => void,
   options?: { resume?: boolean }
-): Promise<void> {
+): Promise<{
+  feedbackInjection: string;
+  manifest: Awaited<ReturnType<typeof fetchOrCacheManifest>> | undefined;
+}> {
   // Fetch relevant feedback examples once per session start (non-blocking on failure).
   const feedbackInjection = await buildFeedbackInjection(message).catch(() => "");
 
@@ -2568,6 +2847,24 @@ export async function runAgentLoop(
     fetchOrCacheManifest(),
     new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 5000)),
   ]).catch(() => undefined);
+
+  return { feedbackInjection, manifest };
+}
+
+export async function runAgentLoop(
+  message: string,
+  sessionId: string,
+  agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void,
+  options?: { resume?: boolean }
+): Promise<void> {
+  const { feedbackInjection, manifest } = await prepareRunAgentLoopContext(
+    message,
+    sessionId,
+    agentConfig,
+    emit,
+    options
+  );
 
   // 声明式有序直连调度表(范围 B / spec §4.2):取代原 5 条顺序 if。各 runner 内部 self-gate,
   // 顺序即优先级,与旧 if 链按构造等价(同序、同 runner、同门槛)。新增 pre-LLM 直连只需加进此数组。
@@ -2709,93 +3006,7 @@ export async function runAgentLoop(
       (lastTool?.name === "query_jb_bins" || lastTool?.name === "aggregate_jb_bins")
     ) {
       // Touchdown 问题：JB 数据已拿到 device/lot，但 touch 数据在 INF 文件中，需逐片调用
-      const jbPayload = resolveJbToolPayload(sessionId, String(lastTool.content ?? ""));
-      const lot = jbPayload ? String(jbPayload["lot"] ?? "") : "";
-      const device = jbPayload ? String(jbPayload["device"] ?? "") : "";
-      const slotSet = new Set<number>();
-      if (jbPayload) {
-        const summary = (jbPayload["slotYieldSummary"] as Array<{ slot: number }> | undefined) ?? [];
-        summary.forEach((r) => slotSet.add(r.slot));
-      }
-      const slots = [...slotSet].sort((a, b) => a - b);
-
-      // 用户问题中已包含 slot 编号时，直接调 inf_touch_analysis，跳过引导轮
-      const specifiedSlot = extractSlotFromUserText(userQuestion);
-      if (specifiedSlot != null && device && lot) {
-        emit({ type: "status", message: `正在查询 slot ${specifiedSlot} 的 touchdown 数据…` });
-        try {
-          const touchRaw = await runTool("inf_touch_analysis", { device, lot, slot: specifiedSlot });
-          if (typeof touchRaw === "string") {
-            const td = tryParseJsonish(touchRaw) as Record<string, unknown> | null;
-            if (td && !td["note"]) {
-              const totalDies = Number(td["total_dies"] ?? 0);
-              const withData = Number(td["dies_with_touch_data"] ?? 0);
-              const maxTouch = Number(td["max_touch"] ?? 0);
-              const avgTouch = Number(td["avg_touch"] ?? 0);
-              const highTouchCount = Number(td["high_touch_count"] ?? 0);
-              const minTh = Number(td["min_touch_threshold"] ?? 2);
-              const siteStats = (td["site_stats"] as Array<{ site: number; die_count: number; avg_touch: number; max_touch: number }> | undefined) ?? [];
-              const byTouch = (td["by_touch_count"] as Array<{ touch_count: number; die_count: number; good_count: number; bad_count: number; yield: number }> | undefined) ?? [];
-              const highPct = totalDies > 0 ? ((highTouchCount / totalDies) * 100).toFixed(1) : "0.0";
-
-              const lines: string[] = [
-                `**lot ${lot}**（${device}）**slot ${specifiedSlot} Touchdown（探针接触次数）分析**`,
-                "",
-                `- 总 die 数：${totalDies}，有接触数据：${withData}`,
-                `- 平均接触次数：**${avgTouch.toFixed(2)}**，最大接触次数：**${maxTouch}**`,
-                `- 高接触（≥${minTh}次）die 数：**${highTouchCount}**（占 ${highPct}%）`,
-              ];
-
-              if (byTouch.length > 0) {
-                lines.push("", "**接触次数分布**", "");
-                lines.push("| 接触次数 | die数 | 良品 | 坏品 | 良率% |");
-                lines.push("|---:|---:|---:|---:|---:|");
-                for (const r of byTouch) {
-                  lines.push(`| ${r.touch_count} | ${r.die_count} | ${r.good_count} | ${r.bad_count} | ${(r.yield * 100).toFixed(1)}% |`);
-                }
-              }
-
-              if (siteStats.length > 0) {
-                lines.push("", "**各 DUT（site）接触次数**（按平均次数降序）", "");
-                lines.push("| DUT | die数 | 平均接触次数 | 最大接触次数 |");
-                lines.push("|---:|---:|---:|---:|");
-                for (const s of siteStats) {
-                  lines.push(`| DUT${s.site} | ${s.die_count} | ${s.avg_touch.toFixed(2)} | ${s.max_touch} |`);
-                }
-              }
-
-              const highDuts = siteStats.filter((s) => s.avg_touch >= minTh);
-              if (highDuts.length > 0) {
-                lines.push("", `> ⚠ 高接触 DUT：${highDuts.map((s) => `DUT${s.site}（平均 ${s.avg_touch.toFixed(1)} 次）`).join("、")}，建议优先检查这些位号针尖状态。`);
-              }
-
-              const msg = lines.join("\n");
-              emitTextInChunks(msg, emit);
-              appendMessages(sessionId, { role: "assistant", content: msg });
-              emit({ type: "done" });
-              return;
-            }
-            // td["note"] 表示无数据，fall through to guidance
-          }
-        } catch {
-          // inf_touch_analysis 调用失败，fall through to guidance
-        }
-      }
-
-      const slotHint = slots.length > 0
-        ? `，共 ${slots.length} 片（slot ${slots[0]}–${slots[slots.length - 1]}）`
-        : "";
-      const deviceHint = device ? `（${device}）` : "";
-      const msg = [
-        `已查询到 lot **${lot}**${deviceHint}${slotHint}。`,
-        "",
-        "**Touchdown（探针接触次数）** 记录在各片 wafer 的 INF 文件中，需逐片调用 `inf_touch_analysis` 查询，无法一次性返回全部片数据。",
-        "",
-        "请告知需要查哪几片（如「第1片」「slot 3、5、12」），我将逐片列出各 DUT 的平均接触次数统计。",
-      ].join("\n");
-      emitTextInChunks(msg, emit);
-      appendMessages(sessionId, { role: "assistant", content: msg });
-      emit({ type: "done" });
+      await runTouchdownSummaryReply(sessionId, userQuestion, lastTool, emit);
       return;
     }
 
@@ -2945,35 +3156,7 @@ export async function runAgentLoop(
         "不要强制使用固定分节结构，不要编造数据。"
       : "";
 
-    const summaryUserNudge: ChatMessage = {
-      role: "user",
-      content:
-        summaryCtx === "dual_source"
-          ? "请立即用中文给出分析结论。\n" +
-            "要求：\n" +
-            "1. 不要调用工具；不要画 markdown 表格\n" +
-            "2. 分「### YM 侧（Yield Monitor 报警）」「### JB 侧（JB STAR 测试）」「### 综合结论」三节，每节 ≤ 3 句\n" +
-            "3. 各节只引用本节工具数据；禁止跨节混用\n" +
-            "4. 【链接必须保留】若工具返回了晶圆图/热力图链接（[点击...查看](...) 格式），必须原样复制到回复第一行，不得省略" +
-            emptyResultHint
-          : summaryCtx === "generic"
-          ? "请立即用中文给出分析结论，分「### 数据摘要」「### 主要发现」「### 建议」三节输出。\n" +
-            "要求：\n" +
-            "1. 不要调用工具；不要 markdown 表格\n" +
-            "2. 每节 ≤ 3 条，只引用工具返回的数据，禁止编造\n" +
-            "3. 禁止引用本次问题以外的 lot/卡号/device 数据\n" +
-            "4. 【链接必须保留】若工具返回了晶圆图/热力图链接（[点击...查看](...) 格式），必须原样复制到回复第一行，不得省略" +
-            emptyResultHint
-          : "请立即用中文给出分析结论。\n" +
-            "要求：\n" +
-            "1. 不要调用工具\n" +
-            "2. 不要画 markdown 表格（`| col |`）\n" +
-            "3. 不要逐行复述数据表——只点明异常/对比，引导用户看表\n" +
-            "4. 数据解读 3 句以内；专业建议恰好 3 条，每条 1 句\n" +
-            "5. 各 pass 良率独立报告，禁止合并为「整体良率」\n" +
-            "6. 【链接必须保留】若工具返回了晶圆图/热力图链接（[点击...查看](...) 格式），必须原样复制到回复第一行，不得省略" +
-            emptyResultHint,
-    };
+    const summaryUserNudge = buildSummaryUserNudge(summaryCtx, emptyResultHint);
     await streamSiliconFlow(
       awaitingSummary
         ? {
@@ -3150,121 +3333,16 @@ export async function runAgentLoop(
       tool_calls: assistantToolCalls,
     });
 
-    // Execute tools — same-pool tools sequential, cross-pool tools concurrent.
-    // SSE events (tool_start / tool_result / chart / clarification) are emitted
-    // as each tool completes. Tool messages are appended to history in the
-    // original tool_calls order after all tools finish so the next LLM round
-    // sees a consistent sequence regardless of execution order.
-    //
-    // Parallelism is safe because:
-    //   • "probeweb" (withProbeWebConnection) and "main" (withConnection) are
-    //     independent Oracle pools — concurrent use does not exceed per-pool limits.
-    //   • "perl" tools invoke Perl scripts with no Oracle dependency.
-    //   • "pure" tools (generate_chart, ask_clarification) are in-process only.
-    //   Tools within the same group always run sequentially (pool constraint).
-    type ToolRunResult = { historyContent: string; callId: string; toolName: string };
-    const toolRunResults: ToolRunResult[] = new Array(toolCalls.length);
-
-    type ToolSlot = {
-      tc: CollectedToolCall;
-      tcIdx: number;
-      parsedArgs: Record<string, unknown>;
-      callId: string;
-    };
-    const resourceGroups = new Map<ToolResourceGroup, ToolSlot[]>();
-    for (let tcIdx = 0; tcIdx < toolCalls.length; tcIdx++) {
-      const tc = toolCalls[tcIdx];
-      let parsedArgs: Record<string, unknown> = {};
-      try {
-        parsedArgs = JSON.parse(tc.args || "{}") as Record<string, unknown>;
-      } catch {
-        parsedArgs = {};
-      }
-      const callId = assistantToolCalls[tcIdx]?.id ?? `call_${round}_${tc.index}`;
-      const group = getToolResourceGroup(tc.name);
-      if (!resourceGroups.has(group)) resourceGroups.set(group, []);
-      resourceGroups.get(group)!.push({ tc, tcIdx, parsedArgs, callId });
-    }
-
-    await Promise.all(
-      Array.from(resourceGroups.values()).map(async (slots) => {
-        for (const { tc, tcIdx, parsedArgs, callId } of slots) {
-          // Auto-correct known arg mistakes before execution (prefer rules here
-          // over prompt rules — see agentToolValidator.ts for the rationale).
-          const { args: fixedArgs, notes: validatorNotes } = validateAndFixToolArgs(
-            tc.name, parsedArgs, userQuestion
-          );
-          if (validatorNotes.length > 0) {
-            // Transparently log what was fixed; parsedArgs in tool_start shows the FIXED args
-            // so the LLM history reflects what was actually executed.
-            console.log(`[validator] ${tc.name}: ${validatorNotes.join("; ")}`);
-          }
-
-          emit({ type: "tool_start", name: tc.name, args: fixedArgs });
-          emit({ type: "status", message: `正在${toolStatusLabel(tc.name)}…` });
-
-          let historyContent: string;
-          let jbCacheForHistory: string | undefined;
-          try {
-            const toolResult = await runTool(tc.name, fixedArgs, {
-              toolResultMaxChars: agentConfig.toolResultMaxChars,
-              history: getHistory(sessionId),
-              onJbBinsWrapped: (wrapped) => {
-                jbCacheForHistory = storeJbQuerySessionCache(sessionId, wrapped);
-              },
-              onUnderperformingDuts: (passes) => {
-                tryEmitUnderperformingDutScatter(passes, emit);
-              },
-            });
-            if (
-              typeof toolResult === "object" &&
-              toolResult !== null &&
-              "__chartOption" in toolResult
-            ) {
-              emit({ type: "chart", option: (toolResult as ChartSentinel).__chartOption });
-              historyContent = "[图表已生成]";
-            } else if (
-              typeof toolResult === "object" &&
-              toolResult !== null &&
-              "__clarification" in toolResult
-            ) {
-              const question = (toolResult as ClarificationSentinel).__clarification;
-              const clarOptions = (toolResult as ClarificationSentinel).__clarification_options;
-              emit({ type: "clarification", question, ...(clarOptions ? { options: clarOptions } : {}) });
-              historyContent = `[已向用户提问：${question}]`;
-            } else {
-              const rawContent =
-                typeof toolResult === "string"
-                  ? toolResult
-                  : JSON.stringify(toolResult);
-              historyContent = toolResultForHistory(
-                tc.name,
-                rawContent,
-                agentConfig.toolResultMaxHistoryChars,
-                agentConfig.toolResultMaxChars,
-                jbCacheForHistory
-              );
-            }
-          } catch (err) {
-            historyContent = `工具执行失败: ${err instanceof Error ? err.message : String(err)}`;
-          }
-
-          emit({ type: "tool_result", name: tc.name, summary: historyContent.slice(0, 200) });
-          toolRunResults[tcIdx] = { historyContent, callId, toolName: tc.name };
-        }
-      })
+    await executeRoundToolCalls(
+      sessionId,
+      agentConfig,
+      emit,
+      toolCalls,
+      assistantToolCalls,
+      round,
+      userQuestion
     );
 
-    // Append tool messages in original order (tool_call_id must align with
-    // the assistant's tool_calls sequence for all LLM providers)
-    for (const result of toolRunResults) {
-      appendMessages(sessionId, {
-        role: "tool",
-        tool_call_id: result.callId,
-        name: result.toolName,
-        content: result.historyContent,
-      });
-    }
     // If agent asked for clarification, stop this round and wait for user reply
     const askedClarification = toolCalls.some((tc) => tc.name === "ask_clarification");
     if (askedClarification) {
