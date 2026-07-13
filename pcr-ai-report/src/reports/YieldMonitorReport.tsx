@@ -204,10 +204,10 @@ const PERIOD_ALARM_FALLBACK_GROUP_TOP = 100;
 
 /**
  * 报警频率 tab 按钮的 title 提示（口径说明放 tooltip，不占用行高，保持四宫格卡片高度一致）。
- * 分母固定是同桶 JB Start 全部记录数；分子按各块自己的口径（触发总和/Tester 数/Probe Card 数）。
+ * 分母固定是同桶 JB Start distinct (LOT,SLOT) 片数（同片多断片计 1）；分子按各块自己的口径（触发总和/Tester 数/Probe Card 数）。
  */
 const PERIOD_ALARM_RATE_DENOMINATOR_HINT =
-  "该桶同期同筛选下 JB Start 全部记录数（含 TEST / INTERRUPT / TEST ISR / TEST INTERRUPT，不含 Auto retest）";
+  "该桶同期同筛选下 JB Start distinct (LOT,SLOT) 片数（含 TEST / INTERRUPT / TEST ISR / TEST INTERRUPT，不含 Auto retest；同片多断片计 1）";
 const PERIOD_ALARM_TOTAL_RATE_TAB_HINT = `delta_diff 报警次数 ÷ ${PERIOD_ALARM_RATE_DENOMINATOR_HINT}`;
 const PERIOD_ALARM_TESTER_RATE_TAB_HINT = `该桶 distinct Tester 数 ÷ ${PERIOD_ALARM_RATE_DENOMINATOR_HINT}`;
 const PERIOD_ALARM_CARD_RATE_TAB_HINT = `该桶 distinct Probe Card 数 ÷ ${PERIOD_ALARM_RATE_DENOMINATOR_HINT}`;
@@ -1585,7 +1585,7 @@ export function YieldMonitorReport({ apiBase, listLimits }: Props) {
       ),
     [trendBuckets, trendPoints, trendTopTesterEntriesByBucket, theme, chartPalette.accent, period]
   );
-  /** 每块「报警频率」的分子各用自己的口径（触发总和/Tester 数/Probe Card 数），分母统一是 JB STAR 总量。 */
+  /** 每块「报警频率」的分子各用自己的口径（触发总和/Tester 数/Probe Card 数），分母统一是 JB distinct (LOT,SLOT) 片数。 */
   const trendTotalRateValues = useMemo(
     () =>
       trendPoints.map((p) => {
