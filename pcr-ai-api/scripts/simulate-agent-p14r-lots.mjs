@@ -3,7 +3,7 @@
  *   node scripts/simulate-agent-p14r-lots.mjs
  */
 import "../dist/loadEnv.js";
-import { runTool } from "../dist/lib/agent/agentToolHandlers.js";
+import { runTool } from "../dist/lib/agent/tools/agentToolHandlers.js";
 
 const TEST_END_FROM = "2026-04-22T00:00:00.000Z";
 const TEST_END_TO = "2026-06-22T23:59:59.999Z";
