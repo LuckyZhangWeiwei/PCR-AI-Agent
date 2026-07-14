@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildDutConcentrationInsights } from "../src/lib/agent/agentDutConcentration.js";
-import type { SiteBinPass } from "../src/lib/outputSiteBinByLot.js";
+import type { SiteBinPass } from "../src/lib/outputSiteBinByLot/types.js";
 
 function pass(passId: number, bin: string, duts: Array<[number, number]>): SiteBinPass {
   return { passId, bins: [{ bin, duts: duts.map(([dut, dieCount]) => ({ dut, dieCount })) }] };

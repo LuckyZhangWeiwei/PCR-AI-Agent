@@ -7,7 +7,7 @@ import { listApisForceOracleNoDummy } from "./listDummyRuntime.js";
 import {
   OutputSiteBinByLotNotFoundError,
   OutputSiteBinByLotValidationError,
-} from "./outputSiteBinByLot.js";
+} from "./outputSiteBinByLot/types.js";
 import { probeCardTypeLeadingSegment } from "./probeCardTypeLeadingSegment.js";
 import {
   rowTestEndInWindow,

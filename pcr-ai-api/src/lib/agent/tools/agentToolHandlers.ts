@@ -20,10 +20,8 @@ import {
   clampToolResultMaxChars,
   DEFAULT_TOOL_RESULT_MAX_CHARS,
 } from "../agentConfig.js";
-import {
-  runOutputSiteBinByLotForLotByDirectory,
-  type SiteBinPass,
-} from "../../outputSiteBinByLot.js";
+import { runOutputSiteBinByLotForLotByDirectory } from "../../outputSiteBinByLot/aggregate.js";
+import type { SiteBinPass } from "../../outputSiteBinByLot/types.js";
 import { tryResolveSiteBinByLotDummyForLotByDirectory } from "../../outputSiteBinByLotDummy.js";
 import {
   buildDutConcentrationInsights,

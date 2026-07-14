@@ -8,7 +8,7 @@ import { after, before, describe, test } from "node:test";
 
 import { buildInfPath } from "../src/lib/buildInfPath.js";
 import { getInfcontrolLayerBinDummyRows } from "../src/lib/infcontrol/infcontrolLayerBinDummy.js";
-import { mergeSiteBinByLotData } from "../src/lib/outputSiteBinByLot.js";
+import { mergeSiteBinByLotData } from "../src/lib/outputSiteBinByLot/singleWafer.js";
 import { mergeSiteBinPasses } from "../../pcr-ai-report/src/utils/mergeSiteBinPasses.js";
 
 describe("site-bin-bylot multi-wafer HTTP (dummy)", () => {

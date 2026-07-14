@@ -1,7 +1,7 @@
 // pcr-ai-api/src/lib/agent/tools/agentToolInfSiteBin.ts
 import {
   runSiteBinForWafer,
-} from "../../outputSiteBinByLot.js";
+} from "../../outputSiteBinByLot/singleWafer.js";
 import { tryResolveSiteBinByLotDummy } from "../../outputSiteBinByLotDummy.js";
 import { buildInfPath } from "../../buildInfPath.js";
 import { truncateResult } from "./agentToolHandlers.js";

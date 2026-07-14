@@ -297,7 +297,7 @@ curl -s "http://127.0.0.1:30008/api/v1/inf-analysis/site-bin-bylot?device=WA03P0
 | 文件 | 说明 |
 | --- | --- |
 | `src/routes/infAnalysisRoutes.ts` | 路由（单片 / lot / device 分支） |
-| `src/lib/outputSiteBinByLot.ts` | 校验、Perl、目录扫描与 JB 聚合 |
+| `src/lib/outputSiteBinByLot/` | 校验（`params.ts`）、Perl 调用（`perlRunner.ts`）、单片取数（`singleWafer.ts`）、多层批量（`layersBatch.ts`）、目录扫描与 JB 聚合（`aggregate.ts`）、共享类型（`types.ts`） |
 | `src/lib/siteBinByLotWaferResolve.ts` | JB 查 wafer 列表 + `probeCardType` 过滤 |
 | `src/lib/buildInfPath.ts` | `buildInfPath` / `buildInfLotDir` / `buildInfDeviceDir` |
 | `src/lib/outputSiteBinByLotDummy.ts` | Dummy 开关与固定路径 |

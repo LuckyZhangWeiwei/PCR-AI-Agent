@@ -5,24 +5,30 @@ import {
   InfSiteBinUnavailableError,
   OutputSiteBinByLotNotFoundError,
   OutputSiteBinByLotValidationError,
-  parseOptionalKeynumber,
-  parseOptionalLayerTestEnd,
-  parseOptionalPassNum,
-  parsePassIdsFromQuery,
-  parseSiteBinLayersBody,
-  runOutputSiteBinByLotForDevice,
-  runOutputSiteBinByLotForLot,
-  runOutputSiteBinByLotForLotByDirectory,
-  runSiteBinForWafer,
-  runSiteBinForWaferLayers,
   SITE_BIN_BY_LOT_DEVICE_AGG_SUMMARY,
   SITE_BIN_BY_LOT_LOT_AGG_SUMMARY,
   SITE_BIN_BY_LOT_LOT_DIR_AGG_SUMMARY,
   SITE_BIN_LAYERS_BATCH_SUMMARY,
   SITE_BIN_BY_LOT_SUMMARY,
+} from "../lib/outputSiteBinByLot/types.js";
+import {
+  parseOptionalKeynumber,
+  parseOptionalLayerTestEnd,
+  parseOptionalPassNum,
+  parsePassIdsFromQuery,
   validateDeviceLot,
   validateInfPath,
-} from "../lib/outputSiteBinByLot.js";
+} from "../lib/outputSiteBinByLot/params.js";
+import { runSiteBinForWafer } from "../lib/outputSiteBinByLot/singleWafer.js";
+import {
+  parseSiteBinLayersBody,
+  runSiteBinForWaferLayers,
+} from "../lib/outputSiteBinByLot/layersBatch.js";
+import {
+  runOutputSiteBinByLotForDevice,
+  runOutputSiteBinByLotForLot,
+  runOutputSiteBinByLotForLotByDirectory,
+} from "../lib/outputSiteBinByLot/aggregate.js";
 import { parseInfWaferCoordsFromPath } from "../lib/buildInfPath.js";
 import {
   tryResolveSiteBinByLotDummy,

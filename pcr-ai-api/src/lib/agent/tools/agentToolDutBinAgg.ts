@@ -2,8 +2,8 @@
 import {
   runOutputSiteBinByLotForLot,
   runOutputSiteBinByLotForLotByDirectory,
-  type SiteBinPass,
-} from "../../outputSiteBinByLot.js";
+} from "../../outputSiteBinByLot/aggregate.js";
+import type { SiteBinPass } from "../../outputSiteBinByLot/types.js";
 import {
   tryResolveSiteBinByLotDummyForLot,
   tryResolveSiteBinByLotDummyForLotByDirectory,

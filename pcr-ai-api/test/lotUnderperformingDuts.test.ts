@@ -7,8 +7,8 @@ import {
   DEFAULT_UNDERPERFORMING_THRESHOLD_RATIO,
   parseUnderperformingThresholdRatio,
 } from "../src/lib/lotUnderperformingDuts.js";
-import { OutputSiteBinByLotValidationError } from "../src/lib/outputSiteBinByLot.js";
-import type { SiteBinPass } from "../src/lib/outputSiteBinByLot.js";
+import { OutputSiteBinByLotValidationError } from "../src/lib/outputSiteBinByLot/types.js";
+import type { SiteBinPass } from "../src/lib/outputSiteBinByLot/types.js";
 import {
   resolveDeviceForLot,
   resolveProbeCardTypeForLot,

@@ -2,7 +2,7 @@ import { passIdSortLabel } from "./infcontrol/jbYieldCalc.js";
 import {
   OutputSiteBinByLotValidationError,
   type SiteBinPass,
-} from "./outputSiteBinByLot.js";
+} from "./outputSiteBinByLot/types.js";
 
 export const LOT_UNDERPERFORMING_DUTS_SUMMARY =
   "Lot-level probe-card DUT yield from aggregated INF site-bin data: list DUTs whose yield is below thresholdRatio × lot overall yield for each requested pass.";

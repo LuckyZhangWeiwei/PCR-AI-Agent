@@ -8,18 +8,18 @@ import {
   buildInfLotDir,
   parseInfWaferSlotFromPath,
 } from "./buildInfPath.js";
+import { mergeSiteBinByLotData } from "./outputSiteBinByLot/singleWafer.js";
 import {
-  mergeSiteBinByLotData,
   type SiteBinByLotData,
   type SiteBinPass,
-} from "./outputSiteBinByLot.js";
+} from "./outputSiteBinByLot/types.js";
 import {
   distinctProbeCardTypesFromDummy,
   recentLotsForDeviceFromDummy,
   resolveSiteBinWafersFromDummy,
 } from "./siteBinByLotWaferResolve.js";
 import type { SiteBinTestEndWindow } from "./siteBinByLotTestEndWindow.js";
-import { OutputSiteBinByLotValidationError } from "./outputSiteBinByLot.js";
+import { OutputSiteBinByLotValidationError } from "./outputSiteBinByLot/types.js";
 
 /** Dummy 联调固定 INF 路径（与 `docs/site-bin-bylot-dummy-r_1-1.passes.json` 样本一致）。 */
 export const SITE_BIN_BY_LOT_DUMMY_CANONICAL_INF_PATH =

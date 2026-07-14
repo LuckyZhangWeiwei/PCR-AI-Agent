@@ -1,4 +1,4 @@
-import { OutputSiteBinByLotValidationError } from "./outputSiteBinByLot.js";
+import { OutputSiteBinByLotValidationError } from "./outputSiteBinByLot/types.js";
 import { v3DefaultThroughNowMinusOneUtcYear } from "./v3DefaultOneYearWindow.js";
 
 export type SiteBinTestEndWindow = {

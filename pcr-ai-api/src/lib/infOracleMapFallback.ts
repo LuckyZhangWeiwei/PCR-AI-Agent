@@ -8,7 +8,7 @@ import fs from "node:fs";
 
 import { withConnection } from "../oracle.js";
 import { siteBinByLotUseDummy } from "./outputSiteBinByLotDummy.js";
-import type { SiteBinByLotData, SiteBinPass } from "./outputSiteBinByLot.js";
+import type { SiteBinByLotData, SiteBinPass } from "./outputSiteBinByLot/types.js";
 
 const CLOB_AS_STRING = {
   BINCODELAST: { type: oracledb.STRING },

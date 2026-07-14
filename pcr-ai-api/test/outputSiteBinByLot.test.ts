@@ -1,13 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import {
-  OutputSiteBinByLotValidationError,
-  mergeSiteBinByLotData,
-  parsePassIdsFromQuery,
-  parseSiteBinByLotJson,
-  validateInfPath,
-} from "../src/lib/outputSiteBinByLot.js";
+import { OutputSiteBinByLotValidationError } from "../src/lib/outputSiteBinByLot/types.js";
+import { mergeSiteBinByLotData } from "../src/lib/outputSiteBinByLot/singleWafer.js";
+import { parsePassIdsFromQuery, validateInfPath } from "../src/lib/outputSiteBinByLot/params.js";
+import { parseSiteBinByLotJson } from "../src/lib/outputSiteBinByLot/perlRunner.js";
 import { buildInfLotDir } from "../src/lib/buildInfPath.js";
 import { getInfcontrolLayerBinDummyRows } from "../src/lib/infcontrol/infcontrolLayerBinDummy.js";
 import {

@@ -15,11 +15,10 @@ import {
 import {
   OutputSiteBinByLotNotFoundError,
   OutputSiteBinByLotValidationError,
-  parsePassIdsFromQuery,
-  runOutputSiteBinByLotForLot,
-  validateDeviceLot,
   type SiteBinPass,
-} from "./outputSiteBinByLot.js";
+} from "./outputSiteBinByLot/types.js";
+import { parsePassIdsFromQuery, validateDeviceLot } from "./outputSiteBinByLot/params.js";
+import { runOutputSiteBinByLotForLot } from "./outputSiteBinByLot/aggregate.js";
 import { tryResolveSiteBinByLotDummyForLot } from "./outputSiteBinByLotDummy.js";
 import { parseSiteBinByLotTestEndWindow } from "./siteBinByLotTestEndWindow.js";
 import {

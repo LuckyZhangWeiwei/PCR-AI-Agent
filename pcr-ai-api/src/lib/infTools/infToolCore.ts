@@ -16,7 +16,7 @@ import {
 import { getDiesForPassId } from "../infWaferMap/infWaferMapPassSpecs.js";
 import { calculateWafer } from "../infWaferMap/infWaferMapCalculate.js";
 import { buildInfPath, buildInfLotDir } from "../buildInfPath.js";
-import { listWaferInfPathsInLotDir } from "../outputSiteBinByLot.js";
+import { listWaferInfPathsInLotDir } from "../outputSiteBinByLot/aggregate.js";
 import type { InfBlock } from "../infParser.js";
 
 // ── Wafer maps output directory ────────────────────────────────────────────

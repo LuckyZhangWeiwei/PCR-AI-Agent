@@ -1,4 +1,4 @@
-import { OutputSiteBinByLotValidationError } from "./outputSiteBinByLot.js";
+import { OutputSiteBinByLotValidationError } from "./outputSiteBinByLot/types.js";
 
 /** device 聚合默认纳入 TESTEND 最新的 lot 数 */
 export const SITE_BIN_DEVICE_TOP_LOTS_DEFAULT = 10;
