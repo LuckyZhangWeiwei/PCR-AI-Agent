@@ -12,12 +12,9 @@ import {
   type WaferResult,
 } from "../infWaferMap/infWaferMapGeometry.js";
 import { getDiesForPassId } from "../infWaferMap/infWaferMapPassSpecs.js";
-import {
-  generateWaferMapHtml,
-  generateLotHeatmapHtml,
-  generateSlotTrendHtml,
-  type WaferMapPass,
-} from "../infWaferMap/infWaferMapHtml.js";
+import { generateWaferMapHtml, type WaferMapPass } from "../infWaferMap/html/waferMapHtml.js";
+import { generateLotHeatmapHtml } from "../infWaferMap/html/lotHeatmapHtml.js";
+import { generateSlotTrendHtml } from "../infWaferMap/html/slotTrendHtml.js";
 import { detectClusters } from "./infClusterDetector.js";
 import {
   loadLotWafers,

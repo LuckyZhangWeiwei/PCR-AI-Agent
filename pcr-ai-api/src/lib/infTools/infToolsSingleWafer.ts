@@ -18,7 +18,8 @@ import {
   buildWaferMapPassSpecs,
 } from "../infWaferMap/infWaferMapPassSpecs.js";
 import { computeSiteStats, buildAsciiMap } from "../infWaferMap/infWaferMapCalculate.js";
-import { generateWaferMapHtml, generateDutBinMapHtml, type WaferMapPass } from "../infWaferMap/infWaferMapHtml.js";
+import { generateWaferMapHtml, type WaferMapPass } from "../infWaferMap/html/waferMapHtml.js";
+import { generateDutBinMapHtml } from "../infWaferMap/html/dutBinMapHtml.js";
 import { detectClusters, classifyClusterShapes } from "./infClusterDetector.js";
 import {
   loadInfWafer,
