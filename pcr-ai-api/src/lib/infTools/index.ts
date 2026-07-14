@@ -5,11 +5,18 @@
 
 import {
   runParseWafer, runGetDieMap, runSiteStats, runAnalyzeWafer,
-  runListPasses, runComparePasses, runBinMigration, runUnstableDies,
-  runEdgeAnalysis, runBinSpatial, runTemperatureCompare,
-  runClusterDetect, runTouchAnalysis, runYieldLossBreakdown,
-  runPartialProbe, runDrawWaferMap, runClusterShape, runDrawDutBinMap,
-} from "./infToolsSingleWafer.js";
+  runListPasses, runComparePasses,
+} from "./singleWafer/infToolsBasics.js";
+import {
+  runBinMigration, runUnstableDies, runEdgeAnalysis, runBinSpatial,
+  runTemperatureCompare, runClusterDetect, runClusterShape,
+} from "./singleWafer/infToolsSpatialAnalysis.js";
+import {
+  runTouchAnalysis, runYieldLossBreakdown, runPartialProbe,
+} from "./singleWafer/infToolsProbeQuality.js";
+import {
+  runDrawWaferMap, runDrawDutBinMap,
+} from "./singleWafer/infToolsVisualization.js";
 import {
   runParseDir, runCompareWafers, runLotDieCompare,
   runLotHeatmap, runLotClusterOverlap, runSlotTrend,
