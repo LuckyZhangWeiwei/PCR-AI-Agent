@@ -119,27 +119,53 @@ function scaleSiteBinPassDieCount(
  * 按请求的 passId 过滤样本；样本中不存在的 pass 不放入 `passes`（与生产 Perl 行为一致）。
  * @param waferSlot Dummy 单片：按 slot 缩放 dieCount，便于多片 `infPath` 联调时与 Oracle「每片独立 map」区分（lot 目录聚合仍用 scale=1）。
  */
+/** Dummy 层缩放：同 slot 不同 KEYNUMBER 返回不同 dieCount。 */
+export function dummyDieCountScaleForKeynumber(keynumber: number): number {
+  return (Math.abs(Math.trunc(keynumber)) % 7) + 1;
+}
+
+/** Dummy 层缩放：同 slot 不同层（testEnd / keynumber）返回不同 dieCount。 */
+export function dummyDieCountScaleForLayer(
+  keynumber?: number,
+  testEnd?: string,
+  waferSlot = 1
+): number {
+  if (testEnd?.trim()) {
+    let h = 0;
+    for (const ch of testEnd.trim()) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    return (h % 7) + 1;
+  }
+  if (keynumber !== undefined && Number.isFinite(keynumber)) {
+    return dummyDieCountScaleForKeynumber(keynumber);
+  }
+  return waferSlot > 0 ? waferSlot : 1;
+}
+
 export function buildSiteBinByLotDummyData(
   passIds: number[],
-  waferSlot = 1
+  dieCountScale = 1
 ): SiteBinByLotData {
+  const scale = dieCountScale > 0 ? dieCountScale : 1;
   const byPass = new Map(loadDummyPasses().map((p) => [p.passId, p]));
   const passes: SiteBinPass[] = [];
   for (const id of passIds) {
     const row = byPass.get(id);
-    if (row) passes.push(scaleSiteBinPassDieCount(row, waferSlot));
+    if (row) passes.push(scaleSiteBinPassDieCount(row, scale));
   }
   return { passes };
 }
 
 export function tryResolveSiteBinByLotDummy(
   infPath: string,
-  passIds: number[]
+  passIds: number[],
+  keynumber?: number,
+  testEnd?: string
 ): SiteBinByLotData | null {
   if (!siteBinByLotUseDummy()) return null;
   if (!siteBinByLotDummyPathAllowed(infPath)) return null;
   const slot = parseInfWaferSlotFromPath(infPath);
-  return buildSiteBinByLotDummyData(passIds, slot ?? 1);
+  const scale = dummyDieCountScaleForLayer(keynumber, testEnd, slot ?? 1);
+  return buildSiteBinByLotDummyData(passIds, scale);
 }
 
 export type SiteBinByLotDummyAggResult = SiteBinByLotData & {

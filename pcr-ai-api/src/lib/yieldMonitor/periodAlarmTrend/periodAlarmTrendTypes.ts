@@ -36,7 +36,7 @@ export type PeriodAlarmTrendPoint = {
   dutCount: number;
   /** delta_diff 报警触发次数（= total；分子） */
   testerAlarmNumerator: number;
-  /** 同期同筛选、该桶内 JB Start 记录总数（分母；v3 PASSTYPE，不含 RETESTBIN） */
+  /** 同期同筛选、该桶内 JB Start distinct (LOT,SLOT) 片数（分母；v3 PASSTYPE，不含 RETESTBIN；同片多断片/多 pass 计 1） */
   testerActivityTotal: number;
   /** testerAlarmNumerator / testerActivityTotal；分母为 0 时为 null */
   testerAlarmRate: number | null;
@@ -79,4 +79,4 @@ export type ParsePeriodAlarmTrendOk = {
 export type ParsePeriodAlarmTrendFail = { ok: false; error: string };
 
 export const PERIOD_ALARM_TREND_DOCUMENTATION =
-  "按查询 TIME_STAMP 时间窗（未传则近 1 UTC 年）切分周/月 x 轴桶，返回各桶触发总量与 COUNT(DISTINCT) 种类数（Tester / Probe Card / Bin excluding goodbin / DUT）、Tester 报警频率（分子 YM delta_diff 次数 ÷ 分母同期同筛选 JB Start 记录总数，v3 PASSTYPE 不含 RETESTBIN）、以及各桶触发 Top 5 device。";
+  "按查询 TIME_STAMP 时间窗（未传则近 1 UTC 年）切分周/月 x 轴桶，返回各桶触发总量与 COUNT(DISTINCT) 种类数（Tester / Probe Card / Bin excluding goodbin / DUT）、Tester 报警频率（分子 YM delta_diff 次数 ÷ 分母同期同筛选 JB Start distinct (LOT,SLOT) 片数，v3 PASSTYPE 不含 RETESTBIN；同片多断片计 1）、以及各桶触发 Top 5 device。";

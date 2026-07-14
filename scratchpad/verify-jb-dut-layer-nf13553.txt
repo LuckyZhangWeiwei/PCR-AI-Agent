@@ -1,0 +1,30 @@
+# JB DUT×BIN 按层复验 NF13553.1H slot 14 passId 3
+# 2026-07-13 (Cursor 真库 Oracle + 生产 API 抽样)
+
+## JB 明细（v4 list, PASSTYPE=TEST）
+| TESTEND (UTC)           | GROSSDIE | Yield% | KEYNUMBER (v1) | PASSNUM |
+|-------------------------|----------|--------|----------------|---------|
+| 2026-07-12T14:31:42.000Z | 126      | 0.0    | 10228816       | 1       |
+| 2026-07-12T18:20:30.000Z | 1831     | 99.2   | 10228816       | 1       |
+
+注：v3/v4 列表 SQL 原先未 SELECT KEYNUMBER；两行同 KEYNUMBER+PASSNUM，仅靠 TESTEND 区分。
+
+## 问题根因
+1. 前端合并同 slot，未按明细行分层请求。
+2. site-bin-bylot 无 testEnd → INF 整片图或 Oracle 合并 → pass3 totalDie=1957。
+3. 仅 keynumber=10228816 仍合并两层（同 KEY/PASSNUM）。
+4. Oracle INFLAYERMAP 重复 JOIN 时同 TESTEND 有两行 map，后处理若「覆盖」会把 1831 层盖成 0。
+
+## 修复后 Oracle 分层（本地 dist + 真库）
+| 层 TESTEND              | site-bin totalDie | 对齐 GROSSDIE |
+|-------------------------|-------------------|---------------|
+| 2026-07-12T14:31:42.000Z | 126               | 126 ✅        |
+| 2026-07-12T18:20:30.000Z | 1831              | 1831 ✅       |
+| 未分层（合并）           | 1957              | 126+1831 ✅   |
+
+## 生产 API（部署前抽样 2026-07-13）
+- GET site-bin-bylot 无 testEnd: mapSource=inf, pass3 totalDie=1957
+- GET + keynumber=10228816: mapSource=oracle, pass3 totalDie=1957（仍合并，符合旧逻辑）
+
+部署含 testEnd 参数后复验：
+  cd pcr-ai-api && node scripts/verify-jb-dut-layer-nf13553.mjs

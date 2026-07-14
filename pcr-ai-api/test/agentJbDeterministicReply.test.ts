@@ -185,11 +185,11 @@ describe("agentJbDeterministicReply", () => {
       detectJbReplyMode(
         "WA03P02G 这个 device 下最好的探针卡+机台组合是什么，哪张探针卡表现最差"
       ),
-      "equipment"
+      "generic"
     );
     assert.equal(
       detectJbReplyMode("帮我看一下 WA03P02G 的探针卡表现排名和组合排名"),
-      "equipment"
+      "generic"
     );
     // 既有单卡对比问法必须继续命中 card_yield_compare（不能被本次修复误伤）
     assert.equal(detectJbReplyMode("哪张卡良率最低"), "card_yield_compare");
@@ -774,8 +774,23 @@ describe("agentJbDeterministicReply", () => {
       isProbeCardTesterPerformanceQuestion("帮我看一下 WA03P02G 的探针卡表现排名和组合排名"),
       true
     );
+    assert.equal(
+      isProbeCardTesterPerformanceQuestion("WA03309061N86K 用什么probecard 测试最好"),
+      true
+    );
+    assert.equal(
+      isProbeCardTesterPerformanceQuestion("WA20P98C 和什么卡什么机台搭配最合适"),
+      true
+    );
     assert.equal(isProbeCardTesterPerformanceQuestion("哪张卡良率最低"), false);
     assert.equal(isProbeCardTesterPerformanceQuestion("探针卡哪个最差"), false);
+  });
+
+  it("detectJbReplyMode: probe card best-choice routes to generic, not equipment", () => {
+    assert.equal(
+      detectJbReplyMode("WA03309061N86K 用什么probecard 测试最好"),
+      "generic"
+    );
   });
 
   it("canRunLotOverviewDirectRoute bails on good bin field ask", async () => {

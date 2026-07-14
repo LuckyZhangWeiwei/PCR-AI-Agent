@@ -2,21 +2,28 @@ import type { Request, Response } from "express";
 import { Router } from "express";
 import { sendAgentError } from "../lib/agentResponse.js";
 import {
+  InfSiteBinUnavailableError,
   OutputSiteBinByLotNotFoundError,
   OutputSiteBinByLotValidationError,
+  parseOptionalKeynumber,
+  parseOptionalLayerTestEnd,
+  parseOptionalPassNum,
   parsePassIdsFromQuery,
-  parseSiteBinByLotJson,
-  runOutputSiteBinByLot,
+  parseSiteBinLayersBody,
   runOutputSiteBinByLotForDevice,
   runOutputSiteBinByLotForLot,
   runOutputSiteBinByLotForLotByDirectory,
+  runSiteBinForWafer,
+  runSiteBinForWaferLayers,
   SITE_BIN_BY_LOT_DEVICE_AGG_SUMMARY,
   SITE_BIN_BY_LOT_LOT_AGG_SUMMARY,
   SITE_BIN_BY_LOT_LOT_DIR_AGG_SUMMARY,
+  SITE_BIN_LAYERS_BATCH_SUMMARY,
   SITE_BIN_BY_LOT_SUMMARY,
   validateDeviceLot,
   validateInfPath,
 } from "../lib/outputSiteBinByLot.js";
+import { parseInfWaferCoordsFromPath } from "../lib/buildInfPath.js";
 import {
   tryResolveSiteBinByLotDummy,
   tryResolveSiteBinByLotDummyForDevice,
@@ -372,8 +379,16 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
 
   // ── single wafer ──────────────────────────────────────────────────────────
   let infPath: string;
+  let keynumber: number | undefined;
+  let passNum: number | undefined;
+  let testEnd: Date | undefined;
   try {
     infPath = validateInfPath(firstQueryString(infRaw));
+    keynumber = parseOptionalKeynumber(
+      req.query.keynumber ?? req.query.key_number
+    );
+    passNum = parseOptionalPassNum(req.query.passNum ?? req.query.pass_num);
+    testEnd = parseOptionalLayerTestEnd(req.query.testEnd ?? req.query.test_end);
   } catch (e) {
     if (e instanceof OutputSiteBinByLotValidationError) {
       return sendAgentError(res, 400, e.code, e.message);
@@ -382,44 +397,62 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
   }
 
   try {
-    const dummyData = tryResolveSiteBinByLotDummy(infPath, passIds);
+    const dummyData = tryResolveSiteBinByLotDummy(
+      infPath,
+      passIds,
+      keynumber,
+      testEnd?.toISOString()
+    );
     if (dummyData !== null) {
       return res.json({
         meta: { apiVersion: "1", requestId: reqId(req), summary: SITE_BIN_BY_LOT_SUMMARY },
         infPath,
         passIds,
+        ...(keynumber !== undefined ? { keynumber } : {}),
+        ...(passNum !== undefined ? { passNum } : {}),
+        ...(testEnd !== undefined ? { testEnd: testEnd.toISOString() } : {}),
         ...dummyData,
       });
     }
 
-    const result = await runOutputSiteBinByLot(infPath, passIds);
-    if (result.exitCode !== 0) {
-      const detail = [result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n---\n");
+    const coords = parseInfWaferCoordsFromPath(infPath);
+    if (!coords) {
       return sendAgentError(
-        res, 502, "PERL_SCRIPT_FAILED",
-        `Perl script exited with code ${result.exitCode}`,
-        detail || undefined
+        res,
+        400,
+        "VALIDATION_ERROR",
+        "infPath must match .../{DEVICE}/{LOT}/r_1-{slot} (required for Oracle map fallback)"
       );
     }
+    const deviceOpt = firstQueryString(req.query.device).trim();
+    const deviceForWafer = deviceOpt || coords.device;
 
-    let data;
-    try {
-      data = parseSiteBinByLotJson(result.stdout);
-    } catch (e) {
-      if (e instanceof OutputSiteBinByLotValidationError) {
-        return sendAgentError(res, 502, "PERL_OUTPUT_PARSE_FAILED", e.message);
+    const { data, source, notices } = await runSiteBinForWafer(
+      deviceForWafer,
+      { lot: coords.lot, slot: coords.slot, infPath },
+      passIds,
+      {
+        keynumber,
+        passNum,
+        testEnd: testEnd?.toISOString(),
       }
-      throw e;
-    }
+    );
 
     return res.json({
       meta: { apiVersion: "1", requestId: reqId(req), summary: SITE_BIN_BY_LOT_SUMMARY },
       infPath,
       passIds,
+      ...(keynumber !== undefined ? { keynumber } : {}),
+      ...(passNum !== undefined ? { passNum } : {}),
+      ...(testEnd !== undefined ? { testEnd: testEnd.toISOString() } : {}),
+      mapSource: source,
+      ...(notices.length > 0 ? { notices } : {}),
       ...data,
-      ...(result.stderr.trim() !== "" ? { stderr: result.stderr } : {}),
     });
   } catch (e) {
+    if (e instanceof InfSiteBinUnavailableError) {
+      return sendAgentError(res, 404, "LOT_INF_NOT_FOUND", e.message);
+    }
     const statusCode =
       e && typeof e === "object" && "statusCode" in e &&
       typeof (e as { statusCode: unknown }).statusCode === "number"
@@ -429,5 +462,56 @@ infAnalysisRouter.get("/inf-analysis/site-bin-bylot", async (req, res) => {
     const code = statusCode === 504 ? "PERL_SCRIPT_TIMEOUT" : "PERL_EXEC_FAILED";
     const error = statusCode === 504 ? "Perl script execution timed out" : "Failed to execute Perl script";
     return sendAgentError(res, statusCode, code, error, detail);
+  }
+});
+
+/**
+ * 明细多选 DUT×BIN：一次请求拉多层 Oracle map，服务端合并后返回。
+ * POST body: `{ layers: [{ infPath, device, passIds, testEnd?, keynumber?, passNum? }, ...] }`
+ */
+infAnalysisRouter.post("/inf-analysis/site-bin-bylot/layers", async (req, res) => {
+  let layers;
+  try {
+    layers = parseSiteBinLayersBody(req.body);
+  } catch (e) {
+    if (e instanceof OutputSiteBinByLotValidationError) {
+      return sendAgentError(res, 400, e.code, e.message);
+    }
+    throw e;
+  }
+
+  try {
+    const { layerCount, layers: layerResults, data, notices } =
+      await runSiteBinForWaferLayers(layers);
+    const mapSources = [...new Set(layerResults.map((l) => l.mapSource))];
+    return res.json({
+      meta: {
+        apiVersion: "1",
+        requestId: reqId(req),
+        summary: SITE_BIN_LAYERS_BATCH_SUMMARY,
+      },
+      layerCount,
+      mapSources,
+      layers: layerResults.map((l) => ({
+        infPath: l.infPath,
+        passIds: l.passIds,
+        mapSource: l.mapSource,
+        passes: l.passes,
+        ...(l.keynumber !== undefined ? { keynumber: l.keynumber } : {}),
+        ...(l.passNum !== undefined ? { passNum: l.passNum } : {}),
+        ...(l.testEnd ? { testEnd: l.testEnd } : {}),
+      })),
+      ...(notices.length > 0 ? { notices } : {}),
+      ...data,
+    });
+  } catch (e) {
+    if (e instanceof InfSiteBinUnavailableError) {
+      return sendAgentError(res, 404, "LOT_INF_NOT_FOUND", e.message);
+    }
+    if (e instanceof OutputSiteBinByLotValidationError) {
+      return sendAgentError(res, 400, e.code, e.message);
+    }
+    const detail = e instanceof Error ? e.message : String(e);
+    return sendAgentError(res, 502, "SITE_BIN_LAYERS_BATCH_FAILED", detail);
   }
 });

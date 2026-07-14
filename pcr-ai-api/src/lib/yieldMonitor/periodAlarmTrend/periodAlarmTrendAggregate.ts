@@ -91,19 +91,25 @@ export function topProbeCardsFromAlarmRows(
     .map(([probeCard, count]) => ({ probeCard, count }));
 }
 
-function countJbRowsInBucket(
+function waferSlotKey(lot: string, slot: string | number): string {
+  return `${lot}\u0001${slot}`;
+}
+
+function countJbDistinctSlotsInBucket(
   jbRows: InfcontrolLayerBinDummyRow[],
   bucket: PeriodAlarmBucket
 ): number {
+  const keys = new Set<string>();
   const from = bucket.start.getTime();
   const to = bucket.end.getTime();
-  let count = 0;
   for (const row of jbRows) {
+    const lot = String(row.LOT ?? "").trim();
+    if (!lot) continue;
     const te = new Date(String(row.TESTEND)).getTime();
     if (Number.isNaN(te) || te < from || te > to) continue;
-    count += 1;
+    keys.add(waferSlotKey(lot, row.SLOT));
   }
-  return count;
+  return keys.size;
 }
 
 function aggregateBucketMetrics(
@@ -136,7 +142,7 @@ function aggregateBucketMetrics(
   cards.delete("");
 
   const total = rows.length;
-  const testerActivityTotal = countJbRowsInBucket(jbRows, bucket);
+  const testerActivityTotal = countJbDistinctSlotsInBucket(jbRows, bucket);
 
   return {
     total,
@@ -194,23 +200,22 @@ export function mergePeriodAlarmJbSlotDenominator(
   points: PeriodAlarmTrendPoint[],
   jbSlotRows: Record<string, unknown>[]
 ): PeriodAlarmTrendPoint[] {
-  const activityByBucket = new Map<number, number>();
+  const slotsByBucket = new Map<number, Set<string>>();
   for (const row of jbSlotRows) {
     const idxRaw = row.BUCKET_IDX ?? row.bucket_idx;
     const idx = idxRaw != null ? Number(idxRaw) : NaN;
-    if (!Number.isFinite(idx)) continue;
-    const totalRaw =
-      row.ACTIVITY_TOTAL ??
-      row.activity_total ??
-      row.ROW_CNT ??
-      row.row_cnt;
-    const total = totalRaw != null ? Number(totalRaw) : NaN;
-    if (!Number.isFinite(total) || total < 0) continue;
-    activityByBucket.set(idx, total);
+    const lotRaw = row.LOT ?? row.lot;
+    const lot = lotRaw == null ? "" : String(lotRaw).trim();
+    const slotRaw = row.SLOT ?? row.slot;
+    if (!Number.isFinite(idx) || !lot || slotRaw == null) continue;
+    const key = waferSlotKey(lot, slotRaw as string | number);
+    const set = slotsByBucket.get(idx) ?? new Set<string>();
+    set.add(key);
+    slotsByBucket.set(idx, set);
   }
 
   return points.map((p, i) => {
-    const activity = activityByBucket.get(i) ?? 0;
+    const activity = slotsByBucket.get(i)?.size ?? 0;
     const num = p.testerAlarmNumerator;
     return {
       ...p,

@@ -124,3 +124,54 @@ export async function apiGetJson<T>(
   }
   return body as T;
 }
+
+export async function apiPostJson<T>(
+  base: string,
+  path: string,
+  body: unknown,
+  init?: RequestInit
+): Promise<T> {
+  const root = normalizeApiBase(base);
+  const p = path.startsWith("/") ? path : `/${path}`;
+  let url: URL;
+  try {
+    if (root === "") {
+      const origin =
+        typeof window !== "undefined" && window.location?.origin
+          ? window.location.origin
+          : "http://localhost";
+      url = new URL(p, origin);
+    } else {
+      url = new URL(`${root}${p}`);
+    }
+  } catch {
+    url = new URL(`${normalizeApiBase(DEFAULT_BASE)}${p}`);
+  }
+  const res = await fetch(url.toString(), {
+    method: "POST",
+    ...init,
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...(init?.headers ?? {}),
+    },
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  const parsed: unknown = (() => {
+    try {
+      return text ? JSON.parse(text) : null;
+    } catch {
+      return text;
+    }
+  })();
+  if (!res.ok) {
+    const err = parsed as Partial<ApiErrorBody> | null;
+    const msg =
+      err?.error ??
+      (typeof parsed === "string" ? parsed : `HTTP ${res.status}`);
+    const detail = err?.detail ? ` (${err.detail})` : "";
+    throw new Error(`${msg}${detail}`);
+  }
+  return parsed as T;
+}

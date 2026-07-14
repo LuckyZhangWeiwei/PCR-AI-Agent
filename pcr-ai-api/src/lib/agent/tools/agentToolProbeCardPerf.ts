@@ -32,11 +32,14 @@ export async function toolAggregateProbeCardTesterPerformance(
   maxChars: number
 ): Promise<string> {
   const device = typeof args["device"] === "string" ? args["device"].trim() : "";
-  if (!device) {
-    return "aggregate_probe_card_tester_performance 参数错误: device 不能为空，必须先给出 device 代码。";
+  const mask = typeof args["mask"] === "string" ? args["mask"].trim() : "";
+  if (!device && !mask) {
+    return "aggregate_probe_card_tester_performance 参数错误: device 或 mask 至少填一个。";
   }
 
-  const params: Record<string, unknown> = { device };
+  const params: Record<string, unknown> = {};
+  if (device) params["device"] = device;
+  if (mask) params["mask"] = mask;
   if (typeof args["passId"] === "number") params["passId"] = args["passId"];
   if (args["testEndFrom"]) params["testEndFrom"] = args["testEndFrom"];
   if (args["testEndTo"]) params["testEndTo"] = args["testEndTo"];
@@ -72,7 +75,8 @@ export async function toolAggregateProbeCardTesterPerformance(
     }
     const sql = buildInfcontrolLayerBinsV3SqlFullMatching(parsed.whereAndSql);
     logAgentSql("aggregate_probe_card_tester_performance", sql, parsed.binds, {
-      device,
+      device: device || undefined,
+      mask: mask || undefined,
       passId: typeof args["passId"] === "number" ? args["passId"] : undefined,
     });
     rawRows = await withConnection(async (conn) => {
@@ -87,12 +91,14 @@ export async function toolAggregateProbeCardTesterPerformance(
   const groups = computeProbeCardTesterPerformance(enriched);
 
   if (groups.length === 0) {
-    return `aggregate_probe_card_tester_performance: device=${device} 在指定范围内未查到有效良率数据（GROSSDIE 缺失，或 PASSID 不在 1/3/5 范围内）。可尝试放宽 testEndFrom/testEndTo。`;
+    const scope = device ? `device=${device}` : `mask=${mask}`;
+    return `aggregate_probe_card_tester_performance: ${scope} 在指定范围内未查到有效良率数据（GROSSDIE 缺失，或 PASSID 不在 1/3/5 范围内）。可尝试放宽 testEndFrom/testEndTo。`;
   }
 
   return truncateResult(
     {
-      device,
+      ...(device ? { device } : {}),
+      ...(mask ? { mask } : {}),
       passIdFilter: typeof args["passId"] === "number" ? args["passId"] : null,
       totalRowsMatching: rawRows.length,
       groups,

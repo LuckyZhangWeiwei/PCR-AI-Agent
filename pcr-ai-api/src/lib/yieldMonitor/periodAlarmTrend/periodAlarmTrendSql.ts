@@ -59,7 +59,7 @@ ORDER BY b.bucket_idx
 `.trim();
 }
 
-/** JB Start：每桶记录数 COUNT(*)，按 TESTEND 分桶（v3 PASSTYPE 范围，不含 RETESTBIN）。 */
+/** JB Start：每桶 distinct (LOT,SLOT) 片数，按 TESTEND 分桶（v3 PASSTYPE 范围，不含 RETESTBIN）。 */
 export function buildPeriodAlarmJbSlotTuplesSql(
   jbWhereAndSql: string,
   bucketCount: number
@@ -71,20 +71,21 @@ export function buildPeriodAlarmJbSlotTuplesSql(
   const caseExpr = periodAlarmBucketCaseExpr(bucketCount, "t2.TESTEND");
 
   return `
-SELECT bucket_idx, activity_total
+SELECT bucket_idx, lot, slot
 FROM (
-  SELECT bucket_idx, COUNT(*) AS activity_total
-  FROM (
-    SELECT
-      ${caseExpr} AS bucket_idx
-    FROM INFCONTROL t1
-    INNER JOIN INFLAYERBINLIST t2 ON t1.KEYNUMBER = t2.KEYNUMBER
-    ${whereBlock}
-  ) bucketed
-  WHERE bucket_idx IS NOT NULL
-  GROUP BY bucket_idx
+  SELECT
+    ${caseExpr} AS bucket_idx,
+    TRIM(t1.LOT) AS lot,
+    t1.SLOT AS slot
+  FROM INFCONTROL t1
+  INNER JOIN INFLAYERBINLIST t2 ON t1.KEYNUMBER = t2.KEYNUMBER
+  ${whereBlock}
 ) src
-ORDER BY bucket_idx
+WHERE bucket_idx IS NOT NULL
+  AND lot IS NOT NULL
+  AND LENGTH(lot) > 0
+GROUP BY bucket_idx, lot, slot
+ORDER BY bucket_idx, lot, slot
 `.trim();
 }
 

@@ -1,6 +1,10 @@
 // pcr-ai-api/src/lib/agent/core/agentStream.ts
 import https from "node:https";
 import type { AgentConfig } from "../agentConfig.js";
+import {
+  repairToolCallGroupsForLlm,
+  type ChatMessage,
+} from "../agentHistory.js";
 import { getConfig } from "../../runtimeConfig.js";
 import {
   loadMaskingDictionary,
@@ -109,9 +113,14 @@ export async function streamSiliconFlow(
   const dict: MaskingDictionary | null = maskingEnabled
     ? await loadMaskingDictionary()
     : null;
+  // MiniMax 等要求每条 tool 消息前必须有带匹配 tool_calls 的 assistant；
+  // PRE_LLM 直连路由历史上常只写 tool，此处统一修补后再脱敏出站。
+  const repairedMessages = repairToolCallGroupsForLlm(
+    request.messages as ChatMessage[]
+  );
   const outboundMessages = dict
-    ? maskRequestMessages(request.messages, dict)
-    : request.messages;
+    ? maskRequestMessages(repairedMessages, dict)
+    : repairedMessages;
 
   return new Promise((resolve, reject) => {
     const timeoutMs = getStreamTimeoutMs(config);

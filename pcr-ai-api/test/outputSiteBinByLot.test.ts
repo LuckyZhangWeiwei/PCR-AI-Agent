@@ -312,6 +312,90 @@ describe("GET /inf-analysis/site-bin-bylot route", () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
+  test("200 dummy keynumber returns layer-scaled dieCount", async () => {
+    process.env.NODE_ENV = "test";
+    const { createApp } = await import("../src/app.js");
+    const { createServer } = await import("node:http");
+    const app = createApp();
+    const server = createServer(app);
+    await new Promise<void>((resolve, reject) => {
+      server.listen(0, "127.0.0.1", () => resolve());
+      server.on("error", reject);
+    });
+    const addr = server.address() as import("node:net").AddressInfo;
+    const base = `http://127.0.0.1:${addr.port}/api/v1`;
+    const q1 = new URLSearchParams({
+      infPath: SITE_BIN_BY_LOT_DUMMY_CANONICAL_INF_PATH,
+      passId: "1",
+      keynumber: "1001",
+    });
+    const q2 = new URLSearchParams({
+      infPath: SITE_BIN_BY_LOT_DUMMY_CANONICAL_INF_PATH,
+      passId: "1",
+      keynumber: "1002",
+    });
+
+    const r1 = await fetch(`${base}/inf-analysis/site-bin-bylot?${q1}`);
+    const r2 = await fetch(`${base}/inf-analysis/site-bin-bylot?${q2}`);
+    assert.equal(r1.status, 200);
+    assert.equal(r2.status, 200);
+    const b1 = (await r1.json()) as {
+      keynumber: number;
+      passes: { bins: { duts: { dieCount: number }[] }[] }[];
+    };
+    const b2 = (await r2.json()) as {
+      passes: { bins: { duts: { dieCount: number }[] }[] }[];
+    };
+    assert.equal(b1.keynumber, 1001);
+    const die1 = b1.passes[0]?.bins[0]?.duts[0]?.dieCount ?? 0;
+    const die2 = b2.passes[0]?.bins[0]?.duts[0]?.dieCount ?? 0;
+    assert.ok(die1 > 0 && die2 > 0);
+    assert.notEqual(die1, die2);
+
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  test("200 dummy testEnd returns layer-scaled dieCount", async () => {
+    process.env.NODE_ENV = "test";
+    const { createApp } = await import("../src/app.js");
+    const { createServer } = await import("node:http");
+    const app = createApp();
+    const server = createServer(app);
+    await new Promise<void>((resolve, reject) => {
+      server.listen(0, "127.0.0.1", () => resolve());
+      server.on("error", reject);
+    });
+    const addr = server.address() as import("node:net").AddressInfo;
+    const base = `http://127.0.0.1:${addr.port}/api/v1`;
+    const q1 = new URLSearchParams({
+      infPath: SITE_BIN_BY_LOT_DUMMY_CANONICAL_INF_PATH,
+      passId: "1",
+      testEnd: "2026-07-12T14:31:42.000Z",
+    });
+    const q2 = new URLSearchParams({
+      infPath: SITE_BIN_BY_LOT_DUMMY_CANONICAL_INF_PATH,
+      passId: "1",
+      testEnd: "2026-07-12T18:20:30.000Z",
+    });
+
+    const r1 = await fetch(`${base}/inf-analysis/site-bin-bylot?${q1}`);
+    const r2 = await fetch(`${base}/inf-analysis/site-bin-bylot?${q2}`);
+    assert.equal(r1.status, 200);
+    assert.equal(r2.status, 200);
+    const b1 = (await r1.json()) as {
+      passes: { bins: { duts: { dieCount: number }[] }[] }[];
+    };
+    const b2 = (await r2.json()) as {
+      passes: { bins: { duts: { dieCount: number }[] }[] }[];
+    };
+    const die1 = b1.passes[0]?.bins[0]?.duts[0]?.dieCount ?? 0;
+    const die2 = b2.passes[0]?.bins[0]?.duts[0]?.dieCount ?? 0;
+    assert.ok(die1 > 0 && die2 > 0);
+    assert.notEqual(die1, die2);
+
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
   test("200 legacy lot aggregation without probeCardType (directory scan)", async () => {
     process.env.NODE_ENV = "test";
     const { createApp } = await import("../src/app.js");
@@ -449,6 +533,111 @@ describe("GET /inf-analysis/site-bin-bylot route", () => {
     });
     const r = await fetch(`${base}/inf-analysis/site-bin-bylot?${q}`);
     assert.equal(r.status, 400);
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  test("POST layers batch merges dummy passes in one request", async () => {
+    process.env.NODE_ENV = "test";
+    const { createApp } = await import("../src/app.js");
+    const { createServer } = await import("node:http");
+    const app = createApp();
+    const server = createServer(app);
+    await new Promise<void>((resolve, reject) => {
+      server.listen(0, "127.0.0.1", () => resolve());
+      server.on("error", reject);
+    });
+    const addr = server.address() as import("node:net").AddressInfo;
+    const base = `http://127.0.0.1:${addr.port}/api/v1`;
+    const r = await fetch(`${base}/inf-analysis/site-bin-bylot/layers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        layers: [
+          {
+            infPath: SITE_BIN_BY_LOT_DUMMY_CANONICAL_INF_PATH,
+            device: "WA03P02G",
+            passIds: [1],
+          },
+          {
+            infPath: SITE_BIN_BY_LOT_DUMMY_CANONICAL_INF_PATH,
+            device: "WA03P02G",
+            passIds: [1],
+            keynumber: 2,
+            testEnd: "2099-01-01T00:00:00.000Z",
+          },
+        ],
+      }),
+    });
+    assert.equal(r.status, 200);
+    const body = (await r.json()) as {
+      layerCount: number;
+      layers: { passes: { bins: { duts: { dieCount: number }[] }[] }[] }[];
+      passes: { bins: { duts: { dieCount: number }[] }[] }[];
+    };
+    assert.equal(body.layerCount, 2);
+    assert.equal(body.layers.length, 2);
+    const withLayer = body.layers.find(
+      (l: { testEnd?: string }) => l.testEnd === "2099-01-01T00:00:00.000Z"
+    ) as { keynumber?: number; passNum?: number } | undefined;
+    assert.ok(withLayer);
+    assert.equal(withLayer.keynumber, 2);
+    assert.ok(body.passes.length > 0);
+    const mergedDie = body.passes[0]!.bins.reduce(
+      (s, b) => s + b.duts.reduce((t, d) => t + d.dieCount, 0),
+      0
+    );
+    const sumLayers = body.layers.reduce((acc, layer) => {
+      const p = layer.passes[0];
+      if (!p) return acc;
+      return (
+        acc +
+        p.bins.reduce(
+          (s, b) => s + b.duts.reduce((t, d) => t + d.dieCount, 0),
+          0
+        )
+      );
+    }, 0);
+    assert.equal(mergedDie, sumLayers);
+
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  test("POST layers echoes numeric keynumber and passNum from JSON body", async () => {
+    process.env.NODE_ENV = "test";
+    const { createApp } = await import("../src/app.js");
+    const { createServer } = await import("node:http");
+    const app = createApp();
+    const server = createServer(app);
+    await new Promise<void>((resolve, reject) => {
+      server.listen(0, "127.0.0.1", () => resolve());
+      server.on("error", reject);
+    });
+    const addr = server.address() as import("node:net").AddressInfo;
+    const base = `http://127.0.0.1:${addr.port}/api/v1`;
+    const r = await fetch(`${base}/inf-analysis/site-bin-bylot/layers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        layers: [
+          {
+            infPath: SITE_BIN_BY_LOT_DUMMY_CANONICAL_INF_PATH,
+            device: "WA03P02G",
+            passIds: [1],
+            keynumber: 99,
+            passNum: 2,
+            testEnd: "2099-06-01T12:00:00.000Z",
+          },
+        ],
+      }),
+    });
+    assert.equal(r.status, 200);
+    const body = (await r.json()) as {
+      layers: { keynumber?: number; passNum?: number; testEnd?: string }[];
+    };
+    assert.equal(body.layers.length, 1);
+    assert.equal(body.layers[0]!.keynumber, 99);
+    assert.equal(body.layers[0]!.passNum, 2);
+    assert.equal(body.layers[0]!.testEnd, "2099-06-01T12:00:00.000Z");
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 });

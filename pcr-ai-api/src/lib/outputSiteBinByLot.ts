@@ -4,12 +4,24 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-import { buildInfDeviceDir, buildInfLotDir } from "./buildInfPath.js";
+import { buildInfDeviceDir, buildInfLotDir, parseInfWaferCoordsFromPath } from "./buildInfPath.js";
+import {
+  fetchSiteBinByLotFromOracle,
+  infPathReadable,
+  OracleMapFallbackNotFoundError,
+  oracleMapFallbackEnabled,
+  type RunSiteBinWaferResult,
+  type SiteBinWaferSource,
+} from "./infOracleMapFallback.js";
 import {
   resolveSiteBinWafersWithSkips,
   type SiteBinWaferRef,
 } from "./siteBinByLotWaferResolve.js";
 import type { SiteBinTestEndWindow } from "./siteBinByLotTestEndWindow.js";
+import {
+  siteBinByLotUseDummy,
+  tryResolveSiteBinByLotDummy,
+} from "./outputSiteBinByLotDummy.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -18,6 +30,9 @@ const SCRIPT_NAME = "output_site_bin_bylot.pl";
 /** 写入响应 meta，说明本接口业务含义（交接 / 前端展示用）。 */
 export const SITE_BIN_BY_LOT_SUMMARY =
   "Per wafer test pass (one or more PASS_ID in INF, PASS_TYPE=TEST only): for each bin result on the map, which probe-card DUT (test site) produced that bin and how many die at that bin×DUT. Data from INF layers iBinCodeLast + iTestSiteLast via output_site_bin_bylot.pl.";
+
+export const SITE_BIN_LAYERS_BATCH_SUMMARY =
+  "Batch layer-scoped DUT×BIN: merge passId×bin×dut dieCount across multiple JB detail rows (each with optional testEnd/keynumber/passNum) in one request.";
 
 /** 兼容：device+lot、无 probeCardType 时扫描 lot 目录下全部 r_1-{slot}。 */
 export const SITE_BIN_BY_LOT_LOT_DIR_AGG_SUMMARY =
@@ -37,6 +52,90 @@ export class OutputSiteBinByLotValidationError extends Error {
 export class OutputSiteBinByLotNotFoundError extends Error {
   readonly statusCode = 404;
   readonly code = "LOT_INF_NOT_FOUND";
+}
+
+export type RunSiteBinForWaferOpts = {
+  /** JB 明细行 KEYNUMBER（可选，与 testEnd 联用）。 */
+  keynumber?: number;
+  /** JB 明细行 PASSNUM。 */
+  passNum?: number;
+  /** JB 明细行 TESTEND（ISO）；有值时按该层 map 取数，不合并同 slot 其它层。 */
+  testEnd?: string;
+};
+
+/** Optional `passNum` / `pass_num` for layer-scoped DUT×BIN. */
+export function parseOptionalPassNum(raw: unknown): number | undefined {
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  if (typeof raw === "number") {
+    if (!Number.isFinite(raw) || !Number.isInteger(raw) || raw <= 0) {
+      throw new OutputSiteBinByLotValidationError(
+        "Invalid query parameter: passNum (must be a positive integer)"
+      );
+    }
+    return raw;
+  }
+  const s =
+    typeof raw === "string"
+      ? raw
+      : Array.isArray(raw) && typeof raw[0] === "string"
+      ? raw[0]
+      : "";
+  const t = s.trim();
+  if (!t) return undefined;
+  const n = Number(t);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) {
+    throw new OutputSiteBinByLotValidationError(
+      "Invalid query parameter: passNum (must be a positive integer)"
+    );
+  }
+  return n;
+}
+
+/** Optional `testEnd` / `test_end` — exact JB layer TESTEND (ISO). */
+export function parseOptionalLayerTestEnd(raw: unknown): Date | undefined {
+  const s =
+    typeof raw === "string"
+      ? raw
+      : Array.isArray(raw) && typeof raw[0] === "string"
+      ? raw[0]
+      : "";
+  const t = s.trim();
+  if (!t) return undefined;
+  const d = new Date(t);
+  if (Number.isNaN(d.getTime())) {
+    throw new OutputSiteBinByLotValidationError(
+      "Invalid query parameter: testEnd (must be ISO date-time)"
+    );
+  }
+  return d;
+}
+
+/** Optional `keynumber` / `key_number` for single-wafer layer-scoped DUT×BIN. */
+export function parseOptionalKeynumber(raw: unknown): number | undefined {
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  if (typeof raw === "number") {
+    if (!Number.isFinite(raw) || !Number.isInteger(raw) || raw <= 0) {
+      throw new OutputSiteBinByLotValidationError(
+        "Invalid query parameter: keynumber (must be a positive integer)"
+      );
+    }
+    return raw;
+  }
+  const s =
+    typeof raw === "string"
+      ? raw
+      : Array.isArray(raw) && typeof raw[0] === "string"
+      ? raw[0]
+      : "";
+  const t = s.trim();
+  if (!t) return undefined;
+  const n = Number(t);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) {
+    throw new OutputSiteBinByLotValidationError(
+      "Invalid query parameter: keynumber (must be a positive integer)"
+    );
+  }
+  return n;
 }
 
 function resolvePerlScriptPath(): string {
@@ -233,6 +332,8 @@ export type RunOutputSiteBinByLotAggregateResult = {
   selectedLots?: string[];
   topN?: number;
   skippedInfPaths: string[];
+  /** INF 不可读但 Oracle map 回退成功的路径 */
+  oracleFallbackPaths?: string[];
   data: SiteBinByLotData;
   stderrParts: string[];
 };
@@ -259,29 +360,359 @@ function assertWaferCountWithinLimit(
 }
 
 async function runPerlForWafers(
+  device: string,
   wafers: SiteBinWaferRef[],
   passIds: number[]
-): Promise<{ data: SiteBinByLotData; stderrParts: string[] }> {
+): Promise<{
+  data: SiteBinByLotData;
+  stderrParts: string[];
+  oracleFallbackPaths: string[];
+  skippedInfPaths: string[];
+}> {
   const chunks: SiteBinByLotData[] = [];
   const stderrParts: string[] = [];
+  const oracleFallbackPaths: string[] = [];
+  const skippedInfPaths: string[] = [];
 
-  for (const { infPath } of wafers) {
-    const result = await runOutputSiteBinByLot(infPath, passIds);
-    if (result.exitCode !== 0) {
-      const detail = [result.stderr.trim(), result.stdout.trim()]
-        .filter(Boolean)
-        .join("\n---\n");
-      const err = new Error(
-        `Perl script failed for ${infPath} (exit ${result.exitCode})${detail ? `: ${detail}` : ""}`
-      );
-      (err as { statusCode?: number }).statusCode = 502;
-      throw err;
+  for (const wafer of wafers) {
+    try {
+      const { data, source, notices } = await runSiteBinForWafer(device, wafer, passIds);
+      chunks.push(data);
+      for (const n of notices) stderrParts.push(n);
+      if (source === "oracle") oracleFallbackPaths.push(wafer.infPath);
+    } catch (e) {
+      if (e instanceof InfSiteBinUnavailableError || e instanceof OracleMapFallbackNotFoundError) {
+        skippedInfPaths.push(wafer.infPath);
+        stderrParts.push(
+          `${wafer.infPath}: ${e instanceof Error ? e.message : String(e)}`
+        );
+        continue;
+      }
+      throw e;
     }
-    chunks.push(parseSiteBinByLotJson(result.stdout));
-    if (result.stderr.trim()) stderrParts.push(`${infPath}:\n${result.stderr.trim()}`);
   }
 
-  return { data: mergeSiteBinByLotData(chunks), stderrParts };
+  if (chunks.length === 0) {
+    throw new OutputSiteBinByLotNotFoundError(
+      `No wafer data from INF or Oracle for ${wafers.length} wafer(s)`
+    );
+  }
+
+  return {
+    data: mergeSiteBinByLotData(chunks),
+    stderrParts,
+    oracleFallbackPaths,
+    skippedInfPaths,
+  };
+}
+
+/**
+ * Single wafer: Perl/INF first; on missing/unreadable/Perl failure → Oracle map fallback.
+ * With `testEnd`（明细行一层）：跳过 INF 整片合并图，Oracle 按 KEYNUMBER+PASSNUM+TESTEND 取该层 map。
+ */
+export async function runSiteBinForWafer(
+  device: string,
+  wafer: SiteBinWaferRef,
+  passIds: number[],
+  opts?: RunSiteBinForWaferOpts
+): Promise<RunSiteBinWaferResult> {
+  const keynumber = opts?.keynumber;
+  const passNum = opts?.passNum;
+  const testEnd = opts?.testEnd?.trim();
+  const testEndDate = testEnd ? new Date(testEnd) : undefined;
+  const layerScoped =
+    Boolean(testEnd) &&
+    testEndDate !== undefined &&
+    !Number.isNaN(testEndDate.getTime());
+
+  if (siteBinByLotUseDummy()) {
+    const dummyData = tryResolveSiteBinByLotDummy(
+      wafer.infPath,
+      passIds,
+      keynumber,
+      testEnd
+    );
+    if (dummyData !== null) {
+      return { data: dummyData, source: "inf", notices: [] };
+    }
+  }
+
+  if (layerScoped) {
+    const notices: string[] = [
+      `Layer-scoped map for TESTEND=${testEnd}` +
+        (keynumber !== undefined ? ` KEYNUMBER=${keynumber}` : "") +
+        (passNum !== undefined ? ` PASSNUM=${passNum}` : ""),
+    ];
+    if (!oracleMapFallbackEnabled()) {
+      throw new InfSiteBinUnavailableError(
+        wafer.infPath,
+        "Layer-scoped site-bin requires Oracle map fallback (SITE_BIN_ORACLE_FALLBACK) when INF dummy is off"
+      );
+    }
+    const dev =
+      device.trim() || parseInfWaferCoordsFromPath(wafer.infPath)?.device || "";
+    if (!dev) {
+      throw new InfSiteBinUnavailableError(
+        wafer.infPath,
+        "Cannot resolve device for layer-scoped Oracle map (pass device= or use standard infPath layout)"
+      );
+    }
+    const data = await fetchSiteBinByLotFromOracle({
+      device: dev,
+      lot: wafer.lot,
+      slot: wafer.slot,
+      passIds,
+      keynumber,
+      passNum,
+      testEnd: testEndDate,
+    });
+    return { data, source: "oracle", notices };
+  }
+
+  const notices: string[] = [];
+  const readable = await infPathReadable(wafer.infPath);
+
+  if (readable) {
+    const result = await runOutputSiteBinByLot(wafer.infPath, passIds);
+    if (result.exitCode === 0) {
+      try {
+        return {
+          data: parseSiteBinByLotJson(result.stdout),
+          source: "inf",
+          notices,
+        };
+      } catch {
+        notices.push(
+          `${wafer.infPath}: Perl JSON parse failed; trying Oracle fallback`
+        );
+      }
+    } else {
+      const detail = [result.stderr.trim(), result.stdout.trim()]
+        .filter(Boolean)
+        .join(" ");
+      notices.push(
+        `${wafer.infPath}: Perl failed (exit ${result.exitCode})${detail ? `: ${detail.slice(0, 200)}` : ""}; trying Oracle fallback`
+      );
+    }
+  } else {
+    notices.push(`${wafer.infPath}: INF not readable; trying Oracle fallback`);
+  }
+
+  if (!oracleMapFallbackEnabled()) {
+    throw new InfSiteBinUnavailableError(
+      wafer.infPath,
+      "INF unavailable and Oracle map fallback is disabled (SITE_BIN_ORACLE_FALLBACK=false or site-bin dummy mode)"
+    );
+  }
+
+  const dev = device.trim() || parseInfWaferCoordsFromPath(wafer.infPath)?.device || "";
+  if (!dev) {
+    throw new InfSiteBinUnavailableError(
+      wafer.infPath,
+      "Cannot resolve device for Oracle map fallback (pass device= or use standard infPath layout)"
+    );
+  }
+
+  try {
+    const data = await fetchSiteBinByLotFromOracle({
+      device: dev,
+      lot: wafer.lot,
+      slot: wafer.slot,
+      passIds,
+    });
+    return { data, source: "oracle" as SiteBinWaferSource, notices };
+  } catch (e) {
+    if (e instanceof OracleMapFallbackNotFoundError) {
+      throw new InfSiteBinUnavailableError(wafer.infPath, e.message);
+    }
+    throw e;
+  }
+}
+
+export class InfSiteBinUnavailableError extends Error {
+  readonly infPath: string;
+  constructor(infPath: string, message: string) {
+    super(message);
+    this.name = "InfSiteBinUnavailableError";
+    this.infPath = infPath;
+  }
+}
+
+/** 明细多选 DUT×BIN：一次 HTTP 拉多层，服务端串行 Oracle 后合并。 */
+export const SITE_BIN_LAYERS_BATCH_MAX = 50;
+
+export type SiteBinLayerRequest = {
+  infPath: string;
+  device: string;
+  passIds: number[];
+  keynumber?: number;
+  passNum?: number;
+  testEnd?: string;
+};
+
+export type SiteBinLayerResult = {
+  infPath: string;
+  passIds: number[];
+  mapSource: SiteBinWaferSource;
+  keynumber?: number;
+  passNum?: number;
+  testEnd?: string;
+  passes: SiteBinPass[];
+  notices: string[];
+};
+
+export type RunSiteBinLayersBatchResult = {
+  layerCount: number;
+  layers: SiteBinLayerResult[];
+  data: SiteBinByLotData;
+  notices: string[];
+};
+
+function parseSiteBinLayerPassIds(raw: unknown): number[] {
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return [Math.trunc(raw)];
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    return parsePassIdsFromQuery(raw);
+  }
+  if (Array.isArray(raw)) {
+    const out: number[] = [];
+    for (const v of raw) {
+      if (typeof v === "number" && Number.isFinite(v)) out.push(Math.trunc(v));
+    }
+    if (out.length > 0) return [...new Set(out)].sort((a, b) => a - b);
+  }
+  throw new OutputSiteBinByLotValidationError(
+    "Each layer requires passIds (number or comma-separated string)"
+  );
+}
+
+export function parseSiteBinLayersBody(body: unknown): SiteBinLayerRequest[] {
+  if (!body || typeof body !== "object" || !("layers" in body)) {
+    throw new OutputSiteBinByLotValidationError(
+      "Request body must be { layers: [...] }"
+    );
+  }
+  const rawLayers = (body as { layers: unknown }).layers;
+  if (!Array.isArray(rawLayers) || rawLayers.length === 0) {
+    throw new OutputSiteBinByLotValidationError("layers must be a non-empty array");
+  }
+  if (rawLayers.length > SITE_BIN_LAYERS_BATCH_MAX) {
+    throw new OutputSiteBinByLotValidationError(
+      `layers exceeds maximum ${SITE_BIN_LAYERS_BATCH_MAX}`
+    );
+  }
+
+  const layers: SiteBinLayerRequest[] = [];
+  for (let i = 0; i < rawLayers.length; i++) {
+    const item = rawLayers[i];
+    if (!item || typeof item !== "object") {
+      throw new OutputSiteBinByLotValidationError(`layers[${i}] must be an object`);
+    }
+    const row = item as Record<string, unknown>;
+    const infPath = validateInfPath(
+      typeof row.infPath === "string" ? row.infPath : ""
+    );
+    const deviceRaw =
+      typeof row.device === "string" ? row.device.trim() : "";
+    const coords = parseInfWaferCoordsFromPath(infPath);
+    const device = deviceRaw || coords?.device || "";
+    if (!device) {
+      throw new OutputSiteBinByLotValidationError(
+        `layers[${i}]: device required (or inferrable from infPath)`
+      );
+    }
+    const passIds = parseSiteBinLayerPassIds(row.passIds ?? row.passId);
+    const keynumber =
+      row.keynumber !== undefined
+        ? parseOptionalKeynumber(row.keynumber)
+        : undefined;
+    const passNum =
+      row.passNum !== undefined ? parseOptionalPassNum(row.passNum) : undefined;
+    const testEndRaw =
+      typeof row.testEnd === "string"
+        ? row.testEnd.trim()
+        : typeof row.test_end === "string"
+        ? row.test_end.trim()
+        : "";
+    const testEnd = testEndRaw || undefined;
+    layers.push({
+      infPath,
+      device,
+      passIds,
+      ...(keynumber !== undefined ? { keynumber } : {}),
+      ...(passNum !== undefined ? { passNum } : {}),
+      ...(testEnd ? { testEnd } : {}),
+    });
+  }
+  return layers;
+}
+
+/** 多层 site-bin：串行取数后 merge（单次 HTTP，避免 N 次往返）。 */
+export async function runSiteBinForWaferLayers(
+  layers: SiteBinLayerRequest[]
+): Promise<RunSiteBinLayersBatchResult> {
+  if (layers.length === 0) {
+    throw new OutputSiteBinByLotValidationError("layers must be a non-empty array");
+  }
+
+  const results: SiteBinLayerResult[] = [];
+  const notices: string[] = [];
+  const chunks: SiteBinByLotData[] = [];
+
+  for (const layer of layers) {
+    const coords = parseInfWaferCoordsFromPath(layer.infPath);
+    if (!coords) {
+      throw new OutputSiteBinByLotValidationError(
+        `infPath must match .../{DEVICE}/{LOT}/r_1-{slot}: ${layer.infPath}`
+      );
+    }
+    const wafer: SiteBinWaferRef = {
+      lot: coords.lot,
+      slot: coords.slot,
+      infPath: layer.infPath,
+    };
+    const { data, source, notices: layerNotices } = await runSiteBinForWafer(
+      layer.device,
+      wafer,
+      layer.passIds,
+      {
+        keynumber: layer.keynumber,
+        passNum: layer.passNum,
+        testEnd: layer.testEnd,
+      }
+    );
+    chunks.push(data);
+    for (const n of layerNotices) notices.push(n);
+    results.push({
+      infPath: layer.infPath,
+      passIds: layer.passIds,
+      mapSource: source,
+      passes: data.passes,
+      notices: layerNotices,
+      ...(layer.keynumber !== undefined ? { keynumber: layer.keynumber } : {}),
+      ...(layer.passNum !== undefined ? { passNum: layer.passNum } : {}),
+      ...(layer.testEnd ? { testEnd: layer.testEnd } : {}),
+    });
+  }
+
+  return {
+    layerCount: results.length,
+    layers: results,
+    data: mergeSiteBinByLotData(chunks),
+    notices,
+  };
+}
+
+function appendOracleFallbackStderr(
+  stderrParts: string[],
+  oracleFallbackPaths: string[]
+): void {
+  if (oracleFallbackPaths.length > 0) {
+    stderrParts.push(
+      `Oracle map fallback for ${oracleFallbackPaths.length} wafer(s) (INF missing/unreadable):\n${oracleFallbackPaths.join("\n")}`
+    );
+  }
 }
 
 /**
@@ -311,14 +742,17 @@ export async function runOutputSiteBinByLotForLotByDirectory(
     slot,
     infPath,
   }));
-  const { data, stderrParts } = await runPerlForWafers(wafers, passIds);
+  const { data, stderrParts, oracleFallbackPaths, skippedInfPaths: runSkipped } =
+    await runPerlForWafers(device, wafers, passIds);
+  appendOracleFallbackStderr(stderrParts, oracleFallbackPaths);
 
   return {
     aggregateScope: "lot",
     lotDir,
     waferCount: wafers.length,
     waferSlots: wafers.map((w) => w.slot),
-    skippedInfPaths: [],
+    skippedInfPaths: runSkipped,
+    ...(oracleFallbackPaths.length > 0 ? { oracleFallbackPaths } : {}),
     data,
     stderrParts,
   };
@@ -334,7 +768,7 @@ export async function runOutputSiteBinByLotForLot(
   passIds: number[],
   testEndWindow: SiteBinTestEndWindow
 ): Promise<RunOutputSiteBinByLotAggregateResult> {
-  const { wafers, skippedInfPaths, probeCardType: pct } =
+  const { wafers, skippedInfPaths: resolveSkipped, probeCardType: pct } =
     await resolveSiteBinWafersWithSkips({
     device,
     lot,
@@ -350,10 +784,13 @@ export async function runOutputSiteBinByLotForLot(
     { jbTimeFiltered: true }
   );
 
-  const { data, stderrParts } = await runPerlForWafers(wafers, passIds);
+  const { data, stderrParts, oracleFallbackPaths, skippedInfPaths: runSkipped } =
+    await runPerlForWafers(device, wafers, passIds);
+  appendOracleFallbackStderr(stderrParts, oracleFallbackPaths);
+  const skippedInfPaths = [...new Set([...resolveSkipped, ...runSkipped])];
   if (skippedInfPaths.length > 0) {
     stderrParts.push(
-      `Skipped ${skippedInfPaths.length} INF path(s) (JB match but not readable):\n${skippedInfPaths.join("\n")}`
+      `Skipped ${skippedInfPaths.length} wafer(s) (INF and Oracle map fallback unavailable):\n${skippedInfPaths.join("\n")}`
     );
   }
 
@@ -365,6 +802,7 @@ export async function runOutputSiteBinByLotForLot(
     waferCount: wafers.length,
     waferSlots: wafers.map((w) => w.slot),
     skippedInfPaths,
+    ...(oracleFallbackPaths.length > 0 ? { oracleFallbackPaths } : {}),
     data,
     stderrParts,
   };
@@ -380,7 +818,7 @@ export async function runOutputSiteBinByLotForDevice(
   topN: number,
   probeCardType?: string
 ): Promise<RunOutputSiteBinByLotAggregateResult> {
-  const { wafers, skippedInfPaths, probeCardType: pct, selectedLots } =
+  const { wafers, skippedInfPaths: resolveSkipped, probeCardType: pct, selectedLots } =
     await resolveSiteBinWafersWithSkips({
     device,
     probeCardType,
@@ -396,10 +834,13 @@ export async function runOutputSiteBinByLotForDevice(
     { jbTimeFiltered: true }
   );
 
-  const { data, stderrParts } = await runPerlForWafers(wafers, passIds);
+  const { data, stderrParts, oracleFallbackPaths, skippedInfPaths: runSkipped } =
+    await runPerlForWafers(device, wafers, passIds);
+  appendOracleFallbackStderr(stderrParts, oracleFallbackPaths);
+  const skippedInfPaths = [...new Set([...resolveSkipped, ...runSkipped])];
   if (skippedInfPaths.length > 0) {
     stderrParts.push(
-      `Skipped ${skippedInfPaths.length} INF path(s) (JB match but not readable):\n${skippedInfPaths.join("\n")}`
+      `Skipped ${skippedInfPaths.length} wafer(s) (INF and Oracle map fallback unavailable):\n${skippedInfPaths.join("\n")}`
     );
   }
 
@@ -415,6 +856,7 @@ export async function runOutputSiteBinByLotForDevice(
     waferSlots: wafers.map((w) => w.slot),
     waferLots: [...lotSet].sort((a, b) => a.localeCompare(b)),
     skippedInfPaths,
+    ...(oracleFallbackPaths.length > 0 ? { oracleFallbackPaths } : {}),
     data,
     stderrParts,
   };

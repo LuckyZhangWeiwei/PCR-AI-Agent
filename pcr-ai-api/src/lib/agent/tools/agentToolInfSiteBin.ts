@@ -1,7 +1,6 @@
 // pcr-ai-api/src/lib/agent/tools/agentToolInfSiteBin.ts
 import {
-  runOutputSiteBinByLot,
-  parseSiteBinByLotJson,
+  runSiteBinForWafer,
 } from "../../outputSiteBinByLot.js";
 import { tryResolveSiteBinByLotDummy } from "../../outputSiteBinByLotDummy.js";
 import { buildInfPath } from "../../buildInfPath.js";
@@ -39,19 +38,31 @@ export async function toolQueryInfSiteBinByDut(
     return truncateResult(result, maxChars);
   }
 
-  const { stdout, stderr, exitCode } = await runOutputSiteBinByLot(infPath, passIds);
-  if (exitCode !== 0) {
-    return truncateResult({
-      error: "INF/Perl 失败",
-      stderr: stderr.slice(0, 500),
-      hint: "检查 INF_STORAGE_ROOT 及 infPath 在 API 主机上是否可读",
-    }, maxChars);
-  }
   try {
-    const data = parseSiteBinByLotJson(stdout);
-    const compacted = { cardId, device, lot, slot, infPath, passes: compactSiteBinPasses(data.passes) };
+    const { data, source, notices } = await runSiteBinForWafer(
+      device,
+      { lot, slot, infPath },
+      passIds
+    );
+    const compacted = {
+      cardId,
+      device,
+      lot,
+      slot,
+      infPath,
+      mapSource: source,
+      ...(notices.length > 0 ? { notices } : {}),
+      passes: compactSiteBinPasses(data.passes),
+    };
     return truncateResult(compacted, maxChars);
   } catch (e) {
-    return `INF 解析失败: ${e instanceof Error ? e.message : String(e)}`;
+    return truncateResult(
+      {
+        error: "INF/Oracle map 失败",
+        detail: e instanceof Error ? e.message : String(e),
+        hint: "检查 INF_STORAGE_ROOT 或 JB Oracle INFLAYERMAP/INFLAYERBINLIST",
+      },
+      maxChars
+    );
   }
 }

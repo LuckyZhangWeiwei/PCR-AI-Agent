@@ -1,6 +1,7 @@
 import fs from "node:fs";
 
 import { buildInfPath } from "./buildInfPath.js";
+import { oracleMapFallbackEnabled } from "./infOracleMapFallback.js";
 import { getInfcontrolLayerBinDummyRows } from "./infcontrol/infcontrolLayerBinDummy.js";
 import { listApisForceOracleNoDummy } from "./listDummyRuntime.js";
 import {
@@ -495,6 +496,19 @@ export async function resolveSiteBinWafersWithSkips(
   );
   const wafers: SiteBinWaferRef[] = [];
   const skippedInfPaths: string[] = [];
+
+  if (oracleMapFallbackEnabled()) {
+    // INF 丢失时由 Oracle map 回退；仍保留全部 JB 匹配 wafer。
+    return {
+      wafers: fromJb,
+      skippedInfPaths: [],
+      probeCardType,
+      ...(selectedLots !== undefined
+        ? { selectedLots, topN: params.deviceTopLots }
+        : {}),
+    };
+  }
+
   for (let i = 0; i < accessResults.length; i++) {
     const r = accessResults[i]!;
     if (r.status === "fulfilled") {

@@ -17,9 +17,21 @@ export function buildInfPath(device: string, lot: string, slot: number): string 
 
 /** Parse wafer slot from INF path suffix `.../r_1-{slot}`. */
 export function parseInfWaferSlotFromPath(infPath: string): number | null {
+  const coords = parseInfWaferCoordsFromPath(infPath);
+  return coords?.slot ?? null;
+}
+
+/** Parse `{root}/{DEVICE}/{LOT}/r_1-{slot}` — device/lot casing preserved from path. */
+export function parseInfWaferCoordsFromPath(
+  infPath: string
+): { device: string; lot: string; slot: number } | null {
   const normalized = infPath.replace(/\\/g, "/").trim();
-  const m = /\/r_1-(\d+)\s*$/i.exec(normalized);
+  const m = /\/([^/]+)\/([^/]+)\/r_1-(\d+)\s*$/i.exec(normalized);
   if (!m) return null;
-  const n = parseInt(m[1], 10);
-  return Number.isFinite(n) && n > 0 ? n : null;
+  const slot = parseInt(m[3]!, 10);
+  if (!Number.isFinite(slot) || slot < 1) return null;
+  const device = m[1]!.trim();
+  const lot = m[2]!.trim();
+  if (!device || !lot) return null;
+  return { device, lot, slot };
 }
