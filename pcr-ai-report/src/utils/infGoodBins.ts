@@ -188,6 +188,12 @@ export function normalizeGoodBinSet(
   return good;
 }
 
+export function siteBinBinDieTotal(
+  bin: { duts: { dieCount?: number }[] }
+): number {
+  return bin.duts.reduce((s, d) => s + (d.dieCount ?? 0), 0);
+}
+
 /** site-bin-bylot pass：去掉良品 bin（DUT 图 X 轴仅展示不良 bin） */
 export function filterSiteBinPassBadOnly(
   pass: SiteBinPass,
@@ -196,4 +202,26 @@ export function filterSiteBinPassBadOnly(
   const good = normalizeGoodBinSet(goodBinNumbers);
   const bins = pass.bins.filter((b) => !isGoodBinLabel(b.bin, good));
   return { ...pass, bins };
+}
+
+/** 不良 bin 且 die>0（避免 X 轴出现空 bin 柱） */
+export function filterSiteBinPassBadOnlyNonZero(
+  pass: SiteBinPass,
+  goodBinNumbers: ReadonlySet<number> | undefined
+): SiteBinPass {
+  const bad = filterSiteBinPassBadOnly(pass, goodBinNumbers);
+  return {
+    ...bad,
+    bins: bad.bins.filter((b) => siteBinBinDieTotal(b) > 0),
+  };
+}
+
+export function siteBinPassBadDieTotal(
+  pass: SiteBinPass,
+  goodBinNumbers: ReadonlySet<number> | undefined
+): number {
+  return filterSiteBinPassBadOnlyNonZero(pass, goodBinNumbers).bins.reduce(
+    (s, b) => s + siteBinBinDieTotal(b),
+    0
+  );
 }

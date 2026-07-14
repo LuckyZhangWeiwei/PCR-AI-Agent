@@ -170,11 +170,15 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "aggregate_probe_card_tester_performance",
       description:
-        "按 device 计算 JB STAR 探针卡/测试机组合良率排名与探针卡表现排名（含月度趋势、坏 bin 频率、置信度档位）。用于回答：哪个探针卡+测试机组合良率最好/最差、探针卡表现排名、这张卡良率是不是在变差、这张卡常见坏 bin 是什么。**必填 device**；未传 passId 时按 passId∈{1,3,5} 分别输出三张组合表+三张探针卡表（pass1/pass3/pass5，不跨 sort 合并）。结果含月度良率趋势表（仅≥2个月数据的卡）与坏 bin Top3 频率表（仅频率统计，非坐标级分布）。数字均由服务端计算直出，禁止在回复里自行改写。",
+        "按 device 或 mask 计算 JB STAR 探针卡/测试机组合良率排名与探针卡表现排名（含月度趋势、坏 bin 频率、置信度档位）。用于回答：哪个探针卡+测试机组合良率最好/最差、探针卡表现排名、这张卡良率是不是在变差、这张卡常见坏 bin 是什么、用什么探针卡测试最好。**必填 device 或 mask**；未传 passId 时按 passId∈{1,3,5} 分别输出三张组合表+三张探针卡表（pass1/pass3/pass5，不跨 sort 合并）。结果含月度良率趋势表（仅≥2个月数据的卡）与坏 bin Top3 频率表（仅频率统计，非坐标级分布）。数字均由服务端计算直出，禁止在回复里自行改写。",
       parameters: {
         type: "object",
         properties: {
-          device: { type: "string", description: "device 代码，必填" },
+          device: { type: "string", description: "device 代码（与 mask 二选一）" },
+          mask: {
+            type: "string",
+            description: "device 末 4 位 mask（如 N86K），与 device 二选一；用户只给 mask 时用此参数",
+          },
           passId: {
             type: "number",
             description:
@@ -183,7 +187,7 @@ export const TOOL_SCHEMAS = [
           testEndFrom: { type: "string", description: "TESTEND 起始时间（ISO），不传默认最近一年" },
           testEndTo: { type: "string", description: "TESTEND 结束时间（ISO）" },
         },
-        required: ["device"],
+        required: [],
       },
     },
   },

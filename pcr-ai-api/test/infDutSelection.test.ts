@@ -11,6 +11,7 @@ import { getInfcontrolLayerBinDummyRows } from "../src/lib/infcontrolLayerBinDum
 import {
   buildInfDutCtxFromDetailListIndices,
   buildInfDutCtxFromDrillBarKeys,
+  waferSpecFromJbRow,
 } from "../../pcr-ai-report/src/utils/infDutSelection.js";
 import { mergeSiteBinPasses } from "../../pcr-ai-report/src/utils/mergeSiteBinPasses.js";
 
@@ -38,8 +39,7 @@ test("buildInfDutCtxFromDetailListIndices groups wafers and requires same device
   assert.ok(ctx);
   assert.equal(ctx!.lot, String(a.LOT).trim());
   assert.equal(ctx!.device, String(a.DEVICE).trim());
-  assert.ok(ctx!.wafers.length >= 1);
-  assert.equal(ctx!.wafers.length, new Set(ctx!.wafers.map((w) => w.slot)).size);
+  assert.equal(ctx!.wafers.length, 2);
 
   const otherLot = rows.find(
     (r) => String(r.LOT).trim() !== String(a.LOT).trim()
@@ -52,6 +52,42 @@ test("buildInfDutCtxFromDetailListIndices groups wafers and requires same device
     );
     assert.equal(bad, null);
   }
+});
+
+test("buildInfDutCtxFromDetailListIndices keeps same slot rows as separate layers", () => {
+  const rows = getInfcontrolLayerBinDummyRows().filter(
+    (r) => String(r.PASSTYPE).trim() === "TEST"
+  );
+  const base = rows[0]!;
+  const twin = {
+    ...base,
+    KEYNUMBER: Number(base.KEYNUMBER) + 9001,
+    TESTEND: "2099-12-31T00:00:00.000Z",
+  };
+  const extended = [...rows, twin] as typeof rows;
+  const idxA = 0;
+  const idxB = extended.length - 1;
+  const ctx = buildInfDutCtxFromDetailListIndices(
+    [idxA, idxB],
+    extended as never,
+    { source: "detail" }
+  );
+  assert.ok(ctx);
+  assert.equal(ctx!.wafers.length, 2);
+  assert.equal(ctx!.wafers[0]!.slot, ctx!.wafers[1]!.slot);
+  assert.notEqual(ctx!.wafers[0]!.testEnd, ctx!.wafers[1]!.testEnd);
+});
+
+test("waferSpecFromJbRow carries keynumber passNum testEnd for layer fetch", () => {
+  const rows = getInfcontrolLayerBinDummyRows().filter(
+    (r) => String(r.PASSTYPE).trim() === "TEST"
+  );
+  const row = rows[0]!;
+  const spec = waferSpecFromJbRow(row as never);
+  assert.ok(spec);
+  assert.ok(spec!.keynumber && spec!.keynumber > 0);
+  assert.ok(spec!.passNum && spec!.passNum > 0);
+  assert.ok(spec!.testEnd);
 });
 
 test("mergeSiteBinPasses matches mergeSiteBinByLotData (report client vs API)", () => {
@@ -93,6 +129,37 @@ test("dummy per-slot infPath scales dieCount; two-slot client merge matches serv
   const dut7 = bin2?.duts.find((d) => d.dut === 7);
   assert.ok(dut7);
   assert.equal(dut7.dieCount, 2 * slotA + 2 * Number(slotB));
+});
+
+test("buildInfDutCtxFromDrillBarKeys keeps same slot rows as separate layers", () => {
+  const rows = getInfcontrolLayerBinDummyRows().filter(
+    (r) => String(r.PASSTYPE).trim() === "TEST"
+  );
+  const base = rows[0]!;
+  const lot = String(base.LOT).trim();
+  const slot = Number(base.SLOT);
+  const twin = {
+    ...base,
+    KEYNUMBER: Number(base.KEYNUMBER) + 9002,
+    TESTEND: "2099-12-31T00:00:00.000Z",
+  };
+  const extended = [...rows, twin] as typeof rows;
+  const ctx = buildInfDutCtxFromDrillBarKeys({
+    parentDimKey: "lot",
+    parentDimVal: lot,
+    subDim: "slot",
+    selectedKeys: [`Slot ${slot}`],
+    drillGroups: [{ key: `Slot ${slot}`, count: 1, parts: { slot: String(slot) } }],
+    formLot: lot,
+    formDevice: String(base.DEVICE),
+    formPassId: "",
+    listRows: extended as never,
+    anchor: { source: "lotYield" },
+  });
+  assert.ok(ctx);
+  assert.equal(ctx!.wafers.length, 2);
+  assert.equal(ctx!.wafers[0]!.slot, ctx!.wafers[1]!.slot);
+  assert.notEqual(ctx!.wafers[0]!.testEnd, ctx!.wafers[1]!.testEnd);
 });
 
 test("buildInfDutCtxFromDrillBarKeys uses query lot and slot subDim", () => {

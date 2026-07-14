@@ -56,7 +56,7 @@ export type PeriodAlarmTrendPoint = {
   dutCount: number;
   /** delta_diff 报警触发次数（= total；分子） */
   testerAlarmNumerator: number;
-  /** 同期同筛选、该桶内 JB Start 记录总数（分母；v3 PASSTYPE，不含 RETESTBIN） */
+  /** 同期同筛选、该桶内 JB Start distinct (LOT,SLOT) 片数（分母；v3 PASSTYPE，不含 RETESTBIN；同片多断片/多 pass 计 1） */
   testerActivityTotal: number;
   /** testerAlarmNumerator / testerActivityTotal；分母为 0 时为 null */
   testerAlarmRate: number | null;
@@ -478,7 +478,7 @@ ORDER BY b.bucket_idx
 `.trim();
 }
 
-/** JB Start：每桶记录数 COUNT(*)，按 TESTEND 分桶（v3 PASSTYPE 范围，不含 RETESTBIN）。 */
+/** JB Start：每桶 distinct (LOT,SLOT) 片数，按 TESTEND 分桶（v3 PASSTYPE 范围，不含 RETESTBIN）。 */
 export function buildPeriodAlarmJbSlotTuplesSql(
   jbWhereAndSql: string,
   bucketCount: number
@@ -490,20 +490,21 @@ export function buildPeriodAlarmJbSlotTuplesSql(
   const caseExpr = periodAlarmBucketCaseExpr(bucketCount, "t2.TESTEND");
 
   return `
-SELECT bucket_idx, activity_total
+SELECT bucket_idx, lot, slot
 FROM (
-  SELECT bucket_idx, COUNT(*) AS activity_total
-  FROM (
-    SELECT
-      ${caseExpr} AS bucket_idx
-    FROM INFCONTROL t1
-    INNER JOIN INFLAYERBINLIST t2 ON t1.KEYNUMBER = t2.KEYNUMBER
-    ${whereBlock}
-  ) bucketed
-  WHERE bucket_idx IS NOT NULL
-  GROUP BY bucket_idx
+  SELECT
+    ${caseExpr} AS bucket_idx,
+    TRIM(t1.LOT) AS lot,
+    t1.SLOT AS slot
+  FROM INFCONTROL t1
+  INNER JOIN INFLAYERBINLIST t2 ON t1.KEYNUMBER = t2.KEYNUMBER
+  ${whereBlock}
 ) src
-ORDER BY bucket_idx
+WHERE bucket_idx IS NOT NULL
+  AND lot IS NOT NULL
+  AND LENGTH(lot) > 0
+GROUP BY bucket_idx, lot, slot
+ORDER BY bucket_idx, lot, slot
 `.trim();
 }
 
@@ -700,19 +701,25 @@ export function topProbeCardsFromAlarmRows(
     .map(([probeCard, count]) => ({ probeCard, count }));
 }
 
-function countJbRowsInBucket(
+function waferSlotKey(lot: string, slot: string | number): string {
+  return `${lot}\u0001${slot}`;
+}
+
+function countJbDistinctSlotsInBucket(
   jbRows: InfcontrolLayerBinDummyRow[],
   bucket: PeriodAlarmBucket
 ): number {
+  const keys = new Set<string>();
   const from = bucket.start.getTime();
   const to = bucket.end.getTime();
-  let count = 0;
   for (const row of jbRows) {
+    const lot = String(row.LOT ?? "").trim();
+    if (!lot) continue;
     const te = new Date(String(row.TESTEND)).getTime();
     if (Number.isNaN(te) || te < from || te > to) continue;
-    count += 1;
+    keys.add(waferSlotKey(lot, row.SLOT));
   }
-  return count;
+  return keys.size;
 }
 
 function aggregateBucketMetrics(
@@ -745,7 +752,7 @@ function aggregateBucketMetrics(
   cards.delete("");
 
   const total = rows.length;
-  const testerActivityTotal = countJbRowsInBucket(jbRows, bucket);
+  const testerActivityTotal = countJbDistinctSlotsInBucket(jbRows, bucket);
 
   return {
     total,
@@ -803,23 +810,22 @@ export function mergePeriodAlarmJbSlotDenominator(
   points: PeriodAlarmTrendPoint[],
   jbSlotRows: Record<string, unknown>[]
 ): PeriodAlarmTrendPoint[] {
-  const activityByBucket = new Map<number, number>();
+  const slotsByBucket = new Map<number, Set<string>>();
   for (const row of jbSlotRows) {
     const idxRaw = row.BUCKET_IDX ?? row.bucket_idx;
     const idx = idxRaw != null ? Number(idxRaw) : NaN;
-    if (!Number.isFinite(idx)) continue;
-    const totalRaw =
-      row.ACTIVITY_TOTAL ??
-      row.activity_total ??
-      row.ROW_CNT ??
-      row.row_cnt;
-    const total = totalRaw != null ? Number(totalRaw) : NaN;
-    if (!Number.isFinite(total) || total < 0) continue;
-    activityByBucket.set(idx, total);
+    const lotRaw = row.LOT ?? row.lot;
+    const lot = lotRaw == null ? "" : String(lotRaw).trim();
+    const slotRaw = row.SLOT ?? row.slot;
+    if (!Number.isFinite(idx) || !lot || slotRaw == null) continue;
+    const key = waferSlotKey(lot, slotRaw as string | number);
+    const set = slotsByBucket.get(idx) ?? new Set<string>();
+    set.add(key);
+    slotsByBucket.set(idx, set);
   }
 
   return points.map((p, i) => {
-    const activity = activityByBucket.get(i) ?? 0;
+    const activity = slotsByBucket.get(i)?.size ?? 0;
     const num = p.testerAlarmNumerator;
     return {
       ...p,
@@ -945,4 +951,4 @@ export function mapPeriodAlarmTrendRows(
 }
 
 export const PERIOD_ALARM_TREND_DOCUMENTATION =
-  "按查询 TIME_STAMP 时间窗（未传则近 1 UTC 年）切分周/月 x 轴桶，返回各桶触发总量与 COUNT(DISTINCT) 种类数（Tester / Probe Card / Bin excluding goodbin / DUT）、Tester 报警频率（分子 YM delta_diff 次数 ÷ 分母同期同筛选 JB Start 记录总数，v3 PASSTYPE 不含 RETESTBIN）、以及各桶触发 Top 5 device。";
+  "按查询 TIME_STAMP 时间窗（未传则近 1 UTC 年）切分周/月 x 轴桶，返回各桶触发总量与 COUNT(DISTINCT) 种类数（Tester / Probe Card / Bin excluding goodbin / DUT）、Tester 报警频率（分子 YM delta_diff 次数 ÷ 分母同期同筛选 JB Start distinct (LOT,SLOT) 片数，v3 PASSTYPE 不含 RETESTBIN；同片多断片计 1）、以及各桶触发 Top 5 device。";

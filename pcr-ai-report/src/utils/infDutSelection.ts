@@ -12,6 +12,12 @@ export type InfDutWaferSpec = {
   slot: number;
   passIds: number[];
   probeCardType: string;
+  /** JB 明细 KEYNUMBER（v3 列表返回后填入）。 */
+  keynumber?: number;
+  /** JB 明细 PASSNUM。 */
+  passNum?: number;
+  /** JB 明细 TESTEND（ISO）；site-bin-bylot 按层取 map 的主键。 */
+  testEnd?: string;
 };
 
 export type InfDutAnchor =
@@ -31,23 +37,9 @@ export type InfDutSelectionCtx = {
   selectionSummary: string;
 };
 
-function waferSpecKey(w: InfDutWaferSpec): string {
-  return `${w.device}|${w.lot}|${w.slot}`;
-}
-
-function mergePassIdsIntoMap(
-  map: Map<string, InfDutWaferSpec>,
-  spec: InfDutWaferSpec
-): void {
-  const key = waferSpecKey(spec);
-  const existing = map.get(key);
-  if (!existing) {
-    map.set(key, { ...spec, passIds: [...spec.passIds] });
-    return;
-  }
-  const set = new Set(existing.passIds);
-  for (const p of spec.passIds) set.add(p);
-  existing.passIds = [...set].sort((a, b) => a - b);
+/** 单片/单层 site-bin 缓存与请求去重键（与 InfDutDistPanel wafersFetchKey 一致）。 */
+export function infDutWaferCacheKey(w: InfDutWaferSpec): string {
+  return `${w.device}|${w.lot}|${w.slot}|${w.keynumber ?? ""}|${w.passNum ?? ""}|${w.testEnd ?? ""}|${[...w.passIds].sort((a, b) => a - b).join(",")}`;
 }
 
 export function collectGoodBinNumbersForWafers(
@@ -87,7 +79,15 @@ export function waferSpecFromJbRow(row: InfcontrolLayerBinV3Row): InfDutWaferSpe
   const passId = Number(row.PASSID);
   const passIds = Number.isFinite(passId) ? [passId] : [1, 3, 5];
   const probeCardType = probeCardTypeFromJbRow(row);
-  return { device, lot, slot, passIds, probeCardType };
+  const kn = Number(row.KEYNUMBER);
+  const keynumber =
+    Number.isFinite(kn) && kn > 0 ? Math.trunc(kn) : undefined;
+  const pn = Number((row as { PASSNUM?: number }).PASSNUM);
+  const passNum =
+    Number.isFinite(pn) && pn > 0 ? Math.trunc(pn) : undefined;
+  const testEndRaw = String(row.TESTEND ?? "").trim();
+  const testEnd = testEndRaw || undefined;
+  return { device, lot, slot, passIds, probeCardType, keynumber, passNum, testEnd };
 }
 
 export function sameDeviceLot(
@@ -110,7 +110,7 @@ export function canJoinDutSelectionGroup(
   return Boolean(anchor.probeCardType) && anchor.probeCardType === candidate.probeCardType;
 }
 
-/** Detail table: multi-row selection (same Device + LOT, or same Device + ProbeCardType across LOTs). */
+/** Detail table: multi-row selection — each row is one JB layer; overlay only when multiple selected. */
 export function buildInfDutCtxFromDetailListIndices(
   indices: Iterable<number>,
   listRows: InfcontrolLayerBinV3Row[] | undefined,
@@ -119,7 +119,7 @@ export function buildInfDutCtxFromDetailListIndices(
   const indexList = [...indices];
   if (indexList.length === 0 || !listRows?.length) return null;
 
-  const waferMap = new Map<string, InfDutWaferSpec>();
+  const wafers: InfDutWaferSpec[] = [];
   const goodBinNumbers = new Set<number>([HARD_GOOD_BIN]);
   const lots = new Set<string>();
   let device = "";
@@ -139,7 +139,7 @@ export function buildInfDutCtxFromDetailListIndices(
       return null;
     }
     lots.add(spec.lot);
-    mergePassIdsIntoMap(waferMap, spec);
+    wafers.push(spec);
     for (const n of collectGoodBinNumbersFromJbRow(row)) goodBinNumbers.add(n);
     const extra = goodBinNumbersFromDetailRow(
       row as unknown as Record<string, unknown>
@@ -147,11 +147,12 @@ export function buildInfDutCtxFromDetailListIndices(
     if (extra) for (const n of extra) goodBinNumbers.add(n);
   }
 
-  const wafers = [...waferMap.values()].sort((a, b) => a.slot - b.slot);
   if (!wafers.length || !device || !lot) return null;
 
-  const slots = wafers.map((w) => w.slot).join(", ");
+  const slots = [...new Set(wafers.map((w) => w.slot))].sort((a, b) => a - b).join(", ");
   const lotLabel = lots.size > 1 ? `${lots.size} 个 LOT` : `LOT ${lot}`;
+  const layerLabel =
+    wafers.length === 1 ? "1 层" : `${wafers.length} 层（叠加）`;
   return {
     wafers,
     device,
@@ -159,7 +160,7 @@ export function buildInfDutCtxFromDetailListIndices(
     goodBinNumbers,
     detailListIndices: indexList,
     anchor,
-    selectionSummary: `${wafers.length} 片 · ${lotLabel} · Slot ${slots}`,
+    selectionSummary: `${layerLabel} · ${lotLabel} · Slot ${slots}`,
   };
 }
 
@@ -200,29 +201,30 @@ function rowMatchesBinFilter(
   return false;
 }
 
-function resolveDeviceLotFromListRows(
+/** JB 明细行 → 每层独立 wafer（同 slot 不同 TESTEND 不合并）。 */
+function resolveWaferSpecsFromListRows(
   rows: InfcontrolLayerBinV3Row[] | undefined,
   slot: number,
   binFilter: string | undefined,
-  requiredLot: string
-): Pick<InfDutWaferSpec, "device" | "lot" | "passIds"> | null {
-  if (!rows?.length) return null;
+  requiredLot: string,
+  goodBinNumbers?: Set<number>
+): InfDutWaferSpec[] {
+  if (!rows?.length) return [];
   const binToken = binFilter ? normalizeBinToken(binFilter) : undefined;
   const lotNeed = requiredLot.trim();
+  const specs: InfDutWaferSpec[] = [];
   for (const r of rows) {
     if (Number(r.SLOT) !== slot) continue;
     if (lotNeed && String(r.LOT ?? "").trim() !== lotNeed) continue;
     if (!rowMatchesBinFilter(r, binToken)) continue;
-    const device = String(r.DEVICE ?? "").trim();
-    const lot = String(r.LOT ?? "").trim();
-    if (!device || !lot) continue;
-    const passIds =
-      r.PASSID !== undefined && r.PASSID !== null && Number.isFinite(Number(r.PASSID))
-        ? [Number(r.PASSID)]
-        : [1, 3, 5];
-    return { device, lot, passIds };
+    const spec = waferSpecFromJbRow(r);
+    if (!spec) continue;
+    specs.push(spec);
+    if (goodBinNumbers) {
+      for (const n of collectGoodBinNumbersFromJbRow(r)) goodBinNumbers.add(n);
+    }
   }
-  return null;
+  return specs;
 }
 
 export function buildInfDutCtxFromDrillBarKeys(
@@ -255,33 +257,43 @@ export function buildInfDutCtxFromDrillBarKeys(
       ? opts.parentDimVal.trim()
       : opts.formDevice.trim();
 
-  const waferMap = new Map<string, InfDutWaferSpec>();
+  const wafers: InfDutWaferSpec[] = [];
+  const goodBinNumbers = new Set<number>([HARD_GOOD_BIN]);
   const keys = [...opts.selectedKeys];
   if (keys.length === 0) return null;
 
   for (const key of keys) {
     const slot = parseSlotFromDrillClick(key, opts.drillGroups);
     if (slot === null) continue;
-    const fromList = resolveDeviceLotFromListRows(
+    const fromList = resolveWaferSpecsFromListRows(
       opts.listRows,
       slot,
       binFilter,
-      lot
+      lot,
+      goodBinNumbers
     );
-    let device = deviceHint || fromList?.device || "";
+    if (fromList.length > 0) {
+      wafers.push(...fromList);
+      continue;
+    }
+    const device = deviceHint;
     if (!device) continue;
-    const passIds =
-      fromList?.passIds ??
-      (opts.formPassId ? [Number(opts.formPassId)] : [1, 3, 5]);
-    mergePassIdsIntoMap(waferMap, { device, lot, slot, passIds, probeCardType: "" });
+    const passIds = opts.formPassId ? [Number(opts.formPassId)] : [1, 3, 5];
+    const fallback = { device, lot, slot, passIds, probeCardType: "" };
+    wafers.push(fallback);
+    for (const n of collectGoodBinNumbersForWafers(opts.listRows, [fallback])) {
+      goodBinNumbers.add(n);
+    }
   }
 
-  const wafers = [...waferMap.values()].sort((a, b) => a.slot - b.slot);
   if (!wafers.length) return null;
 
   const device = wafers[0]!.device;
-  const goodBinNumbers = collectGoodBinNumbersForWafers(opts.listRows, wafers);
-  const slots = wafers.map((w) => w.slot).join(", ");
+  const slots = [...new Set(wafers.map((w) => w.slot))]
+    .sort((a, b) => a - b)
+    .join(", ");
+  const layerLabel =
+    wafers.length === 1 ? "1 层" : `${wafers.length} 层（叠加）`;
 
   return {
     wafers,
@@ -290,6 +302,6 @@ export function buildInfDutCtxFromDrillBarKeys(
     goodBinNumbers,
     focusBin,
     anchor: opts.anchor,
-    selectionSummary: `${wafers.length} 片 · Slot ${slots}`,
+    selectionSummary: `${layerLabel} · Slot ${slots}`,
   };
 }

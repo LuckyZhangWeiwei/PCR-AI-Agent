@@ -6,10 +6,10 @@ process.env["NODE_ENV"] = "test";
 
 import { runTool } from "../src/lib/agent/agentToolHandlers.js";
 
-test("aggregate_probe_card_tester_performance requires device", async () => {
+test("aggregate_probe_card_tester_performance requires device or mask", async () => {
   const out = await runTool("aggregate_probe_card_tester_performance", {});
   assert.equal(typeof out, "string");
-  assert.ok((out as string).includes("device"));
+  assert.ok((out as string).includes("device 或 mask"));
 });
 
 test("aggregate_probe_card_tester_performance returns grouped markdown tables for a known dummy device", async () => {

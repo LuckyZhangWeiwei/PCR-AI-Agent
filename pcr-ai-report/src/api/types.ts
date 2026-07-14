@@ -88,7 +88,7 @@ export type PeriodAlarmTrendBucket = {
   binCount: number;
   dutCount: number;
   testerAlarmNumerator: number;
-  /** 同期同筛选、该桶内 JB Start 记录总数（分母；v3 PASSTYPE，不含 RETESTBIN） */
+  /** 同期同筛选、该桶内 JB Start distinct (LOT,SLOT) 片数（分母；同片多断片计 1） */
   testerActivityTotal: number;
   testerAlarmRate: number | null;
   topTesters: PeriodAlarmTopTester[];
@@ -211,6 +211,7 @@ export type InfcontrolLayerBinV3Row = {
   PROBE?: string;
   GROSSDIE?: number;
   PASSID?: number;
+  PASSNUM?: number;
   SESSIONNUMBER?: string;
   TESTSTART?: string;
   TESTEND?: string;
@@ -284,4 +285,28 @@ export type SiteBinByLotResponse = {
   infPath: string;
   passIds: number[];
   passes: SiteBinPass[];
+  /** inf = Perl/INF 整片；oracle = 分层或 fallback 库表 map */
+  mapSource?: "inf" | "oracle";
+  keynumber?: number;
+  passNum?: number;
+  testEnd?: string;
+  notices?: string[];
+};
+
+/** POST site-bin-bylot/layers 批量分层响应 */
+export type SiteBinLayersBatchResponse = {
+  meta: { apiVersion: string; requestId: string; summary: string };
+  layerCount: number;
+  mapSources?: Array<"inf" | "oracle">;
+  layers: Array<{
+    infPath: string;
+    passIds: number[];
+    mapSource?: "inf" | "oracle";
+    keynumber?: number;
+    passNum?: number;
+    testEnd?: string;
+    passes: SiteBinPass[];
+  }>;
+  passes: SiteBinPass[];
+  notices?: string[];
 };

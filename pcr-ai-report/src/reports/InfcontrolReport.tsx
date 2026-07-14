@@ -746,21 +746,15 @@ function FunnelDrillSection({
     const deviceStep = chain.find(s => s.level === "device");
     const lotStep    = chain.find(s => s.level === "lot");
     if (!deviceStep || !lotStep) return empty;
-    const waferMap = new Map<string, InfDutWaferSpec>();
+    const dutWafers: InfDutWaferSpec[] = [];
     const goodBins = new Set<number>([HARD_GOOD_BIN]);
     for (const row of filteredRows) {
       const spec = waferSpecFromJbRow(row);
       if (!spec) continue;
-      const key = `${spec.device}|${spec.lot}|${spec.slot}`;
-      const ex = waferMap.get(key);
-      if (!ex) {
-        waferMap.set(key, { ...spec, passIds: [...spec.passIds] });
-      } else {
-        for (const p of spec.passIds) { if (!ex.passIds.includes(p)) ex.passIds.push(p); }
-      }
+      dutWafers.push(spec);
       for (const n of collectGoodBinNumbersFromJbRow(row)) goodBins.add(n);
     }
-    return { dutWafers: [...waferMap.values()], dutDevice: deviceStep.value, dutLot: lotStep.value, dutGoodBins: goodBins };
+    return { dutWafers, dutDevice: deviceStep.value, dutLot: lotStep.value, dutGoodBins: goodBins };
   }, [isDut, filteredRows, chain]);
 
   const chartHeight = !levelDef ? 0
@@ -1773,7 +1767,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
             onClick={() => setShowDetail((s) => !s)}
           >
             <span style={{ fontSize: 10, opacity: 0.6 }}>{showDetail ? "▼" : "▶"}</span>
-            共 {list?.count ?? 0} 条（含 PROBECARDTYPE / Yield%）· 勾选多行叠加 DUT 分布（须同一 Device + LOT，或同一 Device + 相同探针卡类型）
+            共 {list?.count ?? 0} 条（含 PROBECARDTYPE / Yield%）· 勾选一行看该层 DUT×BIN；多行叠加（须同一 Device + LOT，或同一 Device + 相同探针卡类型）
             {detailSelectedListIndices.size > 0 ? (
               <span style={{ marginLeft: 8, color: "var(--accent)" }}>
                 已选 {detailSelectedListIndices.size} 行
@@ -1793,7 +1787,7 @@ export function InfcontrolReport({ apiBase, listLimits }: Props) {
               {Array.from(detailSelectedListIndices).sort().map((idx) => {
                 const row = detailRows[idx];
                 if (!row) return null;
-                const label = `${row.LOT} / slot ${row.SLOT} / ${row.CARDID}`;
+                const label = `${row.LOT} / slot ${row.SLOT} / ${row.CARDID} / ${row["Yield%"]}`;
                 return (
                   <div
                     key={idx}
