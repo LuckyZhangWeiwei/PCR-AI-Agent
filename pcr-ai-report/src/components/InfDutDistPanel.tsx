@@ -786,12 +786,13 @@ export function InfDutDistPanel({
   const waferKey = wafersFetchKey(wafers);
   const layerCacheRef = useRef(new Map<string, SiteBinByLotResponse>());
   const apiBaseRef = useRef(apiBase);
-  if (apiBaseRef.current !== apiBase) {
-    apiBaseRef.current = apiBase;
-    layerCacheRef.current.clear();
-  }
 
   useEffect(() => {
+    if (apiBaseRef.current !== apiBase) {
+      apiBaseRef.current = apiBase;
+      layerCacheRef.current.clear();
+    }
+
     let cancelled = false;
     if (wafers.length === 0) {
       setLoading(false);
