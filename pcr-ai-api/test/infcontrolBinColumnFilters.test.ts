@@ -8,7 +8,7 @@ import {
 import {
   filterInfcontrolLayerBinV3DummyRows,
   filterInfcontrolLayerBinV3DummyRowsMatching,
-} from "../src/lib/infcontrol/infcontrolLayerBinDummy.js";
+} from "../src/lib/infcontrol/infcontrolLayerBinDummyV3.js";
 import { parseInfcontrolLayerBinsV3Query } from "../src/lib/infcontrol/infcontrolLayerBinFilters.js";
 
 test("parseBinIndexList accepts plain and BIN-prefixed tokens", () => {

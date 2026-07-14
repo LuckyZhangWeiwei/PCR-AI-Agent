@@ -16,10 +16,12 @@ import {
 } from "../../infcontrol/infcontrolLayerBinAggregate.js";
 import {
   infcontrolLayerBinsUseDummy,
+} from "../../infcontrol/infcontrolLayerBinDummy.js";
+import {
   filterInfcontrolLayerBinV3DummyRows,
   filterInfcontrolLayerBinV3DummyRowsMatching,
   aggregateInfcontrolLayerBinV3DummyRows,
-} from "../../infcontrol/infcontrolLayerBinDummy.js";
+} from "../../infcontrol/infcontrolLayerBinDummyV3.js";
 import {
   buildInfcontrolLayerBinsV3Sql,
   buildInfcontrolLayerBinsV3SqlFullMatching,

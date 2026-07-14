@@ -3,10 +3,8 @@ import {
   yieldMonitorDummyTimeOffsetMs,
   type YieldMonitorTriggerDummyRow,
 } from "../yieldMonitorTriggerDummy.js";
-import {
-  filterInfcontrolLayerBinV3DummyRowsMatching,
-  type InfcontrolLayerBinDummyRow,
-} from "../../infcontrol/infcontrolLayerBinDummy.js";
+import type { InfcontrolLayerBinDummyRow } from "../../infcontrol/infcontrolLayerBinDummy.js";
+import { filterInfcontrolLayerBinV3DummyRowsMatching } from "../../infcontrol/infcontrolLayerBinDummyV3.js";
 import { parseBinFromTriggerLabel } from "../../yieldTriggerLabelBin.js";
 import { parseDutNumberFromTriggerLabel } from "../../yieldTriggerLabelDut.js";
 import {
