@@ -79,68 +79,57 @@ export function mergeSiteBinByLotData(chunks: SiteBinByLotData[]): SiteBinByLotD
 }
 
 /**
- * Single wafer: Perl/INF first; on missing/unreadable/Perl failure → Oracle map fallback.
- * With `testEnd`（明细行一层）：跳过 INF 整片合并图，Oracle 按 KEYNUMBER+PASSNUM+TESTEND 取该层 map。
+ * Layer-scoped branch: `testEnd`（明细行一层）指定时，跳过 INF 整片合并图，
+ * Oracle 按 KEYNUMBER+PASSNUM+TESTEND 取该层 map。
  */
-export async function runSiteBinForWafer(
+async function runSiteBinForWaferLayerScoped(
   device: string,
   wafer: SiteBinWaferRef,
   passIds: number[],
-  opts?: RunSiteBinForWaferOpts
+  keynumber: number | undefined,
+  passNum: number | undefined,
+  testEnd: string | undefined,
+  testEndDate: Date | undefined
 ): Promise<RunSiteBinWaferResult> {
-  const keynumber = opts?.keynumber;
-  const passNum = opts?.passNum;
-  const testEnd = opts?.testEnd?.trim();
-  const testEndDate = testEnd ? new Date(testEnd) : undefined;
-  const layerScoped =
-    Boolean(testEnd) &&
-    testEndDate !== undefined &&
-    !Number.isNaN(testEndDate.getTime());
-
-  if (siteBinByLotUseDummy()) {
-    const dummyData = tryResolveSiteBinByLotDummy(
+  const notices: string[] = [
+    `Layer-scoped map for TESTEND=${testEnd}` +
+      (keynumber !== undefined ? ` KEYNUMBER=${keynumber}` : "") +
+      (passNum !== undefined ? ` PASSNUM=${passNum}` : ""),
+  ];
+  if (!oracleMapFallbackEnabled()) {
+    throw new InfSiteBinUnavailableError(
       wafer.infPath,
-      passIds,
-      keynumber,
-      testEnd
+      "Layer-scoped site-bin requires Oracle map fallback (SITE_BIN_ORACLE_FALLBACK) when INF dummy is off"
     );
-    if (dummyData !== null) {
-      return { data: dummyData, source: "inf", notices: [] };
-    }
   }
-
-  if (layerScoped) {
-    const notices: string[] = [
-      `Layer-scoped map for TESTEND=${testEnd}` +
-        (keynumber !== undefined ? ` KEYNUMBER=${keynumber}` : "") +
-        (passNum !== undefined ? ` PASSNUM=${passNum}` : ""),
-    ];
-    if (!oracleMapFallbackEnabled()) {
-      throw new InfSiteBinUnavailableError(
-        wafer.infPath,
-        "Layer-scoped site-bin requires Oracle map fallback (SITE_BIN_ORACLE_FALLBACK) when INF dummy is off"
-      );
-    }
-    const dev =
-      device.trim() || parseInfWaferCoordsFromPath(wafer.infPath)?.device || "";
-    if (!dev) {
-      throw new InfSiteBinUnavailableError(
-        wafer.infPath,
-        "Cannot resolve device for layer-scoped Oracle map (pass device= or use standard infPath layout)"
-      );
-    }
-    const data = await fetchSiteBinByLotFromOracle({
-      device: dev,
-      lot: wafer.lot,
-      slot: wafer.slot,
-      passIds,
-      keynumber,
-      passNum,
-      testEnd: testEndDate,
-    });
-    return { data, source: "oracle", notices };
+  const dev =
+    device.trim() || parseInfWaferCoordsFromPath(wafer.infPath)?.device || "";
+  if (!dev) {
+    throw new InfSiteBinUnavailableError(
+      wafer.infPath,
+      "Cannot resolve device for layer-scoped Oracle map (pass device= or use standard infPath layout)"
+    );
   }
+  const data = await fetchSiteBinByLotFromOracle({
+    device: dev,
+    lot: wafer.lot,
+    slot: wafer.slot,
+    passIds,
+    keynumber,
+    passNum,
+    testEnd: testEndDate,
+  });
+  return { data, source: "oracle", notices };
+}
 
+/**
+ * Normal branch: Perl/INF first; on missing/unreadable/Perl failure → Oracle map fallback.
+ */
+async function runSiteBinForWaferInfThenOracle(
+  device: string,
+  wafer: SiteBinWaferRef,
+  passIds: number[]
+): Promise<RunSiteBinWaferResult> {
   const notices: string[] = [];
   const readable = await infPathReadable(wafer.infPath);
 
@@ -199,4 +188,50 @@ export async function runSiteBinForWafer(
     }
     throw e;
   }
+}
+
+/**
+ * Single wafer: Perl/INF first; on missing/unreadable/Perl failure → Oracle map fallback.
+ * With `testEnd`（明细行一层）：跳过 INF 整片合并图，Oracle 按 KEYNUMBER+PASSNUM+TESTEND 取该层 map。
+ */
+export async function runSiteBinForWafer(
+  device: string,
+  wafer: SiteBinWaferRef,
+  passIds: number[],
+  opts?: RunSiteBinForWaferOpts
+): Promise<RunSiteBinWaferResult> {
+  const keynumber = opts?.keynumber;
+  const passNum = opts?.passNum;
+  const testEnd = opts?.testEnd?.trim();
+  const testEndDate = testEnd ? new Date(testEnd) : undefined;
+  const layerScoped =
+    Boolean(testEnd) &&
+    testEndDate !== undefined &&
+    !Number.isNaN(testEndDate.getTime());
+
+  if (siteBinByLotUseDummy()) {
+    const dummyData = tryResolveSiteBinByLotDummy(
+      wafer.infPath,
+      passIds,
+      keynumber,
+      testEnd
+    );
+    if (dummyData !== null) {
+      return { data: dummyData, source: "inf", notices: [] };
+    }
+  }
+
+  if (layerScoped) {
+    return runSiteBinForWaferLayerScoped(
+      device,
+      wafer,
+      passIds,
+      keynumber,
+      passNum,
+      testEnd,
+      testEndDate
+    );
+  }
+
+  return runSiteBinForWaferInfThenOracle(device, wafer, passIds);
 }
