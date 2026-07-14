@@ -1,17 +1,19 @@
 // pcr-ai-api/src/lib/agent/jb/agentJbHistoryCompact.ts
 /** query_jb_bins 写入会话历史时的压缩与空总结回退文案。 */
 
+import type {
+  JbYieldMetrics,
+  SlotYieldSummaryEntry,
+  YieldInterruptSegment,
+} from "../../infcontrol/jbYield/jbYieldMetrics.js";
+import { passIdSortLabel } from "../../infcontrol/jbYield/jbYieldRank.js";
 import {
   buildSlotYieldInterruptRows,
   buildSlotYieldPivot,
-  passIdSortLabel,
   slotPivotDisplayMetrics,
-  type JbYieldMetrics,
-  type SlotYieldSummaryEntry,
   type SlotYieldPivot,
   type YieldByPassEntry,
-  type YieldInterruptSegment,
-} from "../../infcontrol/jbYieldCalc.js";
+} from "../../infcontrol/jbYield/jbYieldByPass.js";
 import type { CardByPassIdEntry, LotTesterEntry } from "./agentJbBinFormat.js";
 import { multiLotListingFields } from "../agentJbMultiLotListing.js";
 import { jbYieldCoreFields } from "../agentJbYieldCore.js";

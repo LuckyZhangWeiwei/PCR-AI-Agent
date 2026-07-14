@@ -1,7 +1,7 @@
 // pcr-ai-api/src/lib/agent/jb/agentJbPayloadResolve.ts
 /** JB 工具 payload 解析/解析优先级 + good bin 直答 + DUT 良率追加判定。 */
 
-import { goodBinIndicesForJbRow } from "../../infcontrol/jbYieldCalc.js";
+import { goodBinIndicesForJbRow } from "../../infcontrol/jbYield/jbYieldRowHelpers.js";
 import { getJbToolRawJson } from "../agentJbSessionCache.js";
 import { extractLotFromUserText } from "../tools/agentInfWaferMapTool.js";
 import {

@@ -1,15 +1,17 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { badDieFromJbRow } from "../src/lib/infcontrol/jbYield/jbYieldRowHelpers.js";
 import {
-  badDieFromJbRow,
   binDieByHalvesForGroup,
-  buildLotYieldRank,
+  countTestInterruptEvents,
+} from "../src/lib/infcontrol/jbYield/jbYieldHalves.js";
+import {
   buildSlotYieldSummary,
-  buildYieldByPassId,
   buildYieldInterruptSegments,
   computeJbYieldMetrics,
-  countTestInterruptEvents,
-} from "../src/lib/infcontrol/jbYieldCalc.js";
+} from "../src/lib/infcontrol/jbYield/jbYieldMetrics.js";
+import { buildLotYieldRank } from "../src/lib/infcontrol/jbYield/jbYieldRank.js";
+import { buildYieldByPassId } from "../src/lib/infcontrol/jbYield/jbYieldByPass.js";
 
 describe("jbYieldCalc", () => {
   it("no interrupt: uses MAX GROSSDIE pool only", () => {

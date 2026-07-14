@@ -7,7 +7,7 @@ import {
   parseUnderperformingThresholdRatio,
   type PassUnderperformingDutsResult,
 } from "./lotUnderperformingDuts.js";
-import { goodBinIndicesForJbRow } from "./infcontrol/jbYieldCalc.js";
+import { goodBinIndicesForJbRow } from "./infcontrol/jbYield/jbYieldRowHelpers.js";
 import {
   getInfcontrolLayerBinDummyRows,
   infcontrolLayerBinsUseDummy,

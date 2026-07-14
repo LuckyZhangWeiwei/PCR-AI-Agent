@@ -1,7 +1,7 @@
 /** DUT 集中度检测：坏 die 集中在少数 DUT（探针卡）vs 分散（工艺）。 */
 import type { SiteBinPass } from "../outputSiteBinByLot/types.js";
 import type { CardByPassIdEntry } from "./jb/agentJbBinFormat.js";
-import { passIdSortLabel } from "../infcontrol/jbYieldCalc.js";
+import { passIdSortLabel } from "../infcontrol/jbYield/jbYieldRank.js";
 
 export type DutConcentrationVerdict = "probe_card" | "process" | "inconclusive";
 

@@ -1,4 +1,4 @@
-import { badDieFromJbRow, goodBinIndicesForJbRow } from "../infcontrol/jbYieldCalc.js";
+import { badDieFromJbRow, goodBinIndicesForJbRow } from "../infcontrol/jbYield/jbYieldRowHelpers.js";
 
 // ─── stats helpers ──────────────────────────────────────────────────────────
 

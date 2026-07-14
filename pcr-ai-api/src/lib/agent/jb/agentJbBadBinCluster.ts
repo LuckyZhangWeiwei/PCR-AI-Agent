@@ -1,11 +1,9 @@
 // pcr-ai-api/src/lib/agent/jb/agentJbBadBinCluster.ts
 /** 按 slot 序列检测突增/聚集/递升坏 bin，供 Agent 必须点明。 */
 
-import {
-  binDieByHalvesForGroup,
-  passIdFromJbRow,
-  passIdSortLabel,
-} from "../../infcontrol/jbYieldCalc.js";
+import { binDieByHalvesForGroup } from "../../infcontrol/jbYield/jbYieldHalves.js";
+import { passIdFromJbRow } from "../../infcontrol/jbYield/jbYieldRowHelpers.js";
+import { passIdSortLabel } from "../../infcontrol/jbYield/jbYieldRank.js";
 
 export type ClusteredBadBinAlertKind =
   | "sudden_increase"

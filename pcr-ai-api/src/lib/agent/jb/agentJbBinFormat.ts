@@ -2,16 +2,22 @@
 /** Agent 工具回传：与 aggregate_jb_bins 的 bin/count 语义对齐，避免 n/value 被模型对调。 */
 
 import {
-  buildLotYieldRank,
-  buildSlotYieldSummary,
-  buildSlotYieldPivot,
-  buildYieldByPassId,
   isInterruptPasstype,
   passIdFromJbRow,
   passNumFromJbRow,
-  type LotYieldRankEntry,
+} from "../../infcontrol/jbYield/jbYieldRowHelpers.js";
+import {
+  buildSlotYieldSummary,
   type SlotYieldSummaryEntry,
-} from "../../infcontrol/jbYieldCalc.js";
+} from "../../infcontrol/jbYield/jbYieldMetrics.js";
+import {
+  buildLotYieldRank,
+  type LotYieldRankEntry,
+} from "../../infcontrol/jbYield/jbYieldRank.js";
+import {
+  buildSlotYieldPivot,
+  buildYieldByPassId,
+} from "../../infcontrol/jbYield/jbYieldByPass.js";
 import {
   formatCardByPassIdMarkdown,
   formatLotYieldOverviewMarkdown,
