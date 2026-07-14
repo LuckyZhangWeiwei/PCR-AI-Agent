@@ -221,10 +221,17 @@ export function isProbeCardTesterPerformanceQuestion(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
   if (isCardComboRankingQuestion(t)) return true;
+  // 「和什么卡什么机台搭配最合适」— 卡+机台搭配/最合适，与「组合排名」同工具
+  if (
+    /(?:卡|探针).*(?:机台|tester)|(?:机台|tester).*(?:卡|探针)/i.test(t) &&
+    /(?:搭配|匹配|组合|最合适|最好|最佳|推荐)/i.test(t)
+  ) {
+    return true;
+  }
   // 「用什么/哪个 probecard/探针卡 … 最好/最佳」— 跨 lot 卡排名，非单 lot 卡枚举
   if (
     /(?:什么|哪个|哪张|哪种)\s*(?:探针\s*卡|probe\s*card|probecard)/i.test(t) &&
-    /(?:最好|最佳|最差|推荐)/i.test(t)
+    /(?:最好|最佳|最差|推荐|合适)/i.test(t)
   ) {
     return true;
   }

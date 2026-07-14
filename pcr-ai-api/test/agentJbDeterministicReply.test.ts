@@ -770,6 +770,10 @@ describe("agentJbDeterministicReply", () => {
       isProbeCardTesterPerformanceQuestion("WA03309061N86K 用什么probecard 测试最好"),
       true
     );
+    assert.equal(
+      isProbeCardTesterPerformanceQuestion("WA20P98C 和什么卡什么机台搭配最合适"),
+      true
+    );
     assert.equal(isProbeCardTesterPerformanceQuestion("哪张卡良率最低"), false);
     assert.equal(isProbeCardTesterPerformanceQuestion("探针卡哪个最差"), false);
   });

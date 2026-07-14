@@ -66,6 +66,122 @@ export function appendMessages(
 }
 
 /**
+ * PRE_LLM 直连路由写入 tool 结果时，必须同时写入带 tool_calls 的 assistant，
+ * 否则 MiniMax 等严格模型会拒绝后续含该历史的请求：
+ * 「Message has tool role, but there was no previous assistant message with a tool call」。
+ */
+export function appendSyntheticToolTurn(
+  sessionId: string,
+  opts: {
+    name: string;
+    content: string;
+    args?: Record<string, unknown>;
+    toolCallId?: string;
+  }
+): string {
+  const callId =
+    opts.toolCallId?.trim() || `${opts.name}_${Date.now()}`;
+  appendMessages(
+    sessionId,
+    {
+      role: "assistant",
+      content: null,
+      tool_calls: [
+        {
+          id: callId,
+          type: "function",
+          function: {
+            name: opts.name,
+            arguments: JSON.stringify(opts.args ?? {}),
+          },
+        },
+      ],
+    },
+    {
+      role: "tool",
+      name: opts.name,
+      tool_call_id: callId,
+      content: opts.content,
+    }
+  );
+  return callId;
+}
+
+/**
+ * 修复「孤立 tool 消息」（前面没有匹配 tool_calls 的 assistant）。
+ * 供出站 LLM 请求使用（不改 session 存储）；DeepSeek 往往宽松放过，
+ * MiniMax / 部分 OpenAI 兼容网关会直接 HTTP 400。
+ *
+ * 合法组：assistant(tool_calls[]) + 其后一条或多条 tool（tool_call_id 均在该组内）。
+ */
+export function repairToolCallGroupsForLlm(
+  messages: ChatMessage[]
+): ChatMessage[] {
+  const out: ChatMessage[] = [];
+  let i = 0;
+  let synthSeq = 0;
+  while (i < messages.length) {
+    const m = messages[i]!;
+    if (m.role !== "tool") {
+      out.push(m);
+      i++;
+      continue;
+    }
+
+    const tools: ChatMessage[] = [];
+    while (i < messages.length && messages[i]!.role === "tool") {
+      tools.push(messages[i]!);
+      i++;
+    }
+
+    const prev = out[out.length - 1];
+    const prevCalls =
+      prev?.role === "assistant" && Array.isArray(prev.tool_calls)
+        ? prev.tool_calls
+        : undefined;
+    const coveredIds = new Set((prevCalls ?? []).map((tc) => tc.id));
+    const allCovered =
+      !!prevCalls &&
+      prevCalls.length > 0 &&
+      tools.every((t) => {
+        const id = t.tool_call_id?.trim();
+        return !!id && coveredIds.has(id);
+      });
+
+    if (allCovered) {
+      out.push(...tools);
+      continue;
+    }
+
+    const synthCalls: ToolCall[] = tools.map((t, idx) => {
+      const id =
+        t.tool_call_id?.trim() || `synth_call_${Date.now()}_${synthSeq++}_${idx}`;
+      return {
+        id,
+        type: "function" as const,
+        function: {
+          name: (t.name ?? "").trim() || "unknown_tool",
+          arguments: "{}",
+        },
+      };
+    });
+    out.push({
+      role: "assistant",
+      content: null,
+      tool_calls: synthCalls,
+    });
+    out.push(
+      ...tools.map((t, idx) => ({
+        ...t,
+        tool_call_id: synthCalls[idx]!.id,
+        name: t.name ?? synthCalls[idx]!.function.name,
+      }))
+    );
+  }
+  return out;
+}
+
+/**
  * Returns true when the history is long enough to warrant summarization.
  * Pass a custom `threshold` for large-context models (e.g. 80 for 200K models)
  * to defer compression until the context window is more fully utilised.

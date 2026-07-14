@@ -4,6 +4,7 @@ import { getConfig } from "../runtimeConfig.js";
 import {
   getHistory,
   appendMessages,
+  appendSyntheticToolTurn,
   needsSummarization,
   popOldMessagesForSummarization,
   storeSummary,
@@ -3088,11 +3089,12 @@ async function tryRunProbeCardPerfDirectRoute(
       name: "aggregate_probe_card_tester_performance",
       summary: raw.slice(0, 200),
     });
-    appendMessages(sessionId, {
-      role: "tool",
+    // Must pair assistant(tool_calls) + tool — MiniMax rejects orphan tool history.
+    appendSyntheticToolTurn(sessionId, {
       name: "aggregate_probe_card_tester_performance",
-      tool_call_id: `probe_card_perf_${Date.now()}`,
+      args,
       content: raw.slice(0, agentConfig.toolResultMaxChars ?? 12000),
+      toolCallId: `probe_card_perf_${Date.now()}`,
     });
   } catch {
     return false;
