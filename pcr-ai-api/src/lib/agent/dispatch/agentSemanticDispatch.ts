@@ -16,9 +16,7 @@ import {
   DETERMINISTIC_COMMENTARY_SECTION_TITLE,
 } from "../jb/agentJbOverviewMarkdown.js";
 import { renderAggregateJbBinsResult } from "../render/agentAggregateBinsRender.js";
-import {
-  emitDeterministicJbTablesReply,
-} from "../core/agentLoop.js";
+import { emitDeterministicJbTablesReply } from "../render/agentJbTablesReply.js";
 import {
   lastToolMessage,
   emitTextInChunks,
