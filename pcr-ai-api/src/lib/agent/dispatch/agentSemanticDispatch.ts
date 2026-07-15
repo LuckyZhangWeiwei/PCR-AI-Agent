@@ -17,11 +17,13 @@ import {
 } from "../jb/agentJbOverviewMarkdown.js";
 import { renderAggregateJbBinsResult } from "../render/agentAggregateBinsRender.js";
 import {
+  emitDeterministicJbTablesReply,
+} from "../core/agentLoop.js";
+import {
   lastToolMessage,
   emitTextInChunks,
-  emitDeterministicJbTablesReply,
   toolResultForHistory,
-} from "../core/agentLoop.js";
+} from "../core/agentLoopShared.js";
 
 type LotYieldRankEntry = {
   lot: string;
