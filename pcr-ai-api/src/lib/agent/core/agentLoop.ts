@@ -35,12 +35,10 @@ import {
 import {
   lastToolMessage,
   emitTextInChunks,
-  cleanStreamErrorMessage,
   toolResultForHistory,
 } from "./agentLoopShared.js";
 import { emitDeterministicProbeCardPerfReply } from "../render/agentProbeCardPerfReply.js";
 import {
-  extractBinFromUserText,
   extractSlotFromUserText,
   isSingleWaferDieClusterQuestion,
   isCardTypeLevelOverviewQuestion,
@@ -52,19 +50,14 @@ import {
   buildLotListingContext,
 } from "../jb/agentJbListingMarkdown.js";
 import {
-  BRIEF_COMMENTARY_SYSTEM,
-  buildBriefCommentaryUserMessage,
   buildDeterministicJbTables,
-  buildEngineeringContextFromPayload,
   DETERMINISTIC_DATA_SECTION_TITLE,
-  DETERMINISTIC_COMMENTARY_SECTION_TITLE,
   stampFirstTestNote,
 } from "../jb/agentJbOverviewMarkdown.js";
 import {
   resolveJbToolPayload,
 } from "../jb/agentJbPayloadResolve.js";
 import {
-  getCachedJbPayloadForLot,
   LOT_OVERVIEW_JB_NUDGE,
   lotOverviewNeedsJbRecovery,
 } from "../agentJbOverviewRoute.js";
@@ -74,21 +67,8 @@ import {
 import {
   scopedBadBinNeedsAggregateRecovery,
 } from "../agentJbScopedBadBinRoute.js";
-import {
-  canRunUnderperformingDutDirectRoute,
-  underperformingDutArgsFromText,
-} from "../agentUnderperformingDutRoute.js";
-import {
-  formatAllDutsHighlightMarkdown,
-} from "../agentUnderperformingDutView.js";
-import {
-  runLotUnderperformingDuts,
-} from "../../lotUnderperformingDutsResolve.js";
-import { findLastToolCallArgs, inferDeviceFromText, inferDeviceFromHistory, inferLotFromHistory, inferMaskFromText, inferMaskFromHistory, inferRecentMonthsWindow } from "../agentQueryScope.js";
+import { inferDeviceFromText, inferDeviceFromHistory, inferMaskFromText, inferMaskFromHistory, inferRecentMonthsWindow } from "../agentQueryScope.js";
 import { deviceBaseMask } from "../../deviceMask.js";
-import {
-  extractLotFromUserText,
-} from "../tools/agentInfWaferMapTool.js";
 import {
   DUT_BIN_MAP_JB_LOOKUP_NUDGE,
   sessionCanDrawDutBinMap,
@@ -109,7 +89,6 @@ import {
   historyAwaitingToolSummary,
 } from "./agentToolStatus.js";
 import {
-  isDutBinConcentrationQuestion,
   questionHasIdentifiableToolScope,
   isCardProbeTestQuestion,
 } from "../dispatch/agentQuestionHeuristics.js";
@@ -118,10 +97,6 @@ import {
   tryEmitUnderperformingDutScatter,
 } from "../tools/agentToolUnderperformingDutsRender.js";
 import { renderAggregateJbBinsResult } from "../render/agentAggregateBinsRender.js";
-import {
-  tryEmitDutBinBarChart,
-  buildDutBinAggMarkdown,
-} from "../render/agentChartEmitters.js";
 import {
   applyWaferMapRoutePlan,
   tryRunWaferMapWithAutoDeviceLookup,
@@ -143,6 +118,11 @@ import {
   tryRunUnscopedBinClarifyDirectRoute,
   tryRunDeterministicJbSummary,
 } from "../dispatch/directRoutes/agentJbBinDirectRoutes.js";
+import {
+  tryRunDutBinAggDirectRoute,
+  tryRunDutBinAggAutoRoute,
+  tryRunUnderperformingDutDirectRoute,
+} from "../dispatch/directRoutes/agentDutAggDirectRoutes.js";
 
 export type AgentSseEvent =
   | { type: "text"; delta: string }
@@ -219,67 +199,6 @@ function lastUserMessageText(
   return fallback.trim();
 }
 
-/**
- * 「哪个卡/哪个 DUT 测出 BIN79 最多」：首轮直连 query_lot_dut_bin_agg（P-F）。
- */
-async function tryRunDutBinAggDirectRoute(
-  sessionId: string,
-  userQuestion: string,
-  agentConfig: AgentConfig,
-  emit: (event: AgentSseEvent) => void
-): Promise<boolean> {
-  if (!isDutBinConcentrationQuestion(userQuestion)) return false;
-
-  const focusBin = extractBinFromUserText(userQuestion)!;
-  const history = getHistory(sessionId);
-  const lot =
-    extractLotFromUserText(userQuestion) || inferLotFromHistory(history);
-  if (!lot) return false;
-
-  let device = "";
-  const cached = getCachedJbPayloadForLot(sessionId, lot);
-  if (cached) {
-    device = String(cached["device"] ?? "").trim();
-  }
-  if (!device) {
-    const jbArgs = findLastToolCallArgs(history, "query_jb_bins");
-    device = String(jbArgs?.["device"] ?? "").trim();
-  }
-  if (!device) return false;
-
-  const queryArgs: Record<string, unknown> = { device, lot, passId: 1, focusBin };
-  emit({ type: "status", message: `正在查询 ${lot} DUT×BIN${focusBin} 聚合…` });
-  emit({ type: "tool_start", name: "query_lot_dut_bin_agg", args: queryArgs });
-
-  let rawContent: string;
-  try {
-    const toolResult = await runTool("query_lot_dut_bin_agg", queryArgs, {
-      toolResultMaxChars: agentConfig.toolResultMaxChars,
-      history,
-    });
-    rawContent = typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult);
-  } catch {
-    return false;
-  }
-
-  emit({ type: "tool_result", name: "query_lot_dut_bin_agg", summary: rawContent.slice(0, 200) });
-  appendMessages(sessionId, {
-    role: "tool",
-    name: "query_lot_dut_bin_agg",
-    tool_call_id: `dut_bin_direct_${Date.now()}`,
-    content: rawContent.slice(0, agentConfig.toolResultMaxChars),
-  });
-
-  if (!/坏 die 的 DUT 集中度/.test(rawContent)) return false;
-
-  const tablesBlock = stampFirstTestNote(`${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${rawContent}`);
-  emitTextInChunks(tablesBlock, emit);
-  tryEmitDutBinBarChart(rawContent, focusBin, emit);
-  appendMessages(sessionId, { role: "assistant", content: tablesBlock });
-  emit({ type: "done" });
-  return true;
-}
-
 /** 用户是否在问 touchdown（探针接触次数）。 */
 function isTouchdownQuestion(text: string): boolean {
   return /touchdown|接触次数|探针接触|touch\s*count/i.test(text);
@@ -308,146 +227,6 @@ const ANNOUNCEMENT_WITHOUT_ACTION_NUDGE =
 function isTestItemMappingQuestion(text: string): boolean {
   if (!/\bbin\s*\d{1,3}\b/i.test(text)) return false;
   return /测试项|test\s*item|什么测试|哪个测试项|哪种测试|测试内容|测试名称|失效.*测试|测试.*失效|bin.*是什么测试/i.test(text);
-}
-
-/**
- * A 路：用户问「lot 内哪些 DUT 良率偏低」→ 直接 runLotUnderperformingDuts，
- * 确定性出全 DUT 高亮表 + 每 pass 散点图，跳过 LLM。失败落回 LLM（return false）。
- */
-async function tryRunUnderperformingDutDirectRoute(
-  sessionId: string,
-  userQuestion: string,
-  _agentConfig: AgentConfig,
-  emit: (event: AgentSseEvent) => void
-): Promise<boolean> {
-  const history = getHistory(sessionId);
-  if (!canRunUnderperformingDutDirectRoute(userQuestion, history)) return false;
-  const args = underperformingDutArgsFromText(userQuestion, history);
-  if (!args) return false;
-
-  emit({ type: "status", message: "正在分析各 DUT 良率（含 INF 取数，稍慢）…" });
-  emit({ type: "tool_start", name: "query_lot_underperforming_duts", args });
-
-  let resp;
-  let md: string;
-  try {
-    resp = await runLotUnderperformingDuts({ lot: args.lot, device: args.device });
-    md = formatAllDutsHighlightMarkdown(resp.passes ?? [], resp.lot, resp.device);
-  } catch {
-    return false; // INF 取数或格式化失败 → 落回 LLM，不 dead-end
-  }
-  if (!md.trim()) return false;
-  const passes = resp.passes ?? [];
-
-  emit({ type: "tool_result", name: "query_lot_underperforming_duts", summary: md.slice(0, 200) });
-  const block = stampFirstTestNote(`${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${md}`);
-  emitTextInChunks(block, emit);
-  tryEmitUnderperformingDutScatter(passes, emit);
-  appendMessages(sessionId, { role: "assistant", content: block });
-  emit({ type: "done" });
-  return true;
-}
-
-/**
- * Summary 轮专用：query_jb_bins 已完成、用户问"哪个 DUT 的 BIN X 最多"时，
- * 自动调 query_lot_dut_bin_agg，直出 DUT 分布表 + LLM 解读，避免模型承诺查询却无法执行。
- */
-async function tryRunDutBinAggAutoRoute(
-  sessionId: string,
-  userQuestion: string,
-  agentConfig: AgentConfig,
-  emit: (event: AgentSseEvent) => void
-): Promise<boolean> {
-  const focusBin = extractBinFromUserText(userQuestion);
-  if (focusBin == null) return false;
-  if (!/(dut|触点)/i.test(userQuestion)) return false;
-
-  const history = getHistory(sessionId);
-  const lastTool = lastToolMessage(history);
-  if (lastTool?.name !== "query_jb_bins") return false;
-
-  const payload = resolveJbToolPayload(sessionId, String(lastTool.content ?? ""));
-  if (!payload) return false;
-
-  const device = String(payload["device"] ?? "").trim();
-  const lot = String(payload["lot"] ?? "").trim();
-  if (!device || !lot) return false;
-
-  const queryArgs: Record<string, unknown> = { device, lot, passId: 1, focusBin };
-  emit({ type: "status", message: `正在查询 ${lot} DUT×BIN${focusBin} 聚合…` });
-  emit({ type: "tool_start", name: "query_lot_dut_bin_agg", args: queryArgs });
-
-  let rawContent: string;
-  try {
-    const toolResult = await runTool("query_lot_dut_bin_agg", queryArgs, {
-      toolResultMaxChars: agentConfig.toolResultMaxChars,
-      history: getHistory(sessionId),
-    });
-    rawContent = typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult);
-  } catch {
-    return false; // 失败回退到 LLM 路由
-  }
-
-  emit({ type: "tool_result", name: "query_lot_dut_bin_agg", summary: rawContent.slice(0, 200) });
-  appendMessages(sessionId, {
-    role: "tool",
-    name: "query_lot_dut_bin_agg",
-    tool_call_id: `dut_bin_auto_${Date.now()}`,
-    content: rawContent.slice(0, agentConfig.toolResultMaxChars),
-  });
-
-  const tableMd = buildDutBinAggMarkdown(rawContent, focusBin, lot, device);
-  if (!tableMd.trim()) return false;
-
-  const tablesBlock = stampFirstTestNote(`${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${tableMd}`);
-  emitTextInChunks(tablesBlock, emit);
-  // DUT 分布数据点 ≥3 时自动生成 bar chart，直观展示哪个 DUT 集中出 BIN
-  tryEmitDutBinBarChart(rawContent, focusBin, emit);
-  emit({ type: "status", message: "正在生成数据解读…" });
-  emit({ type: "text", delta: `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n` });
-
-  const commFilter = createDeepSeekFilter(emit);
-  let streamError: string | undefined;
-  await streamSiliconFlow(
-    {
-      model: agentConfig.subAgentModel,
-      messages: [
-        { role: "system", content: BRIEF_COMMENTARY_SYSTEM },
-        {
-          role: "user",
-          content: buildBriefCommentaryUserMessage(userQuestion, tableMd, {
-            engineeringContext: buildEngineeringContextFromPayload(payload),
-          }),
-        },
-      ],
-      max_tokens: 1024,
-    },
-    agentConfig,
-    (chunk) => {
-      if (chunk.type === "delta") commFilter.push(chunk.text);
-      if (chunk.type === "error") streamError = chunk.message;
-    }
-  );
-  commFilter.finalize();
-  const commentary = commFilter.cleanText.trim();
-
-  let commentaryOrFallback: string;
-  if (commentary) {
-    commentaryOrFallback = commentary;
-  } else {
-    commentaryOrFallback = streamError
-      ? `*（解读生成失败：${cleanStreamErrorMessage(streamError)}；以上实测数据表为准。）*`
-      : `*（模型未返回解读；以上实测数据表为准。）*`;
-    emit({ type: "text", delta: commentaryOrFallback });
-  }
-
-  const full =
-    tablesBlock +
-    `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n` +
-    commentaryOrFallback;
-  appendMessages(sessionId, { role: "assistant", content: full });
-  emit({ type: "done" });
-  return true;
 }
 
 /**
