@@ -4,7 +4,6 @@ import { getConfig } from "../../runtimeConfig.js";
 import {
   getHistory,
   appendMessages,
-  appendSyntheticToolTurn,
   needsSummarization,
   popOldMessagesForSummarization,
   storeSummary,
@@ -37,13 +36,11 @@ import {
   emitTextInChunks,
   toolResultForHistory,
 } from "./agentLoopShared.js";
-import { emitDeterministicProbeCardPerfReply } from "../render/agentProbeCardPerfReply.js";
 import {
   extractSlotFromUserText,
   isSingleWaferDieClusterQuestion,
   isCardTypeLevelOverviewQuestion,
   isLotOverviewQuestion,
-  isProbeCardTesterPerformanceQuestion,
 } from "../jb/agentJbQuestionClassifiers.js";
 import {
   extractYmLotsFromHistory,
@@ -67,7 +64,6 @@ import {
 import {
   scopedBadBinNeedsAggregateRecovery,
 } from "../agentJbScopedBadBinRoute.js";
-import { inferDeviceFromText, inferDeviceFromHistory, inferMaskFromText, inferMaskFromHistory, inferRecentMonthsWindow } from "../agentQueryScope.js";
 import { deviceBaseMask } from "../../deviceMask.js";
 import {
   DUT_BIN_MAP_JB_LOOKUP_NUDGE,
@@ -123,6 +119,10 @@ import {
   tryRunDutBinAggAutoRoute,
   tryRunUnderperformingDutDirectRoute,
 } from "../dispatch/directRoutes/agentDutAggDirectRoutes.js";
+import {
+  tryRunProbeCardPerfDirectRoute,
+  tryRunDeterministicProbeCardPerfSummary,
+} from "../dispatch/directRoutes/agentProbeCardDirectRoutes.js";
 
 export type AgentSseEvent =
   | { type: "text"; delta: string }
@@ -227,121 +227,6 @@ const ANNOUNCEMENT_WITHOUT_ACTION_NUDGE =
 function isTestItemMappingQuestion(text: string): boolean {
   if (!/\bbin\s*\d{1,3}\b/i.test(text)) return false;
   return /测试项|test\s*item|什么测试|哪个测试项|哪种测试|测试内容|测试名称|失效.*测试|测试.*失效|bin.*是什么测试/i.test(text);
-}
-
-/**
- * 「WA03P02G …最好的探针卡+机台组合…」：PRE_LLM 直调 aggregate_probe_card_tester_performance，
- * 不依赖 LLM 选工具（真库 DeepSeek 仍常误选 query_jb_bins 单 lot 表）。
- */
-async function tryRunProbeCardPerfDirectRoute(
-  sessionId: string,
-  userQuestion: string,
-  agentConfig: AgentConfig,
-  emit: (event: AgentSseEvent) => void
-): Promise<boolean> {
-  if (!isProbeCardTesterPerformanceQuestion(userQuestion)) return false;
-
-  const history = getHistory(sessionId);
-  const device =
-    inferDeviceFromText(userQuestion) || inferDeviceFromHistory(history);
-  const mask =
-    !device
-      ? inferMaskFromText(userQuestion) || inferMaskFromHistory(history)
-      : undefined;
-  if (!device && !mask) return false;
-
-  const args: Record<string, unknown> = {};
-  if (device) args["device"] = device;
-  else if (mask) args["mask"] = mask;
-  const scopeLabel = device ?? `mask=${mask}`;
-  const window = inferRecentMonthsWindow(userQuestion);
-  if (window.testEndFrom) args["testEndFrom"] = window.testEndFrom;
-  if (window.testEndTo) args["testEndTo"] = window.testEndTo;
-  const passIdMatch = userQuestion.match(/\bpass\s*Id\s*[=:]?\s*([135])\b|\bpass\s*([135])\b/i);
-  if (passIdMatch) {
-    args["passId"] = Number(passIdMatch[1] ?? passIdMatch[2]);
-  } else if (/sort\s*1|常温/i.test(userQuestion)) {
-    args["passId"] = 1;
-  } else if (/sort\s*2|高温/i.test(userQuestion)) {
-    args["passId"] = 3;
-  } else if (/sort\s*3|低温/i.test(userQuestion)) {
-    args["passId"] = 5;
-  }
-
-  emit({ type: "status", message: `正在聚合 ${scopeLabel} 探针卡+机台组合表现…` });
-  emit({ type: "tool_start", name: "aggregate_probe_card_tester_performance", args });
-
-  let raw = "";
-  try {
-    const result = await runTool("aggregate_probe_card_tester_performance", args, {
-      toolResultMaxChars: agentConfig.toolResultMaxChars,
-      history,
-    });
-    raw = typeof result === "string" ? result : JSON.stringify(result);
-    if (raw.startsWith("aggregate_probe_card_tester_performance")) return false;
-    emit({
-      type: "tool_result",
-      name: "aggregate_probe_card_tester_performance",
-      summary: raw.slice(0, 200),
-    });
-    // Must pair assistant(tool_calls) + tool — MiniMax rejects orphan tool history.
-    appendSyntheticToolTurn(sessionId, {
-      name: "aggregate_probe_card_tester_performance",
-      args,
-      content: raw.slice(0, agentConfig.toolResultMaxChars ?? 12000),
-      toolCallId: `probe_card_perf_${Date.now()}`,
-    });
-  } catch {
-    return false;
-  }
-
-  let payload: Record<string, unknown> | null = null;
-  try {
-    payload = JSON.parse(raw) as Record<string, unknown>;
-  } catch {
-    return false;
-  }
-  return emitDeterministicProbeCardPerfReply(
-    sessionId,
-    userQuestion,
-    payload,
-    agentConfig,
-    emit
-  );
-}
-
-/**
- * 直出 aggregate_probe_card_tester_performance 服务端表 + 单独一轮"仅写解读/建议"的
- * LLM 调用，复用既有 BRIEF_COMMENTARY_SYSTEM 架构。
- *
- * 2026-07-11 真实 MiniMax-M2.5 联调发现：仅在 prompt/agentPrompt.ts 里用文字硬规则要求"必须原样
- * 贴表、禁止改写"，模型仍会把 comboRankingMarkdown / cardRankingMarkdown 转述成自己的大白话
- * 总结（且转述时出现过 pass2/pass3 张冠李戴）。与 query_jb_bins 走 `tryRunDeterministicJbSummary`
- * 服务端直出表的理由完全一致：数字必须由服务端保证，不能寄望于 prompt 约束模型的转述行为。
- */
-async function tryRunDeterministicProbeCardPerfSummary(
-  sessionId: string,
-  userQuestion: string,
-  agentConfig: AgentConfig,
-  emit: (event: AgentSseEvent) => void
-): Promise<boolean> {
-  const history = getHistory(sessionId);
-  const lastTool = lastToolMessage(history);
-  if (lastTool?.name !== "aggregate_probe_card_tester_performance") return false;
-
-  let payload: Record<string, unknown> | null = null;
-  try {
-    payload = JSON.parse(String(lastTool.content ?? "")) as Record<string, unknown>;
-  } catch {
-    return false;
-  }
-  return emitDeterministicProbeCardPerfReply(
-    sessionId,
-    userQuestion,
-    payload,
-    agentConfig,
-    emit
-  );
 }
 
 function chartToolFallbackMessage(toolMsg: ChatMessage): string {
