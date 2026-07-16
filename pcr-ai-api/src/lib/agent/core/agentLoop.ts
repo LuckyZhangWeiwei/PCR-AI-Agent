@@ -1,6 +1,5 @@
 // pcr-ai-api/src/lib/agent/core/agentLoop.ts
 import type { AgentConfig } from "../agentConfig.js";
-import { getConfig } from "../../runtimeConfig.js";
 import {
   getHistory,
   appendMessages,
@@ -24,7 +23,6 @@ import { detectPendingQuery } from "../agentPendingQuery.js";
 import {
   buildFactSheetFromHistory,
   factCheckSummaryText,
-  formatFactCheckNote,
 } from "../agentFactChecker.js";
 import { storeJbQuerySessionCache, jbWrappedIsEmptyQuery } from "../jb/agentJbBinFormat.js";
 import {
@@ -43,7 +41,6 @@ import {
   isLotOverviewQuestion,
 } from "../jb/agentJbQuestionClassifiers.js";
 import {
-  extractYmLotsFromHistory,
   buildLotListingContext,
 } from "../jb/agentJbListingMarkdown.js";
 import {
@@ -64,15 +61,11 @@ import {
 import {
   scopedBadBinNeedsAggregateRecovery,
 } from "../agentJbScopedBadBinRoute.js";
-import { deviceBaseMask } from "../../deviceMask.js";
 import {
   DUT_BIN_MAP_JB_LOOKUP_NUDGE,
   sessionCanDrawDutBinMap,
   userWantsDutBinRelationMap,
 } from "../agentDutBinMapRoute.js";
-import {
-  getJbToolRawJson,
-} from "../agentJbSessionCache.js";
 import {
   planWaferMapRoute,
   WAFER_MAP_JB_LOOKUP_NUDGE,
@@ -86,7 +79,6 @@ import {
 } from "./agentToolStatus.js";
 import {
   questionHasIdentifiableToolScope,
-  isCardProbeTestQuestion,
 } from "../dispatch/agentQuestionHeuristics.js";
 import { tryRunSemanticDispatchDirectRoute } from "../dispatch/agentSemanticDispatch.js";
 import {
