@@ -9,9 +9,14 @@ import { getConfig } from "../../runtimeConfig.js";
 import {
   loadMaskingDictionary,
   createStreamUnmasker,
+  emptyMaskingStats,
+  addMaskingStats,
+  countInboundTokens,
   type MaskingDictionary,
+  type MaskingReplaceStats,
   type StreamUnmasker,
 } from "../agentDataMasking.js";
+import { logDataMaskingEvidence } from "../agentDataMaskingAudit.js";
 
 export type StreamChunk =
   | { type: "delta"; text: string }
@@ -84,24 +89,30 @@ interface MaskableMessage {
 export function maskRequestMessages(
   messages: unknown[],
   dict: MaskingDictionary
-): unknown[] {
-  return messages.map((raw) => {
+): { messages: unknown[]; stats: MaskingReplaceStats } {
+  let stats = emptyMaskingStats();
+  const nextMessages = messages.map((raw) => {
     const m = raw as MaskableMessage;
     const next: MaskableMessage = { ...m };
     if (typeof m.content === "string") {
-      next.content = dict.mask(m.content);
+      const r = dict.maskWithStats(m.content);
+      next.content = r.text;
+      stats = addMaskingStats(stats, r.stats);
     }
     if (Array.isArray(m.tool_calls)) {
       next.tool_calls = m.tool_calls.map((tc) => {
         if (!tc?.function?.arguments) return tc;
+        const r = dict.maskWithStats(tc.function.arguments);
+        stats = addMaskingStats(stats, r.stats);
         return {
           ...tc,
-          function: { ...tc.function, arguments: dict.mask(tc.function.arguments) },
+          function: { ...tc.function, arguments: r.text },
         };
       });
     }
     return next;
   });
+  return { messages: nextMessages, stats };
 }
 
 export async function streamSiliconFlow(
@@ -118,9 +129,21 @@ export async function streamSiliconFlow(
   const repairedMessages = repairToolCallGroupsForLlm(
     request.messages as ChatMessage[]
   );
-  const outboundMessages = dict
-    ? maskRequestMessages(repairedMessages, dict)
-    : repairedMessages;
+  let outboundMessages: unknown[] = repairedMessages;
+  if (dict) {
+    const masked = maskRequestMessages(repairedMessages, dict);
+    outboundMessages = masked.messages;
+    logDataMaskingEvidence("outbound_mask", {
+      enabled: true,
+      dictOk: dict.meta.ok,
+      dictSize: dict.meta.size,
+      dictBuiltAt: dict.meta.builtAt,
+      messageCount: repairedMessages.length,
+      deviceReplacements: masked.stats.deviceReplacements,
+      nxpReplacements: masked.stats.nxpReplacements,
+      model: request.model,
+    });
+  }
 
   return new Promise((resolve, reject) => {
     const timeoutMs = getStreamTimeoutMs(config);
@@ -155,11 +178,29 @@ export async function streamSiliconFlow(
     let settled = false;
     let timeoutId: NodeJS.Timeout | undefined;
     const unmasker: StreamUnmasker | null = dict ? createStreamUnmasker(dict) : null;
+    /** Raw LLM stream text before unmask — used only for token counts in audit evidence. */
+    let inboundRawText = "";
 
     const flushUnmaskTail = () => {
       if (!unmasker) return;
       const tail = unmasker.finalize();
       if (tail) onChunk({ type: "delta", text: tail });
+    };
+
+    const emitInboundAudit = (toolCallArgsUnmasked: number, argsStats: MaskingReplaceStats) => {
+      if (!dict) return;
+      const streamStats = countInboundTokens(inboundRawText);
+      logDataMaskingEvidence("inbound_unmask", {
+        enabled: true,
+        dictOk: dict.meta.ok,
+        dictSize: dict.meta.size,
+        dictBuiltAt: dict.meta.builtAt,
+        deviceTokensRestored:
+          streamStats.deviceReplacements + argsStats.deviceReplacements,
+        nxpTokensRestored: streamStats.nxpReplacements + argsStats.nxpReplacements,
+        toolCallArgsUnmasked,
+        model: request.model,
+      });
     };
 
     const clearRequestTimeout = () => {
@@ -175,6 +216,7 @@ export async function streamSiliconFlow(
       settled = true;
       clearRequestTimeout();
       flushUnmaskTail();
+      emitInboundAudit(0, emptyMaskingStats());
       onChunk({ type: "error", message: timeoutMessage });
       req.destroy(new Error(timeoutMessage));
       resolve();
@@ -243,6 +285,7 @@ export async function streamSiliconFlow(
 
           // Reasoning belongs in reasoning_content; never forward to UI text stream.
           if (typeof delta?.content === "string" && delta.content.length > 0) {
+            if (unmasker) inboundRawText += delta.content;
             const text = unmasker ? unmasker.push(delta.content) : delta.content;
             if (text) onChunk({ type: "delta", text });
           }
@@ -263,12 +306,19 @@ export async function streamSiliconFlow(
         settled = true;
         clearRequestTimeout();
         flushUnmaskTail();
+        let argsStats = emptyMaskingStats();
+        let toolCallArgsUnmasked = 0;
         if (collected.length > 0) {
-          const calls = collected
-            .filter(Boolean)
-            .map((c) => (dict ? { ...c, args: dict.unmask(c.args) } : c));
+          const calls = collected.filter(Boolean).map((c) => {
+            if (!dict) return c;
+            const r = dict.unmaskWithStats(c.args);
+            argsStats = addMaskingStats(argsStats, r.stats);
+            toolCallArgsUnmasked += 1;
+            return { ...c, args: r.text };
+          });
           onChunk({ type: "tool_calls", calls });
         }
+        emitInboundAudit(toolCallArgsUnmasked, argsStats);
         onChunk({ type: "finish", reason: finishReason });
         resolve();
       });
@@ -277,6 +327,7 @@ export async function streamSiliconFlow(
         if (settled) return;
         settled = true;
         flushUnmaskTail();
+        emitInboundAudit(0, emptyMaskingStats());
         onChunk({ type: "error", message: err.message });
         resolve();
       });

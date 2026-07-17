@@ -12,6 +12,9 @@ data/feedback.json
 # AI agent session logs (runtime-generated, may contain user queries)
 session-logs/
 
+# Agent data-masking audit evidence (JSONL; counts/timestamps only, no secrets)
+logs/
+
 # E2E agent script outputs (local runs)
 scripts/e2e-last-*.txt
 scripts/e2e-hybrid-*.txt

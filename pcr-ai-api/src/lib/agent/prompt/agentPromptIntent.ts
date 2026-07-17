@@ -45,7 +45,14 @@ export function classifyIntent(userQuestion: string, historyFirst?: string): Pro
   }
 
   // Wafer map / cluster / die distribution (highest priority)
-  if (/晶圆图|wafer\s*map|cluster|聚集|die\s*(坐标|分布)|inf_draw/.test(q)) return "wafer_map";
+  // 含口语「wafer图」（无 map 英文）——与 userWantsWaferMapOnly 对齐
+  if (
+    /晶圆图|wafer\s*map|wafer\s*图|wafermap|cluster|聚集|die\s*(坐标|分布)|inf_draw/.test(
+      q
+    )
+  ) {
+    return "wafer_map";
+  }
 
   // Platform query: PS16 / J750 / FLEX / UFLEX family + test/yield keyword (no lot ID)
   if (

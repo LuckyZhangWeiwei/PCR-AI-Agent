@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import https from "node:https";
 import test from "node:test";
-import { existsSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -103,6 +103,12 @@ test("streamSiliconFlow unmasks a COMPANY_X token back to NXP in streamed text b
     `data: {"choices":[{"delta":{"content":"COMPANY_X 良率正常"},"finish_reason":null}]}\n\n` +
     `data: [DONE]\n\n`;
   const mock = mockStreamedResponse(sse);
+  const auditPath = join(
+    tmpdir(),
+    `pcr-ai-agent-stream-masking-audit-${process.pid}-${Date.now()}.jsonl`
+  );
+  const prevAuditPath = process.env.AGENT_DATA_MASKING_AUDIT_PATH;
+  process.env.AGENT_DATA_MASKING_AUDIT_PATH = auditPath;
   try {
     const { streamSiliconFlow } = await import("../src/lib/agent/core/agentStream.js");
     const { resolveAgentConfig } = await import("../src/lib/agent/agentConfig.js");
@@ -114,7 +120,7 @@ test("streamSiliconFlow unmasks a COMPANY_X token back to NXP in streamed text b
 
     const texts: string[] = [];
     await streamSiliconFlow(
-      { model: "test-model", messages: [{ role: "user", content: "hi" }] },
+      { model: "test-model", messages: [{ role: "user", content: "NXP hi" }] },
       config,
       (chunk) => {
         if (chunk.type === "delta") texts.push(chunk.text);
@@ -122,7 +128,28 @@ test("streamSiliconFlow unmasks a COMPANY_X token back to NXP in streamed text b
     );
 
     assert.equal(texts.join(""), "NXP 良率正常");
+    const { waitForPendingDataMaskingAuditWrites } = await import(
+      "../src/lib/agent/agentDataMaskingAudit.js"
+    );
+    await waitForPendingDataMaskingAuditWrites();
+    assert.ok(existsSync(auditPath), "audit JSONL should be written");
+    const lines = readFileSync(auditPath, "utf-8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l) as { event: string; ts: string; nxpReplacements?: number; nxpTokensRestored?: number });
+    assert.ok(lines.some((l) => l.event === "outbound_mask"));
+    assert.ok(lines.some((l) => l.event === "inbound_unmask"));
+    for (const l of lines) {
+      assert.match(l.ts, /^\d{4}-\d{2}-\d{2}T/);
+    }
+    const outbound = lines.find((l) => l.event === "outbound_mask");
+    assert.ok((outbound?.nxpReplacements ?? 0) >= 1);
+    const inbound = lines.find((l) => l.event === "inbound_unmask");
+    assert.ok((inbound?.nxpTokensRestored ?? 0) >= 1);
   } finally {
     mock.restore();
+    if (prevAuditPath === undefined) delete process.env.AGENT_DATA_MASKING_AUDIT_PATH;
+    else process.env.AGENT_DATA_MASKING_AUDIT_PATH = prevAuditPath;
+    if (existsSync(auditPath)) unlinkSync(auditPath);
   }
 });

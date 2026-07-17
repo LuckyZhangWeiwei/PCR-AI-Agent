@@ -164,7 +164,8 @@ export async function emitDeterministicJbTablesReply(
   );
   const withCommentary =
     options?.withCommentaryLlm ??
-    (!jbReplySkipsCommentaryLlm(mode) && !skipCommentaryForAlerts);
+    (!jbReplySkipsCommentaryLlm(mode, userQuestion) &&
+      !skipCommentaryForAlerts);
 
   const tablesBlock = stampFirstTestNote(`${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${tables}`);
   emit({ type: "status", message: "正在输出服务端预计算表…" });

@@ -354,8 +354,8 @@ function mergeStructuredWithEmbedded(
 // Keywords that trigger injection of INF drawing tools (inf_draw_wafer_map / inf_draw_dut_bin_map).
 // Only wafer-map drawing tools remain; all analysis tools have been removed from agent schemas.
 const INF_KEYWORDS = [
-  // Wafer map / visual output
-  "晶圆图", "wafermap", "wafer map", "wafer图", "画晶圆",
+  // Wafer map / visual output（含口语 wafer图 / wafer 图）
+  "晶圆图", "wafermap", "wafer map", "wafer图", "wafer 图", "画晶圆", "画wafer",
   // DUT×BIN relationship map (inf_draw_dut_bin_map)
   "dut和bin", "dut与bin", "dut×bin", "bin和dut",
   "dut_bin_map", "dutbin",

@@ -112,7 +112,7 @@ const SEC_ROUTING = `\
 
 | 用户意图 | 正确路径 | 禁止 |
 |---|---|---|
-| 画晶圆图 / 看 wafer map / 生成 HTML | \`query_jb_bins(lot)\` 取 device → 服务端**自动** \`inf_draw_wafer_map\` 返回链接（**勿**输出聚集/良率大表） | 直接返回 JB STAR 表格当「晶圆图」 |
+| 画晶圆图 / wafer图 / 看 wafer map / 生成 HTML | \`query_jb_bins(lot)\` 取 device → 服务端**自动** \`inf_draw_wafer_map\` 返回链接（**勿**输出聚集/良率大表） | 直接返回 JB STAR 表格当「晶圆图」 |
 | **device/mask 总坏 die / 跨 lot 坏 bin 汇总**（无具体 lot，如「WK12N22J 总的坏die」「N55Z 总坏die」） | \`aggregate_jb_bins(device, groupBy:"bin", groupTop:50)\`（若只有 mask 先取 device） | \`query_jb_bins(device)\`（只返回最新单 lot，不是跨 lot 总量） |
 | lot 良率 / 坏 bin 数量 / 批次概况 | \`query_jb_bins\` / \`query_yield_triggers\`（Oracle） | 调用任何 \`inf_*\` 工具 |
 | 报警次数 / DUT 不均衡趋势 | \`query_yield_triggers\` / \`aggregate_yield_triggers\` | 调用 \`inf_*\` 工具 |
@@ -499,7 +499,7 @@ const SEC_JB_BINS_RESULT_SCHEMA = `\
 | **topBadBins** | 当前范围坏 bin Top15；单 lot 概况用此字段，禁止无 lot 的 aggregate_jb_bins |
 | **clusteredBadBinAlerts** | 按 slot 序列检出突增/聚集/递升；**有则数据解读首段必须点明** BIN+waferId 范围，禁止只报总量；读 **clusteredBadBinAlertsMarkdown** 直接引用 |
 | **badBinSlotTrends** | 有中断时先前半/后半段→合计→整片合并（3行顺序固定），禁止只报后半段 |
-| **slotBadBinsCompact** | 按 (slot, passId, cardId) 分组；体积超限时截断，**禁止**用于「BIN 按片趋势」（读 badBinSlotTrends） |
+| **slotBadBinsCompact** | 按 (slot, passId, cardId) 分组；**单片某 BIN 颗数 / 单片全部坏 bin** 由服务端从此字段直出。全片 1–25 趋势仍读 badBinSlotTrends（勿自行用截断 JSON 猜缺片） |
 | **binTotalsByLot** | 按 lot 跨 slot/pass 汇总各坏 bin dieCount；对比两个 bin 从 badBins 按 bin 编号查 dieCount，缺失视为 0；禁止用 aggregate 排名表横向对比 |
 
 ### 卡/机台/测试层
@@ -782,15 +782,16 @@ const SEC_CROSS_DOMAIN_INSIGHTS = `\
 **需进一步确认时**：可再调 \`query_yield_triggers(probeCard: "<cardId>", timeFrom, timeTo)\` 获取完整 YM 历史，或调 \`query_lot_dut_bin_agg\` 确认坏 bin 在哪个 DUT 集中。`;
 
 // ─── SEC_BIN_BY_SLOT ───────────────────────────────────────────────────────
-// 按 slot 分析某一 BIN 的逐片趋势（badBinSlotTrends，禁用 slotBadBinsCompact）
+// 全片趋势用 badBinSlotTrends；单片精确颗数由服务端读 slotBadBinsCompact
 
 const SEC_BIN_BY_SLOT = `\
 ## 按 slot 分析某一 BIN（如「1–25 片 BIN7 颗数」「BIN7 趋势」）
 
 - **一次** \`query_jb_bins(lot: "…", limit: 200)\`（**必须带 lot**；全量行 + 总结轮服务端直出表）
-- **唯一正确数据源**：\`badBinSlotTrends\` 中 **BINn + passId** 的 markdown（**1–25 片齐全**，含前半/后半/整片列）；总结轮会先 SSE 输出该表
+- **全片趋势（1–25）**：读 \`badBinSlotTrends\` 中 **BINn + passId** 的 markdown（含前半/后半/整片列）；总结轮会先 SSE 输出该表
+- **单片精确颗数**（如「第3片 pass3 有多少个 BIN3」「第三片所有坏 bin」）：服务端从 \`slotBadBinsCompact\` 直出该 (slot, passId) 的 BIN 颗数。**禁止**用 lot 级 \`topBadBins\` Top15 猜测「未上榜=0」——某 BIN 可在单片很多、全 lot 排名却进不了 Top15
 - **严禁**：
-  - 用 \`slotBadBinsCompact\` 列举逐片 BIN（体积大时 JSON **会被截断**，不得据此声称「slot 18–25 未显示」）
+  - 自行用截断的 \`slotBadBinsCompact\` JSON 声称「slot 18–25 未显示」（全片趋势须读 \`badBinSlotTrends\` / 服务端表）
   - 用户要 **良率%/yield** 时：**禁止**用 \`binBySlot\` 或坏 die 合计代替；用 \`slotYieldPivotMarkdown\`（列名为 pass1/pass3/pass5 良率%）
   - 再调 \`aggregate_jb_bins\`「补全」BIN 趋势（聚合表不能替代逐片趋势表）
   - 只读 \`rows\` 前几行推断
@@ -1075,7 +1076,6 @@ const SEC_FORMAT_LIMITS = `\
 
 - **严禁**在回复中使用 Markdown 图片语法 \`![...](url)\`，图片无法在界面显示
 - 图表只能通过 generate_chart 工具生成，不要用文字图片替代`;
-
 
 // ─── assembler ─────────────────────────────────────────────────────────────
 

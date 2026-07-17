@@ -13,17 +13,56 @@ import {
 } from "../infcontrol/infcontrolLayerBinDummy.js";
 
 const NXP_TOKEN = "COMPANY_X";
-const NXP_RE = /nxp/gi;
 const DEVICE_TOKEN_PREFIX = "DEV_";
+/** Count DEV_ tokens already present in LLM inbound text (never log the tokens themselves). */
+const DEVICE_TOKEN_COUNT_RE = /DEV_[0-9a-f]+/g;
 const DICTIONARY_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 const MAX_HASH_HEX_LEN = 64; // full SHA-256 hex length — collision-safe upper bound
 const INITIAL_HASH_HEX_LEN = 10;
+
+export interface MaskingReplaceStats {
+  deviceReplacements: number;
+  nxpReplacements: number;
+}
+
+export interface MaskingDictionaryMeta {
+  ok: boolean;
+  size: number;
+  /** ISO-8601 UTC when this dictionary snapshot was built */
+  builtAt: string;
+}
 
 export interface MaskingDictionary {
   /** Replace real device values / NXP with tokens in outbound text. */
   mask(text: string): string;
   /** Replace tokens back to real device values / NXP in inbound text (whole string, no streaming). */
   unmask(text: string): string;
+  /** Same as mask, but returns replacement counts for audit evidence. */
+  maskWithStats(text: string): { text: string; stats: MaskingReplaceStats };
+  /** Same as unmask, but returns restore counts for audit evidence. */
+  unmaskWithStats(text: string): { text: string; stats: MaskingReplaceStats };
+  meta: MaskingDictionaryMeta;
+}
+
+export function emptyMaskingStats(): MaskingReplaceStats {
+  return { deviceReplacements: 0, nxpReplacements: 0 };
+}
+
+export function addMaskingStats(
+  a: MaskingReplaceStats,
+  b: MaskingReplaceStats
+): MaskingReplaceStats {
+  return {
+    deviceReplacements: a.deviceReplacements + b.deviceReplacements,
+    nxpReplacements: a.nxpReplacements + b.nxpReplacements,
+  };
+}
+
+/** Count DEV_ / COMPANY_X tokens in raw inbound LLM text (for evidence only). */
+export function countInboundTokens(text: string): MaskingReplaceStats {
+  const deviceReplacements = (text.match(DEVICE_TOKEN_COUNT_RE) ?? []).length;
+  const nxpReplacements = (text.match(new RegExp(NXP_TOKEN, "g")) ?? []).length;
+  return { deviceReplacements, nxpReplacements };
 }
 
 interface DictionaryState {
@@ -159,21 +198,74 @@ export function resetMaskingDictionaryCacheForTest(): void {
   buildingPromise = undefined;
 }
 
-function maskWithState(text: string, dict: DictionaryState): string {
+function maskWithStatsState(
+  text: string,
+  dict: DictionaryState
+): { text: string; stats: MaskingReplaceStats } {
   let out = text;
+  let deviceReplacements = 0;
   if (dict.matchRegex) {
-    out = out.replace(dict.matchRegex, (m) => dict.realToToken.get(m) ?? m);
+    out = out.replace(dict.matchRegex, (m) => {
+      const token = dict.realToToken.get(m);
+      if (token) {
+        deviceReplacements += 1;
+        return token;
+      }
+      return m;
+    });
   }
-  out = out.replace(NXP_RE, NXP_TOKEN);
-  return out;
+  // Fresh regex each call — global RegExp.lastIndex must not leak across match/replace.
+  const nxpRe = /nxp/gi;
+  const nxpMatches = out.match(nxpRe);
+  const nxpReplacements = nxpMatches?.length ?? 0;
+  if (nxpReplacements > 0) {
+    out = out.replace(/nxp/gi, NXP_TOKEN);
+  }
+  return {
+    text: out,
+    stats: { deviceReplacements, nxpReplacements },
+  };
+}
+
+function unmaskWithStatsState(
+  text: string,
+  dict: DictionaryState
+): { text: string; stats: MaskingReplaceStats } {
+  let out = text;
+  let deviceReplacements = 0;
+  if (dict.tokenRegex) {
+    out = out.replace(dict.tokenRegex, (m) => {
+      const real = dict.tokenToReal.get(m);
+      if (real) {
+        deviceReplacements += 1;
+        return real;
+      }
+      return m;
+    });
+  }
+  const nxpParts = out.split(NXP_TOKEN);
+  const nxpReplacements = Math.max(0, nxpParts.length - 1);
+  out = nxpParts.join("NXP");
+  return {
+    text: out,
+    stats: { deviceReplacements, nxpReplacements },
+  };
+}
+
+function maskWithState(text: string, dict: DictionaryState): string {
+  return maskWithStatsState(text, dict).text;
 }
 
 function unmaskWithState(text: string, dict: DictionaryState): string {
-  let out = text;
-  if (dict.tokenRegex) {
-    out = out.replace(dict.tokenRegex, (m) => dict.tokenToReal.get(m) ?? m);
-  }
-  return out.split(NXP_TOKEN).join("NXP");
+  return unmaskWithStatsState(text, dict).text;
+}
+
+function metaFromState(dict: DictionaryState): MaskingDictionaryMeta {
+  return {
+    ok: dict.ok,
+    size: dict.realToToken.size,
+    builtAt: new Date(dict.builtAt).toISOString(),
+  };
 }
 
 export async function loadMaskingDictionary(): Promise<MaskingDictionary> {
@@ -181,6 +273,9 @@ export async function loadMaskingDictionary(): Promise<MaskingDictionary> {
   return {
     mask: (text: string) => maskWithState(text, dict),
     unmask: (text: string) => unmaskWithState(text, dict),
+    maskWithStats: (text: string) => maskWithStatsState(text, dict),
+    unmaskWithStats: (text: string) => unmaskWithStatsState(text, dict),
+    meta: metaFromState(dict),
   };
 }
 

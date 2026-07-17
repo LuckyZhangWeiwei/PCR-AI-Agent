@@ -347,6 +347,25 @@ export function extractSlotFromUserText(text: string): number | null {
 }
 
 /**
+ * 从用户文字提取passId（1/3/5）。
+ * 支持 pass3 / pass 3 / sort2 / 高温；未写明时返回 null（由调用方决定默认）。
+ */
+export function extractPassIdFromUserText(text: string): number | null {
+  if (/常温|sort\s*1|pass\s*1|passId\s*[=:]?\s*1|\bpass1\b/i.test(text)) return 1;
+  if (/高温|sort\s*2|pass\s*3|passId\s*[=:]?\s*3|\bpass3\b/i.test(text)) return 3;
+  if (/低温|sort\s*3|pass\s*5|passId\s*[=:]?\s*5|\bpass5\b/i.test(text)) return 5;
+  return null;
+}
+
+/**
+ * 指定片号 + 指定 BIN 的颗数问句（如「第三片 pass3 有多少个 bin3」）。
+ * 必须从 slotBadBinsCompact 直出，禁止用 lot 级 topBadBins 猜测（该 BIN 可能不进 Top15）。
+ */
+export function isSingleSlotBinCountQuestion(text: string): boolean {
+  return extractSlotFromUserText(text) != null && extractBinFromUserText(text) != null;
+}
+
+/**
  * 条件性/假设性推理问题（「如果两张卡都...」「若出现...下一步怎么」）。
  * 这类问题需要 LLM 领域推理，不能被 equipment 模式吃掉后跳过 LLM。
  */
@@ -574,7 +593,18 @@ export function lotOverviewSkipsCommentaryAfterAlerts(
 }
 
 /** 服务端表已覆盖用户问题时，不再调 LLM 解读（避免超时）。lot_overview / per_slot_bin_ranking / bad_bin_ranking 需要工程分析，不在此列。 */
-export function jbReplySkipsCommentaryLlm(mode: JbReplyMode): boolean {
+export function jbReplySkipsCommentaryLlm(
+  mode: JbReplyMode,
+  userMessage?: string
+): boolean {
+  // 单片+指定 BIN 颗数：表已给出精确数字，禁止 LLM 再用 topBadBins 猜「可能为 0」
+  if (
+    userMessage &&
+    isSingleSlotBinCountQuestion(userMessage) &&
+    (mode === "bin_trend" || mode === "single_slot")
+  ) {
+    return true;
+  }
   return (
     // bad_bin_ranking 移出：「常见 fail bin / 坏 bin 排行」常与「实测失效情况」合问，LLM 解读有价值
     mode === "interrupt_count" ||
