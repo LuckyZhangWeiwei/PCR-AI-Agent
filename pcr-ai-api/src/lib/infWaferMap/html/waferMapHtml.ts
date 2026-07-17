@@ -142,7 +142,7 @@ function renderWaferMapWaferSvg(
     const status = d.isGood ? "良品" : "不良";
 
     const tipParts = [`X=${d.x} Y=${d.y}`, `Bin=${d.bin}  ${status}`];
-    if (d.site != null) tipParts.push(`站点=${d.site}`);
+    if (d.site != null) tipParts.push(`DUT=${d.site}`);
     if (d.touchCount != null) tipParts.push(`接触=${d.touchCount}次`);
     const tip = tipParts.join("|");
 

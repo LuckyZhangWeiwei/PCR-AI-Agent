@@ -2,6 +2,16 @@
 
 ---
 
+## 2026-07-17 — 晶圆图 DUT 提示文案修正
+
+**完成内容：**
+- `pcr-ai-api/src/lib/infWaferMap/html/waferMapHtml.ts`：die 悬浮提示中「站点=N」文案改为「DUT=N」，与其余 UI 术语统一。
+- 排查用户反映的「多 pass 晶圆图 passId 错标（pass5 显示为 pass4）」：静态审查标签生成逻辑（直接回显 INF 文件 SmWaferPass 的 PASS_ID，无索引换算）、比对仓库内一份真实生成的晶圆图（Pass 1/3/5 标签均正确）及 dummy fixture，均未复现；用户确认暂不深究，留待下次有具体案例（lot/device/slot 或保存的 html）时再查。
+
+**测试：** `npm run typecheck` 通过；改动为单行文案，未新增/跑其它测试。
+
+---
+
 ## 2026-07-11 — Agent 回答准确性问题清单（会话日志复盘，交接 Cursor）
 
 **完成内容：**

@@ -11,6 +11,8 @@
 
 ## 待办
 
+- ✅ **晶圆图 DUT 提示文案** — die 悬浮提示「站点=N」改为「DUT=N」 — 2026-07-17 完成
+- [ ] **晶圆图多 pass 标签错位（用户反映 pass5 显示 pass4）** — 静态审查标签生成逻辑 + 比对真实生成的晶圆图/dummy fixture 均未复现，用户暂缓深究；待有具体 lot/device/slot 或保存的 html 案例时再排查
 - [x] **【Cursor】Agent 回答准确性 8 项** — 代码 `97906b2` 已部署；真库 7/8 场景绿，见 [`HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-07-12_AGENT_ACCURACY.md`](HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-07-12_AGENT_ACCURACY.md)；P0-4 `_trendRows` 补丁待再 deploy
 - ✅ **灰色小字对比度 + 字号微调** — `--muted`/`--dimmed`（`index.css` dark/light）+ `chartTheme.ts` `axisColor` 提高对比度；所有引用这两个 token 的灰色小字字号统一 +1px。`tsc -b --noEmit` 通过；未做浏览器实测。 — 2026-07-05 完成
 - ✅ **light/dark 主题切换：终审 3 项收尾** — `TreeTable.tsx` 主题化（`--dim-*`/`--fg-rgb`/`--text`/`--muted`/`--dimmed` 替换全部硬编码颜色）+ `InfDutDistPanel.tsx` tooltip hover 行文字 `#fff`→`var(--text)`（light 下可读）+ `index.html` head 内同步读 `localStorage` 设 `data-theme`（消除刷新闪深色）。`npm run build` 通过、grep 无残留硬编码色。分支 `feat/jb-route-resolver` 内 worktree `light-mode-theme` 提交。 — 2026-07-04 完成
