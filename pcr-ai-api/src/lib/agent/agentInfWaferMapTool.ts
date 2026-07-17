@@ -218,7 +218,7 @@ export function extractLotsFromUserText(text: string): string[] {
 
 /**
  * User only wants an interactive wafer map link — not lot-wide JB tables / commentary.
- * 口语变体须覆盖：wafer图 / wafer 图 / 晶圆图 / 画一下第三片的图（带 wafer/lot/片号语境）。
+ * 口语变体须覆盖：wafer图 / wafer 图 / 晶圆图 / 画一下第三片的图（带 wafer/晶圆 字样 + 片号语境）。
  */
 export function userWantsWaferMapOnly(text: string): boolean {
   const t = text.trim();
@@ -239,11 +239,12 @@ export function userWantsWaferMapOnly(text: string): boolean {
     /晶圆图/.test(t) ||
     /画.*(晶圆图|wafer|晶圆)/i.test(t) ||
     /(画出|绘制|生成|看看|看下|看一下|打开|出一张|来一张).*(晶圆|wafer)/i.test(t) ||
-    // 「第N片的图 / 这片的图」且句中已有 wafer/lot 语境（避免「画个柱状图」误伤）
+    // 「第N片的图 / 这片的图」且句中已出现 wafer/晶圆 字样（避免「画个柱状图」「良率趋势图」误伤——
+    // 不能只靠 lot 编号判断语境，几乎所有 JB 问句都带 lot 号）
     (/(?:第\s*[一二三四五六七八九十百\d]+\s*片|waferId\s*\d+|slot\s*\d+|这\s*片|该\s*片).{0,12}的?\s*图/i.test(
       t
     ) &&
-      /wafer|晶圆|\b[A-Z]{2}\d{4,}\.\d/i.test(t)) ||
+      /wafer|晶圆/i.test(t)) ||
     // 跟进指令：同理/换/改 + BIN 编号（用户已在对话中建立晶圆图上下文）
     /同理.*(wafer|晶圆图|wafermap|wafer\s*图|标出|标亮|高亮)/i.test(t) ||
     /(?:换(?:成|为)?|改(?:成|为)?|重画|重新.*画)\s*bin\s*\d/i.test(t) ||

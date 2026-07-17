@@ -7,7 +7,7 @@
  * Override: AGENT_DATA_MASKING_AUDIT_PATH
  * Disable file (console only): AGENT_DATA_MASKING_AUDIT=false
  */
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 export type DataMaskingAuditEvent =
@@ -44,7 +44,20 @@ export function resolveDataMaskingAuditPath(): string {
   return join(process.cwd(), "logs", "agent-data-masking-audit.jsonl");
 }
 
-/** Append one JSONL evidence line + mirror to console. Never includes secrets. */
+// Serializes async writes onto one chain so concurrent requests don't interleave
+// appendFile calls; also lets tests await completion (see below).
+let pendingWrites: Promise<void> = Promise.resolve();
+
+/** Test-only: await every audit file write queued so far before asserting on the file. */
+export function waitForPendingDataMaskingAuditWrites(): Promise<void> {
+  return pendingWrites;
+}
+
+/**
+ * Append one JSONL evidence line + mirror to console. Never includes secrets.
+ * File I/O is async/fire-and-forget — this runs on every streamSiliconFlow call
+ * (a per-request hot path), so it must never block the event loop.
+ */
 export function logDataMaskingEvidence(
   event: DataMaskingAuditEvent,
   fields: Omit<DataMaskingAuditRecord, "ts" | "event">
@@ -57,16 +70,16 @@ export function logDataMaskingEvidence(
   const line = JSON.stringify(record);
   console.info(`[agentDataMasking/audit] ${line}`);
   if (auditFileEnabled()) {
-    try {
-      const path = resolveDataMaskingAuditPath();
-      mkdirSync(dirname(path), { recursive: true });
-      appendFileSync(path, `${line}\n`, "utf-8");
-    } catch (err) {
-      console.warn(
-        "[agentDataMasking/audit] failed to append audit file:",
-        err instanceof Error ? err.message : err
-      );
-    }
+    const path = resolveDataMaskingAuditPath();
+    pendingWrites = pendingWrites
+      .then(() => mkdir(dirname(path), { recursive: true }))
+      .then(() => appendFile(path, `${line}\n`, "utf-8"))
+      .catch((err) => {
+        console.warn(
+          "[agentDataMasking/audit] failed to append audit file:",
+          err instanceof Error ? err.message : err
+        );
+      });
   }
   return record;
 }

@@ -128,6 +128,10 @@ test("streamSiliconFlow unmasks a COMPANY_X token back to NXP in streamed text b
     );
 
     assert.equal(texts.join(""), "NXP 良率正常");
+    const { waitForPendingDataMaskingAuditWrites } = await import(
+      "../src/lib/agent/agentDataMaskingAudit.js"
+    );
+    await waitForPendingDataMaskingAuditWrites();
     assert.ok(existsSync(auditPath), "audit JSONL should be written");
     const lines = readFileSync(auditPath, "utf-8")
       .trim()

@@ -13,7 +13,6 @@ import {
 } from "../infcontrolLayerBinDummy.js";
 
 const NXP_TOKEN = "COMPANY_X";
-const NXP_RE = /nxp/gi;
 const DEVICE_TOKEN_PREFIX = "DEV_";
 /** Count DEV_ tokens already present in LLM inbound text (never log the tokens themselves). */
 const DEVICE_TOKEN_COUNT_RE = /DEV_[0-9a-f]+/g;

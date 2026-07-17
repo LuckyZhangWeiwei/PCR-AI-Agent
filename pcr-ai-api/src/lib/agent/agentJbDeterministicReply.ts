@@ -1989,14 +1989,9 @@ export function buildDeterministicJbTables(
     const bin = extractBinFromUserText(userMessage);
     if (bin == null) return null;
 
-    // 指定片号 + BIN：优先 slotBadBinsCompact 直出精确颗数（不依赖 topBadBins / 全片趋势预计算）
+    // 指定片号 + BIN：优先 slotBadBinsCompact 直出精确颗数（不依赖 topBadBins / 全片趋势预计算）。
+    // 若下方还能取到全片趋势表，会与此结果合并展示；取不到时单独返回此结果（末尾兜底）。
     const slotBinDirect = buildSingleSlotBinCountMarkdown(toolPayload, userMessage);
-    if (slotBinDirect?.trim()) {
-      // 若用户还要整批趋势语境，可再附 on-demand 全片表；单片颗数问句到此即可
-      if (isSingleSlotBinCountQuestion(userMessage)) {
-        return slotBinDirect;
-      }
-    }
 
     const trends = digest.binTrends ?? [];
     const matches = trends.filter((t) => Number(t.bin) === bin);
@@ -2042,13 +2037,10 @@ export function buildDeterministicJbTables(
     const device = String(toolPayload["device"] ?? "").trim() || undefined;
     const parts: string[] = [];
 
-    // 0. 指定 BIN 颗数优先
+    // 0. 指定 BIN 颗数优先（不短路——后续该片良率/坏bin警示/卡机台信息仍需展示）
     const slotBinDirect = buildSingleSlotBinCountMarkdown(toolPayload, userMessage);
     if (slotBinDirect?.trim()) {
       parts.push(slotBinDirect.trim());
-      if (isSingleSlotBinCountQuestion(userMessage)) {
-        return parts.join("\n\n");
-      }
     }
 
     // 1. 该片良率（中断片 or 无中断片）

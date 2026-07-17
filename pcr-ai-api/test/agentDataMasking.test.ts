@@ -15,6 +15,7 @@ import { getYieldMonitorTriggerDummyRows } from "../src/lib/yieldMonitorTriggerD
 import {
   logDataMaskingEvidence,
   resolveDataMaskingAuditPath,
+  waitForPendingDataMaskingAuditWrites,
 } from "../src/lib/agent/agentDataMaskingAudit.js";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -80,7 +81,7 @@ describe("agentDataMasking", () => {
     assert.match(dict.meta.builtAt, /^\d{4}-\d{2}-\d{2}T/);
   });
 
-  it("logDataMaskingEvidence writes ISO timestamp JSONL without real device values", () => {
+  it("logDataMaskingEvidence writes ISO timestamp JSONL without real device values", async () => {
     const auditPath = join(
       tmpdir(),
       `pcr-ai-masking-audit-${process.pid}-${Date.now()}.jsonl`
@@ -102,6 +103,7 @@ describe("agentDataMasking", () => {
       });
       assert.match(record.ts, /^\d{4}-\d{2}-\d{2}T/);
       assert.equal(resolveDataMaskingAuditPath(), auditPath);
+      await waitForPendingDataMaskingAuditWrites();
       assert.ok(existsSync(auditPath));
       const line = readFileSync(auditPath, "utf-8").trim();
       const parsed = JSON.parse(line) as Record<string, unknown>;
