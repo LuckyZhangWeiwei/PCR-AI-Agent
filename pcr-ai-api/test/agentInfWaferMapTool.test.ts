@@ -44,6 +44,20 @@ test("inferSinglePassIdFromText for pass1-only wafermap request", () => {
   );
 });
 
+test("userWantsWaferMapOnly recognizes 口语 wafer图 / 晶圆图（无 wafermap 字样）", () => {
+  // 用户常说「wafer图」而不写 wafermap —— 此前直连路由漏检
+  assert.equal(userWantsWaferMapOnly("NF13607.1R 第三片的wafer图"), true);
+  assert.equal(userWantsWaferMapOnly("帮我看一下 DR44117.1Y 第14片 wafer 图"), true);
+  assert.equal(userWantsWaferMapOnly("画出 NF13128.1A 第一片晶圆图"), true);
+  assert.equal(userWantsWaferMapOnly("WA03P02G NF13128.1A 第二十四片的晶圆图"), true);
+  assert.equal(userWantsWaferMapOnly("同理画出 bin14 的 wafer图"), true);
+  // 标准写法仍命中
+  assert.equal(userWantsWaferMapOnly("画出第14片 wafermap"), true);
+  // 非画图问句不误伤
+  assert.equal(userWantsWaferMapOnly("NF13607.1R 第三片 pass3 有多少个bin3"), false);
+  assert.equal(userWantsWaferMapOnly("DR44117.1Y 整体的测试情况"), false);
+});
+
 test("normalizeInfDrawWaferMapArgs sets passes=1 for pass1-only question", () => {
   const history = [
     {

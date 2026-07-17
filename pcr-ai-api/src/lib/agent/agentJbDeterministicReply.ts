@@ -727,6 +727,25 @@ export function extractSlotFromUserText(text: string): number | null {
 }
 
 /**
+ * 从用户文字提取 passId（1/3/5）。
+ * 支持 pass3 / pass 3 / sort2 / 高温；未写明时返回 null（由调用方决定默认）。
+ */
+export function extractPassIdFromUserText(text: string): number | null {
+  if (/常温|sort\s*1|pass\s*1|passId\s*[=:]?\s*1|\bpass1\b/i.test(text)) return 1;
+  if (/高温|sort\s*2|pass\s*3|passId\s*[=:]?\s*3|\bpass3\b/i.test(text)) return 3;
+  if (/低温|sort\s*3|pass\s*5|passId\s*[=:]?\s*5|\bpass5\b/i.test(text)) return 5;
+  return null;
+}
+
+/**
+ * 指定片号 + 指定 BIN 的颗数问句（如「第三片 pass3 有多少个 bin3」）。
+ * 必须从 slotBadBinsCompact 直出，禁止用 lot 级 topBadBins 猜测（该 BIN 可能不进 Top15）。
+ */
+export function isSingleSlotBinCountQuestion(text: string): boolean {
+  return extractSlotFromUserText(text) != null && extractBinFromUserText(text) != null;
+}
+
+/**
  * 条件性/假设性推理问题（「如果两张卡都...」「若出现...下一步怎么」）。
  * 这类问题需要 LLM 领域推理，不能被 equipment 模式吃掉后跳过 LLM。
  */
@@ -954,7 +973,18 @@ export function lotOverviewSkipsCommentaryAfterAlerts(
 }
 
 /** 服务端表已覆盖用户问题时，不再调 LLM 解读（避免超时）。lot_overview / per_slot_bin_ranking / bad_bin_ranking 需要工程分析，不在此列。 */
-export function jbReplySkipsCommentaryLlm(mode: JbReplyMode): boolean {
+export function jbReplySkipsCommentaryLlm(
+  mode: JbReplyMode,
+  userMessage?: string
+): boolean {
+  // 单片+指定 BIN 颗数：表已给出精确数字，禁止 LLM 再用 topBadBins 猜「可能为 0」
+  if (
+    userMessage &&
+    isSingleSlotBinCountQuestion(userMessage) &&
+    (mode === "bin_trend" || mode === "single_slot")
+  ) {
+    return true;
+  }
   return (
     // bad_bin_ranking 移出：「常见 fail bin / 坏 bin 排行」常与「实测失效情况」合问，LLM 解读有价值
     mode === "interrupt_count" ||
@@ -1102,15 +1132,176 @@ function pickPassIdForBinTrend(
   trends: BinTrendDigest[],
   passIdsPresent?: number[]
 ): number | null {
-  if (/常温|sort\s*1|pass\s*1|passId\s*[=:]?\s*1/i.test(userMessage)) return 1;
-  if (/高温|sort\s*2|pass\s*3|passId\s*[=:]?\s*3/i.test(userMessage)) return 3;
-  if (/低温|sort\s*3|pass\s*5|passId\s*[=:]?\s*5/i.test(userMessage)) return 5;
+  const fromUser = extractPassIdFromUserText(userMessage);
+  if (fromUser != null) return fromUser;
   const inTrends = [...new Set(trends.map((t) => t.passId))].sort((a, b) => a - b);
   if (inTrends.length === 1) return inTrends[0]!;
   if (passIdsPresent?.includes(1) && inTrends.includes(1)) return 1;
   if (inTrends.length) return inTrends[0] ?? null;
   if (passIdsPresent?.includes(1)) return 1;
   return passIdsPresent?.[0] ?? null;
+}
+
+type CompactBadBin = { bin: number; dieCount: number };
+
+/** 合并同 (slot, passId) 下多卡的坏 bin（换卡时各卡分段相加）。 */
+function mergeCompactBadBins(
+  entries: SlotBadBinsCompactEntry[]
+): CompactBadBin[] {
+  const map = new Map<number, number>();
+  for (const e of entries) {
+    for (const b of e.badBins ?? []) {
+      const bin = Number(b.bin);
+      const die = Number(b.dieCount) || 0;
+      if (!Number.isFinite(bin) || die <= 0) continue;
+      map.set(bin, (map.get(bin) ?? 0) + die);
+    }
+  }
+  return [...map.entries()]
+    .map(([bin, dieCount]) => ({ bin, dieCount }))
+    .sort((a, b) => b.dieCount - a.dieCount || a.bin - b.bin);
+}
+
+/**
+ * 单片（可选 pass）全部坏 bin 列表 —— 来自 slotBadBinsCompact，不依赖 topBadBins。
+ */
+export function buildSingleSlotAllBadBinsMarkdown(
+  toolPayload: Record<string, unknown>,
+  userMessage: string
+): string | null {
+  const slot = extractSlotFromUserText(userMessage);
+  if (slot == null) return null;
+  const compact = toolPayload["slotBadBinsCompact"] as
+    | SlotBadBinsCompactEntry[]
+    | undefined;
+  if (!compact?.length) return null;
+
+  const passPref = extractPassIdFromUserText(userMessage);
+  let entries = compact.filter((e) => e.slot === slot);
+  if (passPref != null) {
+    entries = entries.filter((e) => e.passId === passPref);
+  }
+  if (!entries.length) {
+    const lot = String(toolPayload["lot"] ?? "").trim();
+    const passTag = passPref != null ? ` / ${passIdSortLabel(passPref)}` : "";
+    return (
+      `**${lot ? `${lot} ` : ""}waferId ${slot}${passTag}：无坏 bin 明细**` +
+      `（slotBadBinsCompact 中无该片${passPref != null ? ` pass${passPref}` : ""} 行）。`
+    );
+  }
+
+  const lot = String(toolPayload["lot"] ?? "").trim();
+  const device = String(toolPayload["device"] ?? "").trim();
+  const lotTag = lot
+    ? `（lot ${lot}${device ? ` ${device}` : ""}）`
+    : "";
+
+  // 按 pass 分组输出
+  const byPass = new Map<number, SlotBadBinsCompactEntry[]>();
+  for (const e of entries) {
+    const list = byPass.get(e.passId) ?? [];
+    list.push(e);
+    byPass.set(e.passId, list);
+  }
+  const passIds = [...byPass.keys()].sort((a, b) => a - b);
+  const parts: string[] = [];
+
+  for (const passId of passIds) {
+    const passEntries = byPass.get(passId)!;
+    const merged = mergeCompactBadBins(passEntries);
+    const cardIds = [
+      ...new Set(passEntries.map((e) => e.cardId).filter(Boolean)),
+    ];
+    const totalBad = merged.reduce((s, b) => s + b.dieCount, 0);
+    const header =
+      `**waferId ${slot} / ${passIdSortLabel(passId)} 坏 bin${lotTag}**` +
+      `（合计坏 die **${totalBad}** 颗` +
+      `${cardIds.length ? `；探针卡 ${cardIds.join(", ")}` : ""}）`;
+    if (!merged.length) {
+      parts.push(`${header}\n\n无坏 bin（该层全为良品 bin）。`);
+      continue;
+    }
+    const rows = [
+      "| # | BIN | 坏 die 颗数 |",
+      "|---:|---:|---:|",
+      ...merged.map(
+        (b, i) => `| ${i + 1} | BIN${b.bin} | ${b.dieCount} |`
+      ),
+    ];
+    parts.push([header, "", ...rows].join("\n"));
+  }
+  return parts.join("\n\n");
+}
+
+/**
+ * 单片 + 指定 BIN 精确颗数（slotBadBinsCompact）。
+ * 解决「BIN 不进 lot topBadBins Top15 → 模型猜 0」的问题。
+ */
+export function buildSingleSlotBinCountMarkdown(
+  toolPayload: Record<string, unknown>,
+  userMessage: string
+): string | null {
+  const slot = extractSlotFromUserText(userMessage);
+  const bin = extractBinFromUserText(userMessage);
+  if (slot == null || bin == null) return null;
+  const compact = toolPayload["slotBadBinsCompact"] as
+    | SlotBadBinsCompactEntry[]
+    | undefined;
+  if (!compact?.length) return null;
+
+  const passPref = extractPassIdFromUserText(userMessage);
+  let entries = compact.filter((e) => e.slot === slot);
+  if (passPref != null) {
+    entries = entries.filter((e) => e.passId === passPref);
+  }
+  const lot = String(toolPayload["lot"] ?? "").trim();
+  const device = String(toolPayload["device"] ?? "").trim();
+  const lotTag = lot
+    ? `（lot ${lot}${device ? ` ${device}` : ""}）`
+    : "";
+
+  if (!entries.length) {
+    const passTag = passPref != null ? ` / ${passIdSortLabel(passPref)}` : "";
+    return (
+      `**结论：waferId ${slot}${passTag} BIN${bin} = 0 颗**${lotTag}\n\n` +
+      `（slotBadBinsCompact 中无该片该 pass 测试行；若怀疑片号/pass 有误请核对。）`
+    );
+  }
+
+  // 若未指定 pass：按 pass 分别报；指定则只报该 pass
+  const byPass = new Map<number, SlotBadBinsCompactEntry[]>();
+  for (const e of entries) {
+    const list = byPass.get(e.passId) ?? [];
+    list.push(e);
+    byPass.set(e.passId, list);
+  }
+  const passIds = [...byPass.keys()].sort((a, b) => a - b);
+  const parts: string[] = [];
+
+  for (const passId of passIds) {
+    const passEntries = byPass.get(passId)!;
+    const merged = mergeCompactBadBins(passEntries);
+    const dieCount = merged.find((b) => b.bin === bin)?.dieCount ?? 0;
+    const cardIds = [
+      ...new Set(passEntries.map((e) => e.cardId).filter(Boolean)),
+    ];
+    const others = merged.filter((b) => b.bin !== bin);
+    const othersLine =
+      others.length > 0
+        ? `\n\n同片 ${passIdSortLabel(passId)} 其它坏 bin：` +
+          others
+            .slice(0, 12)
+            .map((b) => `BIN${b.bin}（${b.dieCount}）`)
+            .join("、") +
+          (others.length > 12 ? `…共 ${others.length} 类` : "")
+        : "";
+    parts.push(
+      `**结论：waferId ${slot} / ${passIdSortLabel(passId)} 正测 BIN${bin} = ${dieCount} 颗**${lotTag}` +
+        `${cardIds.length ? `；探针卡 ${cardIds.join(", ")}` : ""}` +
+        othersLine
+    );
+  }
+  return parts.join("\n\n");
 }
 
 /** 从用户文字提取"前N名"数字（支持中文：前五名=5，前3名=3）。 */
@@ -1797,6 +1988,16 @@ export function buildDeterministicJbTables(
   if (mode === "bin_trend") {
     const bin = extractBinFromUserText(userMessage);
     if (bin == null) return null;
+
+    // 指定片号 + BIN：优先 slotBadBinsCompact 直出精确颗数（不依赖 topBadBins / 全片趋势预计算）
+    const slotBinDirect = buildSingleSlotBinCountMarkdown(toolPayload, userMessage);
+    if (slotBinDirect?.trim()) {
+      // 若用户还要整批趋势语境，可再附 on-demand 全片表；单片颗数问句到此即可
+      if (isSingleSlotBinCountQuestion(userMessage)) {
+        return slotBinDirect;
+      }
+    }
+
     const trends = digest.binTrends ?? [];
     const matches = trends.filter((t) => Number(t.bin) === bin);
     if (matches.length) {
@@ -1810,8 +2011,13 @@ export function buildDeterministicJbTables(
           ? matches.filter((t) => t.passId === passId)
           : matches;
       if (chosen.length) {
-        if (chosen.length === 1) return chosen[0]!.markdown;
-        return chosen.map((t) => t.markdown).join("\n\n");
+        const trendMd =
+          chosen.length === 1
+            ? chosen[0]!.markdown
+            : chosen.map((t) => t.markdown).join("\n\n");
+        return slotBinDirect?.trim()
+          ? `${slotBinDirect}\n\n${trendMd}`
+          : trendMd;
       }
     }
     const onDemand = buildBinSlotTrendMarkdownOnDemand(
@@ -1819,7 +2025,13 @@ export function buildDeterministicJbTables(
       bin,
       userMessage
     );
-    if (onDemand?.trim()) return onDemand;
+    if (onDemand?.trim()) {
+      return slotBinDirect?.trim()
+        ? `${slotBinDirect}\n\n${onDemand.trim()}`
+        : onDemand;
+    }
+    // topBadBins 未含该 BIN 且无 _trendRows 时：仍可用 compact 答单片；否则 null
+    if (slotBinDirect?.trim()) return slotBinDirect;
     return null;
   }
 
@@ -1829,6 +2041,15 @@ export function buildDeterministicJbTables(
     const lot = String(toolPayload["lot"] ?? "").trim() || undefined;
     const device = String(toolPayload["device"] ?? "").trim() || undefined;
     const parts: string[] = [];
+
+    // 0. 指定 BIN 颗数优先
+    const slotBinDirect = buildSingleSlotBinCountMarkdown(toolPayload, userMessage);
+    if (slotBinDirect?.trim()) {
+      parts.push(slotBinDirect.trim());
+      if (isSingleSlotBinCountQuestion(userMessage)) {
+        return parts.join("\n\n");
+      }
+    }
 
     // 1. 该片良率（中断片 or 无中断片）
     const summary = toolPayload["slotYieldSummary"] as SlotYieldSummaryEntry[] | undefined;
@@ -1848,7 +2069,13 @@ export function buildDeterministicJbTables(
       parts.push([header, ...rows].join("\n"));
     }
 
-    // 2. 涉及该 slot 的 BIN 警示
+    // 2. 该片坏 bin 明细（slotBadBinsCompact）——「所有坏 bin / 坏 bin 列出来」的答案源
+    const allBadMd = buildSingleSlotAllBadBinsMarkdown(toolPayload, userMessage);
+    if (allBadMd?.trim() && !slotBinDirect?.trim()) {
+      parts.push(allBadMd.trim());
+    }
+
+    // 3. 涉及该 slot 的 BIN 警示
     const alerts = toolPayload["clusteredBadBinAlerts"] as ClusteredBadBinAlert[] | undefined;
     const relevantAlerts = alerts?.filter(
       (a) => slot >= a.slotStart && slot <= a.slotEnd
@@ -1860,7 +2087,7 @@ export function buildDeterministicJbTables(
       }
     }
 
-    // 3. 探针卡与机台（简短上下文）
+    // 4. 探针卡与机台（简短上下文）
     const cardMd = toolPayload["cardByPassIdMarkdown"];
     if (typeof cardMd === "string" && cardMd.trim()) parts.push(cardMd.trim());
     const testerMd = toolPayload["testerIdMarkdown"];

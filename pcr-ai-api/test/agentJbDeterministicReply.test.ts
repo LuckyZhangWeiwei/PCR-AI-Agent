@@ -12,8 +12,14 @@ import {
   detectJbReplyMode,
   equipmentRouteDutLevelBail,
   extractBinFromUserText,
+  extractPassIdFromUserText,
+  extractSlotFromUserText,
   extractYmLotsFromHistory,
+  buildSingleSlotAllBadBinsMarkdown,
+  buildSingleSlotBinCountMarkdown,
   isBinTrendQuestion,
+  isSingleSlotBinCountQuestion,
+  jbReplySkipsCommentaryLlm,
   isInterruptCountQuestion,
   isLotListingQuestion,
   isLotYieldRankingQuestion,
@@ -116,6 +122,64 @@ describe("agentJbDeterministicReply", () => {
       detectJbReplyMode("BIN55 的 fail bin 情况"),
       "bad_bin_ranking"
     );
+  });
+
+  // 单片 + 指定 BIN：即使该 BIN 不在 lot topBadBins Top15，也要从 compact 直出颗数
+  it("single-slot BIN count from slotBadBinsCompact (not topBadBins)", () => {
+    const q = "NF13607.1R 第三片wafer pass3 正测中 有多少个bin3";
+    assert.equal(extractSlotFromUserText(q), 3);
+    assert.equal(extractBinFromUserText(q), 3);
+    assert.equal(extractPassIdFromUserText(q), 3);
+    assert.ok(isSingleSlotBinCountQuestion(q));
+    assert.equal(detectJbReplyMode(q), "bin_trend");
+    assert.equal(jbReplySkipsCommentaryLlm("bin_trend", q), true);
+
+    // BIN3 不在 topBadBins，但 slot3/pass3 compact 有 39 颗
+    const payload = {
+      lot: "NF13607.1R",
+      device: "WAXX",
+      topBadBins: [
+        { bin: 169, dieCount: 30 },
+        { bin: 8, dieCount: 25 },
+      ],
+      slotBadBinsCompact: [
+        {
+          slot: 3,
+          passId: 3,
+          cardId: "6045-10",
+          badBins: [
+            { bin: 3, dieCount: 39, isGoodBin: false },
+            { bin: 8, dieCount: 4, isGoodBin: false },
+            { bin: 31, dieCount: 2, isGoodBin: false },
+          ],
+        },
+        {
+          slot: 1,
+          passId: 3,
+          cardId: "6045-10",
+          badBins: [{ bin: 8, dieCount: 10, isGoodBin: false }],
+        },
+      ],
+    };
+    const countMd = buildSingleSlotBinCountMarkdown(payload, q);
+    assert.ok(countMd?.includes("BIN3 = 39"));
+    assert.ok(countMd?.includes("waferId 3"));
+    assert.ok(countMd?.includes("pass3") || countMd?.includes("sort2"));
+
+    const tables = buildDeterministicJbTables(q, payload);
+    assert.ok(tables?.includes("BIN3 = 39"), `expected exact count, got:\n${tables}`);
+    // 不得只给全 lot 趋势空表 / 让模型去猜 topBadBins
+    assert.equal(tables?.includes("未能"), false);
+
+    const allQ = "NF13607.1R 第三片wafer pass3 正测中的所有坏bin 列出来";
+    assert.equal(detectJbReplyMode(allQ), "single_slot");
+    const allMd = buildSingleSlotAllBadBinsMarkdown(payload, allQ);
+    assert.ok(allMd?.includes("BIN3"));
+    assert.ok(allMd?.includes("39"));
+    assert.ok(allMd?.includes("BIN8"));
+    const allTables = buildDeterministicJbTables(allQ, payload);
+    assert.ok(allTables?.includes("BIN3"));
+    assert.ok(allTables?.includes("39"));
   });
 
   it("detects lot listing vs single-lot overview", () => {
