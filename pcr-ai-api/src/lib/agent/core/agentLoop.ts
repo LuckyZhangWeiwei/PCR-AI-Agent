@@ -804,6 +804,336 @@ async function prepareRunAgentLoopContext(
   return { feedbackInjection, manifest };
 }
 
+/**
+ * Assembles the per-round system prompt: base manifest prompt + feedback
+ * injection, plus mode-specific nudges (wafer/JB lookup, DUT×BIN map, DUT
+ * yield chart, lot overview, announcement-without-action, summary-round
+ * synthesis suffix). Pure computation, no side effects.
+ * Behavior-identical to the code inlined at this point in the loop before
+ * this split.
+ */
+function buildRoundSystemPrompt(
+  history: ChatMessage[],
+  userQuestion: string,
+  manifest: Awaited<ReturnType<typeof fetchOrCacheManifest>> | undefined,
+  feedbackInjection: string,
+  awaitingSummary: boolean,
+  waferPlan: ReturnType<typeof planWaferMapRoute>,
+  summaryCtx: SummaryContext,
+  announcementNudgeUsed: boolean
+): string {
+  // Inject nudge into the system prompt for the summary round — avoid a
+  // trailing system message after tool turns, which is non-standard and can
+  // cause empty responses on some providers (SiliconFlow/DeepSeek).
+  const firstUserMsg = history.find((m) => m.role === "user")?.content ?? undefined;
+  const intent = classifyIntent(userQuestion, firstUserMsg);
+  const basePrompt = buildSystemPrompt(manifest, intent) + feedbackInjection;
+  const waferJbNudge =
+    !awaitingSummary && waferPlan.action.kind === "need_jb_lookup"
+      ? `\n\n${WAFER_MAP_JB_LOOKUP_NUDGE}`
+      : "";
+  const dutBinNudge =
+    !awaitingSummary &&
+    userWantsDutBinRelationMap(userQuestion) &&
+    !sessionCanDrawDutBinMap(history, userQuestion)
+      ? `\n\n${DUT_BIN_MAP_JB_LOOKUP_NUDGE}`
+      : "";
+  const dutYieldChartNudge =
+    !awaitingSummary &&
+    userWantsDutYieldChart(userQuestion) &&
+    !history.some((m) => m.role === "tool" && m.name === "inf_site_stats")
+      ? `\n\n${DUT_YIELD_CHART_NUDGE}`
+      : "";
+  const lotOverviewNudge =
+    !awaitingSummary && isLotOverviewQuestion(userQuestion)
+      ? `\n\n${LOT_OVERVIEW_JB_NUDGE}`
+      : "";
+  const summarySuffix =
+    summaryCtx === "dual_source" ? DUAL_SOURCE_SYNTHESIS_NUDGE
+    : summaryCtx === "generic" ? GENERIC_STRUCTURED_SYNTHESIS_NUDGE
+    : "";
+  const announcementNudge =
+    !awaitingSummary && announcementNudgeUsed
+      ? `\n\n${ANNOUNCEMENT_WITHOUT_ACTION_NUDGE}`
+      : "";
+  return awaitingSummary
+    ? `${basePrompt}\n\n${SUMMARIZE_NUDGE}${summarySuffix}`
+    : `${basePrompt}${waferJbNudge}${dutBinNudge}${dutYieldChartNudge}${lotOverviewNudge}${announcementNudge}`;
+}
+
+/**
+ * Summary-round guard: after data tools run, the model must produce text OR
+ * call a conclusion tool (generate_chart / ask_clarification). Data-fetch
+ * tools are blocked to prevent infinite loops; conclusion tools are
+ * explicitly allowed.
+ *
+ * Bug A — embedded data-fetch calls: model produced "让我再查一下…" text
+ *   + an embedded tool call. Silently emitting that as `done` misleads user.
+ * Bug B — structured data-fetch tool_calls: providers sometimes emit these
+ *   even without a tool schema, consuming rounds until maxRounds is reached.
+ *
+ * `toolCalls` is mutated in place (same array reference) to mirror the
+ * original inline splice/push semantics. `finishReason` cannot be mutated
+ * through a closure (primitive `let` in the caller), so it is threaded
+ * through the return value instead. The original inline block used a bare
+ * `return;` to exit `runAgentLoop` entirely in two places — since a `return`
+ * inside this helper would only exit the helper, those spots are converted
+ * to `shouldReturn: true`, and the caller must `return` when it sees that.
+ * Behavior-identical to the code inlined at this point in the loop before
+ * this split.
+ */
+function applySummaryRoundToolCallGuard(
+  sessionId: string,
+  userQuestion: string,
+  emit: (event: AgentSseEvent) => void,
+  awaitingSummary: boolean,
+  toolCalls: CollectedToolCall[],
+  embeddedCalls: CollectedToolCall[],
+  textBuffer: string,
+  finishReason: string
+): { finishReason: string; shouldReturn: boolean } {
+  if (!awaitingSummary) {
+    return { finishReason, shouldReturn: false };
+  }
+
+  // generate_chart and ask_clarification are legitimate conclusion steps.
+  const isConclusionTool = (name: string) =>
+    name === "generate_chart" || name === "ask_clarification";
+
+  // Structured tool_calls: keep only conclusion tools, discard data tools.
+  if (toolCalls.length > 0) {
+    const kept = toolCalls.filter((tc) => isConclusionTool(tc.name));
+    toolCalls.splice(0, toolCalls.length, ...kept);
+    if (toolCalls.length > 0) finishReason = "tool_calls";
+  }
+
+  // Embedded calls: conclusion tools → merge; data tools → handle below.
+  if (embeddedCalls.length > 0) {
+    const allowedEmb = embeddedCalls.filter((ec) => isConclusionTool(ec.name));
+    const blockedEmb = embeddedCalls.filter((ec) => !isConclusionTool(ec.name));
+
+    if (allowedEmb.length > 0 && toolCalls.length === 0) {
+      // generate_chart / ask_clarification embedded → merge and execute.
+      toolCalls.push(...allowedEmb);
+      finishReason = "tool_calls";
+    } else if (blockedEmb.length > 0 && allowedEmb.length === 0) {
+      // Data-fetch embedded call in summary round.
+      if (!textBuffer.trim()) {
+        if (finishWithJbServerTablesFallback(sessionId, userQuestion, emit)) {
+          return { finishReason, shouldReturn: true };
+        }
+        emit({
+          type: "error",
+          message:
+            "模型未返回分析结论（工具数据已在上方）。请点「重试」，或缩小查询范围后重新提问。",
+        });
+        return { finishReason, shouldReturn: true };
+      }
+      // Has partial text (e.g. "JB 数据为空，让我换个方式：") → emit it as
+      // the answer rather than erroring; the blocked call is discarded.
+      // Fall through to the normal text-output path below.
+    }
+  }
+
+  return { finishReason, shouldReturn: false };
+}
+
+/**
+ * General pending-query mechanism: when a two-step query reaches the summary
+ * round without its second tool call having been executed (because the
+ * summary round blocks tool calls), this detects the gap via
+ * `detectPendingQuery` and executes the follow-up tool.
+ *
+ * The original inline block used a bare `continue;` on success to loop the
+ * caller's `for` round back so the next iteration (still a summary round)
+ * has complete data for a proper LLM summary. A `continue` inside this
+ * helper would only affect a loop local to the helper (there is none), so
+ * the signal is threaded back via `shouldContinue`, and the caller must
+ * `continue` its round loop when it sees that.
+ * Behavior-identical to the code inlined at this point in the loop before
+ * this split.
+ */
+async function runPendingQueryFollowUp(
+  sessionId: string,
+  agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void,
+  userQuestion: string
+): Promise<{ shouldContinue: boolean }> {
+  const lastTool = lastToolMessage(getHistory(sessionId));
+  if (lastTool) {
+    const jbPayload = resolveJbToolPayload(sessionId, String(lastTool.content ?? ""));
+    const pending = detectPendingQuery(
+      userQuestion,
+      lastTool.name ?? "",
+      jbPayload ?? {},
+      getHistory(sessionId)
+    );
+    if (pending) {
+      emit({ type: "status", message: pending.statusLabel });
+      emit({ type: "tool_start", name: pending.toolName, args: pending.args });
+      try {
+        const toolResult = await runTool(pending.toolName, pending.args, {
+          toolResultMaxChars: agentConfig.toolResultMaxChars,
+          history: getHistory(sessionId),
+        });
+        const rawContent =
+          typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult);
+        emit({
+          type: "tool_result",
+          name: pending.toolName,
+          summary: rawContent.slice(0, 200),
+        });
+        appendMessages(sessionId, {
+          role: "tool",
+          name: pending.toolName,
+          tool_call_id: `pending_${Date.now()}`,
+          content: rawContent.slice(0, agentConfig.toolResultMaxChars),
+        });
+        // History now has complete data; loop back so the next round
+        // (still a summary round) has everything needed for a full answer.
+        return { shouldContinue: true };
+      } catch {
+        // Pending query failed — fall through to deterministic routes / LLM summary
+      }
+    }
+  }
+  return { shouldContinue: false };
+}
+
+/**
+ * Post-stream finish/fallback handling: decides what happens once the LLM
+ * stream for this round has finished. Covers the "model only announced but
+ * didn't actually call a tool" retry, the empty-textBuffer fallback paths
+ * (generate_chart fallback / JB server-tables fallback / generic error),
+ * the fact-check pass, appending the assistant turn to history, executing
+ * any requested tool calls, the ask_clarification short-circuit, and the
+ * generate_chart-only-round shortcut.
+ *
+ * The original inline code had several `return;` statements that exited
+ * `runAgentLoop` entirely, and one `continue;` that skipped to the next
+ * `for` iteration. Neither can be expressed directly inside a helper
+ * function, so both are surfaced via the returned `action` field
+ * (`"return" | "continue" | "proceed"`) for the caller to act on exactly as
+ * the inlined code did. `announcementNudgeUsed` is a `let` in the caller
+ * that persists across round iterations; since a primitive cannot be
+ * mutated through a closure, its (possibly updated) value is threaded back
+ * through the return value too, and the caller must reassign it.
+ * Behavior-identical to the code inlined at this point in the loop before
+ * this split.
+ */
+async function finalizeStreamedTurn(
+  sessionId: string,
+  agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void,
+  round: number,
+  maxRounds: number,
+  userQuestion: string,
+  awaitingSummary: boolean,
+  announcementNudgeUsedIn: boolean,
+  finishReason: string,
+  toolCalls: CollectedToolCall[],
+  textBuffer: string
+): Promise<{
+  action: "return" | "continue" | "proceed";
+  announcementNudgeUsed: boolean;
+}> {
+  let announcementNudgeUsed = announcementNudgeUsedIn;
+
+  if (finishReason !== "tool_calls" || toolCalls.length === 0) {
+    // 首轮模型只承诺"马上查"却未真正调用工具(见 prompt/agentPrompt.ts 硬规则)——
+    // 代码兜底重试一次:不落盘这条未完成的文字,加强系统提示后重新请求,而不是把
+    // "确认性文字"当成最终答案直接结束整轮对话。
+    if (
+      !awaitingSummary &&
+      !announcementNudgeUsed &&
+      round < maxRounds - 1 &&
+      questionHasIdentifiableToolScope(userQuestion)
+    ) {
+      announcementNudgeUsed = true;
+      emit({ type: "status", message: "检测到尚未真正查询，正在重新调用工具…" });
+      return { action: "continue", announcementNudgeUsed };
+    }
+    if (awaitingSummary && !textBuffer.trim()) {
+      const lastTool = lastToolMessage(getHistory(sessionId));
+      if (lastTool?.name === "generate_chart") {
+        const note = chartToolFallbackMessage(lastTool);
+        appendMessages(sessionId, { role: "assistant", content: note });
+        emit({ type: "text", delta: note });
+        emit({ type: "done" });
+        return { action: "return", announcementNudgeUsed };
+      }
+      if (finishWithJbServerTablesFallback(sessionId, userQuestion, emit)) {
+        return { action: "return", announcementNudgeUsed };
+      }
+      emit({
+        type: "error",
+        message:
+          "模型未返回分析结论（工具数据已在上方）。请点「重试」，或缩小查询范围后重新提问。",
+      });
+      return { action: "return", announcementNudgeUsed };
+    }
+    // Fact check: verify the LLM's conclusion against tool-result data (summary round only).
+    // Log mismatches server-side only — the text is already streamed to the client, and
+    // appending a visible correction note confuses users (they see contradictory text).
+    if (awaitingSummary && textBuffer.trim()) {
+      const facts = buildFactSheetFromHistory(getHistory(sessionId));
+      const checkResult = factCheckSummaryText(textBuffer, facts);
+      if (!checkResult.ok) {
+        console.warn(`[factchecker/${sessionId}] ${checkResult.issue}`);
+      }
+    }
+    appendMessages(sessionId, { role: "assistant", content: textBuffer });
+    emit({ type: "done" });
+    return { action: "return", announcementNudgeUsed };
+  }
+
+  // Record assistant turn with tool_calls
+  const assistantToolCalls: ToolCall[] = toolCalls.map((tc) => ({
+    id: tc.id || `call_${round}_${tc.index}`,
+    type: "function",
+    function: { name: tc.name, arguments: tc.args },
+  }));
+  appendMessages(sessionId, {
+    role: "assistant",
+    content: textBuffer || null,
+    tool_calls: assistantToolCalls,
+  });
+
+  await executeRoundToolCalls(
+    sessionId,
+    agentConfig,
+    emit,
+    toolCalls,
+    assistantToolCalls,
+    round,
+    userQuestion
+  );
+
+  // If agent asked for clarification, stop this round and wait for user reply
+  const askedClarification = toolCalls.some((tc) => tc.name === "ask_clarification");
+  if (askedClarification) {
+    emit({ type: "done" });
+    return { action: "return", announcementNudgeUsed };
+  }
+
+  // generate_chart: chart is already shown via SSE — GLM often returns empty on the
+  // follow-up summary round; skip that round and close with a short confirmation.
+  const onlyGenerateChart =
+    toolCalls.length > 0 && toolCalls.every((tc) => tc.name === "generate_chart");
+  if (onlyGenerateChart) {
+    const lastTool = lastToolMessage(getHistory(sessionId));
+    if (lastTool?.name === "generate_chart") {
+      const note = chartToolFallbackMessage(lastTool);
+      appendMessages(sessionId, { role: "assistant", content: note });
+      emit({ type: "text", delta: note });
+      emit({ type: "done" });
+      return { action: "return", announcementNudgeUsed };
+    }
+  }
+
+  return { action: "proceed", announcementNudgeUsed };
+}
+
 export async function runAgentLoop(
   message: string,
   sessionId: string,
@@ -964,50 +1294,13 @@ export async function runAgentLoop(
     }
 
     if (awaitingSummary && !waferPlan.skipJbDeterministicSummary) {
-      // ── General pending query mechanism ──────────────────────────────────
-      // When a two-step query reaches the summary round without its second tool
-      // call having been executed (because the summary round blocks tool calls),
-      // the registry detects the gap and executes the follow-up tool here.
-      // We then `continue` so the next iteration has complete data for a proper
-      // LLM summary — rather than an incomplete "I'll query later" response.
-      const lastTool = lastToolMessage(getHistory(sessionId));
-      if (lastTool) {
-        const jbPayload = resolveJbToolPayload(sessionId, String(lastTool.content ?? ""));
-        const pending = detectPendingQuery(
-          userQuestion,
-          lastTool.name ?? "",
-          jbPayload ?? {},
-          getHistory(sessionId)
-        );
-        if (pending) {
-          emit({ type: "status", message: pending.statusLabel });
-          emit({ type: "tool_start", name: pending.toolName, args: pending.args });
-          try {
-            const toolResult = await runTool(pending.toolName, pending.args, {
-              toolResultMaxChars: agentConfig.toolResultMaxChars,
-              history: getHistory(sessionId),
-            });
-            const rawContent =
-              typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult);
-            emit({
-              type: "tool_result",
-              name: pending.toolName,
-              summary: rawContent.slice(0, 200),
-            });
-            appendMessages(sessionId, {
-              role: "tool",
-              name: pending.toolName,
-              tool_call_id: `pending_${Date.now()}`,
-              content: rawContent.slice(0, agentConfig.toolResultMaxChars),
-            });
-            // History now has complete data; loop back so the next round
-            // (still a summary round) has everything needed for a full answer.
-            continue;
-          } catch {
-            // Pending query failed — fall through to deterministic routes / LLM summary
-          }
-        }
-      }
+      const pendingResult = await runPendingQueryFollowUp(
+        sessionId,
+        agentConfig,
+        emit,
+        userQuestion
+      );
+      if (pendingResult.shouldContinue) continue;
 
       // ── Specialised deterministic routes (formatted output + LLM commentary) ──
       // DUT×BIN 自动聚合路由：用户问"哪个 DUT 的 BIN X 最多"，query_jb_bins 已得到
@@ -1037,43 +1330,16 @@ export async function runAgentLoop(
       if (handled) return;
     }
 
-    // Inject nudge into the system prompt for the summary round — avoid a
-    // trailing system message after tool turns, which is non-standard and can
-    // cause empty responses on some providers (SiliconFlow/DeepSeek).
-    const firstUserMsg = history.find((m) => m.role === "user")?.content ?? undefined;
-    const intent = classifyIntent(userQuestion, firstUserMsg);
-    const basePrompt = buildSystemPrompt(manifest, intent) + feedbackInjection;
-    const waferJbNudge =
-      !awaitingSummary && waferPlan.action.kind === "need_jb_lookup"
-        ? `\n\n${WAFER_MAP_JB_LOOKUP_NUDGE}`
-        : "";
-    const dutBinNudge =
-      !awaitingSummary &&
-      userWantsDutBinRelationMap(userQuestion) &&
-      !sessionCanDrawDutBinMap(history, userQuestion)
-        ? `\n\n${DUT_BIN_MAP_JB_LOOKUP_NUDGE}`
-        : "";
-    const dutYieldChartNudge =
-      !awaitingSummary &&
-      userWantsDutYieldChart(userQuestion) &&
-      !history.some((m) => m.role === "tool" && m.name === "inf_site_stats")
-        ? `\n\n${DUT_YIELD_CHART_NUDGE}`
-        : "";
-    const lotOverviewNudge =
-      !awaitingSummary && isLotOverviewQuestion(userQuestion)
-        ? `\n\n${LOT_OVERVIEW_JB_NUDGE}`
-        : "";
-    const summarySuffix =
-      summaryCtx === "dual_source" ? DUAL_SOURCE_SYNTHESIS_NUDGE
-      : summaryCtx === "generic" ? GENERIC_STRUCTURED_SYNTHESIS_NUDGE
-      : "";
-    const announcementNudge =
-      !awaitingSummary && announcementNudgeUsed
-        ? `\n\n${ANNOUNCEMENT_WITHOUT_ACTION_NUDGE}`
-        : "";
-    const systemContent = awaitingSummary
-      ? `${basePrompt}\n\n${SUMMARIZE_NUDGE}${summarySuffix}`
-      : `${basePrompt}${waferJbNudge}${dutBinNudge}${dutYieldChartNudge}${lotOverviewNudge}${announcementNudge}`;
+    const systemContent = buildRoundSystemPrompt(
+      history,
+      userQuestion,
+      manifest,
+      feedbackInjection,
+      awaitingSummary,
+      waferPlan,
+      summaryCtx,
+      announcementNudgeUsed
+    );
 
     const messages: ChatMessage[] = [
       { role: "system", content: systemContent },
@@ -1166,57 +1432,18 @@ export async function runAgentLoop(
       finishReason = "tool_calls";
     }
 
-    // ── Summary-round guard ──────────────────────────────────────────────────
-    // After data tools run, the model must produce text OR call a conclusion
-    // tool (generate_chart / ask_clarification). Data-fetch tools are blocked
-    // to prevent infinite loops; conclusion tools are explicitly allowed.
-    //
-    // Bug A — embedded data-fetch calls: model produced "让我再查一下…" text
-    //   + an embedded tool call. Silently emitting that as `done` misleads user.
-    // Bug B — structured data-fetch tool_calls: providers sometimes emit these
-    //   even without a tool schema, consuming rounds until maxRounds is reached.
-    if (awaitingSummary) {
-      // generate_chart and ask_clarification are legitimate conclusion steps.
-      const isConclusionTool = (name: string) =>
-        name === "generate_chart" || name === "ask_clarification";
-
-      // Structured tool_calls: keep only conclusion tools, discard data tools.
-      if (toolCalls.length > 0) {
-        const kept = toolCalls.filter((tc) => isConclusionTool(tc.name));
-        toolCalls.splice(0, toolCalls.length, ...kept);
-        if (toolCalls.length > 0) finishReason = "tool_calls";
-      }
-
-      // Embedded calls: conclusion tools → merge; data tools → handle below.
-      if (embeddedCalls.length > 0) {
-        const allowedEmb = embeddedCalls.filter((ec) => isConclusionTool(ec.name));
-        const blockedEmb = embeddedCalls.filter((ec) => !isConclusionTool(ec.name));
-
-        if (allowedEmb.length > 0 && toolCalls.length === 0) {
-          // generate_chart / ask_clarification embedded → merge and execute.
-          toolCalls.push(...allowedEmb);
-          finishReason = "tool_calls";
-        } else if (blockedEmb.length > 0 && allowedEmb.length === 0) {
-          // Data-fetch embedded call in summary round.
-          if (!textBuffer.trim()) {
-            if (
-              finishWithJbServerTablesFallback(sessionId, userQuestion, emit)
-            ) {
-              return;
-            }
-            emit({
-              type: "error",
-              message:
-                "模型未返回分析结论（工具数据已在上方）。请点「重试」，或缩小查询范围后重新提问。",
-            });
-            return;
-          }
-          // Has partial text (e.g. "JB 数据为空，让我换个方式：") → emit it as
-          // the answer rather than erroring; the blocked call is discarded.
-          // Fall through to the normal text-output path below.
-        }
-      }
-    }
+    const guardResult = applySummaryRoundToolCallGuard(
+      sessionId,
+      userQuestion,
+      emit,
+      awaitingSummary,
+      toolCalls,
+      embeddedCalls,
+      textBuffer,
+      finishReason
+    );
+    finishReason = guardResult.finishReason;
+    if (guardResult.shouldReturn) return;
 
     if (streamError) {
       if (textBuffer) {
@@ -1226,97 +1453,22 @@ export async function runAgentLoop(
       return;
     }
 
-    if (finishReason !== "tool_calls" || toolCalls.length === 0) {
-      // 首轮模型只承诺"马上查"却未真正调用工具(见 prompt/agentPrompt.ts 硬规则)——
-      // 代码兜底重试一次:不落盘这条未完成的文字,加强系统提示后重新请求,而不是把
-      // "确认性文字"当成最终答案直接结束整轮对话。
-      if (
-        !awaitingSummary &&
-        !announcementNudgeUsed &&
-        round < maxRounds - 1 &&
-        questionHasIdentifiableToolScope(userQuestion)
-      ) {
-        announcementNudgeUsed = true;
-        emit({ type: "status", message: "检测到尚未真正查询，正在重新调用工具…" });
-        continue;
-      }
-      if (awaitingSummary && !textBuffer.trim()) {
-        const lastTool = lastToolMessage(getHistory(sessionId));
-        if (lastTool?.name === "generate_chart") {
-          const note = chartToolFallbackMessage(lastTool);
-          appendMessages(sessionId, { role: "assistant", content: note });
-          emit({ type: "text", delta: note });
-          emit({ type: "done" });
-          return;
-        }
-        if (finishWithJbServerTablesFallback(sessionId, userQuestion, emit)) {
-          return;
-        }
-        emit({
-          type: "error",
-          message:
-            "模型未返回分析结论（工具数据已在上方）。请点「重试」，或缩小查询范围后重新提问。",
-        });
-        return;
-      }
-      // Fact check: verify the LLM's conclusion against tool-result data (summary round only).
-      // Log mismatches server-side only — the text is already streamed to the client, and
-      // appending a visible correction note confuses users (they see contradictory text).
-      if (awaitingSummary && textBuffer.trim()) {
-        const facts = buildFactSheetFromHistory(getHistory(sessionId));
-        const checkResult = factCheckSummaryText(textBuffer, facts);
-        if (!checkResult.ok) {
-          console.warn(`[factchecker/${sessionId}] ${checkResult.issue}`);
-        }
-      }
-      appendMessages(sessionId, { role: "assistant", content: textBuffer });
-      emit({ type: "done" });
-      return;
-    }
-
-    // Record assistant turn with tool_calls
-    const assistantToolCalls: ToolCall[] = toolCalls.map((tc) => ({
-      id: tc.id || `call_${round}_${tc.index}`,
-      type: "function",
-      function: { name: tc.name, arguments: tc.args },
-    }));
-    appendMessages(sessionId, {
-      role: "assistant",
-      content: textBuffer || null,
-      tool_calls: assistantToolCalls,
-    });
-
-    await executeRoundToolCalls(
+    const finalizeOutcome = await finalizeStreamedTurn(
       sessionId,
       agentConfig,
       emit,
-      toolCalls,
-      assistantToolCalls,
       round,
-      userQuestion
+      maxRounds,
+      userQuestion,
+      awaitingSummary,
+      announcementNudgeUsed,
+      finishReason,
+      toolCalls,
+      textBuffer
     );
-
-    // If agent asked for clarification, stop this round and wait for user reply
-    const askedClarification = toolCalls.some((tc) => tc.name === "ask_clarification");
-    if (askedClarification) {
-      emit({ type: "done" });
-      return;
-    }
-
-    // generate_chart: chart is already shown via SSE — GLM often returns empty on the
-    // follow-up summary round; skip that round and close with a short confirmation.
-    const onlyGenerateChart =
-      toolCalls.length > 0 && toolCalls.every((tc) => tc.name === "generate_chart");
-    if (onlyGenerateChart) {
-      const lastTool = lastToolMessage(getHistory(sessionId));
-      if (lastTool?.name === "generate_chart") {
-        const note = chartToolFallbackMessage(lastTool);
-        appendMessages(sessionId, { role: "assistant", content: note });
-        emit({ type: "text", delta: note });
-        emit({ type: "done" });
-        return;
-      }
-    }
+    announcementNudgeUsed = finalizeOutcome.announcementNudgeUsed;
+    if (finalizeOutcome.action === "return") return;
+    if (finalizeOutcome.action === "continue") continue;
 
     // Continue to next round — let user know LLM is processing tool results
     emit({ type: "status", message: "正在分析工具结果…" });
