@@ -37,14 +37,68 @@ import { type WaferMapRoutePlan } from "../../agentWaferMapRoute.js";
 export async function tryRunDutBinMapDirectRoute(
   sessionId: string,
   userQuestion: string,
-  emit: (event: AgentSseEvent) => void
+  emit: (event: AgentSseEvent) => void,
+  agentConfig?: AgentConfig
 ): Promise<boolean> {
-  if (!sessionCanDrawDutBinMap(getHistory(sessionId), userQuestion)) {
+  if (!sessionCanDrawDutBinMap(sessionId, getHistory(sessionId), userQuestion)) {
     return false;
   }
 
   const history = getHistory(sessionId);
-  const drawArgs = buildDutBinMapArgsFromSession(history, userQuestion);
+  let drawArgs = buildDutBinMapArgsFromSession(sessionId, history, userQuestion);
+
+  // lot+slot+bin 已知但缺 device → JB 轻量反查（与 wafer map auto lookup 同思路）
+  if (!String(drawArgs["device"] ?? "").trim() && agentConfig) {
+    const lot = String(drawArgs["lot"] ?? "").trim();
+    if (!lot) return false;
+
+    const cached = getCachedJbPayloadForLot(sessionId, lot);
+    if (cached) {
+      const device = String(cached["device"] ?? "").trim();
+      if (device) drawArgs = { ...drawArgs, device };
+    } else {
+      const queryArgs: Record<string, unknown> = { lot, limit: 1 };
+      emit({ type: "status", message: `正在查询 ${lot} 的设备信息…` });
+      emit({ type: "tool_start", name: "query_jb_bins", args: queryArgs });
+      try {
+        let jbCacheForHistory: string | undefined;
+        const toolResult = await runTool("query_jb_bins", queryArgs, {
+          toolResultMaxChars: agentConfig.toolResultMaxChars,
+          history: getHistory(sessionId),
+          onJbBinsWrapped: (wrapped) => {
+            jbCacheForHistory = storeJbQuerySessionCache(sessionId, wrapped);
+          },
+        });
+        const rawContent =
+          typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult);
+        const historyContent = toolResultForHistory(
+          "query_jb_bins",
+          rawContent,
+          agentConfig.toolResultMaxHistoryChars,
+          agentConfig.toolResultMaxChars,
+          jbCacheForHistory
+        );
+        emit({
+          type: "tool_result",
+          name: "query_jb_bins",
+          summary: historyContent.slice(0, 200),
+        });
+        appendMessages(sessionId, {
+          role: "tool",
+          name: "query_jb_bins",
+          tool_call_id: `dutbin_device_${Date.now()}`,
+          content: historyContent,
+        });
+        const payload =
+          (jbCacheForHistory ? parseJbToolPayload(jbCacheForHistory) : null) ??
+          resolveJbToolPayload(sessionId, historyContent);
+        const device = String(payload?.["device"] ?? "").trim();
+        if (device) drawArgs = { ...drawArgs, device };
+      } catch {
+        return false;
+      }
+    }
+  }
 
   const missing: string[] = [];
   if (!String(drawArgs["device"] ?? "").trim()) missing.push("device");
@@ -68,9 +122,10 @@ export async function tryRunDutBinMapDirectRoute(
   emit({ type: "tool_start", name: "inf_draw_dut_bin_map", args: drawArgs });
 
   try {
-    const raw = await runTool("inf_draw_dut_bin_map", drawArgs, { history });
-    const content =
-      typeof raw === "string" ? raw : JSON.stringify(raw);
+    const raw = await runTool("inf_draw_dut_bin_map", drawArgs, {
+      history: getHistory(sessionId),
+    });
+    const content = typeof raw === "string" ? raw : JSON.stringify(raw);
     emit({
       type: "tool_result",
       name: "inf_draw_dut_bin_map",

@@ -4,6 +4,7 @@ import { extractBinFromUserText, isBinCardAttributionQuestion } from "../jb/agen
 import { extractLotFromUserText } from "../tools/agentInfWaferMapTool.js";
 import { inferDeviceFromText } from "../agentQueryScope.js";
 import { deviceBaseMask } from "../../deviceMask.js";
+import { userWantsDutBinRelationMap } from "../agentDutBinMapRoute.js";
 
 /**
  * 用户是否在问 lot 级 DUT×BIN 集中度（DUT/触点/探针 级，非卡级归因）。
@@ -17,6 +18,14 @@ import { deviceBaseMask } from "../../deviceMask.js";
 export function isDutBinConcentrationQuestion(text: string): boolean {
   const focusBin = extractBinFromUserText(text);
   if (focusBin == null) return false;
+  // 画 DUT×BIN 关系图 / wafermap → inf_draw_dut_bin_map，禁止 lot 聚合代答
+  if (userWantsDutBinRelationMap(text)) return false;
+  if (
+    /(画出|绘制|生成).{0,12}(关系图|wafer\s*map|wafermap|晶圆图)/i.test(text) ||
+    /(关系图|wafermap|晶圆图).{0,20}(dut|bin)/i.test(text)
+  ) {
+    return false;
+  }
   if (/(dut|触点|探针)/i.test(text)) return true;
   if (/(卡|card)/i.test(text)) return !isBinCardAttributionQuestion(text);
   return false;

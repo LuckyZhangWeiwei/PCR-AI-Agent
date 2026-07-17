@@ -815,6 +815,7 @@ async function prepareRunAgentLoopContext(
  * this split.
  */
 function buildRoundSystemPrompt(
+  sessionId: string,
   history: ChatMessage[],
   userQuestion: string,
   manifest: Awaited<ReturnType<typeof fetchOrCacheManifest>> | undefined,
@@ -837,7 +838,7 @@ function buildRoundSystemPrompt(
   const dutBinNudge =
     !awaitingSummary &&
     userWantsDutBinRelationMap(userQuestion) &&
-    !sessionCanDrawDutBinMap(history, userQuestion)
+    !sessionCanDrawDutBinMap(sessionId, history, userQuestion)
       ? `\n\n${DUT_BIN_MAP_JB_LOOKUP_NUDGE}`
       : "";
   const dutYieldChartNudge =
@@ -1233,18 +1234,20 @@ export async function runAgentLoop(
     }
 
     if (!awaitingSummary) {
+      // DUT×BIN 关系图须先于 PRE_LLM（含 query_lot_dut_bin_agg），避免「画出关系图」被 lot 聚合劫持
+      const dutBinDone = await tryRunDutBinMapDirectRoute(
+        sessionId,
+        userQuestion,
+        emit,
+        agentConfig
+      );
+      if (dutBinDone) return;
+
       // 有序直连调度:依次调用,首个返回 true 即结束;各 runner 内部 self-gate。
       // 等价于原 5 条顺序 if(同序、同 runner、同门槛)。范围 B / spec §4.2。
       for (const runDirectRoute of PRE_LLM_DIRECT_ROUTES) {
         if (await runDirectRoute(sessionId, userQuestion, agentConfig, emit)) return;
       }
-
-      const dutBinDone = await tryRunDutBinMapDirectRoute(
-        sessionId,
-        userQuestion,
-        emit
-      );
-      if (dutBinDone) return;
 
       // lot+slot 已知但 device 未知 → 自动 query_jb_bins 取 device，不经 LLM
       if (waferPlan.isWaferMapIntent && waferPlan.action.kind === "need_jb_lookup") {
@@ -1274,7 +1277,12 @@ export async function runAgentLoop(
       if (drawn) return;
     } else if (awaitingSummary && userWantsDutBinRelationMap(userQuestion) && lastTool?.name === "query_jb_bins") {
       // Summary 轮：query_jb_bins 已完成，尝试直接画 DUT×BIN 关系图
-      const dutBinDone = await tryRunDutBinMapDirectRoute(sessionId, userQuestion, emit);
+      const dutBinDone = await tryRunDutBinMapDirectRoute(
+        sessionId,
+        userQuestion,
+        emit,
+        agentConfig
+      );
       if (dutBinDone) return;
       // 无法画图（通常缺少片号）— 给出明确提示而非输出 JB 表
       const msg = "已查询 JB 数据。画 DUT×BIN 关系图还需要**片号（slot/waferId）**，如「第5片」或「slot=14」，以及 BIN 编号。请补充后重试。";
@@ -1343,6 +1351,7 @@ export async function runAgentLoop(
     }
 
     const systemContent = buildRoundSystemPrompt(
+      sessionId,
       history,
       userQuestion,
       manifest,
