@@ -11,6 +11,7 @@
 import type { ChatMessage } from "./agentHistory.js";
 import {
   extractBinFromUserText,
+  extractPassIdFromUserText,
   extractSlotFromUserText,
   isBadBinRankingQuestion,
   isBinCardAttributionQuestion,
@@ -20,6 +21,7 @@ import {
   isLotOverviewQuestion,
   isProbeCardQuestion,
 } from "./jb/agentJbQuestionClassifiers.js";
+import { extractDutFromUserText } from "./agentDutBinMapRoute.js";
 import {
   buildAggregateJbBinsScopeArgs,
   buildJbScopeArgs,
@@ -173,10 +175,17 @@ const CHECKERS: PendingQueryChecker[] = [
       const device = String(payload["device"] ?? "").trim();
       const lot = String(payload["lot"] ?? "").trim();
       if (!device || !lot) return null;
+      const args: Record<string, unknown> = { device, lot, slot };
+      const passId = extractPassIdFromUserText(userQuestion);
+      if (passId != null) args["passId"] = passId;
+      const focusDut = extractDutFromUserText(userQuestion);
+      if (focusDut != null) args["focusDut"] = focusDut;
+      const focusLabel =
+        focusDut != null ? ` DUT${focusDut}` : "";
       return {
         toolName: "query_inf_site_bin_by_dut",
-        args: { device, lot, slot },
-        statusLabel: `正在查询 ${lot} slot ${slot} DUT×BIN 分布…`,
+        args,
+        statusLabel: `正在查询 ${lot} waferId ${slot}${focusLabel} DUT×BIN 分布…`,
       };
     },
   },

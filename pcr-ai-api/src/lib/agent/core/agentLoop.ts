@@ -109,6 +109,8 @@ import {
 import {
   tryRunDutBinAggDirectRoute,
   tryRunDutBinAggAutoRoute,
+  tryRunDutFocusBinsDirectRoute,
+  tryRunDutFocusBinsAutoRoute,
   tryRunUnderperformingDutDirectRoute,
 } from "../dispatch/directRoutes/agentDutAggDirectRoutes.js";
 import {
@@ -1157,6 +1159,7 @@ export async function runAgentLoop(
     tryRunUnderperformingDutDirectRoute,
     tryRunGoodBinValueDirectRoute,
     tryRunProbeCardPerfDirectRoute,
+    tryRunDutFocusBinsDirectRoute,
     tryRunDutBinAggDirectRoute,
     tryRunBinLotRankingDirectRoute,
     tryRunLotListingDirectRoute,
@@ -1303,6 +1306,15 @@ export async function runAgentLoop(
       if (pendingResult.shouldContinue) continue;
 
       // ── Specialised deterministic routes (formatted output + LLM commentary) ──
+      // DUT 聚焦坏 BIN：query_inf_site_bin_by_dut(focusDut) 后直出排行表，避免 Top8 截断假阴性
+      const dutFocusHandled = await tryRunDutFocusBinsAutoRoute(
+        sessionId,
+        userQuestion,
+        agentConfig,
+        emit
+      );
+      if (dutFocusHandled) return;
+
       // DUT×BIN 自动聚合路由：用户问"哪个 DUT 的 BIN X 最多"，query_jb_bins 已得到
       // device/lot，自动调 query_lot_dut_bin_agg，避免 LLM 在总结轮承诺查询却无法执行。
       const dutBinHandled = await tryRunDutBinAggAutoRoute(

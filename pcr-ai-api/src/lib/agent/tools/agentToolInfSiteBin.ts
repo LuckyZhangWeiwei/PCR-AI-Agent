@@ -5,7 +5,73 @@ import {
 import { tryResolveSiteBinByLotDummy } from "../../outputSiteBinByLotDummy.js";
 import { buildInfPath } from "../../buildInfPath.js";
 import { truncateResult } from "./agentToolHandlers.js";
-import { compactSiteBinPasses } from "./agentToolDutBinAgg.js";
+import { compactSiteBinPasses, extractFocusBinDuts } from "./agentToolDutBinAgg.js";
+import { extractFocusDutBins } from "../agentDutFocusBins.js";
+import type { SiteBinPass } from "../../outputSiteBinByLot/types.js";
+
+function parseFocusDut(args: Record<string, unknown>): number | undefined {
+  const raw = args["focusDut"];
+  if (typeof raw === "number" && Number.isFinite(raw)) return Math.round(raw);
+  if (typeof raw === "string" && /^\d+$/.test(raw.trim())) return Number(raw.trim());
+  return undefined;
+}
+
+function parseFocusBinKey(args: Record<string, unknown>): string | undefined {
+  const focusBinRaw = args["focusBin"];
+  const focusBinNum = typeof focusBinRaw === "number" ? Math.round(focusBinRaw) : NaN;
+  return Number.isFinite(focusBinNum) ? `bin${focusBinNum}` : undefined;
+}
+
+function buildInfSiteBinResult(opts: {
+  cardId?: string;
+  device: string;
+  lot: string;
+  slot: number;
+  infPath: string;
+  rawPasses: SiteBinPass[];
+  focusDut?: number;
+  focusBinKey?: string;
+  mapSource?: string;
+  notices?: string[];
+  maxChars: number;
+}): string {
+  const {
+    cardId,
+    device,
+    lot,
+    slot,
+    infPath,
+    rawPasses,
+    focusDut,
+    focusBinKey,
+    mapSource,
+    notices,
+    maxChars,
+  } = opts;
+
+  const passes = compactSiteBinPasses(rawPasses, { focusDut });
+  const focusBinDuts = focusBinKey
+    ? extractFocusBinDuts(passes, focusBinKey)
+    : undefined;
+  const focusDutBins =
+    focusDut != null ? extractFocusDutBins(rawPasses, focusDut) : undefined;
+
+  return truncateResult(
+    {
+      ...(focusDut != null ? { focusDut, focusDutBins } : {}),
+      ...(focusBinDuts?.length ? { focusBin: focusBinKey, focusBinDuts } : {}),
+      cardId,
+      device,
+      lot,
+      slot,
+      infPath,
+      ...(mapSource ? { mapSource } : {}),
+      ...(notices && notices.length > 0 ? { notices } : {}),
+      passes,
+    },
+    maxChars
+  );
+}
 
 export async function toolQueryInfSiteBinByDut(
   args: Record<string, unknown>,
@@ -16,6 +82,8 @@ export async function toolQueryInfSiteBinByDut(
   const slotRaw = args["slot"];
   const slot = typeof slotRaw === "number" ? Math.round(slotRaw) : NaN;
   const cardId = typeof args["cardId"] === "string" ? args["cardId"].trim() : undefined;
+  const focusDut = parseFocusDut(args);
+  const focusBinKey = parseFocusBinKey(args);
 
   if (!device) return "query_inf_site_bin_by_dut 参数错误: device 不能为空";
   if (!lot)    return "query_inf_site_bin_by_dut 参数错误: lot 不能为空";
@@ -34,8 +102,17 @@ export async function toolQueryInfSiteBinByDut(
 
   const dummy = tryResolveSiteBinByLotDummy(infPath, passIds);
   if (dummy) {
-    const result = { cardId, device, lot, slot, infPath, passes: compactSiteBinPasses(dummy.passes) };
-    return truncateResult(result, maxChars);
+    return buildInfSiteBinResult({
+      cardId,
+      device,
+      lot,
+      slot,
+      infPath,
+      rawPasses: dummy.passes,
+      focusDut,
+      focusBinKey,
+      maxChars,
+    });
   }
 
   try {
@@ -44,17 +121,19 @@ export async function toolQueryInfSiteBinByDut(
       { lot, slot, infPath },
       passIds
     );
-    const compacted = {
+    return buildInfSiteBinResult({
       cardId,
       device,
       lot,
       slot,
       infPath,
+      rawPasses: data.passes,
+      focusDut,
+      focusBinKey,
       mapSource: source,
-      ...(notices.length > 0 ? { notices } : {}),
-      passes: compactSiteBinPasses(data.passes),
-    };
-    return truncateResult(compacted, maxChars);
+      notices,
+      maxChars,
+    });
   } catch (e) {
     return truncateResult(
       {

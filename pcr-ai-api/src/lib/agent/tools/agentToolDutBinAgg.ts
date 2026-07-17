@@ -17,6 +17,7 @@ import {
   fetchJbTestRowsForLot,
   buildGoodBinsByPassFromJbRows,
 } from "../../lotUnderperformingDutsResolve.js";
+import { ensureFocusDutInCompactedDuts } from "../agentDutFocusBins.js";
 import { truncateResult } from "./agentToolHandlers.js";
 
 /**
@@ -31,6 +32,7 @@ import { truncateResult } from "./agentToolHandlers.js";
  *  - Bad bins: keep top MAX_DUTS_PER_BIN DUTs sorted by dieCount desc;
  *    append a "moreDuts" note for the remainder.
  *  - Skip bins with totalDieCount = 0.
+ *  - Optional focusDut: always keep that DUT in each bad BIN's duts list.
  */
 const GOOD_BIN_AVG_THRESHOLD = 100; // avg dieCount/DUT above this ≈ good/passing bin
 const MAX_DUTS_PER_BAD_BIN = 8;    // top DUTs shown per bad bin; 8 is enough for DUT comparison
@@ -47,6 +49,11 @@ export function extractFocusBinDuts(passes: unknown[], focusBinKey: string): unk
   }
   return result;
 }
+
+export type CompactSiteBinOpts = {
+  /** 用户聚焦的 DUT：压缩时保留该 DUT，即使不在各 BIN Top8 */
+  focusDut?: number;
+};
 
 /**
  * 单 lot DUT 集中度分析的良品 bin 判定：直接查该 lot/device/passIds 的 JB PASSBIN
@@ -73,7 +80,11 @@ export async function lotDutConcentrationOpts(
   return opts;
 }
 
-export function compactSiteBinPasses(passes: SiteBinPass[]): unknown[] {
+export function compactSiteBinPasses(
+  passes: SiteBinPass[],
+  opts?: CompactSiteBinOpts
+): unknown[] {
+  const focusDut = opts?.focusDut;
   return passes.map((pass) => {
     // Separate good bins (summary only) and bad bins (full DUT breakdown)
     type MappedBin = { bin: string; isGoodBin?: boolean; totalDieCount: number; [k: string]: unknown };
@@ -102,10 +113,22 @@ export function compactSiteBinPasses(passes: SiteBinPass[]): unknown[] {
     const summaryBins = badBins.slice(MAX_BAD_BINS_DETAIL);
 
     const formattedDetail = detailBins.map((b) => {
-      const rawDuts = (b["_duts"] as Array<{ site: number; dieCount: number }>) ?? [];
+      const rawDuts =
+        (b["_duts"] as Array<{ dut: number | "single"; dieCount: number }>) ?? [];
       const sorted = [...rawDuts].sort((a, z) => z.dieCount - a.dieCount);
-      const top = sorted.slice(0, MAX_DUTS_PER_BAD_BIN);
-      const extra = sorted.length - top.length;
+      let top: Array<{ dut: number | "single"; dieCount: number }> = sorted.slice(
+        0,
+        MAX_DUTS_PER_BAD_BIN
+      );
+      if (focusDut != null) {
+        top = ensureFocusDutInCompactedDuts(
+          top,
+          sorted,
+          focusDut,
+          MAX_DUTS_PER_BAD_BIN
+        ) as Array<{ dut: number | "single"; dieCount: number }>;
+      }
+      const extra = Math.max(0, sorted.length - top.length);
       const { _duts: _d, ...rest } = b;
       void _d;
       return { ...rest, duts: top, ...(extra > 0 ? { moreDuts: `另有 ${extra} 个 DUT 未展示` } : {}) };

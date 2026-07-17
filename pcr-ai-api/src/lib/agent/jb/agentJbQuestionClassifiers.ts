@@ -391,6 +391,10 @@ export function isBadBinRankingQuestion(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
   if (extractBinFromUserText(t) != null) return false; // 有具体 bin 号走 bin_trend
+  // 指定 DUT 的「哪个坏 bin 最多」须走 INF focusDut 反查，禁止 JB 跨 lot/device 坏 bin 排行代答
+  if (/\bdut\s*[#:=]?\s*\d{1,3}\b|\bDUT\s*\d{1,3}\b|第\s*\d{1,3}\s*(?:号\s*)?DUT/i.test(t)) {
+    return false;
+  }
   return (
     /主要.*坏\s*bin|坏\s*bin.*主要|坏\s*bin.*排行|排行.*坏\s*bin|坏\s*bin.*排名|排名.*坏\s*bin|top.*bad.*bin|主要.*bad\s*bin|哪些.*坏\s*bin|坏\s*bin.*哪些|坏die.*排行|排行.*坏die/i.test(t) ||
     // fail / failed bin 变体
@@ -623,6 +627,15 @@ export function jbReplySkipsCommentaryLlm(
 export function detectJbReplyMode(userMessage: string): JbReplyMode {
   // 条件性/假设性推理问题（「如果两张卡都...下一步怎么做」）须走 LLM，不能被 equipment 短路
   if (isConditionalReasoningQuestion(userMessage)) return "generic";
+  // 指定 DUT + 片号：JB 无 DUT×BIN，交 INF focusDut / LLM，禁止 single_slot / bad_bin_ranking 代答
+  if (
+    /\bdut\s*[#:=]?\s*\d{1,3}\b|\bDUT\s*\d{1,3}\b|第\s*\d{1,3}\s*(?:号\s*)?DUT/i.test(
+      userMessage
+    ) &&
+    isSingleSlotQuestion(userMessage)
+  ) {
+    return "generic";
+  }
   // Specific attribution/compare modes take priority over generic equipment check
   if (isBinCardAttributionQuestion(userMessage)) return "bin_card_attribution";
   if (isCardYieldCompareQuestion(userMessage)) return "card_yield_compare";

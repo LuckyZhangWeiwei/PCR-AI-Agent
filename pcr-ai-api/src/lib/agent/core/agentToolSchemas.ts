@@ -383,7 +383,9 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "query_inf_site_bin_by_dut",
       description:
-        "读取该片 wafer 的 INF 文件（服务端由 device+lot+slot 自动拼路径），按 pass 统计各 bin 由哪个 DUT(site) 测得及 dieCount。数据来自磁盘 INF，非 Oracle JB；与 query_jb_bins 数据源不同。调用前须已通过 query_jb_bins 获得 device+lot+slot+CARDID。",
+        "读取该片 wafer 的 INF 文件（服务端由 device+lot+slot 自动拼路径），按 pass 统计各 bin 由哪个 DUT(site) 测得及 dieCount。" +
+        "数据来自磁盘 INF，非 Oracle JB；与 query_jb_bins 数据源不同。调用前须已通过 query_jb_bins 获得 device+lot+slot+CARDID。" +
+        "问「某 DUT 哪个坏 bin 最多 / 某 DUT 测出了什么坏 bin」时必须传 focusDut。",
       parameters: {
         type: "object",
         properties: {
@@ -401,6 +403,12 @@ export const TOOL_SCHEMAS = [
             description: "多 pass 对比，如 sort1+2+3 用 [1,3,5]",
           },
           focusBin: { type: "number", description: "结论聚焦某一 BIN" },
+          focusDut: {
+            type: "number",
+            description:
+              "结论聚焦某一 DUT：返回 focusDutBins（该 DUT 各坏 BIN 颗数降序，完整反查，不受 Top8 截断）。" +
+              "用户问「DUT12 哪个坏 bin 最多 / DUT12 都测出了什么坏 bin」时必须传。",
+          },
           cardId:   { type: "string", description: "探针卡 ID（来自 query_jb_bins 的 CARDID），用于结论描述卡号" },
         },
         required: ["device", "lot", "slot"],
