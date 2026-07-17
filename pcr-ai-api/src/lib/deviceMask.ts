@@ -1,19 +1,23 @@
-/**
- * Returns the last 4 characters of a device string (the "mask" product identifier).
- * Returns null if the device value is empty.
- *
- * Example: "WA03P02G" → "P02G"
- */
-export function deviceMask(raw: unknown): string | null {
-  const s = String(raw ?? "").trim();
-  return s.length > 0 ? s.slice(-4) : null;
-}
-
 /** Base segment = part before first `-` or `_` (if any). */
 export function deviceBaseSegment(device: unknown): string {
   const s = String(device ?? "").trim();
   const sepIdx = s.search(/[-_]/);
   return sepIdx >= 0 ? s.slice(0, sepIdx) : s;
+}
+
+/**
+ * Returns the last 4 characters of a device string's base segment (the "mask"
+ * product identifier). Returns null if the device value is empty.
+ *
+ * Suffixes like `-M` / `-N` (or any `-`/`_` separated variant marker) are
+ * stripped before taking the last 4 chars, so the mask reflects the product
+ * code and not the variant marker.
+ *
+ * Example: "WA03P02G" → "P02G"; "WA03P02G-M" → "P02G" (not "02G-M"/"2G-M").
+ */
+export function deviceMask(raw: unknown): string | null {
+  const s = deviceBaseSegment(raw);
+  return s.length > 0 ? s.slice(-4) : null;
 }
 
 /** Mask = last 4 chars of base segment (agent / filter semantics). */
