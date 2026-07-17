@@ -211,6 +211,9 @@ export function parseInfcontrolLayerBinsV3Query(
     // Exclude internal/test lots starting with kk, gg, or c (case-insensitive)
     clauses.push(`NOT REGEXP_LIKE(t1.LOT, '^(kk|gg|c)', 'i')`);
 
+    // Exclude PASSID 2/4/6 (not valid sort stages) from JB STAR data source
+    clauses.push(`t2.PASSID NOT IN (2, 4, 6)`);
+
     strEqTrimCi("device", "t1.DEVICE", "ic3_device");
     strEqTrimCi("lot", "t1.LOT", "ic3_lot");
     strEqTrimCi("meslot", "t1.MESLOT", "ic3_meslot");

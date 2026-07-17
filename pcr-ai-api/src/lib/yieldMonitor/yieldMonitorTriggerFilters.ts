@@ -191,6 +191,9 @@ export function parseYieldMonitorTriggerV3Query(
     // Exclude internal/test lots starting with kk, gg, or c (case-insensitive)
     clauses.push(`NOT REGEXP_LIKE(t.LOTID, '^(kk|gg|c)', 'i')`);
 
+    // Exclude PASS 2/4/6 (not valid sort stages) from Yield Monitor data source
+    clauses.push(`t.PASS NOT IN (2, 4, 6)`);
+
     const strEqTrimCi = (param: string, columnSql: string, bindName: string) => {
       const v = firstString(firstQueryValue(q, param));
       if (v === undefined) return;
@@ -332,6 +335,9 @@ export function parseYieldMonitorTriggerActivityQuery(
     }
 
     clauses.push(`NOT REGEXP_LIKE(t.LOTID, '^(kk|gg|c)', 'i')`);
+
+    // Exclude PASS 2/4/6 (not valid sort stages) from Yield Monitor data source
+    clauses.push(`t.PASS NOT IN (2, 4, 6)`);
 
     const strEqTrimCi = (param: string, columnSql: string, bindName: string) => {
       const v = firstString(firstQueryValue(q, param));

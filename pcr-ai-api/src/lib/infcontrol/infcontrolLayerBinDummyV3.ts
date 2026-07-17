@@ -25,7 +25,8 @@ export function filterInfcontrolLayerBinV3DummyRowsMatching(
       String(r.LAYERNAME ?? "").trim().toUpperCase() !== "ABANDONED" &&
       !["kk", "gg", "c"].some((pfx) =>
         String(r.LOT ?? "").trim().toLowerCase().startsWith(pfx)
-      )
+      ) &&
+      ![2, 4, 6].includes(Number(r.PASSID))
     );
   });
 

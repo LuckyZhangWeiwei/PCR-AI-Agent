@@ -320,7 +320,8 @@ function filterYieldMonitorDummyRowsBeforeTime(
       String(r.TYPE).trim().toLowerCase() === YIELD_MONITOR_V3_TYPE_SCOPE &&
       !["kk", "gg", "c"].some((pfx) =>
         String(r.LOTID ?? "").trim().toLowerCase().startsWith(pfx)
-      )
+      ) &&
+      ![2, 4, 6].includes(Number(r.PASS))
   );
 
   const ci = (param: keyof YieldMonitorTriggerDummyRow, key: string) => {
@@ -384,10 +385,11 @@ export function yieldMonitorDummyTimeOffsetMs(
 function filterYieldMonitorDummyRowsBeforeTimeActivity(
   applied: Record<string, unknown>
 ): YieldMonitorTriggerDummyRow[] {
-  let rows = [...getYieldMonitorTriggerDummyRowsInternal()].filter((r) =>
-    !["kk", "gg", "c"].some((pfx) =>
-      String(r.LOTID ?? "").trim().toLowerCase().startsWith(pfx)
-    )
+  let rows = [...getYieldMonitorTriggerDummyRowsInternal()].filter(
+    (r) =>
+      !["kk", "gg", "c"].some((pfx) =>
+        String(r.LOTID ?? "").trim().toLowerCase().startsWith(pfx)
+      ) && ![2, 4, 6].includes(Number(r.PASS))
   );
 
   const ci = (param: keyof YieldMonitorTriggerDummyRow, key: string) => {
