@@ -89,8 +89,14 @@ interface MaskableMessage {
 export function maskRequestMessages(
   messages: unknown[],
   dict: MaskingDictionary
-): { messages: unknown[]; stats: MaskingReplaceStats } {
+): {
+  messages: unknown[];
+  stats: MaskingReplaceStats;
+  /** Real device values masked anywhere in this batch, deduped and sorted. */
+  realDeviceValues: string[];
+} {
   let stats = emptyMaskingStats();
+  const realDeviceValues = new Set<string>();
   const nextMessages = messages.map((raw) => {
     const m = raw as MaskableMessage;
     const next: MaskableMessage = { ...m };
@@ -98,12 +104,14 @@ export function maskRequestMessages(
       const r = dict.maskWithStats(m.content);
       next.content = r.text;
       stats = addMaskingStats(stats, r.stats);
+      for (const v of r.realDeviceValues) realDeviceValues.add(v);
     }
     if (Array.isArray(m.tool_calls)) {
       next.tool_calls = m.tool_calls.map((tc) => {
         if (!tc?.function?.arguments) return tc;
         const r = dict.maskWithStats(tc.function.arguments);
         stats = addMaskingStats(stats, r.stats);
+        for (const v of r.realDeviceValues) realDeviceValues.add(v);
         return {
           ...tc,
           function: { ...tc.function, arguments: r.text },
@@ -112,7 +120,11 @@ export function maskRequestMessages(
     }
     return next;
   });
-  return { messages: nextMessages, stats };
+  return {
+    messages: nextMessages,
+    stats,
+    realDeviceValues: [...realDeviceValues].sort(),
+  };
 }
 
 export async function streamSiliconFlow(
@@ -142,6 +154,11 @@ export async function streamSiliconFlow(
       deviceReplacements: masked.stats.deviceReplacements,
       nxpReplacements: masked.stats.nxpReplacements,
       model: request.model,
+      // Full masked payload actually sent to the LLM + the real device values it
+      // came from — deliberately logged on request (see agentDataMaskingAudit.ts
+      // header); this file is sensitive once these fields are populated.
+      outboundMessages: masked.messages,
+      realDeviceValues: masked.realDeviceValues,
     });
   }
 

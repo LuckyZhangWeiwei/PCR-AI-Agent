@@ -137,10 +137,12 @@ describe("agentDataMasking", () => {
       maskWithStats: (t: string) => ({
         text: t.replace(/FOO/g, "DEV_0123456789ab"),
         stats: { deviceReplacements: 1, nxpReplacements: 0 },
+        realDeviceValues: ["FOO"],
       }),
       unmaskWithStats: (t: string) => ({
         text: t.replace(/DEV_0123456789ab/g, "FOO"),
         stats: { deviceReplacements: 1, nxpReplacements: 0 },
+        realDeviceValues: ["FOO"],
       }),
       meta: { ok: true, size: 1, builtAt: "2026-07-17T00:00:00.000Z" },
     };

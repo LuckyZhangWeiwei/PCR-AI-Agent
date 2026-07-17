@@ -19,6 +19,12 @@ const TEST_CONFIG_PATH = join(
 process.env.RUNTIME_CONFIG_PATH = TEST_CONFIG_PATH;
 writeFileSync(TEST_CONFIG_PATH, JSON.stringify({ dataMaskingEnabled: true }), "utf-8");
 
+// Real Oracle isn't reachable in this test run; force the masking dictionary
+// to build from the in-memory dummy rows so device masking actually has
+// values to work with (otherwise the dict build fails and dict.ok stays false).
+process.env.YIELD_MONITOR_TRIGGERS_DUMMY = "true";
+process.env.INFCONTROL_LAYER_BINS_DUMMY = "true";
+
 test.after(() => {
   delete process.env.RUNTIME_CONFIG_PATH;
   if (existsSync(TEST_CONFIG_PATH)) unlinkSync(TEST_CONFIG_PATH);
@@ -146,6 +152,73 @@ test("streamSiliconFlow unmasks a COMPANY_X token back to NXP in streamed text b
     assert.ok((outbound?.nxpReplacements ?? 0) >= 1);
     const inbound = lines.find((l) => l.event === "inbound_unmask");
     assert.ok((inbound?.nxpTokensRestored ?? 0) >= 1);
+  } finally {
+    mock.restore();
+    if (prevAuditPath === undefined) delete process.env.AGENT_DATA_MASKING_AUDIT_PATH;
+    else process.env.AGENT_DATA_MASKING_AUDIT_PATH = prevAuditPath;
+    if (existsSync(auditPath)) unlinkSync(auditPath);
+  }
+});
+
+test("outbound_mask audit record carries the masked payload sent to the LLM and the real device values behind it", async () => {
+  const { resetMaskingDictionaryCacheForTest } = await import(
+    "../src/lib/agent/agentDataMasking.js"
+  );
+  const { getYieldMonitorTriggerDummyRows } = await import(
+    "../src/lib/yieldMonitor/yieldMonitorTriggerDummy.js"
+  );
+  resetMaskingDictionaryCacheForTest();
+  const realDevice = String(getYieldMonitorTriggerDummyRows()[0]?.DEVICE ?? "").trim();
+  assert.ok(realDevice.length > 0, "dummy rows must contain at least one DEVICE value");
+
+  const sse =
+    `data: {"choices":[{"delta":{"content":"ok"},"finish_reason":null}]}\n\n` +
+    `data: [DONE]\n\n`;
+  const mock = mockStreamedResponse(sse);
+  const auditPath = join(
+    tmpdir(),
+    `pcr-ai-agent-stream-masking-audit-outbound-${process.pid}-${Date.now()}.jsonl`
+  );
+  const prevAuditPath = process.env.AGENT_DATA_MASKING_AUDIT_PATH;
+  process.env.AGENT_DATA_MASKING_AUDIT_PATH = auditPath;
+  try {
+    const { streamSiliconFlow } = await import("../src/lib/agent/core/agentStream.js");
+    const { resolveAgentConfig } = await import("../src/lib/agent/agentConfig.js");
+    const config = resolveAgentConfig({
+      apiKey: "sk-test",
+      apiBase: "https://api.siliconflow.cn/v1",
+      model: "test-model",
+    });
+
+    await streamSiliconFlow(
+      {
+        model: "test-model",
+        messages: [{ role: "user", content: `设备 ${realDevice} 良率偏低` }],
+      },
+      config,
+      () => {}
+    );
+
+    const { waitForPendingDataMaskingAuditWrites } = await import(
+      "../src/lib/agent/agentDataMaskingAudit.js"
+    );
+    await waitForPendingDataMaskingAuditWrites();
+    const lines = readFileSync(auditPath, "utf-8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l) as Record<string, unknown>);
+    const outbound = lines.find((l) => l["event"] === "outbound_mask")!;
+    assert.ok(outbound, "outbound_mask record must be written");
+
+    // The real device value must show up in realDeviceValues (proving the audit
+    // record can be used to verify the mapping)...
+    assert.deepEqual(outbound["realDeviceValues"], [realDevice]);
+    // ...while the logged outbound payload itself must contain only the token,
+    // never the real value (it's what was actually sent to the LLM).
+    const outboundMessages = outbound["outboundMessages"] as { content: string }[];
+    const sentContent = outboundMessages[0]?.content ?? "";
+    assert.ok(!sentContent.includes(realDevice), "outboundMessages must not contain the real device value");
+    assert.match(sentContent, /DEV_[0-9a-f]+/);
   } finally {
     mock.restore();
     if (prevAuditPath === undefined) delete process.env.AGENT_DATA_MASKING_AUDIT_PATH;

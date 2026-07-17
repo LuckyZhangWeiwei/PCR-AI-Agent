@@ -1,7 +1,15 @@
 // pcr-ai-api/src/lib/agent/agentDataMaskingAudit.ts
 /**
  * Timestamped audit evidence for Agent device/NXP masking.
- * Never logs real device values or raw message content — only counts / meta.
+ *
+ * By explicit request this now also logs, on outbound_mask, the full masked
+ * message payload actually sent to the LLM AND the real (unmasked) device
+ * values it was derived from (`outboundMessages` / `realDeviceValues`) — so
+ * the exact real→token mapping for every request can be verified. This is a
+ * deliberate trade-off against the masking feature's own goal: this file is
+ * therefore SENSITIVE (contains real device identifiers) once populated and
+ * must be treated like any other file holding real device data — restrict
+ * filesystem access, do not forward it off-box, don't attach it to tickets.
  *
  * Default file: <cwd>/logs/agent-data-masking-audit.jsonl
  * Override: AGENT_DATA_MASKING_AUDIT_PATH
@@ -32,6 +40,16 @@ export interface DataMaskingAuditRecord {
   nxpTokensRestored?: number;
   toolCallArgsUnmasked?: number;
   model?: string;
+  /**
+   * outbound_mask only: full masked message array actually sent to the LLM.
+   * SENSITIVE — see file header. Never populated on other event types.
+   */
+  outboundMessages?: unknown;
+  /**
+   * outbound_mask only: the real (unmasked) device values this request's
+   * DEV_ tokens came from, deduped and sorted. SENSITIVE — see file header.
+   */
+  realDeviceValues?: string[];
 }
 
 function auditFileEnabled(): boolean {
@@ -54,7 +72,9 @@ export function waitForPendingDataMaskingAuditWrites(): Promise<void> {
 }
 
 /**
- * Append one JSONL evidence line + mirror to console. Never includes secrets.
+ * Append one JSONL evidence line + mirror to console. `outboundMessages` /
+ * `realDeviceValues` (outbound_mask only) DO carry real device data — see the
+ * file header before changing what callers pass in `fields`.
  * File I/O is async/fire-and-forget — this runs on every streamSiliconFlow call
  * (a per-request hot path), so it must never block the event loop.
  */

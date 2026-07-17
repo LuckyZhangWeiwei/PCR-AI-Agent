@@ -32,15 +32,22 @@ export interface MaskingDictionaryMeta {
   builtAt: string;
 }
 
+export interface MaskingWithStatsResult {
+  text: string;
+  stats: MaskingReplaceStats;
+  /** Real (unmasked) device values replaced/restored in this call, deduped and sorted. */
+  realDeviceValues: string[];
+}
+
 export interface MaskingDictionary {
   /** Replace real device values / NXP with tokens in outbound text. */
   mask(text: string): string;
   /** Replace tokens back to real device values / NXP in inbound text (whole string, no streaming). */
   unmask(text: string): string;
-  /** Same as mask, but returns replacement counts for audit evidence. */
-  maskWithStats(text: string): { text: string; stats: MaskingReplaceStats };
-  /** Same as unmask, but returns restore counts for audit evidence. */
-  unmaskWithStats(text: string): { text: string; stats: MaskingReplaceStats };
+  /** Same as mask, but also returns replacement counts + the real values that were masked (for audit evidence). */
+  maskWithStats(text: string): MaskingWithStatsResult;
+  /** Same as unmask, but also returns restore counts + the real values that were restored (for audit evidence). */
+  unmaskWithStats(text: string): MaskingWithStatsResult;
   meta: MaskingDictionaryMeta;
 }
 
@@ -201,14 +208,16 @@ export function resetMaskingDictionaryCacheForTest(): void {
 function maskWithStatsState(
   text: string,
   dict: DictionaryState
-): { text: string; stats: MaskingReplaceStats } {
+): MaskingWithStatsResult {
   let out = text;
   let deviceReplacements = 0;
+  const realDeviceValues = new Set<string>();
   if (dict.matchRegex) {
     out = out.replace(dict.matchRegex, (m) => {
       const token = dict.realToToken.get(m);
       if (token) {
         deviceReplacements += 1;
+        realDeviceValues.add(m);
         return token;
       }
       return m;
@@ -224,20 +233,23 @@ function maskWithStatsState(
   return {
     text: out,
     stats: { deviceReplacements, nxpReplacements },
+    realDeviceValues: [...realDeviceValues].sort(),
   };
 }
 
 function unmaskWithStatsState(
   text: string,
   dict: DictionaryState
-): { text: string; stats: MaskingReplaceStats } {
+): MaskingWithStatsResult {
   let out = text;
   let deviceReplacements = 0;
+  const realDeviceValues = new Set<string>();
   if (dict.tokenRegex) {
     out = out.replace(dict.tokenRegex, (m) => {
       const real = dict.tokenToReal.get(m);
       if (real) {
         deviceReplacements += 1;
+        realDeviceValues.add(real);
         return real;
       }
       return m;
@@ -249,6 +261,7 @@ function unmaskWithStatsState(
   return {
     text: out,
     stats: { deviceReplacements, nxpReplacements },
+    realDeviceValues: [...realDeviceValues].sort(),
   };
 }
 
