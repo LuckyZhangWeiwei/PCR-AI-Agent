@@ -144,11 +144,18 @@ export function DataTable({
     const active = Object.entries(columnFilters).filter(([, v]) => v !== "");
     if (!active.length) return rows;
     return rows.filter((row) =>
-      active.every(([col, val]) =>
-        formatCellWithOverride(col, cellValueForColumn(row, col))
+      active.every(([col, val]) => {
+        const raw = cellValueForColumn(row, col);
+        if (typeof raw === "number") {
+          // Numeric columns filter by exact value, not substring
+          // (typing "1" must not also match 11 / 21).
+          const want = Number(val.trim());
+          return !Number.isNaN(want) && raw === want;
+        }
+        return formatCellWithOverride(col, raw)
           .toLowerCase()
-          .includes(val.toLowerCase())
-      )
+          .includes(val.toLowerCase());
+      })
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, columnFilters, filterRow, columnFormatters]);
