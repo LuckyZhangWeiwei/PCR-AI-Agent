@@ -2,6 +2,15 @@
 
 ---
 
+## 2026-07-18 — 同步 SDD Task 1 报告文件
+
+**完成内容：**
+- `.superpowers/sdd/task-1-report.md`：内容与工作区不同步（残留旧一轮"拆分 apiManifest.ts"报告文本），更新为与已提交的 `7d9a579`（manifest：注册 agent chat/feedback + admin config 端点）一致的报告内容。纯文档同步，无代码改动。
+
+**测试：** 无代码变更，未运行测试。
+
+---
+
 ## 2026-07-18 — agentLoop.ts 继续拆分（Round 4）
 
 **完成内容：**
