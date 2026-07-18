@@ -4,6 +4,7 @@ import { infcontrolManifestEndpoints } from "./infcontrolManifestEndpoints.js";
 import { yieldMonitorManifestEndpoints } from "./yieldMonitorManifestEndpoints.js";
 import { agentManifestEndpoints } from "./agentManifestEndpoints.js";
 import { adminManifestEndpoints } from "./adminManifestEndpoints.js";
+import { infAnalysisManifestEndpoints } from "./infAnalysisManifestEndpoints.js";
 import {
   miscManifestEndpoints,
   deprecatedManifestEndpoints,
@@ -22,6 +23,7 @@ export const apiManifest = {
     ...miscManifestEndpoints,
     ...infcontrolManifestEndpoints,
     ...yieldMonitorManifestEndpoints,
+    ...infAnalysisManifestEndpoints,
     ...agentManifestEndpoints,
     ...adminManifestEndpoints,
   ],
