@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>pcr-ai-api · API Docs</title>
+  <link rel="stylesheet" href="./vendor/swagger-ui.css" />
+  <style>
+    body { margin: 0; background: #1b1b1b; }
+  </style>
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="./vendor/swagger-ui-bundle.js"></script>
+  <script src="./vendor/swagger-ui-standalone-preset.js"></script>
+  <script>
+    window.onload = function () {
+      window.ui = SwaggerUIBundle({
+        url: "/openapi.json",
+        dom_id: "#swagger-ui",
+        presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+        layout: "StandaloneLayout",
+        tryItOutEnabled: true,
+      });
+    };
+  </script>
+</body>
+</html>

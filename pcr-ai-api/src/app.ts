@@ -1,6 +1,7 @@
 import "./polyfillUtilIsDate.js";
 import express, { type ErrorRequestHandler } from "express";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { sendAgentError } from "./lib/agentResponse.js";
@@ -54,6 +55,12 @@ export function createApp() {
   );
   /** 本地 v3 联调页：`public/v3-api-tester.html` → `GET /v3-api-tester.html` */
   app.use(express.static(publicDir));
+
+  /** Swagger UI 静态资源（不依赖 CDN）：`GET /api-docs/` 渲染 public/api-docs/index.html，指向 GET /openapi.json。 */
+  const swaggerUiDistDir = path.dirname(
+    createRequire(import.meta.url).resolve("swagger-ui-dist")
+  );
+  app.use("/api-docs/vendor", express.static(swaggerUiDistDir));
 
   /** 晶圆图 HTML 文件：`GET /wafermaps/<filename>.html` */
   const waferMapsDir = process.env["WAFERMAPS_DIR"] ?? path.join(process.cwd(), "wafermaps");

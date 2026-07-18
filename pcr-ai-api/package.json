@@ -23,6 +23,7 @@
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
     "oracledb": "5.5.0",
+    "swagger-ui-dist": "^5.32.9",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
