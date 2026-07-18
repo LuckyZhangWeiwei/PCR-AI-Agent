@@ -230,10 +230,11 @@ export const yieldMonitorManifestEndpoints = [
       "Combined v3 list + trigger aggregate(s) in one request: same filters/limit/rows as GET .../yield-monitor-triggers/v3, plus an aggs query param requesting one or more dimension aggregations. Oracle: one probeweb connection reused for the list query and each aggregate query (own GROUP BY SQL, same fixed WHERE incl. TYPE=delta_diff). Dummy: aggregates computed in Node over the same in-memory matching rows.",
     queryParameters: [
       {
-        name: "hostname, device, lotId, wafer, triggerLabel, probeCard, pass, id, timeStamp*, limit, includeProbeCardSummary",
+        name: "hostname, platform, device, lotId, wafer, probeCard, mask, probeCardType, pass, timeStamp*, limit",
         type: "mixed",
         optional: true,
-        note: "Identical to yield-monitor-triggers/v3 (see that entry); type query parameter still not supported",
+        note:
+          "Identical to yield-monitor-triggers/v3's actual accepted filters (parseYieldMonitorTriggerV3Query — no triggerLabel/id/includeProbeCardSummary on v3; this /combined route never emits probeCardSummary/hostnameSummary either, those are v1-only). platform is one of J750, FLEX, UFLEX, PS16, MST, 93K (case-insensitive). type query parameter still not supported.",
       },
       {
         name: "aggs",
@@ -246,7 +247,7 @@ export const yieldMonitorManifestEndpoints = [
     responseShape: {
       meta: "{ apiVersion: '3', requestId, combinedPath }",
       limit: "number",
-      limitMax: "number (500)",
+      limitMax: "number (2000)",
       orderBy: "string (TIME_STAMP DESC NULLS LAST)",
       filters: "object (echo of applied query params, incl. limit)",
       count: "number",
@@ -289,10 +290,11 @@ export const yieldMonitorManifestEndpoints = [
           "ISO 8601; window upper bound (alias: timeStampTo). Defaults to [now − 1 UTC year, now] when neither bound is supplied; max span capped (week buckets: PERIOD_ALARM_MAX_WEEK_BUCKETS).",
       },
       {
-        name: "hostname, device, lotId, wafer, triggerLabel, probeCard, pass, id",
+        name: "hostname, platform, device, lotId, wafer, probeCard, mask, probeCardType, pass",
         type: "mixed",
         optional: true,
-        note: "Identical filter semantics to yield-monitor-triggers/v3 (TYPE still fixed to delta_diff; type query parameter not supported)",
+        note:
+          "Same filter set as yield-monitor-triggers/v3's actual accepted filters (parseYieldMonitorTriggerV3Query — no triggerLabel/id). TYPE still fixed to delta_diff; type query parameter not supported. platform is one of J750, FLEX, UFLEX, PS16, MST, 93K (case-insensitive).",
       },
     ],
     responseShape: {

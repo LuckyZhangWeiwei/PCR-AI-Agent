@@ -695,7 +695,7 @@ export const infcontrolManifestEndpoints = [
     responseShape: {
       meta: "{ apiVersion: '4', requestId, combinedPath }",
       limit: "number",
-      limitMax: "number (500)",
+      limitMax: "number (2000, API_V3_LIST_LIMIT_MAX)",
       orderBy: "string (TESTEND DESC NULLS LAST, SLOT, PASSID, PASSNUM)",
       filters: "object (echo of applied query params, incl. limit)",
       count: "number",
