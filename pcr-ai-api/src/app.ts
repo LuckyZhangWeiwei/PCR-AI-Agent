@@ -10,6 +10,7 @@ import { adminRouter } from "./routes/admin.js";
 import { agentRouter } from "./routes/agent.js";
 import { apiRouter } from "./routes/api.js";
 import { healthRouter } from "./routes/health.js";
+import { openapiRouter } from "./routes/openapiRoutes.js";
 
 function getStatusCode(err: unknown): number {
   if (
@@ -37,6 +38,7 @@ export function createApp() {
   app.use(express.json());
 
   app.use(healthRouter);
+  app.use(openapiRouter);
   app.use("/api/v1", apiRouter);
   /** Same router as **`/api/v1`**; **`/api/v3/manifest`** returns v3-focused paths (no `/api/v1` in catalog URLs). */
   app.use("/api/v3", apiRouter);
