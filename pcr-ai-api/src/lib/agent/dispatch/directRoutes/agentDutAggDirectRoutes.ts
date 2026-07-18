@@ -70,11 +70,17 @@ function resolveDeviceLotForDutFocus(
     device = String(cached["device"] ?? "").trim();
   }
   if (!device) {
+    // 仅信任与 lot 匹配的历史 query_jb_bins 调用参数，避免会话中最近一次
+    // query_jb_bins 是其它 lot 时把该 lot 的 device 错配到当前 lot 上。
     const jbArgs = findLastToolCallArgs(history, "query_jb_bins");
-    device = String(jbArgs?.["device"] ?? "").trim();
+    if (jbArgs && String(jbArgs["lot"] ?? "").trim().toUpperCase() === lot.toUpperCase()) {
+      device = String(jbArgs["device"] ?? "").trim();
+    }
   }
   if (!device) {
-    const payload = resolveJbToolPayload(sessionId, "");
+    // 明确传 preferredLot：resolveJbToolPayload 在无 preferredLot 时会无条件
+    // 返回会话缓存 payload，可能是另一个 lot 的 device。
+    const payload = resolveJbToolPayload(sessionId, "", { preferredLot: lot });
     device = String(payload?.["device"] ?? "").trim();
   }
   if (!device) return null;
@@ -175,13 +181,16 @@ export async function tryRunDutFocusBinsDirectRoute(
   const scope = resolveDeviceLotForDutFocus(sessionId, userQuestion, history);
   if (!scope) return false;
 
-  const passId = extractPassIdFromUserText(userQuestion) ?? 1;
+  // 用户未指明 pass 时不要传 passId=1——底层工具「未传 passId/passIds」会默认
+  // 查全部 sort1/2/3（[1,3,5]），显式传 1 会把范围收窄到单个 pass，可能漏掉
+  // 集中在 pass3/pass5 的坏 bin，产生「未测出坏 BIN」的假阴性结论。
+  const passId = extractPassIdFromUserText(userQuestion) ?? undefined;
   const queryArgs: Record<string, unknown> = {
     device: scope.device,
     lot: scope.lot,
     slot,
-    passId,
     focusDut,
+    ...(passId != null ? { passId } : {}),
   };
   emit({
     type: "status",
@@ -242,7 +251,8 @@ export async function tryRunDutFocusBinsAutoRoute(
   const history = getHistory(sessionId);
   const lastTool = lastToolMessage(history);
   const slot = extractSlotFromUserText(userQuestion);
-  const passId = extractPassIdFromUserText(userQuestion) ?? 1;
+  // 未指明 pass 时留空，让底层工具默认查全部 [1,3,5]，避免漏掉 pass3/pass5 的坏 bin。
+  const passId = extractPassIdFromUserText(userQuestion) ?? undefined;
 
   if (lastTool?.name === "query_inf_site_bin_by_dut") {
     const parsed = parseFocusDutBinsFromToolResult(String(lastTool.content ?? ""));
@@ -271,8 +281,8 @@ export async function tryRunDutFocusBinsAutoRoute(
     device,
     lot,
     slot,
-    passId,
     focusDut,
+    ...(passId != null ? { passId } : {}),
   };
   emit({
     type: "status",

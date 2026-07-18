@@ -39,3 +39,37 @@ test("isDutBinConcentrationQuestion still matches count asks without map intent"
     isDutBinConcentrationQuestion("NF13607.1R 哪个 DUT 测出 BIN61 最多")
   );
 });
+
+test("buildDutBinMapArgsFromSession does not leak device from a different lot in history (regression)", () => {
+  // Session previously queried lot A (device OLDDEV1); user now switches to a
+  // brand-new lot B that hasn't had its own query_jb_bins this session.
+  const history = [
+    {
+      role: "tool" as const,
+      name: "query_jb_bins",
+      content: JSON.stringify({ device: "OLDDEV1", lot: "NF11111.1A" }),
+    },
+  ];
+  const q = "Lot: NF99999.9Z 画出第3片 dut5 和 bin20 的关系图";
+
+  const args = buildDutBinMapArgsFromSession("sess-cross-lot", history, q);
+  assert.equal(String(args["lot"]).toUpperCase(), "NF99999.9Z");
+  // Must NOT silently reuse the old lot's device for the new lot — leave empty
+  // so the caller's JB auto-lookup fetches the correct device instead.
+  assert.equal(args["device"], "");
+});
+
+test("buildDutBinMapArgsFromSession still uses history device when lot matches (no regression)", () => {
+  const history = [
+    {
+      role: "tool" as const,
+      name: "query_jb_bins",
+      content: JSON.stringify({ device: "DEV1", lot: "NF22222.1A" }),
+    },
+  ];
+  const q = "画出第3片 dut5 和 bin20 的关系图"; // no explicit lot — falls back to history lot
+
+  const args = buildDutBinMapArgsFromSession("sess-same-lot", history, q);
+  assert.equal(String(args["lot"]).toUpperCase(), "NF22222.1A");
+  assert.equal(args["device"], "DEV1");
+});

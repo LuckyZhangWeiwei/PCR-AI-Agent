@@ -148,6 +148,51 @@ export function buildFocusDutBinsMarkdown(
   return lines.join("\n").trim();
 }
 
+/**
+ * 从 `"key":` 开始扫描一个完整的 JSON 值（对象/数组按括号配对，标量按下一个
+ * `,`/`}`/`]` 截断）。truncateResult() 对超长结果按字符数硬切并追加中文提示
+ * 后缀，不是合法 JSON 收尾；focusDut/focusDutBins 在 buildInfSiteBinResult()
+ * 中被放在对象最前面，即使 passes 被截断，这两个字段本身通常仍然完整——
+ * 因此逐字段提取比对整段 raw 做 JSON.parse 更抗截断。
+ */
+function extractJsonValueAfterKey(text: string, key: string): string | null {
+  const marker = `"${key}":`;
+  const markerIdx = text.indexOf(marker);
+  if (markerIdx < 0) return null;
+  let i = markerIdx + marker.length;
+  while (i < text.length && /\s/.test(text[i]!)) i++;
+  const start = i;
+  const openChar = text[i];
+  if (openChar !== "{" && openChar !== "[") {
+    let end = i;
+    while (end < text.length && !",}]".includes(text[end]!)) end++;
+    return text.slice(start, end);
+  }
+  const closeChar = openChar === "{" ? "}" : "]";
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (; i < text.length; i++) {
+    const ch = text[i]!;
+    if (inString) {
+      if (escape) escape = false;
+      else if (ch === "\\") escape = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === openChar) depth++;
+    else if (ch === closeChar) {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return null; // unbalanced — truncated mid-value, can't recover
+}
+
 /** 从工具 JSON 字符串解析 focusDutBins（若服务端已写入）。 */
 export function parseFocusDutBinsFromToolResult(
   raw: string
@@ -158,22 +203,32 @@ export function parseFocusDutBinsFromToolResult(
   lot?: string;
   slot?: number;
 } | null {
+  const jsonStart = raw.indexOf("{");
+  if (jsonStart < 0) return null;
+  const body = raw.slice(jsonStart);
+
+  const focusDutRaw = extractJsonValueAfterKey(body, "focusDut");
+  const focusDutBinsRaw = extractJsonValueAfterKey(body, "focusDutBins");
+  if (!focusDutRaw || !focusDutBinsRaw) return null;
+
   try {
-    const jsonStart = raw.indexOf("{");
-    if (jsonStart < 0) return null;
-    const parsed = JSON.parse(raw.slice(jsonStart).replace(/…\(truncated\)$/, "")) as Record<
-      string,
-      unknown
-    >;
-    const focusDut = parsed["focusDut"];
-    const focusDutBins = parsed["focusDutBins"];
+    const focusDut = JSON.parse(focusDutRaw) as unknown;
+    const focusDutBins = JSON.parse(focusDutBinsRaw) as unknown;
     if (typeof focusDut !== "number" || !Array.isArray(focusDutBins)) return null;
+
+    const deviceRaw = extractJsonValueAfterKey(body, "device");
+    const lotRaw = extractJsonValueAfterKey(body, "lot");
+    const slotRaw = extractJsonValueAfterKey(body, "slot");
+    const device = deviceRaw != null ? (JSON.parse(deviceRaw) as unknown) : undefined;
+    const lot = lotRaw != null ? (JSON.parse(lotRaw) as unknown) : undefined;
+    const slot = slotRaw != null ? (JSON.parse(slotRaw) as unknown) : undefined;
+
     return {
       focusDut,
       focusDutBins: focusDutBins as FocusDutPassBins[],
-      device: typeof parsed["device"] === "string" ? parsed["device"] : undefined,
-      lot: typeof parsed["lot"] === "string" ? parsed["lot"] : undefined,
-      slot: typeof parsed["slot"] === "number" ? parsed["slot"] : undefined,
+      device: typeof device === "string" ? device : undefined,
+      lot: typeof lot === "string" ? lot : undefined,
+      slot: typeof slot === "number" ? slot : undefined,
     };
   } catch {
     return null;

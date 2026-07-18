@@ -85,16 +85,20 @@ export function buildDutBinMapArgsFromSession(
   const out: Record<string, unknown> = {};
   const waferCtx = normalizeInfDrawWaferMapArgs({}, history);
 
+  const jbCtx = findJbLotContext(history);
   const userLot = extractLotFromUserText(userText);
-  const lot =
-    userLot ||
-    String(waferCtx["lot"] ?? "").trim() ||
-    findJbLotContext(history).lot ||
-    "";
+  const historyLot = String(waferCtx["lot"] ?? "").trim() || jbCtx.lot || "";
+  const lot = userLot || historyLot || "";
   out["lot"] = lot;
 
+  // waferCtx["device"] / jbCtx.device 来自历史中最后出现的 lot，可能与刚
+  // 解析出的 lot 不是同一个批次（用户切换到会话里未查询过的新 lot）；仅当
+  // 两者 lot 一致时才信任该 device，否则留空，交由下方 session 缓存反查
+  // 或调用方的 JB 自动补查逻辑取正确 device。
   let device =
-    String(waferCtx["device"] ?? "").trim() || findJbLotContext(history).device || "";
+    historyLot && lot && historyLot.toUpperCase() === lot.toUpperCase()
+      ? String(waferCtx["device"] ?? "").trim() || jbCtx.device || ""
+      : "";
   if (lot && !device) {
     const cached = getCachedJbPayloadForLot(sessionId, lot);
     if (cached) device = String(cached["device"] ?? "").trim();

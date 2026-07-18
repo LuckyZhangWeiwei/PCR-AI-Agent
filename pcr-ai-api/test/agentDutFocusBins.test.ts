@@ -8,6 +8,7 @@ import {
   ensureFocusDutInCompactedDuts,
   extractFocusDutBins,
   isDutFocusBadBinQuestion,
+  parseFocusDutBinsFromToolResult,
 } from "../src/lib/agent/agentDutFocusBins.js";
 import { compactSiteBinPasses } from "../src/lib/agent/tools/agentToolDutBinAgg.js";
 import {
@@ -15,7 +16,7 @@ import {
   isBadBinRankingQuestion,
 } from "../src/lib/agent/jb/agentJbQuestionClassifiers.js";
 import type { SiteBinPass } from "../src/lib/outputSiteBinByLot/types.js";
-import { runTool } from "../src/lib/agent/tools/agentToolHandlers.js";
+import { runTool, truncateResult } from "../src/lib/agent/tools/agentToolHandlers.js";
 
 process.env["SITE_BIN_BY_LOT_DUMMY"] = "true";
 process.env["NODE_ENV"] = "test";
@@ -218,4 +219,48 @@ test("canRunScopedBadBinDirectRoute rejects DUT-specific bad-bin ask", async () 
     ),
     false
   );
+});
+
+test("parseFocusDutBinsFromToolResult survives truncateResult() truncation (regression)", () => {
+  // Build a payload large enough that truncateResult() has to cut into `passes`
+  // while `focusDut`/`focusDutBins` (emitted first) stay intact — this is the
+  // exact shape produced by buildInfSiteBinResult() for a big wafer.
+  const bigBins = Array.from({ length: 500 }, (_, i) => ({
+    bin: `bin${i}`,
+    dutCount: 78,
+    totalDieCount: 7800,
+    avgPerDut: 100,
+    duts: Array.from({ length: 78 }, (_, d) => ({ dut: d + 1, dieCount: 100 })),
+  }));
+  const raw = truncateResult(
+    {
+      focusDut: 12,
+      focusDutBins: [
+        { passId: 1, totalBadDie: 25, bins: [{ bin: "bin30", binNum: 30, dieCount: 20 }] },
+      ],
+      device: "WA03P02G",
+      lot: "NF12551.1N",
+      slot: 1,
+      passes: [{ passId: 1, bins: bigBins }],
+    },
+    500 // force truncation well before `passes` finishes serializing
+  );
+  assert.ok(raw.includes("已截断"), "sanity: payload must actually be truncated");
+
+  const parsed = parseFocusDutBinsFromToolResult(raw);
+  assert.ok(parsed, "must still recover focusDut/focusDutBins from a truncated payload");
+  assert.equal(parsed!.focusDut, 12);
+  assert.equal(parsed!.focusDutBins?.[0]?.bins?.[0]?.bin, "bin30");
+  assert.equal(parsed!.device, "WA03P02G");
+  assert.equal(parsed!.lot, "NF12551.1N");
+  assert.equal(parsed!.slot, 1);
+});
+
+test("detectJbReplyMode: DUT+slot+card question stays card_dut_question, not generic (regression)", () => {
+  assert.equal(
+    detectJbReplyMode("第7片 4056-013号卡测的DUT12有没有问题"),
+    "card_dut_question"
+  );
+  // Sanity: without the slot mention, this already worked pre-fix.
+  assert.equal(detectJbReplyMode("4056-013号卡测的DUT12有没有问题"), "card_dut_question");
 });

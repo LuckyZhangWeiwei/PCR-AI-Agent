@@ -627,12 +627,17 @@ export function jbReplySkipsCommentaryLlm(
 export function detectJbReplyMode(userMessage: string): JbReplyMode {
   // 条件性/假设性推理问题（「如果两张卡都...下一步怎么做」）须走 LLM，不能被 equipment 短路
   if (isConditionalReasoningQuestion(userMessage)) return "generic";
-  // 指定 DUT + 片号：JB 无 DUT×BIN，交 INF focusDut / LLM，禁止 single_slot / bad_bin_ranking 代答
+  // 指定 DUT + 片号：JB 无 DUT×BIN，交 INF focusDut / LLM，禁止 single_slot / bad_bin_ranking 代答。
+  // 但卡号归因/对比类问法（如「第7片 4056-013号卡的DUT12有没有问题」）本就该走对应卡级模式，
+  // 不能被这里抢先短路成 generic——否则「DUT+片号+卡号」组合问题的既有分类会整体回退。
   if (
     /\bdut\s*[#:=]?\s*\d{1,3}\b|\bDUT\s*\d{1,3}\b|第\s*\d{1,3}\s*(?:号\s*)?DUT/i.test(
       userMessage
     ) &&
-    isSingleSlotQuestion(userMessage)
+    isSingleSlotQuestion(userMessage) &&
+    !isCardDutQuestion(userMessage) &&
+    !isBinCardAttributionQuestion(userMessage) &&
+    !isCardYieldCompareQuestion(userMessage)
   ) {
     return "generic";
   }
