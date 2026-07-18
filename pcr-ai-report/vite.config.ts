@@ -53,6 +53,8 @@ export default defineConfig(({ mode }) => {
       proxy: {
         "/api": devProxy(target),
         "/health": devProxy(target),
+        "/api-docs": devProxy(target),
+        "/openapi.json": devProxy(target),
       },
     },
   };

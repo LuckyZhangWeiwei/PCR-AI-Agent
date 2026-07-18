@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { apiGetJson } from "./api/client";
+import { apiGetJson, displayApiOrigin } from "./api/client";
 import { API_PREFIX } from "./api/paths";
 import { ReportListLimitsSettings } from "./components/ReportListLimitsSettings";
 import { usePersistedApiBase } from "./hooks/usePersistedApiBase";
@@ -275,6 +275,14 @@ function AppShell() {
               <button type="button" className="btn secondary" onClick={probe}>
                 🔗 检查连接
               </button>
+              <a
+                href={`${displayApiOrigin(apiBase)}/api-docs/`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn ghost"
+              >
+                📖 API 文档
+              </a>
             </div>
             <div className="status-row">
               <span className={healthOk === null ? "pill" : healthOk ? "pill ok" : "pill bad"}>
