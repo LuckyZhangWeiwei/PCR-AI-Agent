@@ -668,3 +668,18 @@ export function detectJbReplyMode(userMessage: string): JbReplyMode {
   if (isLotOverviewQuestion(userMessage)) return "lot_overview";
   return "generic";
 }
+
+/** 用户是否在问 touchdown（探针接触次数）。 */
+export function isTouchdownQuestion(text: string): boolean {
+  return /touchdown|接触次数|探针接触|touch\s*count/i.test(text);
+}
+
+/**
+ * 判断用户是否在询问 BIN 对应的测试项（BIN→test item 映射）。
+ * 该信息存储在测试程序（test program）中，不在 JB STAR / Yield Monitor 数据库里。
+ * 必须同时满足：提到 BIN 编号 AND 问的是测试项/测试内容。
+ */
+export function isTestItemMappingQuestion(text: string): boolean {
+  if (!/\bbin\s*\d{1,3}\b/i.test(text)) return false;
+  return /测试项|test\s*item|什么测试|哪个测试项|哪种测试|测试内容|测试名称|失效.*测试|测试.*失效|bin.*是什么测试/i.test(text);
+}

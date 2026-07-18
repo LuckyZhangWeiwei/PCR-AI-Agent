@@ -13,6 +13,19 @@ export function lastToolMessage(history: ChatMessage[]): ChatMessage | undefined
   return undefined;
 }
 
+export function lastUserMessageText(
+  history: ChatMessage[],
+  fallback: string
+): string {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i];
+    if (m.role === "user" && m.content?.trim()) {
+      return String(m.content).trim();
+    }
+  }
+  return fallback.trim();
+}
+
 export function emitTextInChunks(text: string, emit: (event: AgentSseEvent) => void): void {
   const size = 500;
   for (let i = 0; i < text.length; i += size) {

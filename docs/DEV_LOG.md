@@ -2,6 +2,17 @@
 
 ---
 
+## 2026-07-18 — agentLoop.ts 继续拆分（Round 4）
+
+**完成内容：**
+- `pcr-ai-api/src/lib/agent/core/agentLoop.ts`：1502 行 → 460 行，仅保留 `runAgentLoop` 主循环编排、`PRE_LLM_DIRECT_ROUTES` 声明式路由表与 `AgentSseEvent` 类型导出（对外仅这两项被其它文件引用，其余 12 个内部辅助函数原本就不对外暴露，拆分不影响任何调用方）。
+- 拆出 10 个新文件，各自单一职责：`agentLoopSetup.ts`（历史压缩 + manifest 预取）、`agentToolCallMerge.ts`（结构化/嵌入式 tool_calls 合并）、`agentToolSchemaSelect.ts`（INF 关键词触发 schema 选择）、`agentRoundToolExecutor.ts`（按资源分组并行执行本轮工具）、`agentJbFallbackReply.ts`（总结轮 JB/图表兜底回复）、`agentTouchdownReply.ts`（Touchdown 专项总结）、`agentRoundPrompt.ts`（各类 nudge 常量 + 系统提示组装）、`agentSummaryGuard.ts`（总结轮工具调用拦截守卫）、`agentPendingQueryFollowUp.ts`（两段式查询补跑）、`agentTurnFinalize.ts`（流式结束后的收尾分发）。
+- `lastUserMessageText` 并入既有的 `agentLoopShared.ts`（Round 3 遗留的叶子工具函数文件）；`isTouchdownQuestion` / `isTestItemMappingQuestion` 并入既有的 `jb/agentJbQuestionClassifiers.ts`（该文件本就是 `isXxxQuestion` 分类器的家）。纯结构重组，无行为改动。
+
+**测试：** `npm run typecheck` 通过；`npm test` 639 个用例，633 通过、2 失败（`jbRouteResolver.test.ts` 中依赖真实 Oracle/网络的既有失败，在重构前的原始代码上同样失败，与本次改动无关）、4 跳过。
+
+---
+
 ## 2026-07-17 — 晶圆图 DUT 提示文案修正
 
 **完成内容：**

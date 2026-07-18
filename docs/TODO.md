@@ -11,6 +11,7 @@
 
 ## 待办
 
+- ✅ **agentLoop.ts 继续拆分（Round 4）** — 1502 行 → 460 行，拆出 10 个新文件（setup/prompt/tool-call-merge/schema-select/round-executor/JB-fallback/touchdown-reply/summary-guard/pending-query/turn-finalize），纯结构重组无行为改动；`npm run typecheck` 通过，`npm test` 633/639 pass（2 个失败为既有 `jbRouteResolver.test.ts` 真库依赖问题，重构前即失败） — 2026-07-18 完成
 - ✅ **晶圆图 DUT 提示文案** — die 悬浮提示「站点=N」改为「DUT=N」 — 2026-07-17 完成
 - [ ] **晶圆图多 pass 标签错位（用户反映 pass5 显示 pass4）** — 静态审查标签生成逻辑 + 比对真实生成的晶圆图/dummy fixture 均未复现，用户暂缓深究；待有具体 lot/device/slot 或保存的 html 案例时再排查
 - [x] **【Cursor】Agent 回答准确性 8 项** — 代码 `97906b2` 已部署；真库 7/8 场景绿，见 [`HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-07-12_AGENT_ACCURACY.md`](HANDOFF_CURSOR_VERIFICATION_RESULTS_2026-07-12_AGENT_ACCURACY.md)；P0-4 `_trendRows` 补丁待再 deploy
