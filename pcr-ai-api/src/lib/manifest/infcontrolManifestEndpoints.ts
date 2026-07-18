@@ -672,4 +672,38 @@ export const infcontrolManifestEndpoints = [
     example:
       "/api/v1/inf-analysis/lot-underperforming-duts?lot=DR43782.1A&thresholdRatio=0.75",
   },
+  {
+    path: "/api/v1/infcontrol-layer-bins/v4/combined",
+    method: "GET",
+    purpose:
+      "Combined v4 list + BIN aggregate(s) in one request: same filters/limit/rows as GET .../infcontrol-layer-bins/v4, plus an aggs query param requesting one or more groupBy aggregations computed in Node over the same top-N row set returned in rows (not the full Oracle-matching set — no MEMORY_AGG_ORACLE_MAX_ROWS check here since it reuses the already-limited list rows).",
+    queryParameters: [
+      {
+        name: "device, lot, slot, meslot, testerId, tstype, cardId, passId, testStart*, testEnd*, limit",
+        type: "mixed",
+        optional: true,
+        note: "Identical to infcontrol-layer-bins/v4 (see that entry)",
+      },
+      {
+        name: "aggs",
+        type: "string",
+        optional: true,
+        note:
+          "Pipe-separated agg specs: groupBy:groupTop|groupBy:groupTop|… (e.g. bin:30|probeCardType,bin:25); each groupBy must include exactly one 'bin' dimension; max 10 specs; groupTop defaults to 30 when omitted",
+      },
+    ],
+    responseShape: {
+      meta: "{ apiVersion: '4', requestId, combinedPath }",
+      limit: "number",
+      limitMax: "number (500)",
+      orderBy: "string (TESTEND DESC NULLS LAST, SLOT, PASSID, PASSNUM)",
+      filters: "object (echo of applied query params, incl. limit)",
+      count: "number",
+      rows: "same as infcontrol-layer-bins/v4 list",
+      aggregates:
+        "object keyed by each aggs spec's groupBy string; each value is { groupBy, groupTop, totalRowsMatching, groups } computed over the returned rows (not the full Oracle-matching set)",
+    },
+    example:
+      "/api/v1/infcontrol-layer-bins/v4/combined?device=WB10N57U&testEndBegin=2026-05-13T00:00:00.000Z&testEndEnd=2026-05-13T23:59:59.999Z&limit=200&aggs=bin:30|probeCardType,bin:25",
+  },
 ];

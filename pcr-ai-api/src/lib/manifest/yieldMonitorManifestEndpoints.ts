@@ -223,4 +223,87 @@ export const yieldMonitorManifestEndpoints = [
     example:
       "/api/v1/yield-monitor-triggers/v4/aggregate?dimensions=device,hostname&timeStampBegin=2026-05-13T00:00:00.000Z&timeStampEnd=2026-05-13T23:59:59.999Z&groupTop=20",
   },
+  {
+    path: "/api/v1/yield-monitor-triggers/v3/combined",
+    method: "GET",
+    purpose:
+      "Combined v3 list + trigger aggregate(s) in one request: same filters/limit/rows as GET .../yield-monitor-triggers/v3, plus an aggs query param requesting one or more dimension aggregations. Oracle: one probeweb connection reused for the list query and each aggregate query (own GROUP BY SQL, same fixed WHERE incl. TYPE=delta_diff). Dummy: aggregates computed in Node over the same in-memory matching rows.",
+    queryParameters: [
+      {
+        name: "hostname, device, lotId, wafer, triggerLabel, probeCard, pass, id, timeStamp*, limit, includeProbeCardSummary",
+        type: "mixed",
+        optional: true,
+        note: "Identical to yield-monitor-triggers/v3 (see that entry); type query parameter still not supported",
+      },
+      {
+        name: "aggs",
+        type: "string",
+        optional: true,
+        note:
+          "Pipe-separated agg specs: dimensions:groupTop|dimensions:groupTop|… (e.g. timeDay:60|probeCardType:25); max 8 specs; groupTop defaults to 30 when omitted",
+      },
+    ],
+    responseShape: {
+      meta: "{ apiVersion: '3', requestId, combinedPath }",
+      limit: "number",
+      limitMax: "number (500)",
+      orderBy: "string (TIME_STAMP DESC NULLS LAST)",
+      filters: "object (echo of applied query params, incl. limit)",
+      count: "number",
+      rows: "same as yield-monitor-triggers/v3 list",
+      aggregates:
+        "object keyed by each aggs spec's dimensions string; each value is { dimensions, groupTop, totalRowsMatching, groups }",
+    },
+    example:
+      "/api/v1/yield-monitor-triggers/v3/combined?device=WB10N57U&timeStampFrom=2026-05-13T00:00:00.000Z&timeStampTo=2026-05-13T23:59:59.999Z&limit=200&aggs=timeDay:60|probeCardType:25",
+  },
+  {
+    path: "/api/v1/yield-monitor-triggers/v3/period-alarm-trend",
+    method: "GET",
+    purpose:
+      "按查询 TIME_STAMP 时间窗（未传则近 1 UTC 年）切分周/月 x 轴桶，返回各桶触发总量与 COUNT(DISTINCT) 种类数（Tester / Probe Card / Bin excluding goodbin / DUT）、Tester 报警频率（分子 YM delta_diff 次数 ÷ 分母同期同筛选 JB Start distinct (LOT,SLOT) 片数，v3 PASSTYPE 不含 RETESTBIN；同片多断片计 1）、以及各桶触发 Top 5 device。单次 Oracle 扫描（probeweb + 主库各一次连接）。See docs/HANDOFF_CURSOR_YIELD_MONITOR_PERIOD_ALARM_TREND_2026-07-07.md.",
+    queryParameters: [
+      {
+        name: "period",
+        type: "string",
+        optional: false,
+        note: "'week' or 'month'; selects the bucket size",
+      },
+      {
+        name: "now",
+        type: "datetime",
+        optional: true,
+        note: "ISO 8601 override for the 'now' reference point used to compute the default 1-year window; mainly for tests",
+      },
+      {
+        name: "timeStampBegin",
+        type: "datetime",
+        optional: true,
+        note: "ISO 8601; window lower bound (alias: timeStampFrom)",
+      },
+      {
+        name: "timeStampEnd",
+        type: "datetime",
+        optional: true,
+        note:
+          "ISO 8601; window upper bound (alias: timeStampTo). Defaults to [now − 1 UTC year, now] when neither bound is supplied; max span capped (week buckets: PERIOD_ALARM_MAX_WEEK_BUCKETS).",
+      },
+      {
+        name: "hostname, device, lotId, wafer, triggerLabel, probeCard, pass, id",
+        type: "mixed",
+        optional: true,
+        note: "Identical filter semantics to yield-monitor-triggers/v3 (TYPE still fixed to delta_diff; type query parameter not supported)",
+      },
+    ],
+    responseShape: {
+      meta: "{ apiVersion: '3', requestId, path }",
+      documentation: "string (fixed Chinese explanation, same text as this entry's purpose)",
+      period: "'week' | 'month'",
+      filters: "object (echo of applied query params)",
+      buckets:
+        "array of { start, end, label, plus per-bucket alarm count, COUNT(DISTINCT) tester/probeCard/bin/dut, top 5 testers/devices/probe cards, and JB-slot-based tester alarm-rate denominator }",
+    },
+    example:
+      "/api/v1/yield-monitor-triggers/v3/period-alarm-trend?period=week&device=WB10N57U",
+  },
 ];
