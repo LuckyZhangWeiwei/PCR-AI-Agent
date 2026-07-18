@@ -566,6 +566,24 @@ export const infcontrolManifestEndpoints = [
         optional: true,
         note: "Device scope only: include the N most recent lots by MAX(TESTEND); default 10, max 50 (alias: topn)",
       },
+      {
+        name: "keynumber",
+        type: "number",
+        optional: true,
+        note: "Single-wafer mode only (alias: key_number)",
+      },
+      {
+        name: "passNum",
+        type: "number",
+        optional: true,
+        note: "Single-wafer mode only (alias: pass_num)",
+      },
+      {
+        name: "testEnd",
+        type: "datetime",
+        optional: true,
+        note: "Single-wafer mode only; ISO 8601 (alias: test_end)",
+      },
     ],
     responseShape: {
       meta: "{ apiVersion, requestId, summary, aggregateScope: 'wafer' | 'lot' | 'device' }",
@@ -622,6 +640,19 @@ export const infcontrolManifestEndpoints = [
         type: "number",
         optional: true,
         note: "Relative threshold vs lotOverall baseline; default 0.75 (alias threshold_ratio)",
+      },
+      {
+        name: "testEndFrom",
+        type: "datetime",
+        optional: true,
+        note:
+          "ISO 8601; TESTEND lower bound (alias: testEndBegin). Defaults to [UTC now − 1 year, UTC now] when neither bound is supplied.",
+      },
+      {
+        name: "testEndTo",
+        type: "datetime",
+        optional: true,
+        note: "ISO 8601; TESTEND upper bound (alias: testEndEnd)",
       },
     ],
     responseShape: {
