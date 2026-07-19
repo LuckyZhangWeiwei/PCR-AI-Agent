@@ -1099,10 +1099,14 @@ describe("JB listing scope (card / device)", () => {
     assert.ok(canRunLotListingDirectRoute("6081-03 最近一个月怎样", []));
   });
 
-  it("detectJbReplyMode: card/device 怎样 → 对症模式", () => {
+  it("detectJbReplyMode: card/device/tester 怎样 → 对症模式", () => {
     assert.equal(detectJbReplyMode("6081-03 怎样"), "card_test_overview");
     assert.equal(detectJbReplyMode("6081-03 这张卡怎么样"), "card_test_overview");
     assert.equal(detectJbReplyMode("WA01N39W 最近一个月怎样"), "lot_listing");
+    assert.equal(
+      detectJbReplyMode("b3uflex25 最近一个月的测试情况"),
+      "lot_listing"
+    );
   });
 
   it("buildRecentLotsListingMarkdown rich columns: yield + cards + fail bins", () => {

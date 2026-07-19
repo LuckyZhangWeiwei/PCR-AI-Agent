@@ -14,7 +14,11 @@ import {
 import { detectPendingQuery } from "../src/lib/agent/agentPendingQuery.js";
 import { canRunLotListingDirectRoute } from "../src/lib/agent/agentJbLotListingRoute.js";
 import { canRunScopedBadBinDirectRoute } from "../src/lib/agent/agentJbScopedBadBinRoute.js";
-import { isBadBinRankingQuestion } from "../src/lib/agent/jb/agentJbQuestionClassifiers.js";
+import {
+  detectJbReplyMode,
+  isBadBinRankingQuestion,
+  isTesterTestOverviewQuestion,
+} from "../src/lib/agent/jb/agentJbQuestionClassifiers.js";
 
 describe("agentQueryScope", () => {
   it("inferTesterIdFromText maps UFLEX 24 to b3uflex24", () => {
@@ -44,6 +48,17 @@ describe("agentQueryScope", () => {
     assert.ok(canRunLotListingDirectRoute(q));
     const args = buildLotListingQueryArgs(q);
     assert.equal(args?.["testerId"], "b3flex25");
+    assert.ok(args?.["testEndFrom"]);
+    assert.ok(args?.["testEndTo"]);
+  });
+
+  it("canRunLotListingDirectRoute for b3uflex25 最近一个月的测试情况", () => {
+    const q = "b3uflex25 最近一个月的测试情况";
+    assert.ok(isTesterTestOverviewQuestion(q));
+    assert.equal(detectJbReplyMode(q), "lot_listing");
+    assert.ok(canRunLotListingDirectRoute(q));
+    const args = buildLotListingQueryArgs(q);
+    assert.equal(args?.["testerId"], "b3uflex25");
     assert.ok(args?.["testEndFrom"]);
     assert.ok(args?.["testEndTo"]);
   });

@@ -10,6 +10,7 @@ import {
   isCardTestOverviewQuestion,
   isDeviceTestOverviewQuestion,
   isLotListingQuestion,
+  isTesterTestOverviewQuestion,
 } from "./jb/agentJbQuestionClassifiers.js";
 import {
   buildAggregateJbBinsScopeArgs,
@@ -20,12 +21,13 @@ import {
   resolveJbListingScope,
 } from "./agentQueryScope.js";
 
-/** 跨 lot 列表或卡/device 概况（均走 lot 列表呈现）。 */
+/** 跨 lot 列表或卡/device/机台概况（均走 lot 列表呈现）。 */
 export function isLotListingOrOverviewQuestion(userText: string): boolean {
   return (
     isLotListingQuestion(userText) ||
     isCardTestOverviewQuestion(userText) ||
-    isDeviceTestOverviewQuestion(userText)
+    isDeviceTestOverviewQuestion(userText) ||
+    isTesterTestOverviewQuestion(userText)
   );
 }
 

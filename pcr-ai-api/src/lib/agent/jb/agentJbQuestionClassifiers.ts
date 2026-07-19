@@ -287,6 +287,24 @@ export function isDeviceTestOverviewQuestion(text: string): boolean {
   return OVERVIEW_ASK_RE.test(t);
 }
 
+/**
+ * 用户询问某台测试机的概况（如「b3uflex25 最近一个月的测试情况」），无具体 lot/device/卡号。
+ * 须列该机台时间窗内 lot，禁止只 get_filter_values 确认 ID 后结束、也禁止单 lot 概况代答。
+ */
+export function isTesterTestOverviewQuestion(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (extractLotFromUserText(t)) return false;
+  if (/\b\d{4}-\d{2,3}\b/.test(t)) return false;
+  if (inferDeviceFromText(t)) return false; // device 概况另走
+  if (!inferTesterIdFromText(t)) return false;
+  if (isLotListingQuestion(t) || isLotYieldRankingQuestion(t)) return false;
+  if (isBadBinRankingQuestion(t) || isProbeCardTesterPerformanceQuestion(t)) {
+    return false;
+  }
+  return OVERVIEW_ASK_RE.test(t);
+}
+
 /** 用户问各片/某片「中断几次」等次数类问题。 */
 export function isInterruptCountQuestion(text: string): boolean {
   const t = text.trim();
@@ -676,8 +694,9 @@ export function detectJbReplyMode(userMessage: string): JbReplyMode {
   if (isMultiCardComparisonQuestion(userMessage)) return "generic";
   // 具体卡号概况须先于 equipment：否则「6081-03 这张卡怎样」被单 lot 卡表劫持。
   if (isCardTestOverviewQuestion(userMessage)) return "card_test_overview";
-  // device 概况 → lot_listing（跨 lot 表：良率 / 全部卡 / 主要坏 bin）
+  // device / 机台概况 → lot_listing（跨 lot 表）；须先于 lot_overview（「测试情况」也会命中概况词）
   if (isDeviceTestOverviewQuestion(userMessage)) return "lot_listing";
+  if (isTesterTestOverviewQuestion(userMessage)) return "lot_listing";
   if (isTesterMachineQuestion(userMessage) && isProbeCardQuestion(userMessage)) {
     return "equipment";
   }
