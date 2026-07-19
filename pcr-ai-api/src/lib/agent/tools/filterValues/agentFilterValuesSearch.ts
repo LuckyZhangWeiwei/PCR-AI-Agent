@@ -1,8 +1,11 @@
 // pcr-ai-api/src/lib/agent/tools/filterValues/agentFilterValuesSearch.ts
 //
 // Generic distinct-value counting/limiting helpers shared by the Dummy and Oracle
-// paths, plus the tester-search-term-expansion fallback (uflex24 <-> flex24 style
-// variants) and the empty-result hint enrichment used by the dispatcher.
+// paths, plus the tester-search-term-expansion fallback and empty-result hint
+// enrichment used by the dispatcher.
+//
+// FLEX vs UFLEX: substring "flex25" must NOT match "b3uflex25". They are different
+// machines; search/expansion must keep the families separate.
 import {
   DEFAULT_LIMIT,
   MAX_LIMIT,
@@ -17,15 +20,67 @@ export function clampLimit(raw: unknown): number {
   return Math.min(Math.max(1, Math.round(n)), MAX_LIMIT);
 }
 
-export function countDistinct(rawValues: string[], limit: number, search?: string): {
+/** Search mentions FLEX family but not UFLEX (e.g. flex25, b3flex25, T25FLEX→flex25). */
+export function isFlexOnlyTesterSearch(search: string): boolean {
+  const s = search.trim().toUpperCase().replace(/\s+/g, "");
+  if (!s || /UFLEX/.test(s)) return false;
+  return /FLEX/.test(s);
+}
+
+/**
+ * Normalize shop-floor / b3-prefixed tester labels to the short keyword used for
+ * dual-DB matching: T25FLEX→flex25, T25UFLEX→uflex25, b3flex25→flex25.
+ */
+export function normalizeTesterSearchKeyword(raw: string): string {
+  const t = raw.trim().replace(/\s+/g, "");
+  if (!t) return t;
+
+  const tUflex = t.match(/^T(\d+)UFLEX$/i);
+  if (tUflex) return `uflex${tUflex[1]!.padStart(2, "0")}`;
+  const tFlex = t.match(/^T(\d+)FLEX$/i);
+  if (tFlex) return `flex${tFlex[1]!.padStart(2, "0")}`;
+  const tPs16 = t.match(/^T(\d+)PS\s*16(?:00)?$/i);
+  if (tPs16) return `ps16${tPs16[1]!.padStart(2, "0")}`;
+  const tJ750 = t.match(/^T(\d+)J?\s*750$/i);
+  if (tJ750) return `j750${tJ750[1]!.padStart(2, "0")}`;
+  const tMst = t.match(/^T(\d+)MST$/i);
+  if (tMst) return `mst${tMst[1]!.padStart(2, "0")}`;
+
+  const lower = t.toLowerCase();
+  if (lower.startsWith("b3")) return lower.slice(2);
+  return lower;
+}
+
+/**
+ * Hostname / TESTERID contains-match that does not let FLEX search hit UFLEX ids.
+ */
+export function testerValueMatchesSearch(value: string, search: string): boolean {
+  const v = value.trim().toUpperCase();
+  const s = search.trim().toUpperCase().replace(/\s+/g, "");
+  if (!s) return true;
+  if (!v.includes(s)) return false;
+  if (isFlexOnlyTesterSearch(s) && v.includes("UFLEX")) return false;
+  return true;
+}
+
+export function countDistinct(
+  rawValues: string[],
+  limit: number,
+  search?: string,
+  opts?: { testerSearch?: boolean }
+): {
   values: string[];
   totalDistinct: number;
 } {
-  const searchUpper = search?.toUpperCase();
   const counts = new Map<string, number>();
   for (const v of rawValues) {
     if (!v) continue;
-    if (searchUpper && !v.toUpperCase().includes(searchUpper)) continue;
+    if (search?.trim()) {
+      const ok = opts?.testerSearch
+        ? testerValueMatchesSearch(v, search)
+        : v.toUpperCase().includes(search.trim().toUpperCase());
+      if (!ok) continue;
+    }
     counts.set(v, (counts.get(v) ?? 0) + 1);
   }
   const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
@@ -33,22 +88,57 @@ export function countDistinct(rawValues: string[], limit: number, search?: strin
   return { values, totalDistinct: counts.size };
 }
 
-/** 机台 search 无命中时尝试 uflex24 → flex24 / b3uflex24 等变体。 */
+/**
+ * Expand alternate spellings for the same physical tester.
+ * Never maps FLEX ↔ UFLEX (different machines).
+ */
 export function expandTesterSearchTerms(search: string): string[] {
-  const normalized = search.trim().toLowerCase().replace(/\s+/g, "");
+  const normalized = normalizeTesterSearchKeyword(search);
   const terms = new Set<string>([search.trim(), normalized]);
-  const uflex = normalized.match(/uflex(\d+)/);
-  if (uflex) {
-    terms.add(`flex${uflex[1]}`);
-    terms.add(`b3uflex${uflex[1]}`);
-    terms.add(`b3uflex${uflex[1]!.padStart(2, "0")}`);
-  }
-  const flexOnly = normalized.match(/^flex(\d+)$/);
-  if (flexOnly) {
-    terms.add(`b3uflex${flexOnly[1]}`);
-    terms.add(`uflex${flexOnly[1]}`);
-  }
   if (normalized.startsWith("b3")) terms.add(normalized.slice(2));
+
+  const uflex = normalized.match(/^uflex(\d+)$/);
+  if (uflex) {
+    const n = uflex[1]!;
+    const nPad = n.padStart(2, "0");
+    terms.add(`uflex${n}`);
+    terms.add(`uflex${nPad}`);
+    terms.add(`b3uflex${n}`);
+    terms.add(`b3uflex${nPad}`);
+    return [...terms];
+  }
+
+  const flex = normalized.match(/^flex(\d+)$/);
+  if (flex) {
+    const n = flex[1]!;
+    const nPad = n.padStart(2, "0");
+    terms.add(`flex${n}`);
+    terms.add(`flex${nPad}`);
+    terms.add(`b3flex${n}`);
+    terms.add(`b3flex${nPad}`);
+    return [...terms];
+  }
+
+  const ps16 = normalized.match(/^ps16(\d+)$/);
+  if (ps16) {
+    const n = ps16[1]!;
+    const nPad = n.padStart(2, "0");
+    terms.add(`ps16${nPad}`);
+    terms.add(`b3ps16${nPad}`);
+  }
+  const j750 = normalized.match(/^j750(\d+)$/);
+  if (j750) {
+    const nPad = j750[1]!.padStart(2, "0");
+    terms.add(`j750${nPad}`);
+    terms.add(`b3j750${nPad}`);
+  }
+  const mst = normalized.match(/^mst(\d+)$/);
+  if (mst) {
+    const nPad = mst[1]!.padStart(2, "0");
+    terms.add(`mst${nPad}`);
+    terms.add(`b3mst${nPad}`);
+  }
+
   return [...terms];
 }
 
@@ -57,11 +147,14 @@ export function countDistinctWithSearchFallback(
   limit: number,
   search?: string
 ): { values: string[]; totalDistinct: number } {
-  const first = countDistinct(rawValues, limit, search);
+  const normalized = search?.trim()
+    ? normalizeTesterSearchKeyword(search)
+    : search;
+  const first = countDistinct(rawValues, limit, normalized, { testerSearch: true });
   if (first.totalDistinct > 0 || !search?.trim()) return first;
   for (const alt of expandTesterSearchTerms(search)) {
-    if (alt.toUpperCase() === search.trim().toUpperCase()) continue;
-    const retry = countDistinct(rawValues, limit, alt);
+    if (alt.toUpperCase() === (normalized ?? "").toUpperCase()) continue;
+    const retry = countDistinct(rawValues, limit, alt, { testerSearch: true });
     if (retry.totalDistinct > 0) return retry;
   }
   return first;
@@ -81,7 +174,8 @@ export function enrichEmptyTesterSearchResult(
     ...result,
     hint:
       "filter 索引未命中不代表无机台/无 lot 数据；若用户句中已有 device+机台（如 b3uflex24），" +
-      "请直接 query_jb_bins(testerId) / query_yield_triggers(hostname)，禁止据此报告「未找到机台」。",
+      "请直接 query_jb_bins(testerId) / query_yield_triggers(hostname)，禁止据此报告「未找到机台」。" +
+      "注意：FLEX 与 UFLEX 是不同机台——search flex25 只匹配 b3flex25，不会匹配 b3uflex25。",
     suggestedSearchTerms: suggestions.slice(0, 6),
   };
 }
@@ -119,13 +213,17 @@ export async function oracleYieldWithSearchFallback(
   filterBy: Record<string, string | undefined>,
   limit: number
 ): Promise<FilterValuesResult> {
-  let result = await oracleYield(field, filterBy, limit);
-  if (result.totalDistinct > 0 || !filterBy["search"] || field !== "hostname") {
+  const fb = { ...filterBy };
+  if (field === "hostname" && fb["search"]) {
+    fb["search"] = normalizeTesterSearchKeyword(fb["search"]);
+  }
+  let result = await oracleYield(field, fb, limit);
+  if (result.totalDistinct > 0 || !fb["search"] || field !== "hostname") {
     return result;
   }
-  for (const alt of expandTesterSearchTerms(filterBy["search"])) {
-    if (alt.toUpperCase() === filterBy["search"]!.toUpperCase()) continue;
-    result = await oracleYield(field, { ...filterBy, search: alt }, limit);
+  for (const alt of expandTesterSearchTerms(fb["search"])) {
+    if (alt.toUpperCase() === fb["search"]!.toUpperCase()) continue;
+    result = await oracleYield(field, { ...fb, search: alt }, limit);
     if (result.totalDistinct > 0) return result;
   }
   return result;
@@ -136,13 +234,17 @@ export async function oracleJbWithSearchFallback(
   filterBy: Record<string, string | undefined>,
   limit: number
 ): Promise<FilterValuesResult> {
-  let result = await oracleJb(field, filterBy, limit);
-  if (result.totalDistinct > 0 || !filterBy["search"] || field !== "testerId") {
+  const fb = { ...filterBy };
+  if (field === "testerId" && fb["search"]) {
+    fb["search"] = normalizeTesterSearchKeyword(fb["search"]);
+  }
+  let result = await oracleJb(field, fb, limit);
+  if (result.totalDistinct > 0 || !fb["search"] || field !== "testerId") {
     return result;
   }
-  for (const alt of expandTesterSearchTerms(filterBy["search"])) {
-    if (alt.toUpperCase() === filterBy["search"]!.toUpperCase()) continue;
-    result = await oracleJb(field, { ...filterBy, search: alt }, limit);
+  for (const alt of expandTesterSearchTerms(fb["search"])) {
+    if (alt.toUpperCase() === fb["search"]!.toUpperCase()) continue;
+    result = await oracleJb(field, { ...fb, search: alt }, limit);
     if (result.totalDistinct > 0) return result;
   }
   return result;

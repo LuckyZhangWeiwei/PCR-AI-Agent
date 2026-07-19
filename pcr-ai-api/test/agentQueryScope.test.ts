@@ -26,6 +26,28 @@ describe("agentQueryScope", () => {
     );
   });
 
+  it("inferTesterIdFromText: T25FLEX→b3flex25, T25UFLEX→b3uflex25 (distinct)", () => {
+    assert.equal(
+      inferTesterIdFromText("T25FLEX 这个机台最近一个月测试过什么lot"),
+      "b3flex25"
+    );
+    assert.equal(inferTesterIdFromText("T25UFLEX 最近测了哪些lot"), "b3uflex25");
+    assert.equal(inferTesterIdFromText("FLEX25 测试情况"), "b3flex25");
+    assert.equal(inferTesterIdFromText("UFLEX25"), "b3uflex25");
+    assert.equal(inferTesterIdFromText("b3flex25的情况"), "b3flex25");
+    // must not collapse UFLEX into FLEX
+    assert.notEqual(inferTesterIdFromText("T25UFLEX"), "b3flex25");
+  });
+
+  it("canRunLotListingDirectRoute for T25FLEX lot list (no device needed)", () => {
+    const q = "T25FLEX 这个机台最近一个月测试过什么lot";
+    assert.ok(canRunLotListingDirectRoute(q));
+    const args = buildLotListingQueryArgs(q);
+    assert.equal(args?.["testerId"], "b3flex25");
+    assert.ok(args?.["testEndFrom"]);
+    assert.ok(args?.["testEndTo"]);
+  });
+
   it("buildLotListingQueryArgs from user sentence without prior tools", () => {
     const args = buildLotListingQueryArgs(
       "WA01P14E 在 b3uflex24 台近 3 个月 测试的所有lot 都列出来"

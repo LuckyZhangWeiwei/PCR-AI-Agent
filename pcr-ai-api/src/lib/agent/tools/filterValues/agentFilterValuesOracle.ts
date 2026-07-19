@@ -16,6 +16,19 @@ import {
   oracleJbDeviceByMask,
 } from "./agentFilterValuesDeviceMask.js";
 
+/** FLEX-only search must not hit UFLEX hosts (LIKE '%flex25%' matches b3uflex25). */
+function oracleTesterSearchAndClause(columnSql: string, search: string): string {
+  const s = search.trim().toUpperCase().replace(/\s+/g, "");
+  const flexOnly = Boolean(s && !/UFLEX/.test(s) && /FLEX/.test(s));
+  if (flexOnly) {
+    return (
+      `AND UPPER(TRIM(${columnSql})) LIKE '%' || UPPER(:search) || '%' ` +
+      `AND NOT REGEXP_LIKE(LOWER(TRIM(${columnSql})), 'uflex')`
+    );
+  }
+  return `AND UPPER(TRIM(${columnSql})) LIKE '%' || UPPER(:search) || '%'`;
+}
+
 function buildYieldFilterValuesSql(
   field: YieldField,
   where: string,
@@ -47,10 +60,14 @@ function buildYieldFilterValuesSql(
   const col = field === "probeCard" ? "t.PROBECARD"
     : field === "hostname" ? "t.HOSTNAME"
     : "t.LOTID";
-  const searchCond = filterBy["search"]
-    ? `AND UPPER(TRIM(${col})) LIKE '%' || UPPER(:search) || '%'`
-    : "";
-  if (filterBy["search"]) binds["search"] = filterBy["search"];
+  let searchCond = "";
+  if (filterBy["search"]) {
+    binds["search"] = filterBy["search"];
+    searchCond =
+      field === "hostname"
+        ? oracleTesterSearchAndClause(col, filterBy["search"])
+        : `AND UPPER(TRIM(${col})) LIKE '%' || UPPER(:search) || '%'`;
+  }
   return `
     SELECT grp_key, cnt, COUNT(*) OVER () AS total_distinct
     FROM (
@@ -156,10 +173,14 @@ function buildJbFilterValuesSql(
   const col = field === "cardId" ? "t2.CARDID"
     : field === "testerId" ? "t2.TESTERID"
     : "t1.LOT";
-  const searchCond = filterBy["search"]
-    ? `AND UPPER(TRIM(${col})) LIKE '%' || UPPER(:search) || '%'`
-    : "";
-  if (filterBy["search"]) binds["search"] = filterBy["search"];
+  let searchCond = "";
+  if (filterBy["search"]) {
+    binds["search"] = filterBy["search"];
+    searchCond =
+      field === "testerId"
+        ? oracleTesterSearchAndClause(col, filterBy["search"])
+        : `AND UPPER(TRIM(${col})) LIKE '%' || UPPER(:search) || '%'`;
+  }
   return `
     SELECT grp_key, cnt, COUNT(*) OVER () AS total_distinct
     FROM (

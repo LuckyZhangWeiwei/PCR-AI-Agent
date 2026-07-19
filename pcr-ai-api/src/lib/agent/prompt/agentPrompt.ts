@@ -380,15 +380,18 @@ const SEC_DATA_RULES = `\
 **机台名称标准化（必须执行）：**
 系统内实际机台 ID 格式为 \`b3ps16XX\`（PS16 系列）、\`b3uflexXX\`（UFLEX）、\`b3flexXX\`（FLEX）等，用户描述通常与此不同。**禁止直接把用户的原始机台描述作为 hostname 或 testerId 参数传入工具。** 必须先：
 1. 从用户描述推导搜索关键词（大小写不敏感）；若用户输入以 "b3" 开头，去掉该前缀后再处理；系统支持机台系列：PS16、UFLEX、FLEX、J750、MST、93K：
-   - "PS1600第12台" / "PS1600-12" / "T12PS16" → 关键词 \`"ps1612"\`（ps + 系列号前两位16 + 台号12）
+   - "PS1600第12台" / "PS1600-12" / "T12PS16" → 关键词 \`"ps1612"\`（ps + 系列号前两位16 + 台号12）→ 精确 ID \`b3ps1612\`
    - "PS1600" 无台号 → 关键词 \`"ps16"\`（匹配全部 PS16 系列）
+   - **"T25FLEX" / "FLEX25" / "FLEX第25台" → 关键词 \`"flex25"\` → 精确 ID \`b3flex25\`（JB \`testerId\` 与 YM \`hostname\` 同用此串匹配两侧）**
+   - **"T25UFLEX" / "UFLEX25" / "b3uflex25" → 关键词 \`"uflex25"\` → 精确 ID \`b3uflex25\`**
    - "UFLEX第3台" / "UFLEX3" → 关键词 \`"uflex03"\`（无台号时用 \`"uflex"\`）
-   - "J750第5台" / "J750-5" → 关键词 \`"j75005"\` 或先用 \`"j750"\`（不确定格式时先查系列名再看实际返回格式）
-   - "MST第2台" / "MST2" → 关键词 \`"mst02"\` 或先用 \`"mst"\`（同上）
+   - "J750第5台" / "J750-5" / "T5J750" → 关键词 \`"j75005"\` 或先用 \`"j750"\`
+   - "MST第2台" / "MST2" / "T2MST" → 关键词 \`"mst02"\` 或先用 \`"mst"\`
+   - **硬规则：FLEX 与 UFLEX 是不同机台。** \`flex25\` **只**对应 \`b3flex25\`，**禁止**当成 \`b3uflex25\`；\`uflex25\` **只**对应 \`b3uflex25\`。search 返回两个候选时，按用户原文族系取一，勿合并、勿让用户在无关族系上绕圈。
    - 若对台号零填充位数不确定，先用系列名搜索，查看实际格式后再精确匹配
-2. 调 \`get_filter_values(domain:"yield", field:"hostname", filterBy:{search:"ps1612"}, limit:10)\` 查 Yield Monitor 侧实际主机名
-3. 调 \`get_filter_values(domain:"jb", field:"testerId", filterBy:{search:"ps1612"}, limit:10)\` 查 JB STAR 侧实际测试机 ID
-4. 从返回列表选最匹配的项（如 \`"b3ps1612"\`），用该精确值查询；若多个候选，列出并询问用户确认
+2. 调 \`get_filter_values(domain:"yield", field:"hostname", filterBy:{search:"flex25"}, limit:10)\` 查 Yield Monitor 侧实际主机名（与 JB 用同一关键词）
+3. 调 \`get_filter_values(domain:"jb", field:"testerId", filterBy:{search:"flex25"}, limit:10)\` 查 JB STAR 侧实际测试机 ID
+4. 从返回列表选**同族**最匹配项（如 \`"b3flex25"\`），用该精确值 **立即** \`query_jb_bins(testerId)\` / \`query_yield_triggers(hostname)\` 回答用户问题（如「最近一个月测过什么 lot」）；**禁止**只列候选 ID 就结束、不查 lot
 5. **若第一个关键词无结果，必须立即用更短的子串重试**（如 \`"ps1612"\` 无结果 → 改用 \`"ps16"\`；\`"uflex03"\` 无结果 → 改用 \`"uflex"\`），**禁止在未重试的情况下直接报告"未找到机台"**
 6. 两次关键词均无结果，才用 \`ask_clarification\` 请用户确认实际机台 ID
 

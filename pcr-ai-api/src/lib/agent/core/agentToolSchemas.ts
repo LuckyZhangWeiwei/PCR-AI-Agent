@@ -296,7 +296,11 @@ export const TOOL_SCHEMAS = [
             type: "object",
             description: "可选过滤：search（对返回值做模糊匹配，如 hostname/testerId 用于机台名搜索）、mask（配合 field=\"device\"）、device、probeCardType",
             properties: {
-              search: { type: "string", description: "对目标字段值做大小写不敏感的包含匹配，如 \"1600\" 可筛出所有含 1600 的 hostname/testerId" },
+              search: {
+                type: "string",
+                description:
+                  "对目标字段值做大小写不敏感匹配。机台：T25FLEX→\"flex25\"（得 b3flex25）、T25UFLEX/b3uflex25→\"uflex25\"；FLEX 与 UFLEX 是不同机台，flex25 不会命中 b3uflex25",
+              },
               mask: { type: "string", description: "device 末 4 位（基础段），如 \"N06Z\"，配合 field=\"device\" 使用" },
               device: { type: "string" },
               probeCardType: { type: "string" },

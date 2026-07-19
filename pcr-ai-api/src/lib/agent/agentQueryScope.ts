@@ -288,13 +288,58 @@ export function resolveJbListingScope(
   return scope;
 }
 
+/**
+ * Map user/shop-floor tester labels to canonical JB/YM ids (b3…).
+ * FLEX and UFLEX are different families — never collapse them.
+ * Examples: T25FLEX→b3flex25, T25UFLEX→b3uflex25, UFLEX 24→b3uflex24, FLEX25→b3flex25.
+ */
 export function inferTesterIdFromText(text: string): string | undefined {
   const b3 = text.match(/(b3(?:uflex|flex|ps16|j750|mst)\d+)/i);
   if (b3) return b3[1]!.toLowerCase();
+
+  // Shop-floor "T{n}{platform}" (UFLEX before FLEX — "T25UFLEX" must not become b3flex25)
+  const tUflex = text.match(/\bT\s*(\d+)\s*UFLEX\b/i);
+  if (tUflex) {
+    return `b3uflex${tUflex[1]!.padStart(2, "0")}`;
+  }
+  // (?<![Uu]) prevents matching the FLEX suffix inside UFLEX
+  const tFlex = text.match(/\bT\s*(\d+)\s*(?<![Uu])FLEX\b/i);
+  if (tFlex) {
+    return `b3flex${tFlex[1]!.padStart(2, "0")}`;
+  }
+  const tPs16 = text.match(/\bT\s*(\d+)\s*PS\s*16(?:00)?\b/i);
+  if (tPs16) {
+    return `b3ps16${tPs16[1]!.padStart(2, "0")}`;
+  }
+  const tJ750 = text.match(/\bT\s*(\d+)\s*J?\s*750\b/i);
+  if (tJ750) {
+    return `b3j750${tJ750[1]!.padStart(2, "0")}`;
+  }
+  const tMst = text.match(/\bT\s*(\d+)\s*MST\b/i);
+  if (tMst) {
+    return `b3mst${tMst[1]!.padStart(2, "0")}`;
+  }
+
   const uflex = text.match(/uflex[\s-]*(\d+)/i);
   if (uflex) {
-    const n = uflex[1]!.padStart(2, "0");
-    return `b3uflex${n}`;
+    return `b3uflex${uflex[1]!.padStart(2, "0")}`;
+  }
+  // \bflex does not match inside "uflex…" (no word boundary between u and f)
+  const flex = text.match(/\bflex[\s-]*(\d+)/i);
+  if (flex) {
+    return `b3flex${flex[1]!.padStart(2, "0")}`;
+  }
+  const ps16 = text.match(/\bps\s*16(?:00)?[\s-]*(\d+)/i);
+  if (ps16) {
+    return `b3ps16${ps16[1]!.padStart(2, "0")}`;
+  }
+  const j750 = text.match(/\bj\s*750[\s-]*(\d+)/i);
+  if (j750) {
+    return `b3j750${j750[1]!.padStart(2, "0")}`;
+  }
+  const mst = text.match(/\bmst[\s-]*(\d+)/i);
+  if (mst) {
+    return `b3mst${mst[1]!.padStart(2, "0")}`;
   }
   return undefined;
 }
