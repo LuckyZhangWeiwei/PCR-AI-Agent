@@ -21,10 +21,13 @@ import {
   getCachedJbPayloadForLot,
 } from "../../agentJbOverviewRoute.js";
 import {
+  buildListingTimeClarifyMessage,
+  canRunListingTimeClarify,
   canRunLotListingDirectRoute,
   lotListingAggregateArgsFromUser,
   lotListingQueryArgsFromUser,
 } from "../../agentJbLotListingRoute.js";
+import { emitTextInChunks } from "../../core/agentLoopShared.js";
 import {
   canRunMaskScopeDirectRoute,
   maskScopeFilterValuesArgs,
@@ -221,8 +224,30 @@ export async function tryRunMaskScopeDirectRoute(
 }
 
 /**
+ * 卡 / device / 跨 lot 列表问法已能解析 scope，但未给时间窗 → 先澄清（数据量过大）。
+ * 须排在 tryRunLotListingDirectRoute 之前。
+ */
+export async function tryRunListingTimeClarifyDirectRoute(
+  sessionId: string,
+  userQuestion: string,
+  _agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void
+): Promise<boolean> {
+  const history = getHistory(sessionId);
+  if (!canRunListingTimeClarify(userQuestion, history)) return false;
+
+  const msg = buildListingTimeClarifyMessage(userQuestion, history);
+  emit({ type: "status", message: "跨 lot 查询需先限定时间范围…" });
+  emitTextInChunks(msg, emit);
+  appendMessages(sessionId, { role: "assistant", content: msg });
+  emit({ type: "done" });
+  return true;
+}
+
+/**
  * 「WA01P14E 在 b3uflex24 近 3 个月所有 lot 列出来」：直连 query_jb_bins + lot 表，
  * 不经过首轮 LLM（避免 get_filter_values 空结果后误判无机台）。
+ * 亦覆盖「6081-03 最近一个月怎样」「WA01N39W 近 3 个月怎样」。
  */
 export async function tryRunLotListingDirectRoute(
   sessionId: string,

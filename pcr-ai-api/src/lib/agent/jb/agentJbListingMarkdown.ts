@@ -2,6 +2,11 @@
 /** YM 侧 lot 信息抽取 + 跨 lot 列表 / 良率列表 markdown（lot_listing / card_test_overview 共用）。 */
 
 import type { RecentLotByTestEndEntry } from "./agentJbBinFormat.js";
+import {
+  isCardTestOverviewQuestion,
+  isDeviceTestOverviewQuestion,
+  isLotListingQuestion,
+} from "./agentJbQuestionClassifiers.js";
 
 /** Yield Monitor 侧 lot 条目（合并进 lot 列表表）。 */
 export type YmLotListingEntry = {
@@ -128,8 +133,11 @@ export function extractTopFailBinByLot(
 
   const out = new Map<string, string>();
   for (const [lot, bins] of byLot) {
-    const top = [...bins.entries()].sort((a, b) => b[1] - a[1])[0];
-    out.set(lot, top ? `BIN${top[0]}（${top[1]}）` : "—");
+    const top = [...bins.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([bin, n]) => `BIN${bin}（${n}）`);
+    out.set(lot, top.length ? top.join("、") : "—");
   }
   return out;
 }
@@ -151,6 +159,10 @@ export type LotListingPresentation = {
   topN?: number;
   includeYield: boolean;
   includeAverageYield: boolean;
+  /** 每 lot 全部探针卡号 */
+  includeCards?: boolean;
+  /** 主要坏 bin（TOP fail） */
+  includeFailBins?: boolean;
 };
 
 const ZH_NUM_LISTING: Record<string, number> = {
@@ -179,11 +191,33 @@ export function inferLotListingPresentation(text: string): LotListingPresentatio
     const n = ZH_NUM_LISTING[zhMatch[1]!];
     if (n) topN = n;
   }
+
+  // 列出 lot / 卡或 device 概况：必须带良率、全部卡、主要坏 bin、平均良率
+  const richListing =
+    isLotListingQuestion(t) ||
+    isCardTestOverviewQuestion(t) ||
+    isDeviceTestOverviewQuestion(t);
+  if (richListing) {
+    return {
+      topN,
+      includeYield: true,
+      includeAverageYield: true,
+      includeCards: true,
+      includeFailBins: true,
+    };
+  }
+
   const includeYield = /(良率|yield|良品率|评价)/i.test(t);
   const includeAverageYield =
     /平均.*(良率|yield|良品率)/i.test(t) ||
     (includeYield && topN != null);
-  return { topN, includeYield, includeAverageYield };
+  return {
+    topN,
+    includeYield,
+    includeAverageYield,
+    includeCards: includeYield,
+    includeFailBins: includeYield,
+  };
 }
 
 export function buildLotListingContext(
@@ -305,6 +339,8 @@ type ListingRow = {
   testEnd: string;
   slotCount: string;
   source: string;
+  yieldPct: number | null;
+  cardIds: string;
 };
 
 /**
@@ -316,7 +352,8 @@ function collectListingRows(
   toolPayload: Record<string, unknown>,
   recent: RecentLotByTestEndEntry[] | undefined,
   ymLots: YmLotListingEntry[] | undefined,
-  ymAlarm: Map<string, number>
+  ymAlarm: Map<string, number>,
+  yieldByLot: Map<string, number>
 ): ListingRow[] {
   const rows: ListingRow[] = [];
   const seen = new Set<string>();
@@ -326,6 +363,7 @@ function collectListingRows(
     if (!lot || seen.has(lot)) continue;
     seen.add(lot);
     const ymCount = ymAlarm.get(lot) ?? 0;
+    const cards = (e.cardIds ?? []).filter(Boolean);
     rows.push({
       lot,
       device: String(e.device ?? "").trim() || "—",
@@ -335,6 +373,8 @@ function collectListingRows(
           ? String(e.slotCount)
           : "—",
       source: ymCount > 0 ? "JB+YM" : "JB STAR",
+      yieldPct: yieldByLot.has(lot) ? yieldByLot.get(lot)! : null,
+      cardIds: cards.length ? cards.join("、") : e.cardId || "—",
     });
   }
 
@@ -356,6 +396,16 @@ function collectListingRows(
           )
         )
       : 0;
+    const cardByPass = toolPayload["cardByPassId"] as
+      | Array<{ cardIds?: string[] }>
+      | undefined;
+    const cardSet = new Set<string>();
+    for (const e of cardByPass ?? []) {
+      for (const c of e.cardIds ?? []) {
+        const s = String(c).trim();
+        if (s) cardSet.add(s);
+      }
+    }
     rows.push({
       lot: primaryLot,
       device: String(toolPayload["device"] ?? "").trim() || "—",
@@ -364,6 +414,8 @@ function collectListingRows(
         : "—",
       slotCount: slotCountNum > 0 ? String(slotCountNum) : "—",
       source: ymCount > 0 ? "JB+YM" : "JB STAR",
+      yieldPct: yieldByLot.has(primaryLot) ? yieldByLot.get(primaryLot)! : null,
+      cardIds: cardSet.size ? [...cardSet].sort().join("、") : "—",
     });
   }
 
@@ -377,6 +429,8 @@ function collectListingRows(
       testEnd: ym.testEnd ? String(ym.testEnd).slice(0, 10) : "—",
       slotCount: "—",
       source: "仅 YM 告警",
+      yieldPct: yieldByLot.has(lot) ? yieldByLot.get(lot)! : null,
+      cardIds: "—",
     });
   }
 
@@ -390,15 +444,23 @@ function collectListingRows(
       testEnd: "—",
       slotCount: "—",
       source: "仅 YM 告警",
+      yieldPct: yieldByLot.has(lot) ? yieldByLot.get(lot)! : null,
+      cardIds: "—",
     });
   }
 
   return rows;
 }
 
+function isRichPresentation(p: LotListingPresentation): boolean {
+  return Boolean(
+    p.includeYield || p.includeCards || p.includeFailBins || p.includeAverageYield
+  );
+}
+
 /**
  * 按测试结束时间排序（"—" 排最后）→ 依据 topN 截取展示行 → 按覆盖情况选表头
- * 文案 → 渲染 detailed/简版表格 + 追问引导 footer。
+ * 文案 → 渲染 detailed/简版/富表（良率+卡+坏 bin）+ 追问引导 footer。
  */
 function renderListingTable(
   rows: ListingRow[],
@@ -433,30 +495,65 @@ function renderListingTable(
     header = `**测试 lot 列表${scopeTag}（最近 ${displayRows.length} 个 lot）**`;
   }
 
+  const rich = isRichPresentation(presentation) && !detailed;
   const tableRows = detailed
     ? [
-        "| # | Lot | Device | 测试结束 | 片数 | TOP fail BIN | YM 报警 | 嫌疑 DUT | 数据来源 |",
-        "|---:|---|---|---|---:|---|---:|---|---|",
+        "| # | Lot | Device | 测试结束 | 片数 | 良率% | 探针卡 | TOP fail BIN | YM 报警 | 嫌疑 DUT | 数据来源 |",
+        "|---:|---|---|---|---:|---:|---|---|---:|---|---|",
         ...displayRows.map((r, i) => {
           const alarm = ymAlarm.get(r.lot);
           const duts = ymSuspect.get(r.lot)?.join("、") ?? "—";
           const failBin = topFail.get(r.lot) ?? "—";
-          return `| ${i + 1} | ${r.lot} | ${r.device} | ${r.testEnd} | ${r.slotCount} | ${failBin} | ${alarm != null && alarm > 0 ? alarm : "—"} | ${duts} | ${r.source} |`;
+          const y =
+            r.yieldPct != null && Number.isFinite(r.yieldPct)
+              ? `${r.yieldPct.toFixed(2)}%`
+              : "—";
+          return `| ${i + 1} | ${r.lot} | ${r.device} | ${r.testEnd} | ${r.slotCount} | ${y} | ${r.cardIds} | ${failBin} | ${alarm != null && alarm > 0 ? alarm : "—"} | ${duts} | ${r.source} |`;
         }),
       ]
-    : [
-        "| # | Lot | Device | 测试结束 | 片数 | 数据来源 |",
-        "|---:|---|---|---|---:|---|",
-        ...displayRows.map((r, i) =>
-          `| ${i + 1} | ${r.lot} | ${r.device} | ${r.testEnd} | ${r.slotCount} | ${r.source} |`
-        ),
-      ];
+    : rich
+      ? [
+          "| # | Lot | Device | 良率% | 探针卡 | 主要坏 bin | 测试结束 | 片数 |",
+          "|---:|---|---|---:|---|---|---|---:|",
+          ...displayRows.map((r, i) => {
+            const failBin = presentation.includeFailBins
+              ? topFail.get(r.lot) ?? "—"
+              : "—";
+            const y =
+              presentation.includeYield &&
+              r.yieldPct != null &&
+              Number.isFinite(r.yieldPct)
+                ? `${r.yieldPct.toFixed(2)}%`
+                : "—";
+            const cards = presentation.includeCards ? r.cardIds : "—";
+            return `| ${i + 1} | ${r.lot} | ${r.device} | ${y} | ${cards} | ${failBin} | ${r.testEnd} | ${r.slotCount} |`;
+          }),
+        ]
+      : [
+          "| # | Lot | Device | 测试结束 | 片数 | 数据来源 |",
+          "|---:|---|---|---|---:|---|",
+          ...displayRows.map((r, i) =>
+            `| ${i + 1} | ${r.lot} | ${r.device} | ${r.testEnd} | ${r.slotCount} | ${r.source} |`
+          ),
+        ];
 
+  let body = `${header}\n\n${tableRows.join("\n")}`;
+  if (presentation.includeAverageYield) {
+    const withYield = displayRows.filter(
+      (r) => r.yieldPct != null && Number.isFinite(r.yieldPct)
+    );
+    if (withYield.length > 0) {
+      const avg =
+        withYield.reduce((s, e) => s + (e.yieldPct as number), 0) /
+        withYield.length;
+      body += `\n\n**平均良率（上述 ${withYield.length} 个有良率的 lot）：${avg.toFixed(2)}%**`;
+    }
+  }
   const footer =
     rows.length >= 1
       ? "\n\n如需深入分析某批次，请告知上表中的 lot 号。"
       : "";
-  return `${header}\n\n${tableRows.join("\n")}${footer}`;
+  return `${body}${footer}`;
 }
 
 /** 跨 lot 列表（JB recentLotsByTestEnd + YM 合并；可选 fail bin / 嫌疑 DUT / 良率列）。 */
@@ -487,14 +584,13 @@ export function buildRecentLotsListingMarkdown(
         return scopeParts.length ? `（${scopeParts.join("，")}）` : "";
       })();
 
-  if (presentation.includeYield && rank?.length) {
-    return buildLotYieldRankListingMarkdown(rank, {
-      scopeTag,
-      totalLots: totalDistinct || rank.length,
-      presentation,
-    });
+  const yieldByLot = new Map<string, number>();
+  for (const e of rank ?? []) {
+    const lot = String(e.lot ?? "").trim();
+    if (lot && Number.isFinite(e.yieldPct)) yieldByLot.set(lot, e.yieldPct);
   }
 
+  // 富表（良率+卡+坏 bin）优先于旧的纯良率表，避免丢卡号/坏 bin
   const recent = toolPayload["recentLotsByTestEnd"] as
     | RecentLotByTestEndEntry[]
     | undefined;
@@ -504,7 +600,52 @@ export function buildRecentLotsListingMarkdown(
   const topFail = ctx?.topFailBinByLot ?? new Map<string, string>();
   const detailed = Boolean(ctx?.detailed);
 
-  const rows = collectListingRows(toolPayload, recent, ymLots, ymAlarm);
+  const rows = collectListingRows(
+    toolPayload,
+    recent,
+    ymLots,
+    ymAlarm,
+    yieldByLot
+  );
+
+  // recent 为空但有 rank 时补行（富表 / 纯良率表共用）
+  if (!recent?.length && rank?.length) {
+    for (const e of rank) {
+      const lot = String(e.lot ?? "").trim();
+      if (!lot || rows.some((r) => r.lot === lot)) continue;
+      rows.push({
+        lot,
+        device: String(e.device ?? "").trim() || "—",
+        testEnd: e.testEnd ? String(e.testEnd).slice(0, 10) : "—",
+        slotCount: "—",
+        source: "JB STAR",
+        yieldPct: Number.isFinite(e.yieldPct) ? e.yieldPct : null,
+        cardIds: "—",
+      });
+    }
+  }
+
+  if (rows.length > 0 && (isRichPresentation(presentation) || detailed)) {
+    return renderListingTable(rows, {
+      scopeTag,
+      totalDistinct: totalDistinct || rows.length,
+      presentation,
+      detailed,
+      ymAlarm,
+      ymSuspect,
+      topFail,
+    });
+  }
+
+  // 兼容：仅要良率、无卡/坏 bin 列时走旧纯良率表
+  if (presentation.includeYield && rank?.length && !presentation.includeCards) {
+    return buildLotYieldRankListingMarkdown(rank, {
+      scopeTag,
+      totalLots: totalDistinct || rank.length,
+      presentation,
+    });
+  }
+
   if (rows.length === 0) return null;
 
   return renderListingTable(rows, {

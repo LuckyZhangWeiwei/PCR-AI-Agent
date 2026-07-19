@@ -459,6 +459,23 @@ const ZH_NUM: Record<string, number> = {
  * Name kept for backward compatibility (callers treat {} as "no window").
  */
 export function inferRecentMonthsWindow(text: string): TimeWindow {
+  // ── absolute date range: 2026-05-01 到 2026-06-01 ──
+  const absRange = text.match(
+    /(\d{4}-\d{2}-\d{2}).{0,12}(?:到|至|~|～|—|–|-)\s*(\d{4}-\d{2}-\d{2})/
+  );
+  if (absRange) {
+    const from = absRange[1]!;
+    const to = absRange[2]!;
+    if (from <= to) {
+      return {
+        testEndFrom: from,
+        testEndTo: to,
+        timeFrom: `${from}T00:00:00.000Z`,
+        timeTo: `${to}T23:59:59.999Z`,
+      };
+    }
+  }
+
   // ── day(s) ──
   const dayArabic = text.match(/(?:最近|近|过去|这|本)\s*(\d+)\s*(?:个)?\s*天/);
   if (dayArabic) {
@@ -515,6 +532,14 @@ export function resolveRecentTimeWindow(
   const fromText = inferRecentMonthsWindow(text);
   if (fromText.testEndFrom) return fromText;
   return inferRecentMonthsWindowFromHistory(history);
+}
+
+/** 句中或近期 history 是否已解析出日历时间窗（相对「最近 N 月」或绝对日期）。 */
+export function hasResolvedTimeWindow(
+  text: string,
+  history: ChatMessage[] = []
+): boolean {
+  return Boolean(resolveRecentTimeWindow(text, history).testEndFrom);
 }
 
 /** Build query_jb_bins args from YM tool call + user question. */

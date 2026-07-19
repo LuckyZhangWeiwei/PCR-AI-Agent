@@ -16,6 +16,7 @@ import {
   isBadBinRankingQuestion,
   isBinCardAttributionQuestion,
   isCardTestOverviewQuestion,
+  isDeviceTestOverviewQuestion,
   isLotDetailListingQuestion,
   isLotListingQuestion,
   isLotOverviewQuestion,
@@ -27,12 +28,14 @@ import {
   buildJbScopeArgs,
   buildLotListingQueryArgs,
   buildScopedBadBinAggregateArgs,
+  hasResolvedTimeWindow,
   inferMaskFromHistory,
   inferMaskFromText,
   inferRecentMonthsWindow,
 } from "./agentQueryScope.js";
 import {
   canRunLotListingDirectRoute,
+  isLotListingOrOverviewQuestion,
 } from "./agentJbLotListingRoute.js";
 import {
   canRunScopedBadBinDirectRoute,
@@ -54,11 +57,22 @@ type PendingQueryChecker = {
   ): PendingQuery | null;
 };
 
-function needsJbAfterYm(userQuestion: string, lastToolName: string): boolean {
+function needsJbAfterYm(
+  userQuestion: string,
+  lastToolName: string,
+  history: ChatMessage[]
+): boolean {
   if (lastToolName !== "query_yield_triggers" && lastToolName !== "aggregate_yield_triggers") {
     return false;
   }
-  if (isLotListingQuestion(userQuestion) || isLotDetailListingQuestion(userQuestion)) {
+  // 无时间窗时不应补 JB（会全量扫库）；由 PRE_LLM 时间澄清路由先追问
+  if (
+    isLotListingOrOverviewQuestion(userQuestion) &&
+    !hasResolvedTimeWindow(userQuestion, history)
+  ) {
+    return false;
+  }
+  if (isLotListingOrOverviewQuestion(userQuestion) || isLotDetailListingQuestion(userQuestion)) {
     return true;
   }
   if (/测试情况|测试记录|在该.*台.*测|机台.*测试|共.*测.*lot|几个\s*lot/i.test(userQuestion)) {
@@ -86,7 +100,7 @@ const CHECKERS: PendingQueryChecker[] = [
   {
     name: "query_jb_bins:after_ym_scope",
     check(userQuestion, lastToolName, _payload, history) {
-      if (!needsJbAfterYm(userQuestion, lastToolName)) return null;
+      if (!needsJbAfterYm(userQuestion, lastToolName, history)) return null;
       const args =
         buildLotListingQueryArgs(userQuestion, history) ??
         buildJbScopeArgs(userQuestion, history, lastToolName);
@@ -116,10 +130,18 @@ const CHECKERS: PendingQueryChecker[] = [
         isProbeCardQuestion(userQuestion) ||
         isLotOverviewQuestion(userQuestion) ||
         isCardTestOverviewQuestion(userQuestion) ||
+        isDeviceTestOverviewQuestion(userQuestion) ||
         isBadBinRankingQuestion(userQuestion) ||
         extractBinFromUserText(userQuestion) != null ||
         /测试情况|哪.*die|坏\s*die|哪.*bin/i.test(userQuestion);
       if (!isJbScoped) return null;
+      // 卡/device 概况与跨 lot 列表：无时间窗不补查
+      if (
+        isLotListingOrOverviewQuestion(userQuestion) &&
+        !hasResolvedTimeWindow(userQuestion, history)
+      ) {
+        return null;
+      }
       const args: Record<string, unknown> = { mask, limit: 200 };
       const window = inferRecentMonthsWindow(userQuestion);
       if (window.testEndFrom) args["testEndFrom"] = window.testEndFrom;

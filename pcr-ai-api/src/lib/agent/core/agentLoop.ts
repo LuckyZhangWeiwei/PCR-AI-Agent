@@ -48,6 +48,7 @@ import {
 import {
   tryRunLotOverviewDirectRoute,
   tryRunMaskScopeDirectRoute,
+  tryRunListingTimeClarifyDirectRoute,
   tryRunLotListingDirectRoute,
   tryRunEquipmentDirectRoute,
   tryRunPerSlotBinRankingDirectRoute,
@@ -121,6 +122,7 @@ export async function runAgentLoop(
     tryRunDutFocusBinsDirectRoute,
     tryRunDutBinAggDirectRoute,
     tryRunBinLotRankingDirectRoute,
+    tryRunListingTimeClarifyDirectRoute,
     tryRunLotListingDirectRoute,
     tryRunScopedBadBinDirectRoute,
     tryRunMaskScopeDirectRoute,

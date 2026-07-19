@@ -252,14 +252,39 @@ export function isCardDutQuestion(text: string): boolean {
   return /(哪个.*dut|dut.*哪个|哪个.*site|site.*哪个|dut.*问题|dut.*坏|哪个.*触点|触点.*问题|dut.*失效|哪个.*不良|dut.*异常)/i.test(t);
 }
 
+/** 概况类口语：怎样 / 怎么样 / 如何 / 测试情况 / 使用情况 等（卡与 device 共用）。 */
+const OVERVIEW_ASK_RE =
+  /(?:测试情况|的情况|整体情况|使用情况|历次测试|测试结果|性能|概况|表现|效果)?\s*(?:怎样|怎么样|如何)|测试情况|的情况|整体情况|使用情况|历次测试|测试结果|性能|概况|表现如何|表现怎样/i;
+
 /** 用户询问某张探针卡的测试概况（卡号格式 dddd-dd/ddd + 概况关键词）。 */
 export function isCardTestOverviewQuestion(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
   if (!/\b\d{4}-\d{2,3}\b/.test(t)) return false;
-  return /(测试情况|的情况|整体情况|使用情况|历次测试|测试结果|性能|效果怎样|效果怎么样|效果如何)/i.test(
-    t
-  );
+  // DUT / 具体 BIN 归因另有分支，勿抢答
+  if (isCardDutQuestion(t) || isBinCardAttributionQuestion(t)) return false;
+  if (isCardYieldCompareQuestion(t) || isProbeCardTesterPerformanceQuestion(t)) {
+    return false;
+  }
+  if (isLotListingQuestion(t)) return false;
+  return OVERVIEW_ASK_RE.test(t);
+}
+
+/**
+ * 用户询问某个完整 device 的概况（如「WA01N39W 怎样」），无具体 lot。
+ * 须列该 device 时间窗内 lot（含良率 / 卡 / 主要坏 bin），禁止用单 lot 概况代答。
+ */
+export function isDeviceTestOverviewQuestion(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (extractLotFromUserText(t)) return false;
+  if (/\b\d{4}-\d{2,3}\b/.test(t)) return false; // 具体卡号走 card_test_overview
+  if (!inferDeviceFromText(t)) return false;
+  if (isLotListingQuestion(t) || isLotYieldRankingQuestion(t)) return false;
+  if (isBadBinRankingQuestion(t) || isProbeCardTesterPerformanceQuestion(t)) {
+    return false;
+  }
+  return OVERVIEW_ASK_RE.test(t);
 }
 
 /** 用户问各片/某片「中断几次」等次数类问题。 */
@@ -617,6 +642,7 @@ export function jbReplySkipsCommentaryLlm(
     mode === "bin_card_attribution" ||
     mode === "lot_yield_ranking" ||
     mode === "lot_listing" ||
+    mode === "card_test_overview" ||
     mode === "card_dut_question" ||
     mode === "good_bin_value"
     // "per_slot_bin_ranking" 已移出：50 行跨片数据 LLM 最有价值（BIN 规律/异常片/pass 对比）
@@ -648,6 +674,10 @@ export function detectJbReplyMode(userMessage: string): JbReplyMode {
   if (isProbeCardTesterPerformanceQuestion(userMessage)) return "generic";
   // 多卡「测试情况对比」必须先于 equipment：否则「这4张卡对比」被单 lot 卡表劫持（答非所问）。
   if (isMultiCardComparisonQuestion(userMessage)) return "generic";
+  // 具体卡号概况须先于 equipment：否则「6081-03 这张卡怎样」被单 lot 卡表劫持。
+  if (isCardTestOverviewQuestion(userMessage)) return "card_test_overview";
+  // device 概况 → lot_listing（跨 lot 表：良率 / 全部卡 / 主要坏 bin）
+  if (isDeviceTestOverviewQuestion(userMessage)) return "lot_listing";
   if (isTesterMachineQuestion(userMessage) && isProbeCardQuestion(userMessage)) {
     return "equipment";
   }
@@ -661,7 +691,6 @@ export function detectJbReplyMode(userMessage: string): JbReplyMode {
   if (isPerSlotBadBinRankingQuestion(userMessage)) return "per_slot_bin_ranking";
   if (isSlotPassYieldQuestion(userMessage)) return "slot_pass_yield";
   if (isCardDutQuestion(userMessage)) return "card_dut_question";
-  if (isCardTestOverviewQuestion(userMessage)) return "card_test_overview";
   // 单片问题必须在 lot_overview 之前检查，避免「第二片的测试情况」触发 lot_overview
   if (isSingleSlotQuestion(userMessage)) return "single_slot";
   if (isGoodBinValueQuestion(userMessage)) return "good_bin_value";

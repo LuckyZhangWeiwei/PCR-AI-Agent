@@ -251,6 +251,12 @@ describe("agentQueryScope", () => {
     assert.ok(args?.["testEndFrom"]);
   });
 
+  it("inferRecentMonthsWindow parses absolute date range", () => {
+    const w = inferRecentMonthsWindow("6081-03 在 2026-05-01 到 2026-06-01 怎样");
+    assert.equal(w.testEndFrom, "2026-05-01");
+    assert.equal(w.testEndTo, "2026-06-01");
+  });
+
   it("inferDeviceFromText matches WC/WB full device codes (A1-4)", () => {
     assert.equal(inferDeviceFromText("WC13N55Z 各 lot 良率 top5"), "WC13N55Z");
     assert.equal(inferDeviceFromText("WA03P02G 测试情况"), "WA03P02G");

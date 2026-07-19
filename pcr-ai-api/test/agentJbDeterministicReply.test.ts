@@ -1078,15 +1078,76 @@ describe("JB listing scope (card / device)", () => {
     assert.ok(md?.includes("平均良率"));
   });
 
-  it("canRunLotListingDirectRoute true for card-scoped lot list", async () => {
-    const { canRunLotListingDirectRoute } = await import(
+  it("canRunLotListingDirectRoute true for card-scoped lot list with time window", async () => {
+    const { canRunLotListingDirectRoute, canRunListingTimeClarify } = await import(
       "../src/lib/agent/agentJbLotListingRoute.js"
     );
     assert.ok(
-      canRunLotListingDirectRoute("列出这个卡最近测试的5个lot", [
+      canRunLotListingDirectRoute("列出这个卡最近一个月测试的5个lot", [
         { role: "user", content: "6081-03 测试过什么lot" },
       ])
     );
+    assert.equal(
+      canRunListingTimeClarify("6081-03 怎样", []),
+      true,
+      "卡概况无时间窗须澄清"
+    );
+    assert.equal(
+      canRunLotListingDirectRoute("6081-03 怎样", []),
+      false
+    );
+    assert.ok(canRunLotListingDirectRoute("6081-03 最近一个月怎样", []));
+  });
+
+  it("detectJbReplyMode: card/device 怎样 → 对症模式", () => {
+    assert.equal(detectJbReplyMode("6081-03 怎样"), "card_test_overview");
+    assert.equal(detectJbReplyMode("6081-03 这张卡怎么样"), "card_test_overview");
+    assert.equal(detectJbReplyMode("WA01N39W 最近一个月怎样"), "lot_listing");
+  });
+
+  it("buildRecentLotsListingMarkdown rich columns: yield + cards + fail bins", () => {
+    const md = buildRecentLotsListingMarkdown(
+      {
+        totalDistinctLots: 1,
+        recentLotsByTestEnd: [
+          {
+            lot: "DR43370.1W",
+            device: "WA01N39W",
+            testEnd: "2026-07-09",
+            slotCount: 24,
+            cardIds: ["6081-03", "6081-04"],
+            hasCardChangeInLot: false,
+            cardId: "6081-03",
+            slots: [1, 2],
+          },
+        ],
+        lotYieldRankByTestEnd: [
+          {
+            lot: "DR43370.1W",
+            device: "WA01N39W",
+            yieldPct: 96.42,
+            worstSlot: 2,
+            worstPassId: 1,
+            testEnd: "2026-07-09",
+          },
+        ],
+      },
+      {
+        scopeLabel: "cardId=6081-03",
+        presentation: {
+          includeYield: true,
+          includeAverageYield: true,
+          includeCards: true,
+          includeFailBins: true,
+        },
+        topFailBinByLot: new Map([["DR43370.1W", "BIN7（12）、BIN11（5）"]]),
+      }
+    );
+    assert.ok(md?.includes("96.42%"));
+    assert.ok(md?.includes("6081-03"));
+    assert.ok(md?.includes("6081-04"));
+    assert.ok(md?.includes("BIN7"));
+    assert.ok(md?.includes("平均良率"));
   });
 });
 

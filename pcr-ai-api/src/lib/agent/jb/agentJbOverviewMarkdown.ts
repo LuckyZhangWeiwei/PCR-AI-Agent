@@ -636,10 +636,23 @@ export function buildDeterministicJbTables(
 
   if (mode === "card_test_overview") {
     const cardId = extractCardIdFromUserText(userMessage);
-    if (cardId) {
-      return withPatterns(buildCardTestOverviewMarkdown(toolPayload, cardId), toolPayload);
-    }
-    return null;
+    if (!cardId) return null;
+    // 跨 lot 概况：优先直出富表（良率 / 全部卡 / 主要坏 bin），避免单 lot 概况答非所问
+    const presentation =
+      listingCtx?.presentation ?? inferLotListingPresentation(userMessage);
+    const listing = buildRecentLotsListingMarkdown(toolPayload, {
+      ...listingCtx,
+      scopeLabel: listingCtx?.scopeLabel ?? `cardId=${cardId}`,
+      presentation: {
+        ...presentation,
+        includeYield: true,
+        includeAverageYield: true,
+        includeCards: true,
+        includeFailBins: true,
+      },
+    });
+    if (listing) return withPatterns(listing, toolPayload);
+    return withPatterns(buildCardTestOverviewMarkdown(toolPayload, cardId), toolPayload);
   }
 
   if (mode === "bin_card_attribution") {
