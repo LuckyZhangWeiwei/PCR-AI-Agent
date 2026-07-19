@@ -21,6 +21,7 @@ import { passIdSortLabel } from "../../infcontrol/jbYield/jbYieldRank.js";
 import { buildBinSlotTrendMarkdownOnDemand } from "./agentJbBinTrend.js";
 import type { JbReplyMode } from "./agentJbQuestionClassifiers.js";
 import {
+  CARD_NUMBER_RE,
   detectJbReplyMode,
   extractBinFromUserText,
   extractPassIdFromUserText,
@@ -53,8 +54,8 @@ export type AgentTablesDigest = {
 
 /** 从用户文字提取探针卡 ID（dddd-dd/ddd 格式）。 */
 function extractCardIdFromUserText(text: string): string | null {
-  const m = text.match(/\b(\d{4}-\d{2,3})\b/);
-  return m ? m[1]! : null;
+  const m = text.match(CARD_NUMBER_RE);
+  return m ? m[0]! : null;
 }
 
 function formatEquipmentTables(toolPayload: Record<string, unknown>): string | null {

@@ -91,6 +91,13 @@ function isCardComboRankingQuestion(text: string): boolean {
   return isProbeCardComboRankingQuestion(text);
 }
 
+/**
+ * 探针卡号格式 dddd-dd/ddd（如 6081-03）。负向前瞻排除绝对日期片段——
+ * 「2026-05-01」中的「2026-05」位数与卡号后缀重叠，会被误判成卡号。
+ */
+export const CARD_NUMBER_RE = /\b\d{4}-\d{2,3}\b(?!-\d{1,2}\b)/;
+const CARD_NUMBER_RE_G = /\b\d{4}-\d{2,3}\b(?!-\d{1,2}\b)/g;
+
 /** 用户比较两张或多张探针卡的良率/坏 die（哪张更差/更好）。 */
 export function isCardYieldCompareQuestion(text: string): boolean {
   const t = text.trim();
@@ -99,7 +106,7 @@ export function isCardYieldCompareQuestion(text: string): boolean {
   if (/哪张.*(良率|yield|更差|更好|最差|最好|最低|最高)|(?:良率|yield).*(哪张|更差|更好|最差)/i.test(t)) {
     return true;
   }
-  const twoCards = (t.match(/\d{4}-\d{2,3}/g) ?? []).length >= 2;
+  const twoCards = (t.match(CARD_NUMBER_RE_G) ?? []).length >= 2;
   if (twoCards && /(哪张|哪个|良率|yield|更差|更好|最差|最好)/i.test(t)) {
     return true;
   }
@@ -248,7 +255,7 @@ export function isPerSlotBadBinRankingQuestion(text: string): boolean {
 export function isCardDutQuestion(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
-  if (!/\b\d{4}-\d{2,3}\b/.test(t)) return false;
+  if (!CARD_NUMBER_RE.test(t)) return false;
   return /(哪个.*dut|dut.*哪个|哪个.*site|site.*哪个|dut.*问题|dut.*坏|哪个.*触点|触点.*问题|dut.*失效|哪个.*不良|dut.*异常)/i.test(t);
 }
 
@@ -260,7 +267,10 @@ const OVERVIEW_ASK_RE =
 export function isCardTestOverviewQuestion(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
-  if (!/\b\d{4}-\d{2,3}\b/.test(t)) return false;
+  // 已点名具体 lot 的走 lot_overview / lot 内单卡表，不能被跨 lot 卡概况抢答
+  // （与 isDeviceTestOverviewQuestion / isTesterTestOverviewQuestion 保持一致）
+  if (extractLotFromUserText(t)) return false;
+  if (!CARD_NUMBER_RE.test(t)) return false;
   // DUT / 具体 BIN 归因另有分支，勿抢答
   if (isCardDutQuestion(t) || isBinCardAttributionQuestion(t)) return false;
   if (isCardYieldCompareQuestion(t) || isProbeCardTesterPerformanceQuestion(t)) {
@@ -278,7 +288,7 @@ export function isDeviceTestOverviewQuestion(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
   if (extractLotFromUserText(t)) return false;
-  if (/\b\d{4}-\d{2,3}\b/.test(t)) return false; // 具体卡号走 card_test_overview
+  if (CARD_NUMBER_RE.test(t)) return false; // 具体卡号走 card_test_overview
   if (!inferDeviceFromText(t)) return false;
   if (isLotListingQuestion(t) || isLotYieldRankingQuestion(t)) return false;
   if (isBadBinRankingQuestion(t) || isProbeCardTesterPerformanceQuestion(t)) {
@@ -295,7 +305,7 @@ export function isTesterTestOverviewQuestion(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
   if (extractLotFromUserText(t)) return false;
-  if (/\b\d{4}-\d{2,3}\b/.test(t)) return false;
+  if (CARD_NUMBER_RE.test(t)) return false;
   if (inferDeviceFromText(t)) return false; // device 概况另走
   if (!inferTesterIdFromText(t)) return false;
   if (isLotListingQuestion(t) || isLotYieldRankingQuestion(t)) return false;
@@ -526,7 +536,7 @@ export function isCardTypeLevelOverviewQuestion(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
   if (extractLotFromUserText(t)) return false;
-  if (/\b\d{4}-\d{2,3}\b/.test(t)) return false; // 具体卡号另有分支
+  if (CARD_NUMBER_RE.test(t)) return false; // 具体卡号另有分支
   if (!/\b\d{4}\b/.test(t)) return false;
   if (!/卡|probe\s*card|型号|card\s*type/i.test(t)) return false;
   return /(测试情况|的情况|整体情况|使用情况|历次测试|测试结果|性能|概况|怎么样|如何)/i.test(t);
@@ -542,7 +552,7 @@ export function isMultiCardComparisonQuestion(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
   // ≥2 个完整卡号（dddd-dd）即视为多卡对比——即使没出现「卡」字，且优先于 lot 排除（卡号 9416-01 可能被误当 lot）。
-  const cardNums = (t.match(/\d{4}-\d{2,3}/g) ?? []).length;
+  const cardNums = (t.match(CARD_NUMBER_RE_G) ?? []).length;
   if (!/卡|probe\s*card|cardid/i.test(t) && cardNums < 2) return false;
   if (cardNums < 2 && extractLotFromUserText(t)) return false; // 指定单 lot 另走概况
   const multiCard =
