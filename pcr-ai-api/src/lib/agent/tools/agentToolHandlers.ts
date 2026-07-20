@@ -56,6 +56,11 @@ export function resolveToolResultMaxChars(options?: RunToolOptions): number {
   );
 }
 
+export {
+  AGENT_TOOL_LIST_LIMIT_DEFAULT,
+  AGENT_TOOL_LIST_LIMIT_MAX,
+} from "./agentToolListLimits.js";
+
 export function clampLimit(raw: unknown, defaultVal: number, max: number): number {
   const n = typeof raw === "number" ? raw : defaultVal;
   return Math.min(Math.max(1, Math.round(n)), max);

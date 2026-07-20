@@ -170,7 +170,7 @@ export type JbListingScope = {
 export function jbListingScopeToQueryArgs(
   scope: JbListingScope
 ): Record<string, unknown> {
-  const args: Record<string, unknown> = { limit: 200 };
+  const args: Record<string, unknown> = { limit: 500 };
   if (scope.cardId) args["cardId"] = scope.cardId;
   if (scope.device) args["device"] = scope.device;
   if (scope.testerId) args["testerId"] = scope.testerId;

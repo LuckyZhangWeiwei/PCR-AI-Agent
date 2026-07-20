@@ -29,7 +29,7 @@ export const TOOL_SCHEMAS = [
           timeTo: { type: "string", description: "结束时间 ISO 8601" },
           limit: {
             type: "number",
-            description: "返回行数，默认 50，最大 200",
+            description: "返回行数，默认 50，最大 500",
           },
         },
         required: [],
@@ -112,7 +112,7 @@ export const TOOL_SCHEMAS = [
           },
           limit: {
             type: "number",
-            description: "返回行数，默认 50，最大 200；传 lot 时忽略（拉全量行以免漏 sort1）",
+            description: "返回行数，默认 50，最大 500；传 lot 时忽略（拉全量行以免漏 sort1）",
           },
         },
         required: [],

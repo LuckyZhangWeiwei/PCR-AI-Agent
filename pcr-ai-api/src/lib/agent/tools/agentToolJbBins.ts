@@ -33,6 +33,7 @@ import {
 import {
   buildDistinctLotsFromMatchingRows,
   fetchOracleDistinctLotsForJb,
+  shouldFetchFullRowsForListing,
 } from "../agentJbDistinctLots.js";
 import {
   buildCardDegradationSignal,
@@ -45,10 +46,11 @@ import {
   attachDutConcentrationToJbPayload,
   type RunToolOptions,
 } from "./agentToolHandlers.js";
+import {
+  AGENT_TOOL_LIST_LIMIT_DEFAULT,
+  AGENT_TOOL_LIST_LIMIT_MAX,
+} from "./agentToolListLimits.js";
 import { fetchYmRowsForCard } from "./agentToolYieldTriggers.js";
-
-const TOOL_LIST_LIMIT = 50;
-const TOOL_LIST_LIMIT_MAX = 200;
 
 /** 指定 lot 时须取全量行，否则 TESTEND DESC + limit 会丢掉较早的 sort1（passId=1）行。 */
 export function isJbLotScopedAgentQuery(args: Record<string, unknown>): boolean {
@@ -77,7 +79,11 @@ export async function toolQueryJbBins(
   maxChars: number,
   options?: RunToolOptions
 ): Promise<string> {
-  const limit = clampLimit(args["limit"], TOOL_LIST_LIMIT, TOOL_LIST_LIMIT_MAX);
+  const limit = clampLimit(
+    args["limit"],
+    AGENT_TOOL_LIST_LIMIT_DEFAULT,
+    AGENT_TOOL_LIST_LIMIT_MAX
+  );
   const lotScoped = isJbLotScopedAgentQuery(args);
   const queryInput: Record<string, unknown> = { ...args, limit };
   if (lotScoped && !jbQueryHasTimeFilter(args)) {
@@ -109,12 +115,18 @@ export async function toolQueryJbBins(
     const matchingEnriched = matching.map((r) =>
       enrichJbRow(r as Record<string, unknown>)
     );
-    const rows = (lotScoped ? matchingEnriched : filterInfcontrolLayerBinV3DummyRows(parsed.applied, limit).map(
-      (r) => enrichJbRow(r as Record<string, unknown>)
-    ));
     const distinctLots = lotScoped
       ? undefined
       : buildDistinctLotsFromMatchingRows(matchingEnriched);
+    const useFullRows =
+      lotScoped ||
+      (distinctLots != null &&
+        shouldFetchFullRowsForListing(distinctLots.totalDistinct));
+    const rows = useFullRows
+      ? matchingEnriched
+      : filterInfcontrolLayerBinV3DummyRows(parsed.applied, limit).map((r) =>
+          enrichJbRow(r as Record<string, unknown>)
+        );
     const cardDegradationSignal = await computeCardSignal(rows);
     const wrapped = wrapJbQueryResultForAgent(rows, {
       lotScopedFullRows: lotScoped,
@@ -129,34 +141,38 @@ export async function toolQueryJbBins(
     return serializeJbQueryResultForAgent(wrapped, maxChars);
   }
 
-  const sql = lotScoped
+  // Non-lot scope: resolve distinct lots first so small windows can fetch full rows.
+  const distinctLots = lotScoped
+    ? null
+    : await fetchOracleDistinctLotsForJb(
+        parsed.whereAndSql,
+        parsed.binds as Record<string, string | number | Date>
+      );
+  const useFullRows =
+    lotScoped ||
+    (distinctLots != null &&
+      shouldFetchFullRowsForListing(distinctLots.totalDistinct));
+  const sql = useFullRows
     ? buildInfcontrolLayerBinsV3SqlFullMatching(parsed.whereAndSql)
     : buildInfcontrolLayerBinsV3Sql(parsed.whereAndSql);
-  const queryBinds = lotScoped ? parsed.binds : { ...parsed.binds, lim: limit };
+  const queryBinds = useFullRows ? parsed.binds : { ...parsed.binds, lim: limit };
   logAgentSql("query_jb_bins", sql, queryBinds, {
     lotScoped,
+    fullRowsForListing: useFullRows && !lotScoped,
     mask: String(args["mask"] ?? "") || undefined,
     lot: String(args["lot"] ?? "") || undefined,
     cardId: String(args["cardId"] ?? "") || undefined,
   });
-  const [rows, distinctLots] = await Promise.all([
-    withConnection(async (conn) => {
-      const result = await conn.execute(sql, queryBinds, {
-        outFormat: oracledb.OUT_FORMAT_OBJECT,
-      });
-      const r = (result.rows ?? []) as Record<string, unknown>[];
-      logAgentSql("query_jb_bins:result", "(rows returned)", queryBinds, {
-        rowCount: r.length,
-      });
-      return r;
-    }),
-    lotScoped
-      ? Promise.resolve(null)
-      : fetchOracleDistinctLotsForJb(
-          parsed.whereAndSql,
-          parsed.binds as Record<string, string | number | Date>
-        ),
-  ]);
+  const rows = await withConnection(async (conn) => {
+    const result = await conn.execute(sql, queryBinds, {
+      outFormat: oracledb.OUT_FORMAT_OBJECT,
+    });
+    const r = (result.rows ?? []) as Record<string, unknown>[];
+    logAgentSql("query_jb_bins:result", "(rows returned)", queryBinds, {
+      rowCount: r.length,
+    });
+    return r;
+  });
   const enriched = rows.map(enrichJbRow);
   const cardDegradationSignal = await computeCardSignal(enriched);
   const wrapped = wrapJbQueryResultForAgent(enriched, {
@@ -197,7 +213,7 @@ export async function toolAggregateJbBins(
     return (
       "aggregate_jb_bins 错误：未传 lot / device / cardId / slot 等过滤条件，将统计全库数据而非用户指定的批次。" +
       "用户已给出 lot ID 时须传 lot（完整含后缀，如 NF12827.1R）。" +
-      "单 lot「整体/概况/坏 bin 排名」请改用 query_jb_bins(lot, limit:200)，读 topBadBins、slotYieldSummary、cardByPassId；勿调用无过滤的本工具。"
+      "单 lot「整体/概况/坏 bin 排名」请改用 query_jb_bins(lot, limit:500)，读 topBadBins、slotYieldSummary、cardByPassId；勿调用无过滤的本工具。"
     );
   }
 

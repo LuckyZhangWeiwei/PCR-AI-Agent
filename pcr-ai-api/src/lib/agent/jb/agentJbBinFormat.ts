@@ -406,6 +406,49 @@ export function buildBinTotalsByLot(
     }));
 }
 
+/** Session-cache slim: keep top N bad bins per lot for lot_listing fail-bin column. */
+export function slimBinTotalsByLotForCache(
+  totals: Array<{ lot: string; device: string; badBins: AgentJbBinEntry[] }>,
+  topN = 3
+): Array<{ lot: string; device: string; badBins: AgentJbBinEntry[] }> {
+  return totals.map((e) => ({
+    lot: e.lot,
+    device: e.device,
+    badBins: [...e.badBins]
+      .sort((a, b) => b.dieCount - a.dieCount)
+      .slice(0, topN),
+  }));
+}
+
+/**
+ * Merge DB-level lot enumeration (override) with per-lot card/slot enrichment from
+ * detail rows. Override keeps testEnd/slotCount/order; rows fill empty cardIds.
+ */
+export function mergeRecentLotsWithRowEnrichment(
+  override: RecentLotByTestEndEntry[],
+  rows: Record<string, unknown>[]
+): RecentLotByTestEndEntry[] {
+  if (!override.length) return override;
+  const fromRows = buildRecentLotsByTestEnd(rows, Math.max(override.length, 50));
+  const byLot = new Map(fromRows.map((e) => [e.lot, e]));
+  return override.map((e) => {
+    const rowLot = byLot.get(e.lot);
+    if (!rowLot) return e;
+    const overrideCards = (e.cardIds ?? []).filter(Boolean);
+    if (overrideCards.length > 0) return e;
+    const cards = (rowLot.cardIds ?? []).filter(Boolean);
+    if (!cards.length && !rowLot.cardId) return e;
+    return {
+      ...e,
+      cardIds: cards.length ? cards : rowLot.cardIds,
+      cardId: e.cardId || rowLot.cardId || cards[cards.length - 1] || "",
+      slots: e.slots?.length ? e.slots : rowLot.slots,
+      hasCardChangeInLot: e.hasCardChangeInLot || rowLot.hasCardChangeInLot,
+      testerId: e.testerId || rowLot.testerId,
+    };
+  });
+}
+
 
 export function normalizeBinsForAgent(bins: unknown): AgentJbBinEntry[] {
   if (!Array.isArray(bins)) return [];
@@ -578,14 +621,21 @@ export function wrapJbQueryResultForAgent(
   const slotYieldSummary = buildSlotYieldSummary(yieldRows);
   const yieldByPassId = buildYieldByPassId(yieldRows);
   const slotYieldPivot = buildSlotYieldPivot(slotYieldSummary);
-  const lotYieldRankByTestEnd = buildLotYieldRank(rows, 20);
+  const lotYieldRankTopN = Math.max(
+    20,
+    meta?.recentLotsOverride?.length ?? 0,
+    meta?.totalDistinctLots && meta.totalDistinctLots > 0
+      ? Math.min(meta.totalDistinctLots, 50)
+      : 0
+  );
+  const lotYieldRankByTestEnd = buildLotYieldRank(rows, lotYieldRankTopN);
   const slotBadBinsCompact = buildSlotBadBinsCompact(yieldRows);
   const topBadBins = buildTopBadBins(yieldRows, 15);
   const cardChangesBySlotPass = buildCardChangesBySlotPass(yieldRows);
   const cardByPassId = buildCardByPassId(yieldRows);
   const recentLotsByTestEnd =
     meta?.recentLotsOverride && meta.recentLotsOverride.length > 0
-      ? meta.recentLotsOverride
+      ? mergeRecentLotsWithRowEnrichment(meta.recentLotsOverride, rows)
       : buildRecentLotsByTestEnd(rows, 20);
   const testerByLot = buildTesterByLot(rows);
   const binTotalsByLot = buildBinTotalsByLot(rows);
@@ -1056,6 +1106,13 @@ export function buildJbSessionCacheJson(wrapped: Record<string, unknown>): strin
   const rank = wrapped["lotYieldRankByTestEnd"] as Array<unknown> | undefined;
   if (rank?.length) {
     cache["lotYieldRankByTestEnd"] = rank;
+  }
+
+  const binTotals = wrapped["binTotalsByLot"] as
+    | Array<{ lot: string; device: string; badBins: AgentJbBinEntry[] }>
+    | undefined;
+  if (binTotals?.length) {
+    cache["binTotalsByLot"] = slimBinTotalsByLotForCache(binTotals, 3);
   }
 
   if (lotScoped && summary?.length) {

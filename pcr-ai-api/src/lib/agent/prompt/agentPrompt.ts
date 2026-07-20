@@ -197,7 +197,7 @@ const SEC_YIELD_TRIGGERS = `\
 
 **硬规则：**
 - 用户问 **良率 / yield%** 时 **禁止** 用 \`aggregate_yield_triggers\` 的 \`count\` 当良率；也 **禁止** 只查 Yield Monitor 就结束。
-- **一次** \`query_jb_bins(device|lot|cardId, limit:200)\` 通常足够；读 \`lotYieldRankByTestEnd\`（按 TESTEND 降序，含每 lot 的 \`yieldPct\`=\该 lot 最差 slot×pass 良率）。用户要「良率最差 top N」→ 对列表按 \`yieldPct\` **升序**重排后取前 N。
+- **一次** \`query_jb_bins(device|lot|cardId, limit:500)\` 通常足够；读 \`lotYieldRankByTestEnd\`（按 TESTEND 降序，含每 lot 的 \`yieldPct\`=\该 lot 最差 slot×pass 良率）。用户要「良率最差 top N」→ 对列表按 \`yieldPct\` **升序**重排后取前 N。
 - 单 lot 各片良率 → 无中断用 \`slotYieldPivotMarkdown\`；**有测试中断**时必须先贴 \`slotYieldInterruptMarkdown\`（每 (waferId,passId) **先**前半/后半各段，**再**整片正片合并，0% 也写），再列无中断片；或读 \`slotYieldSummary\`（含 \`yieldPct\`）。批次整体 → \`yieldByPassId\` **按 pass 分开**，禁止把 pass3+pass5 的 die 相加成一个良率。
 - **每片 wafer × 每个 pass 的 yield%**：必须输出 **良率百分数**（读 pivot / interrupt / slotYieldSummary），**禁止**仅罗列 \`binBySlot\` 坏 die 颗数、禁止称「无 grossDie 无法算良率」（lot 查询已预计算）。\`binBySlot\` 体积大易截断，不得据此声称 slot17–25 无数据。
 - 未指定 sort/pass 时 **不加** \`passId\` 过滤；结论用 **pass1 / pass3 / pass5**（或 sort1/2/3），**禁止**写常温/高温/低温。`;
@@ -365,7 +365,7 @@ const SEC_DATA_RULES = `\
 - 对 Yield Monitor 侧：传 \`timeFrom: "2020-01-01"\`
 
 **③ 换维度确认数据存在**
-- 若已知该 lot 使用的探针卡：调 \`query_jb_bins(cardId: "xxx", limit: 200)\`，从 \`recentLotsByTestEnd\` 确认该 lot 是否存在
+- 若已知该 lot 使用的探针卡：调 \`query_jb_bins(cardId: "xxx", limit: 500)\`，从 \`recentLotsByTestEnd\` 确认该 lot 是否存在
 - 若已知 device：调 \`query_jb_bins(device: "xxx", limit: 50)\`，从结果行找该 lot
 
 **④ cardId 返空时：验证 JB STAR 中该卡型的实际 cardId 格式**
@@ -375,7 +375,7 @@ const SEC_DATA_RULES = `\
 
 **⑤ 用跨域已知 lot 反查 JB STAR**
 - 若步骤 ④ 的 Yield Monitor 查询找到了相关 lot ID，立即用该 lot 查 JB STAR：
-  \`query_jb_bins(lot: "TR20760.1T", limit: 200)\`
+  \`query_jb_bins(lot: "TR20760.1T", limit: 500)\`
 - 这是最直接的验证：若 JB STAR 有该 lot 的数据，会在 rows 中出现，同时 \`recentLotsByTestEnd\` 会列出各卡号
 
 **⑥ 跨域查询**
@@ -434,13 +434,13 @@ const SEC_LOT_ID = `\
   - 时间段先用自然语言转 ISO 8601（「最近3个月」→ \`timeFrom = today-90d\`，\`timeTo = today\`）
   - 两源结果**合并汇报**：先列 JB 各 lot 坏 die 表，再说明 YM 报警频率；两源有交集时对照说明，**不得只报其中一源**
   - INF 文件无法按时间范围查询，仅能在 lot+slot 明确后单独调用，无需强求纳入时间范围联查
-- **lot 整体/概况/测试情况**（如「DR44117.1Y 整体的测试情况」）：**必须先** \`query_jb_bins(lot, limit:200)\` 并由服务端直出聚集/良率/机台/探针卡等表；**禁止**仅 \`query_yield_triggers\` 后用文字代替 JB 表。YM 报警在 JB 表之后的解读中简要提及即可。
+- **lot 整体/概况/测试情况**（如「DR44117.1Y 整体的测试情况」）：**必须先** \`query_jb_bins(lot, limit:500)\` 并由服务端直出聚集/良率/机台/探针卡等表；**禁止**仅 \`query_yield_triggers\` 后用文字代替 JB 表。YM 报警在 JB 表之后的解读中简要提及即可。
 
 ### 用户已指定 lot 的「整体测试情况 / 概况 / 重新计算」（硬规则）
 
 **第一轮只调这 2 个工具（参数必须带同一 lot，禁止第 3 个数据工具）：**
 1. \`query_yield_triggers(lotId: "NF12827.1R", limit: 50)\`（Yield 用 **lotId**）
-2. \`query_jb_bins(lot: "NF12827.1R", limit: 200)\`（JB 用 **lot**；**Oracle 拉该 lot 全量行**，默认 TESTEND 自 2020 起；读 **lotYieldOverviewMarkdown**）
+2. \`query_jb_bins(lot: "NF12827.1R", limit: 500)\`（JB 用 **lot**；**Oracle 拉该 lot 全量行**，默认 TESTEND 自 2020 起；读 **lotYieldOverviewMarkdown**）
 
 **禁止：**
 - \`aggregate_jb_bins\` **不传 lot**（会返回全库 Top bin，不是该批次；服务端将直接报错）
@@ -467,7 +467,7 @@ const SEC_LOT_ID = `\
 触发条件：用户问句明确包含**片号**（如「第15片」「waferId 15」「slot 15」「第15片的主要问题」「这片 wafer 怎么了」）。
 
 **正确行为：**
-1. 仍调 \`query_jb_bins(lot, limit:200)\` 拿全批数据（服务端会输出 markdown 表）
+1. 仍调 \`query_jb_bins(lot, limit:500)\` 拿全批数据（服务端会输出 markdown 表）
 2. **仅在"### 数据解读"+"### 专业建议"中聚焦该片**：
    - 若该片有中断：用 \`slotYieldInterruptMarkdown\` 中仅**该 waferId** 的前半/后半/整片合并三行
    - 若该片有警示（\`clusteredBadBinAlerts\` 中含该 waferId）：**首句**写明突增/聚集 BIN、颗数变化
@@ -556,9 +556,9 @@ const SEC_MASK = `\
   3. 若 \`totalDistinct > 1\`，后续查询**必须**用 \`mask="N06Z"\`（query_yield_triggers / query_jb_bins），或**分别查每个 device**；禁止只取列表第一个 device 就下结论
   4. 若返回空，改用 mask **同时调两个工具**发现 lot 列表（**禁止**用 \`aggregate_yield_triggers\` 做 mask 发现；JB 可用 \`aggregate_jb_bins(mask, groupBy:"lot", groupTop:50)\` 作 lot 数交叉验证）：
      - **必须并行调用两个工具**（不得只调其中一个，会漏掉另一域的 lot）：
-       - \`query_jb_bins(mask:"P14R", testEndFrom, testEndTo, limit:200)\` — JB 侧，按 **TESTEND**（测试完成时间）过滤；用户说「最近 N 月/周**测试**的所有 lot」时必须传 testEndFrom/testEndTo
-       - \`query_yield_triggers(mask:"P14R", timeFrom, timeTo, limit:200)\` — YM 侧，按告警 **TIME_STAMP** 过滤（与 JB 的 TESTEND 窗可不同）
-     - **列举 lot 时读 JB 的 \`recentLotsByTestEnd\` + \`totalDistinctLots\`**（数据库级 GROUP BY lot，**不受 limit:200 行截断影响**）；\`rows\` 仅含最新 lot 的部分明细，**禁止**用 rows 或 primary lot 推断 lot 总数
+       - \`query_jb_bins(mask:"P14R", testEndFrom, testEndTo, limit:500)\` — JB 侧，按 **TESTEND**（测试完成时间）过滤；用户说「最近 N 月/周**测试**的所有 lot」时必须传 testEndFrom/testEndTo
+       - \`query_yield_triggers(mask:"P14R", timeFrom, timeTo, limit:500)\` — YM 侧，按告警 **TIME_STAMP** 过滤（与 JB 的 TESTEND 窗可不同）
+     - **列举 lot 时读 JB 的 \`recentLotsByTestEnd\` + \`totalDistinctLots\`**（数据库级 GROUP BY lot，**不受 limit:500 行截断影响**）；\`rows\` 仅含最新 lot 的部分明细，**禁止**用 rows 或 primary lot 推断 lot 总数
      - ⚠️ **高频错误**：单 lot（如 DR45679.1J 25 片×多 pass）可占满 200 行，导致 \`recentLotsByTestEnd\` 旧逻辑只显示 1 个 lot；修复后须读 \`totalDistinctLots\`（应为 10 而非 1）
      - **构建合并 lot 列表（去重）**：
        - JB 侧：读 \`recentLotsByTestEnd\`（每 lot 一行：lot / device / testEnd / slotCount）；若 \`totalDistinctLots\` > \`recentLotsByTestEnd.length\` 须注明「仅列前 N 个，共 M 个 lot」
@@ -566,7 +566,7 @@ const SEC_MASK = `\
        - **合并**：以 JB \`recentLotsByTestEnd\` 为主（元数据完整）；YM 有但 JB 无的 lot，单独列为"仅YM告警"条目，时间取 YM rows 的最新 TIME_STAMP
      - **⚠️ 已有 YM 结果但尚未调 JB 时用户追问「全部列出/列出lot/有哪些lot」（高频幻觉根因，禁止违反）：**
        - 此时 history 末条是 YM 工具结果（\`role:"tool", name:"query_yield_triggers"\`）
-       - **必须立即** 调 \`query_jb_bins(mask/device, testEndFrom, testEndTo, limit:200)\` 获取 \`recentLotsByTestEnd\`，再输出 lot 表
+       - **必须立即** 调 \`query_jb_bins(mask/device, testEndFrom, testEndTo, limit:500)\` 获取 \`recentLotsByTestEnd\`，再输出 lot 表
        - **禁止**仅凭 YM 行的 LOTID 直接输出 lot 列表：YM 只有触发报警的 lot，大量测试 lot 没有 YM 记录，用 YM 数据代替 lot 列表会严重遗漏
        - **禁止**从记忆或上下文拼凑 lot 号、片数、lot 总数：这些数字必须来自本轮工具返回的 \`recentLotsByTestEnd\` + \`totalDistinctLots\`；无工具数据支撑时一律不写
      - **⚠️ 高频错误（必须遵守）：禁止在输出 lot 汇总表之前展开任何 lot 的分析**
@@ -575,7 +575,7 @@ const SEC_MASK = `\
        - 即使只有 **1 个 device**：
          - **若有 ≥2 个 lot**：输出 lot 汇总表后，**立即调 \`ask_clarification(question:"请选择要重点分析的批次（默认分析最新批次）", options:[<lot编号列表，从新到旧>])\`**；**收到用户选择之前，禁止继续展开任何 lot 的逐片分析**
          - **若只有 1 个 lot**：无需 ask_clarification，直接进入该 lot 分析，但仍须先展示汇总行
-         - **进入具体 lot 后（无论用户选定还是默认最新）**：必须重新调 \`query_jb_bins(lot:"选定的lot", limit:200)\` 获取完整逐片数据；**禁止**仅用 mask 查询的截断行作为完整 lot 数据
+         - **进入具体 lot 后（无论用户选定还是默认最新）**：必须重新调 \`query_jb_bins(lot:"选定的lot", limit:500)\` 获取完整逐片数据；**禁止**仅用 mask 查询的截断行作为完整 lot 数据
      - 用户明确说**「列出」「有哪些lot」「显示所有批次」**时：本轮只输出 lot 汇总表 + ask_clarification（如适用），**禁止**同时展开任何 lot 的详细分析
   5. 若仍为空，则用 \`ask_clarification\` 告知用户未找到对应 device，请提供完整代码
   6. 结论中列出 \`devices[]\` 中的**全部** device（含各域最近日期），注明"即 mask=N06Z 的产品"
@@ -592,7 +592,7 @@ const SEC_WAFER_ENUM = `\
 
 当用户问"这个 lot 有哪些 wafer"、"列出所有 wafer"、"有几片"、"每片 wafer" 等需要完整枚举的场景：
 
-- **JB STAR 侧（优先，数据完整）**：\`query_jb_bins(lot, limit: 200)\`；有中断时每个 wafer **先前半→后半→整片合并** 三行，**不要**只用 INTERRUPT 单行或续测单行代替整片；\`distinctSlots\` 为 waferId 列表
+- **JB STAR 侧（优先，数据完整）**：\`query_jb_bins(lot, limit: 500)\`；有中断时每个 wafer **先前半→后半→整片合并** 三行，**不要**只用 INTERRUPT 单行或续测单行代替整片；\`distinctSlots\` 为 waferId 列表
 - **Yield Monitor 侧（仅触发报警的 wafer）**：调用 \`aggregate_yield_triggers(dimensions: "wafer", lotId: "...", groupTop: 25)\` — 返回有报警记录的 wafer，最多 25 片
 
 **硬规则：**
@@ -612,7 +612,7 @@ const SEC_WAFER_ENUM = `\
 
 **流程（触发时的硬规则）：**
 
-1. **必须重新调** \`query_jb_bins(lot: "选定的lot", limit: 200)\`，不得复用 mask 查询返回的截断行
+1. **必须重新调** \`query_jb_bins(lot: "选定的lot", limit: 500)\`，不得复用 mask 查询返回的截断行
 2. **先展示全片良率概览表**（以 \`slotYieldSummary\` 或 \`yieldByPassId\` 为数据源，按 slot 升序，每行含 waferId、各 pass 良率%、坏 die 数）；有中断的片标注"⚠ 中断"
 3. 概览表展示后，**再**根据用户问题深入具体 waferId / BIN / DUT 分析
 4. 禁止仅展示工具返回的 \`rows\` 片段（rows 按 TESTEND DESC，可能只覆盖部分 slot）；全片概览必须来自 \`distinctSlots\` + \`slotYieldSummary\``;
@@ -635,7 +635,7 @@ const SEC_WORST_CARD = `\
 ### ② 按实测良率 / 坏 die 排名（JB STAR）
 > 适合「哪张卡良率最低」「device 下各 lot 良率」「top N lot yield%」
 
-- **良率排名（优先）**：\`query_jb_bins(cardId|device, limit:200)\` → 读 \`lotYieldRankByTestEnd\`，按 \`yieldPct\` 升序取最差 lot；**禁止**用 \`aggregate_yield_triggers\` 的 count 代替良率
+- **良率排名（优先）**：\`query_jb_bins(cardId|device, limit:500)\` → 读 \`lotYieldRankByTestEnd\`，按 \`yieldPct\` 升序取最差 lot；**禁止**用 \`aggregate_yield_triggers\` 的 count 代替良率
 - **坏 die 总量（需手动汇总）**：\`aggregate_jb_bins(groupBy: "bin,cardId", groupTop: 50, ...)\`
 - 结果是 **(bin, cardId, count)** 三元组（每行一个 bin 一张卡），**不是每张卡的总数**
 - 须按 cardId 对所有行的 count 求和，才能得到「卡 X 总坏 die = N」；再按总和降序给出排名
@@ -718,7 +718,7 @@ const SEC_DEVICE_AGG_BAD_BIN = `\
 
 ### 禁止
 
-- **禁止** \`query_jb_bins(device, limit:200)\` 回答「总的坏die」：该工具返回最新单 lot 的详细行，**不是跨 lot 总量**；服务端总结轮会直出单 lot 概况表，导致用户只看到某一批的测试情况
+- **禁止** \`query_jb_bins(device, limit:500)\` 回答「总的坏die」：该工具返回最新单 lot 的详细行，**不是跨 lot 总量**；服务端总结轮会直出单 lot 概况表，导致用户只看到某一批的测试情况
 - **禁止**把 aggregate 结果中的 count 当作单 lot 坏 die；需说明「以下为历史全部 lot 合计」`;
 
 // ─── SEC_CARD_LOTS ─────────────────────────────────────────────────────────
@@ -737,12 +737,12 @@ const SEC_CARD_LOTS = `\
 **查询顺序：JB STAR 优先，Yield Monitor 作补充/回退**
 
 ⚠️ **探针卡查询必须用 \`cardId\`，禁止替换为 \`device\`（高频错误，查询前必对照）：**
-- 用户问「6045-10 最近一个月怎样/测试情况/lot」→ 调 \`query_jb_bins(cardId:"6045-10", testEndFrom, testEndTo, limit:200)\`，**绝对禁止**只传 \`device\`
+- 用户问「6045-10 最近一个月怎样/测试情况/lot」→ 调 \`query_jb_bins(cardId:"6045-10", testEndFrom, testEndTo, limit:500)\`，**绝对禁止**只传 \`device\`
 - 传 \`device\` 而不传 \`cardId\`：返回的是该 device 上所有探针卡的数据，\`lot\` 字段会是该 device 最近的 lot，与 6045-10 无关
 - 两个工具结果的 lot 必须独立：**YM 结果里的 LOTID 不得用于标注 JB 的 BIN 表**；JB 工具返回 \`lot:"DR45721.1K"\` 则该表只能标注 DR45721.1K，不得借用 YM 中出现的其他 lot 名
 
 **第一步：JB STAR（含完整 bin 记录，优先）**
-- 调用 \`query_jb_bins(cardId: "7747-01", testEndFrom, testEndTo, limit: 200)\`（limit 最大 **200**，禁止 1000）
+- 调用 \`query_jb_bins(cardId: "7747-01", testEndFrom, testEndTo, limit: 500)\`（limit 最大 **500**，禁止 1000）
 - **直接读**工具回传 **\`recentLotsByTestEnd\`**（已按 lot 的 **MAX(TESTEND) 降序**预计算，最多 20 条：lot / device / testEnd / **cardIds** / **slotCount**（该 lot 片数）/ **slots**（slot 列表）/ hasCardChangeInLot；\`cardId\` 仅为最近一行，整 lot 以 **cardIds** 为准）与 **\`lotYieldRankByTestEnd\`**（每 lot 良率%）/ **\`binTotalsByLot\`**（主要坏 bin）
 - 若用户问"共测了几片 wafer"：用 **\`distinctLotSlotCount\`**（跨 lot 正确，禁止用 distinctSlots.length）；recentLotsByTestEnd 每条的 **slotCount** 累加也等于 distinctLotSlotCount（当 20 条覆盖全部 lot 时）
 - **禁止**用 \`aggregate_jb_bins\` 回答「有哪些 lot」：聚合按 **坏 die 合计**排序，**不是**测试时间
@@ -751,7 +751,7 @@ const SEC_CARD_LOTS = `\
 
 **第二步：JB STAR 返回空时，必须再查 Yield Monitor（不可直接说"没有数据"）**
 - JB STAR 返空原因可能是：该卡仅在 Yield Monitor 有报警记录但未写入 JB STAR，或卡号拼写需确认
-- 立即调用 \`query_yield_triggers(probeCard: "7747-01", limit: 200)\`（注意 Yield Monitor 用 \`probeCard\` 而非 \`cardId\`）
+- 立即调用 \`query_yield_triggers(probeCard: "7747-01", limit: 500)\`（注意 Yield Monitor 用 \`probeCard\` 而非 \`cardId\`）
 - 从结果的 \`LOTID\`、\`TIME_STAMP\` 字段汇总该卡测试过的 lot 列表
 - 若 Yield Monitor 也为空，再调 \`aggregate_yield_triggers(dimensions: "probeCard", probeCard: "7747-01")\` 确认
 - **两侧都为空时**，才可以说"在 JB STAR 与 Yield Monitor 中均未找到该卡的记录，请确认卡号"；同时建议用 \`get_filter_values(domain:"jb", field:"cardId")\` 查可用卡号列表`;
@@ -762,7 +762,7 @@ const SEC_CARD_LOTS = `\
 const SEC_BIN_COMPARE = `\
 ## 按 lot 对比任意两个 BIN（如「BIN10 是否多于 BIN66，by lot」）
 
-- **必须** \`query_jb_bins(cardId: "7747-01", limit: 200)\`（或已锁定 \`lot\` 时 \`query_jb_bins(lot, limit: 200)\`）
+- **必须** \`query_jb_bins(cardId: "7747-01", limit: 500)\`（或已锁定 \`lot\` 时 \`query_jb_bins(lot, limit: 500)\`）
 - **直接读** **\`binTotalsByLot\`**：每 lot 一行，\`badBins\` 数组含该 lot 跨 slot/pass 汇总的各坏 bin \`{ bin, dieCount }\`
 - 对比两个 bin：从 \`badBins\` 按 \`bin\` 编号查 \`dieCount\`，两者相减得 diff；该 bin 未出现视为 0
 - 结论须 **逐 lot 列表**（lot、binA 颗数、binB 颗数、谁多），并给汇总：多少 lot 上 binA>binB、多少 lot 上 binB>binA、多少 lot 相等
@@ -802,7 +802,7 @@ const SEC_CROSS_DOMAIN_INSIGHTS = `\
 const SEC_BIN_BY_SLOT = `\
 ## 按 slot 分析某一 BIN（如「1–25 片 BIN7 颗数」「BIN7 趋势」）
 
-- **一次** \`query_jb_bins(lot: "…", limit: 200)\`（**必须带 lot**；全量行 + 总结轮服务端直出表）
+- **一次** \`query_jb_bins(lot: "…", limit: 500)\`（**必须带 lot**；全量行 + 总结轮服务端直出表）
 - **全片趋势（1–25）**：读 \`badBinSlotTrends\` 中 **BINn + passId** 的 markdown（含前半/后半/整片列）；总结轮会先 SSE 输出该表
 - **单片精确颗数**（如「第3片 pass3 有多少个 BIN3」「第三片所有坏 bin」）：服务端从 \`slotBadBinsCompact\` 直出该 (slot, passId) 的 BIN 颗数。**禁止**用 lot 级 \`topBadBins\` Top15 猜测「未上榜=0」——某 BIN 可在单片很多、全 lot 排名却进不了 Top15
 - **严禁**：
@@ -891,7 +891,7 @@ const SEC_ENG_TIPS = `\
 
 ### 联合诊断 3 步流程
 
-1. **整批概况** — \`query_jb_bins(lot, limit:200)\` 读 \`topBadBins\`、\`slotYieldSummary\`；仅当需跨 lot 对比时才 \`aggregate_jb_bins(lot: "…", groupBy: "bin")\`（**必须带 lot**）
+1. **整批概况** — \`query_jb_bins(lot, limit:500)\` 读 \`topBadBins\`、\`slotYieldSummary\`；仅当需跨 lot 对比时才 \`aggregate_jb_bins(lot: "…", groupBy: "bin")\`（**必须带 lot**）
 2. **横向对比** — \`aggregate_yield_triggers(probeCard/timeDay)\` 查该卡近期报警趋势，判断「本批特有」还是「卡长期有问题」
 3. **纵向钻取** — 特定 slot 突出时，\`query_jb_bins(slot)\` + INF DUT 分布，**区分结论**：「探针卡健康问题」→ 换卡/清洗；「工艺良率问题」→ 上报工艺 / 重测
 
@@ -1081,7 +1081,7 @@ const SEC_PLATFORM_QUERY = `\
 
 - **禁止**不带时间范围查平台（数据太多，服务端会报 422 或超时）
 - **禁止**把 tstype 传成用户原始口语（如 "ps1600"）——系统虽自动规范化，但模型应直接传 "PS16"
-- **禁止**传 \`query_jb_bins(tstype, limit:200)\` 回答平台概况——该工具返回行级明细，不适合平台级汇总`;
+- **禁止**传 \`query_jb_bins(tstype, limit:500)\` 回答平台概况——该工具返回行级明细，不适合平台级汇总`;
 
 // ─── SEC_FORMAT_LIMITS ─────────────────────────────────────────────────────
 // 格式硬限制：禁用 Markdown 图片语法

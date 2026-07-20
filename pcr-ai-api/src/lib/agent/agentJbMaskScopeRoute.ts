@@ -40,7 +40,7 @@ export function maskScopeJbQueryArgs(
   if (!device && !mask) return null;
 
   const window = resolveRecentTimeWindow(userText, history);
-  const args: Record<string, unknown> = { limit: 200 };
+  const args: Record<string, unknown> = { limit: 500 };
   if (device) args["device"] = device;
   else if (mask) args["mask"] = mask;
   if (window.testEndFrom) args["testEndFrom"] = window.testEndFrom;

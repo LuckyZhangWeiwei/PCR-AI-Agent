@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { validateAndFixToolArgs } from "../src/lib/agent/agentToolValidator.js";
+import { AGENT_TOOL_LIST_LIMIT_MAX } from "../src/lib/agent/tools/agentToolListLimits.js";
 
 // ── cardId auto-injection ────────────────────────────────────────────────────
 
 test("injects cardId when user asks about specific probe card and model omits it", () => {
   const { args, notes } = validateAndFixToolArgs(
     "query_jb_bins",
-    { device: "WA88888822N95G", limit: 200 },
+    { device: "WA88888822N95G", limit: 500 },
     "6045-10 最近一个月的测试情况"
   );
   assert.equal(args["cardId"], "6045-10", "cardId 应被自动注入");
@@ -27,7 +28,7 @@ test("does NOT inject cardId when lot is already present (lot-specific query)", 
 test("does NOT inject cardId when cardId already present", () => {
   const { args, notes } = validateAndFixToolArgs(
     "query_jb_bins",
-    { cardId: "6045-10", limit: 200 },
+    { cardId: "6045-10", limit: 500 },
     "6045-10 最近情况"
   );
   assert.equal(args["cardId"], "6045-10");
@@ -37,7 +38,7 @@ test("does NOT inject cardId when cardId already present", () => {
 test("does NOT inject cardId when question has no card pattern", () => {
   const { args, notes } = validateAndFixToolArgs(
     "query_jb_bins",
-    { device: "WA01P14R", limit: 200 },
+    { device: "WA01P14R", limit: 500 },
     "WA01P14R 最近的测试情况"
   );
   assert.equal(args["cardId"], undefined);
@@ -46,32 +47,32 @@ test("does NOT inject cardId when question has no card pattern", () => {
 
 // ── limit clamp ──────────────────────────────────────────────────────────────
 
-test("clamps query_jb_bins limit from 1000 to 200", () => {
+test("clamps query_jb_bins limit from 1000 to AGENT_TOOL_LIST_LIMIT_MAX", () => {
   const { args, notes } = validateAndFixToolArgs(
     "query_jb_bins",
     { cardId: "7747-01", limit: 1000 },
     "7747-01 最近情况"
   );
-  assert.equal(args["limit"], 200);
-  assert.ok(notes.some(n => n.includes("200")));
+  assert.equal(args["limit"], AGENT_TOOL_LIST_LIMIT_MAX);
+  assert.ok(notes.some((n) => n.includes(String(AGENT_TOOL_LIST_LIMIT_MAX))));
 });
 
-test("clamps query_yield_triggers limit", () => {
+test("clamps query_yield_triggers limit above max", () => {
   const { args } = validateAndFixToolArgs(
     "query_yield_triggers",
-    { probeCard: "7747-01", limit: 500 },
+    { probeCard: "7747-01", limit: 900 },
     "7747-01 报警情况"
   );
-  assert.equal(args["limit"], 200);
+  assert.equal(args["limit"], AGENT_TOOL_LIST_LIMIT_MAX);
 });
 
-test("does NOT clamp limit when already ≤200", () => {
+test("does NOT clamp limit when already ≤ max", () => {
   const { args, notes } = validateAndFixToolArgs(
     "query_jb_bins",
-    { cardId: "7747-01", limit: 200 },
+    { cardId: "7747-01", limit: AGENT_TOOL_LIST_LIMIT_MAX },
     "7747-01 情况"
   );
-  assert.equal(args["limit"], 200);
+  assert.equal(args["limit"], AGENT_TOOL_LIST_LIMIT_MAX);
   assert.equal(notes.length, 0);
 });
 
@@ -88,7 +89,12 @@ test("clamps aggregate_jb_bins groupTop from 100 to 50", () => {
 // ── passthrough for correct calls ────────────────────────────────────────────
 
 test("correct args pass through unchanged with no notes", () => {
-  const original = { cardId: "6045-10", limit: 200, testEndFrom: "2026-05-01", testEndTo: "2026-06-01" };
+  const original = {
+    cardId: "6045-10",
+    limit: 500,
+    testEndFrom: "2026-05-01",
+    testEndTo: "2026-06-01",
+  };
   const { args, notes } = validateAndFixToolArgs(
     "query_jb_bins",
     original,

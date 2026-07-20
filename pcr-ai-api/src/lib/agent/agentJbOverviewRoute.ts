@@ -41,12 +41,12 @@ export function getCachedJbPayloadForLot(
 }
 
 export function buildLotOverviewQueryArgs(lot: string): Record<string, unknown> {
-  return { lot, limit: 200, testEndFrom: "2020-01-01" };
+  return { lot, limit: 500, testEndFrom: "2020-01-01" };
 }
 
 /** 注入 system：概况类问题必须先 JB，禁止只查 Yield Monitor。 */
 export const LOT_OVERVIEW_JB_NUDGE =
-  "【lot 概况路由】用户问批次整体/测试情况/概况时：**必须先** query_jb_bins(lot)（limit:200），读服务端预计算表；" +
+  "【lot 概况路由】用户问批次整体/测试情况/概况时：**必须先** query_jb_bins(lot)（limit:500），读服务端预计算表；" +
   "禁止仅调用 query_yield_triggers 就结束；YM 报警可在 JB 表输出后再简要提及。";
 
 export function lotOverviewNeedsJbRecovery(

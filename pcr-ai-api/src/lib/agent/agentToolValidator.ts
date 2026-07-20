@@ -21,6 +21,8 @@
  * ──────────────────────────────────────────────────────────────────────────────
  */
 
+import { AGENT_TOOL_LIST_LIMIT_MAX } from "./tools/agentToolListLimits.js";
+
 export type ValidatorResult = {
   args: Record<string, unknown>;
   /** Non-empty when at least one arg was auto-corrected. For logging only. */
@@ -91,11 +93,11 @@ export function validateAndFixToolArgs(
   // ── query_jb_bins ─────────────────────────────────────────────────────────
 
   if (toolName === "query_jb_bins") {
-    // Rule 1: limit clamp — API max is 200; model sometimes uses 1000+
+    // Rule 1: limit clamp — Agent max (see AGENT_TOOL_LIST_LIMIT_MAX); model sometimes uses 1000+
     const lim = Number(a["limit"]);
-    if (Number.isFinite(lim) && lim > 200) {
-      a["limit"] = 200;
-      notes.push(`limit ${lim} → 200（API max）`);
+    if (Number.isFinite(lim) && lim > AGENT_TOOL_LIST_LIMIT_MAX) {
+      a["limit"] = AGENT_TOOL_LIST_LIMIT_MAX;
+      notes.push(`limit ${lim} → ${AGENT_TOOL_LIST_LIMIT_MAX}（API max）`);
     }
 
     // Rule 2: cardId injection
@@ -118,9 +120,9 @@ export function validateAndFixToolArgs(
 
   if (toolName === "query_yield_triggers") {
     const lim = Number(a["limit"]);
-    if (Number.isFinite(lim) && lim > 200) {
-      a["limit"] = 200;
-      notes.push(`limit ${lim} → 200（API max）`);
+    if (Number.isFinite(lim) && lim > AGENT_TOOL_LIST_LIMIT_MAX) {
+      a["limit"] = AGENT_TOOL_LIST_LIMIT_MAX;
+      notes.push(`limit ${lim} → ${AGENT_TOOL_LIST_LIMIT_MAX}（API max）`);
     }
   }
 

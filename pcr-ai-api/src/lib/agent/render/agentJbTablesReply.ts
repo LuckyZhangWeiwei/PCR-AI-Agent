@@ -137,7 +137,7 @@ export async function emitDeterministicJbTablesReply(
       `[jbDeterministic/staleMaskCache] 用户问 lot=${lotInQuestion} 详细，但 payload 为 mask 限量缓存` +
         `（multiLotYieldScope=true, lotQueryFullRows!=true, count=${payload["count"]}, ` +
         `distinctLotCount=${payload["distinctLotCount"]}, primaryLot=${payload["lot"]}）→ ` +
-        `本次出表可能基于残缺片数；应先 query_jb_bins(lot:"${lotInQuestion}", limit:200) 取全量再出详细。`
+        `本次出表可能基于残缺片数；应先 query_jb_bins(lot:"${lotInQuestion}", limit:500) 取全量再出详细。`
     );
   }
   const listingCtx = {

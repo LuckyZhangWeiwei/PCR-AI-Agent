@@ -9,11 +9,19 @@ import {
   buildRecentLotsByTestEnd,
   buildTesterByLot,
   buildSlotBadBinsCompact,
+  buildJbSessionCacheJson,
   formatJbRowsForAgent,
+  mergeRecentLotsWithRowEnrichment,
   normalizeBinsForAgent,
   serializeJbQueryResultForAgent,
   wrapJbQueryResultForAgent,
 } from "../src/lib/agent/jb/agentJbBinFormat.js";
+import { multiLotListingFields } from "../src/lib/agent/agentJbMultiLotListing.js";
+import {
+  buildRecentLotsListingMarkdown,
+  buildLotListingContext,
+  inferLotListingPresentation,
+} from "../src/lib/agent/jb/agentJbListingMarkdown.js";
 
 describe("agentJbBinFormat", () => {
   it("enrichInfcontrolLayerBinRowV2 preserves v4 list bins[] (no BIN columns)", () => {
@@ -450,6 +458,185 @@ describe("agentJbBinFormat", () => {
     assert.equal(out.totalDistinctLots, 10);
     assert.equal((out.recentLotsByTestEnd as unknown[]).length, 10);
     assert.equal(out.multiLotYieldScope, true);
+  });
+
+  it("wrap merges cardIds from rows into empty recentLotsOverride", () => {
+    const rows = [
+      {
+        LOT: "LOT_A",
+        DEVICE: "D",
+        SLOT: 1,
+        PASSID: 1,
+        CARDID: "6081-03",
+        TESTEND: "2026-07-19T00:00:00.000Z",
+        GROSSDIE: 100,
+        bins: [
+          { n: 1, value: 90, isGoodBin: true },
+          { n: 7, value: 10, isGoodBin: false },
+        ],
+      },
+      {
+        LOT: "LOT_B",
+        DEVICE: "D",
+        SLOT: 1,
+        PASSID: 1,
+        CARDID: "6081-04",
+        TESTEND: "2026-07-18T00:00:00.000Z",
+        GROSSDIE: 100,
+        bins: [
+          { n: 1, value: 95, isGoodBin: true },
+          { n: 11, value: 5, isGoodBin: false },
+        ],
+      },
+    ] as Record<string, unknown>[];
+    const override = [
+      {
+        lot: "LOT_A",
+        device: "D",
+        cardIds: [] as string[],
+        hasCardChangeInLot: false,
+        cardId: "",
+        testEnd: "2026-07-19T00:00:00.000Z",
+        slots: [] as number[],
+        slotCount: 25,
+      },
+      {
+        lot: "LOT_B",
+        device: "D",
+        cardIds: [] as string[],
+        hasCardChangeInLot: false,
+        cardId: "",
+        testEnd: "2026-07-18T00:00:00.000Z",
+        slots: [] as number[],
+        slotCount: 25,
+      },
+      {
+        lot: "LOT_C",
+        device: "D",
+        cardIds: [] as string[],
+        hasCardChangeInLot: false,
+        cardId: "",
+        testEnd: "2026-07-14T00:00:00.000Z",
+        slots: [] as number[],
+        slotCount: 25,
+      },
+    ];
+    const out = wrapJbQueryResultForAgent(rows, {
+      recentLotsOverride: override,
+      totalDistinctLots: 3,
+    });
+    const recent = out.recentLotsByTestEnd as Array<{
+      lot: string;
+      cardIds: string[];
+    }>;
+    assert.deepEqual(recent.find((e) => e.lot === "LOT_A")?.cardIds, ["6081-03"]);
+    assert.deepEqual(recent.find((e) => e.lot === "LOT_B")?.cardIds, ["6081-04"]);
+    assert.deepEqual(recent.find((e) => e.lot === "LOT_C")?.cardIds, []);
+  });
+
+  it("mergeRecentLotsWithRowEnrichment does not overwrite existing cardIds", () => {
+    const merged = mergeRecentLotsWithRowEnrichment(
+      [
+        {
+          lot: "L1",
+          device: "D",
+          cardIds: ["KEEP-01"],
+          hasCardChangeInLot: false,
+          cardId: "KEEP-01",
+          testEnd: "2026-07-01",
+          slots: [],
+          slotCount: 1,
+        },
+      ],
+      [
+        {
+          LOT: "L1",
+          DEVICE: "D",
+          CARDID: "OTHER-99",
+          SLOT: 1,
+          TESTEND: "2026-07-01",
+          bins: [],
+        },
+      ]
+    );
+    assert.deepEqual(merged[0]!.cardIds, ["KEEP-01"]);
+  });
+
+  it("session cache keeps cardIds + binTotals for rich lot listing", () => {
+    const rows = [
+      {
+        LOT: "LOT_A",
+        DEVICE: "WA02N49X",
+        SLOT: 1,
+        PASSID: 1,
+        CARDID: "6081-03",
+        TESTEND: "2026-07-19T00:00:00.000Z",
+        GROSSDIE: 100,
+        bins: [
+          { n: 1, value: 90, isGoodBin: true },
+          { n: 7, value: 10, isGoodBin: false },
+        ],
+      },
+      {
+        LOT: "LOT_B",
+        DEVICE: "WA02N49X",
+        SLOT: 1,
+        PASSID: 1,
+        CARDID: "6081-04",
+        TESTEND: "2026-07-18T00:00:00.000Z",
+        GROSSDIE: 100,
+        bins: [
+          { n: 1, value: 94, isGoodBin: true },
+          { n: 11, value: 6, isGoodBin: false },
+        ],
+      },
+    ] as Record<string, unknown>[];
+    const override = [
+      {
+        lot: "LOT_A",
+        device: "WA02N49X",
+        cardIds: [] as string[],
+        hasCardChangeInLot: false,
+        cardId: "",
+        testEnd: "2026-07-19T00:00:00.000Z",
+        slots: [] as number[],
+        slotCount: 1,
+      },
+      {
+        lot: "LOT_B",
+        device: "WA02N49X",
+        cardIds: [] as string[],
+        hasCardChangeInLot: false,
+        cardId: "",
+        testEnd: "2026-07-18T00:00:00.000Z",
+        slots: [] as number[],
+        slotCount: 1,
+      },
+    ];
+    const wrapped = wrapJbQueryResultForAgent(rows, {
+      recentLotsOverride: override,
+      totalDistinctLots: 2,
+    });
+    const fields = multiLotListingFields(wrapped);
+    const recent = fields["recentLotsByTestEnd"] as Array<{ cardIds?: string[] }>;
+    assert.ok(recent?.[0]?.cardIds?.includes("6081-03"));
+
+    const cache = JSON.parse(buildJbSessionCacheJson(wrapped)) as Record<
+      string,
+      unknown
+    >;
+    assert.ok(Array.isArray(cache["binTotalsByLot"]));
+    assert.ok(Array.isArray(cache["lotYieldRankByTestEnd"]));
+
+    const q = "WA02N49X 最近一周测试的lot以及良品率";
+    const md = buildRecentLotsListingMarkdown(cache, {
+      ...buildLotListingContext(cache, []),
+      presentation: inferLotListingPresentation(q),
+      scopeLabel: "device=WA02N49X",
+    });
+    assert.ok(md?.includes("6081-03"), md ?? "");
+    assert.ok(md?.includes("BIN7") || md?.includes("BIN11"), md ?? "");
+    assert.ok(md?.includes("%"), md ?? "");
   });
 
   it("wrapJbQueryResultForAgent includes recentLotsByTestEnd", () => {

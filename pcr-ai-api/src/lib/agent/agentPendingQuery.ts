@@ -142,7 +142,7 @@ const CHECKERS: PendingQueryChecker[] = [
       ) {
         return null;
       }
-      const args: Record<string, unknown> = { mask, limit: 200 };
+      const args: Record<string, unknown> = { mask, limit: 500 };
       const window = inferRecentMonthsWindow(userQuestion);
       if (window.testEndFrom) args["testEndFrom"] = window.testEndFrom;
       if (window.testEndTo) args["testEndTo"] = window.testEndTo;

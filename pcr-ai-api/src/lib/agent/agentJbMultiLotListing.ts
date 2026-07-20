@@ -25,6 +25,8 @@ export function multiLotListingFields(
       device: e["device"],
       testEnd: e["testEnd"],
       slotCount: e["slotCount"],
+      cardIds: e["cardIds"],
+      cardId: e["cardId"],
     })),
   };
 }

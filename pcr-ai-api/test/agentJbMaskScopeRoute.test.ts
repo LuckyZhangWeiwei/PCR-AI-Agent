@@ -22,5 +22,5 @@ test("maskScopeFilterValuesArgs / maskScopeJbQueryArgs", () => {
   });
   const jb = maskScopeJbQueryArgs(q);
   assert.equal(jb?.["mask"], "P11C");
-  assert.equal(jb?.["limit"], 200);
+  assert.equal(jb?.["limit"], 500);
 });

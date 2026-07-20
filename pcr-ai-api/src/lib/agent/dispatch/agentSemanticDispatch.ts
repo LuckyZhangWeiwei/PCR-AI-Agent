@@ -88,7 +88,7 @@ async function enrichLotYieldRankingPayload(
     if (lot === primaryLot && validRank.some((r) => r.lot === lot)) continue;
     const lotArgs: Record<string, unknown> = {
       lot,
-      limit: 200,
+      limit: 500,
       testEndFrom: scopeArgs["testEndFrom"] ?? "2020-01-01",
     };
     emit({ type: "status", message: `正在查询 ${lot} 良率…` });

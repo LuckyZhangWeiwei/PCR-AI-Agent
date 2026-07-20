@@ -24,15 +24,20 @@ import {
   truncateResult,
   enrichYieldRow,
 } from "./agentToolHandlers.js";
-
-const TOOL_LIST_LIMIT = 50;
-const TOOL_LIST_LIMIT_MAX = 200;
+import {
+  AGENT_TOOL_LIST_LIMIT_DEFAULT,
+  AGENT_TOOL_LIST_LIMIT_MAX,
+} from "./agentToolListLimits.js";
 
 export async function toolQueryYieldTriggers(
   args: Record<string, unknown>,
   maxChars: number
 ): Promise<string> {
-  const limit = clampLimit(args["limit"], TOOL_LIST_LIMIT, TOOL_LIST_LIMIT_MAX);
+  const limit = clampLimit(
+    args["limit"],
+    AGENT_TOOL_LIST_LIMIT_DEFAULT,
+    AGENT_TOOL_LIST_LIMIT_MAX
+  );
   const params: Record<string, unknown> = { ...args, limit };
   if (args["timeFrom"]) params["timeStampFrom"] = args["timeFrom"];
   if (args["timeTo"]) params["timeStampTo"] = args["timeTo"];
@@ -134,7 +139,7 @@ export async function fetchYmRowsForCard(
   const params = { probeCard: cardId };
   const parsed = parseYieldMonitorTriggerV3Query(params);
   if (!parsed.ok) return [];
-  const limit = 200;
+  const limit = AGENT_TOOL_LIST_LIMIT_MAX;
   if (yieldMonitorTriggersUseDummy()) {
     return filterYieldMonitorDummyRowsV3(
       parsed.applied,

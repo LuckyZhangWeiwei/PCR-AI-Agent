@@ -10,6 +10,17 @@ import {
 
 export const JB_DISTINCT_LOTS_TOP = 50;
 
+/**
+ * When distinct lot count is at or below this, query_jb_bins fetches all matching
+ * detail rows (not Agent list limit) so lot_listing can fill yield / cardIds / fail bins
+ * for every listed lot (e.g. device + recent week ~14 lots).
+ */
+export const JB_LISTING_FULL_ROWS_MAX_LOTS = 20;
+
+export function shouldFetchFullRowsForListing(totalDistinct: number): boolean {
+  return totalDistinct > 0 && totalDistinct <= JB_LISTING_FULL_ROWS_MAX_LOTS;
+}
+
 export type JbDistinctLotsResult = {
   lots: RecentLotByTestEndEntry[];
   totalDistinct: number;

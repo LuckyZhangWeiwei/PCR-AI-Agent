@@ -308,7 +308,7 @@ INF 文件包含每片晶圆逐个 die 的坐标（X/Y）、bin 值、测试 DUT
 ### 「某张卡测试了几片 wafer / 测试了哪些 lot」处理规则
 
 **正确路径（query_jb_bins → distinctLotSlotCount）：**
-1. 调 \`query_jb_bins(cardId: "7772-01", limit: 200)\`
+1. 调 \`query_jb_bins(cardId: "7772-01", limit: 500)\`
 2. 读 \`recentLotsByTestEnd\`（已按 MAX(TESTEND) 降序，每 lot 一行，含 lot / device / testEnd / cardIds / **slotCount（该 lot 在返回行内的片数）** / **slots（该 lot 的 slot 编号列表）**）
 3. 用 **\`distinctLotSlotCount\`** 给出"共测了 N 片 wafer"的结论
 
@@ -317,7 +317,7 @@ INF 文件包含每片晶圆逐个 die 的坐标（X/Y）、bin 值、测试 DUT
 - \`distinctSlots.length\` = 不同 slot 编号的数量 = **可能少计**（若 lot A 与 lot B 都测了 slot 1，只计为 1 片）
 - **结论中必须用 \`distinctLotSlotCount\`**；不得用 \`distinctSlots.length\` 当作 wafer 总数
 
-⚠️ **limit: 200 的限制**：列表接口按 TESTEND DESC 排序，返回最近 200 条 (lot,slot,passId) 行。若该卡历史记录多于 200 行（如测了 10+ lot 各 25 片 × 3 pass），返回行可能只覆盖近期几个 lot。**若需确认该卡历史上所有测过的 lot 总数**，应额外调：
+⚠️ **limit: 500 的限制**：列表接口按 TESTEND DESC 排序，返回最近 500 条 (lot,slot,passId) 行。若该卡历史记录多于 500 行（如测了 10+ lot 各 25 片 × 3 pass），返回行可能只覆盖近期几个 lot。**若需确认该卡历史上所有测过的 lot 总数**，应额外调：
 \`\`\`
 aggregate_jb_bins(cardId: "7772-01", groupBy: "lot", groupTop: 50)
 \`\`\`
@@ -325,13 +325,13 @@ aggregate_jb_bins(cardId: "7772-01", groupBy: "lot", groupTop: 50)
 
 **JB STAR 返回空时的完整处理（不得只说"无数据"）：**
 1. 验证 cardId 格式：调 \`get_filter_values(domain:"jb", field:"cardId", filterBy:{probeCardType:"7772"})\`，对比 JB STAR 中实际存在的卡号格式
-2. 若 Yield Monitor 历史中已发现该卡测试过的 lot，用该 lot 反查：\`query_jb_bins(lot: "TR20760.1T", limit: 200)\`
-3. 若仍空，用 probeCardType 宽泛查：\`query_jb_bins(probeCardType: "7772", limit: 200)\`，在结果 rows 中筛 CARDID = "7772-01" 的行
+2. 若 Yield Monitor 历史中已发现该卡测试过的 lot，用该 lot 反查：\`query_jb_bins(lot: "TR20760.1T", limit: 500)\`
+3. 若仍空，用 probeCardType 宽泛查：\`query_jb_bins(probeCardType: "7772", limit: 500)\`，在结果 rows 中筛 CARDID = "7772-01" 的行
 4. 全部步骤仍无结果，才可说"JB STAR 中未找到该卡记录"并说明已尝试的步骤
 
 **⚠️ 数据偏少时自我反省（已有数据但数量不符预期）：**
 - 若 \`distinctLotSlotCount\` 或 \`distinctLotCount\` 明显偏少（如用户说"还有其他 lot"、或另一域数据表明该卡测试更多），**必须按以下顺序重查**，不得直接接受偏少的结论：
   1. **扩大时间范围**：加 \`testEndFrom: "2020-01-01"\` 重调 query_jb_bins
   2. **用 aggregate 确认总数**：\`aggregate_jb_bins(cardId, groupBy: "lot", groupTop: 50)\` 在数据库级统计 lot 数
-  3. **跨域交叉验证**：\`query_yield_triggers(probeCard: "7772-02", limit: 200)\` 看 Yield Monitor 中该卡出现过的 lotId`;
+  3. **跨域交叉验证**：\`query_yield_triggers(probeCard: "7772-02", limit: 500)\` 看 Yield Monitor 中该卡出现过的 lotId`;
 
