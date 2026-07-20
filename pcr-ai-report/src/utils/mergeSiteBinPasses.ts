@@ -80,6 +80,10 @@ export function siteBinPassesFromJbFallback(
   for (const w of wafers) {
     const bins = w.jbFallbackBins;
     if (!bins?.length) continue;
+    // passIds.length > 1 means PASSID couldn't be resolved from the row (see
+    // waferSpecFromJbRow's [1,3,5] fallback) — attributing to passIds[0] would
+    // silently mislabel bins that may actually belong to pass3/pass5.
+    if (w.passIds.length !== 1) continue;
     const passId = w.passIds[0];
     if (passId === undefined || !Number.isFinite(passId)) continue;
     let binMap = byPass.get(passId);

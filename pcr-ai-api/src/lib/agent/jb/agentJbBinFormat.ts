@@ -435,12 +435,10 @@ export function mergeRecentLotsWithRowEnrichment(
     const rowLot = byLot.get(e.lot);
     if (!rowLot) return e;
     const overrideCards = (e.cardIds ?? []).filter(Boolean);
-    if (overrideCards.length > 0) return e;
     const cards = (rowLot.cardIds ?? []).filter(Boolean);
-    if (!cards.length && !rowLot.cardId) return e;
     return {
       ...e,
-      cardIds: cards.length ? cards : rowLot.cardIds,
+      cardIds: overrideCards.length ? e.cardIds : cards.length ? cards : rowLot.cardIds,
       cardId: e.cardId || rowLot.cardId || cards[cards.length - 1] || "",
       slots: e.slots?.length ? e.slots : rowLot.slots,
       hasCardChangeInLot: e.hasCardChangeInLot || rowLot.hasCardChangeInLot,

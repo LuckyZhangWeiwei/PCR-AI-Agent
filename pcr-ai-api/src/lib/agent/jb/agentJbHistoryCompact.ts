@@ -18,6 +18,28 @@ import type { CardByPassIdEntry, LotTesterEntry } from "./agentJbBinFormat.js";
 import { multiLotListingFields } from "../agentJbMultiLotListing.js";
 import { jbYieldCoreFields } from "../agentJbYieldCore.js";
 
+/** 与 agentJbBinFormat.ts 的 slimBinTotalsByLotForCache 同逻辑；本地实现避免循环 import。 */
+function slimBinTotalsByLotForHistory(
+  raw: unknown,
+  topN = 3
+): Array<{ lot: unknown; device: unknown; badBins: unknown[] }> | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  return raw.map((e) => {
+    const entry = (e ?? {}) as Record<string, unknown>;
+    const badBins = Array.isArray(entry.badBins) ? [...entry.badBins] : [];
+    badBins.sort(
+      (a, b) =>
+        Number((b as Record<string, unknown>)?.dieCount ?? 0) -
+        Number((a as Record<string, unknown>)?.dieCount ?? 0)
+    );
+    return {
+      lot: entry.lot,
+      device: entry.device,
+      badBins: badBins.slice(0, topN),
+    };
+  });
+}
+
 function roundYieldPct(v: number | null): number | null {
   if (v === null || !Number.isFinite(v)) return null;
   return Math.round(v * 100) / 100;
@@ -530,6 +552,7 @@ export function compactJbCacheForHistory(
       rowsOmitted: true,
       ...jbYieldCoreFields(o),
       ...multiLotListingFields(o),
+      binTotalsByLot: o["binTotalsByLot"],
       _jbSessionCacheVersion: o["_jbSessionCacheVersion"],
       _trendRows: trendRows,
       slotYieldSummary: o["slotYieldSummary"],
@@ -544,6 +567,7 @@ export function compactJbCacheForHistory(
       lotQueryFullRows: o["lotQueryFullRows"],
       topBadBins: o["topBadBins"],
       ...multiLotListingFields(o),
+      binTotalsByLot: o["binTotalsByLot"],
       yieldByPassIdMarkdown: o["yieldByPassIdMarkdown"],
       lotYieldOverviewMarkdown: o["lotYieldOverviewMarkdown"],
       _jbSessionCacheVersion: o["_jbSessionCacheVersion"],
@@ -552,6 +576,7 @@ export function compactJbCacheForHistory(
     () => ({
       ...jbYieldCoreFields(o),
       ...multiLotListingFields(o),
+      binTotalsByLot: o["binTotalsByLot"],
       rowsOmitted: true,
       _historyNote: "仅核心良率；BIN 趋势可能不可用",
     }),
@@ -600,6 +625,7 @@ export function compactJbBinsForHistory(
   const fullSummary = o["slotYieldSummary"] as SlotYieldSummaryEntry[] | undefined;
   const slim = slimSummary(fullSummary);
   const core = jbYieldCoreFields(o);
+  const binTotalsByLot = slimBinTotalsByLotForHistory(o["binTotalsByLot"]);
 
   const tiers: Array<() => Record<string, unknown>> = [
     () => ({
@@ -609,6 +635,7 @@ export function compactJbBinsForHistory(
       rowCount: o["rowCount"] ?? o["count"],
       ...core,
       ...multiLotListingFields(o),
+      binTotalsByLot,
       topBadBins: o["topBadBins"],
       cardByPassId: o["cardByPassId"],
       cardChangesBySlotPass: o["cardChangesBySlotPass"],
@@ -628,11 +655,13 @@ export function compactJbBinsForHistory(
       rowsOmitted: true,
       ...core,
       ...multiLotListingFields(o),
+      binTotalsByLot,
       slotYieldSummary: slim,
     }),
     () => ({
       ...core,
       ...multiLotListingFields(o),
+      binTotalsByLot,
       rowsOmitted: true,
       slotYieldSummary: slim,
     }),
