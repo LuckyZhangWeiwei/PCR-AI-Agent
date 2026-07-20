@@ -18,6 +18,11 @@ export type InfDutWaferSpec = {
   passNum?: number;
   /** JB 明细 TESTEND（ISO）；site-bin-bylot 按层取 map 的主键。 */
   testEnd?: string;
+  /**
+   * JB 层 BIN 汇总（n=bin 号, value=颗数）。Oracle/INF 无 site 图或 map 空时，
+   * DUT 面板回退为 dut=single 柱状图，避免「未找到匹配的 pass 数据」。
+   */
+  jbFallbackBins?: Array<{ n: number; value: number }>;
 };
 
 export type InfDutAnchor =
@@ -87,7 +92,24 @@ export function waferSpecFromJbRow(row: InfcontrolLayerBinV3Row): InfDutWaferSpe
     Number.isFinite(pn) && pn > 0 ? Math.trunc(pn) : undefined;
   const testEndRaw = String(row.TESTEND ?? "").trim();
   const testEnd = testEndRaw || undefined;
-  return { device, lot, slot, passIds, probeCardType, keynumber, passNum, testEnd };
+  const jbFallbackBins: Array<{ n: number; value: number }> = [];
+  for (const c of row.bins ?? []) {
+    const n = Number(c.n);
+    const value = Number(c.value);
+    if (!Number.isFinite(n) || !Number.isFinite(value) || value <= 0) continue;
+    jbFallbackBins.push({ n, value });
+  }
+  return {
+    device,
+    lot,
+    slot,
+    passIds,
+    probeCardType,
+    keynumber,
+    passNum,
+    testEnd,
+    ...(jbFallbackBins.length > 0 ? { jbFallbackBins } : {}),
+  };
 }
 
 export function sameDeviceLot(

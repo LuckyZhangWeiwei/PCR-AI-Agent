@@ -54,16 +54,57 @@ export function parseOracleBinSiteMap(
   return summary;
 }
 
+/**
+ * No site layer (TESTSITELAST empty) — mirror Perl `output_site_bin_bylot.pl`:
+ * still count BINCODELAST dies with `dut: "single"`.
+ */
+export function parseOracleBinCodeOnlyMap(binCodeLast: string): Map<string, number> {
+  const summary = new Map<string, number>();
+  for (const bTok of binCodeLast.trim().split(/\s+/)) {
+    if (SKIP_TOKENS.has(bTok)) continue;
+    const decBin = parseInt(bTok, 16);
+    if (!Number.isFinite(decBin)) continue;
+    const key = `${decBin},single`;
+    summary.set(key, (summary.get(key) ?? 0) + 1);
+  }
+  return summary;
+}
+
+/** Prefer site×bin map; if site CLOB missing/unusable, fall back to bin-only (`dut=single`). */
+export function parseOracleBinSiteMapOrBinOnly(
+  binCodeLast: string,
+  testSiteLast: string
+): Map<string, number> {
+  const binRaw = binCodeLast.trim();
+  if (!binRaw) return new Map();
+  const siteRaw = testSiteLast.trim();
+  if (!siteRaw) return parseOracleBinCodeOnlyMap(binRaw);
+  const withSite = parseOracleBinSiteMap(binRaw, siteRaw);
+  if (withSite.size > 0) return withSite;
+  return parseOracleBinCodeOnlyMap(binRaw);
+}
+
+function parseSummaryDut(siteStr: string | undefined): number | "single" | null {
+  if (siteStr === "single") return "single";
+  const site = Number(siteStr);
+  return Number.isFinite(site) ? site : null;
+}
+
+function dutSortKey(dut: number | "single"): string {
+  if (dut === "single") return "z:single";
+  return `n:${String(dut).padStart(12, "0")}`;
+}
+
 export function binSiteSummaryToSiteBinPass(
   passId: number,
   summary: Map<string, number>
 ): SiteBinPass {
-  const binMap = new Map<number, Map<number, number>>();
+  const binMap = new Map<number, Map<number | "single", number>>();
   for (const [key, count] of summary) {
     const [binStr, siteStr] = key.split(",");
     const bin = Number(binStr);
-    const site = Number(siteStr);
-    if (!Number.isFinite(bin) || !Number.isFinite(site)) continue;
+    const site = parseSummaryDut(siteStr);
+    if (!Number.isFinite(bin) || site === null) continue;
     if (!binMap.has(bin)) binMap.set(bin, new Map());
     const dutMap = binMap.get(bin)!;
     dutMap.set(site, (dutMap.get(site) ?? 0) + count);
@@ -73,7 +114,7 @@ export function binSiteSummaryToSiteBinPass(
     .map(([binNum, dutMap]) => ({
       bin: `bin${binNum}`,
       duts: [...dutMap.entries()]
-        .sort((a, b) => a[0] - b[0])
+        .sort((a, b) => dutSortKey(a[0]).localeCompare(dutSortKey(b[0])))
         .map(([dut, dieCount]) => ({ dut, dieCount })),
     }));
   return { passId, bins };
@@ -184,8 +225,9 @@ ORDER BY lb.PASSID, lb.PASSNUM
     if (!Number.isInteger(passId)) continue;
     const binRaw = row.BINCODELAST != null ? String(row.BINCODELAST) : "";
     const siteRaw = row.TESTSITELAST != null ? String(row.TESTSITELAST) : "";
-    if (!binRaw.trim() || !siteRaw.trim()) continue;
-    const chunk = parseOracleBinSiteMap(binRaw, siteRaw);
+    if (!binRaw.trim()) continue;
+    const chunk = parseOracleBinSiteMapOrBinOnly(binRaw, siteRaw);
+    if (chunk.size === 0) continue;
     if (!byPass.has(passId)) byPass.set(passId, new Map());
     mergeBinSiteSummaries(byPass.get(passId)!, chunk);
   }

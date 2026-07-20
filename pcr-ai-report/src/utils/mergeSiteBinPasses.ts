@@ -65,3 +65,51 @@ export function mergeSiteBinPasses(passLists: SiteBinPass[][]): SiteBinPass[] {
   }
   return out;
 }
+
+/**
+ * When site-bin map is empty (no TESTSITELAST / unparseable CLOBs), build
+ * pass×bin charts from JB layer bin totals with dut=single.
+ */
+export function siteBinPassesFromJbFallback(
+  wafers: Array<{
+    passIds: number[];
+    jbFallbackBins?: Array<{ n: number; value: number }>;
+  }>
+): SiteBinPass[] {
+  const byPass = new Map<number, Map<string, number>>();
+  for (const w of wafers) {
+    const bins = w.jbFallbackBins;
+    if (!bins?.length) continue;
+    const passId = w.passIds[0];
+    if (passId === undefined || !Number.isFinite(passId)) continue;
+    let binMap = byPass.get(passId);
+    if (!binMap) {
+      binMap = new Map();
+      byPass.set(passId, binMap);
+    }
+    for (const b of bins) {
+      if (!Number.isFinite(b.n) || !Number.isFinite(b.value) || b.value <= 0) {
+        continue;
+      }
+      const label = `bin${b.n}`;
+      binMap.set(label, (binMap.get(label) ?? 0) + b.value);
+    }
+  }
+  const out: SiteBinPass[] = [];
+  for (const passId of [...byPass.keys()].sort((a, b) => a - b)) {
+    const binMap = byPass.get(passId)!;
+    const bins: SiteBinEntry[] = [...binMap.entries()]
+      .sort((a, b) => {
+        const na = Number(/^bin(\d+)$/i.exec(a[0])?.[1] ?? NaN);
+        const nb = Number(/^bin(\d+)$/i.exec(b[0])?.[1] ?? NaN);
+        if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) return na - nb;
+        return a[0].localeCompare(b[0]);
+      })
+      .map(([bin, dieCount]) => ({
+        bin,
+        duts: [{ dut: "single" as const, dieCount }],
+      }));
+    if (bins.length > 0) out.push({ passId, bins });
+  }
+  return out;
+}

@@ -13,7 +13,7 @@ import {
   isGoodBinLabel,
   siteBinPassBadDieTotal,
 } from "../utils/infGoodBins";
-import { mergeSiteBinPasses } from "../utils/mergeSiteBinPasses";
+import { mergeSiteBinPasses, siteBinPassesFromJbFallback } from "../utils/mergeSiteBinPasses";
 import type { InfDutWaferSpec } from "../utils/infDutSelection";
 import { infDutWaferCacheKey } from "../utils/infDutSelection";
 import {
@@ -781,6 +781,7 @@ export function InfDutDistPanel({
   const [fetchMeta, setFetchMeta] = useState<{
     mapSources: string[];
     badDieTotal: number;
+    usedJbFallback?: boolean;
   } | null>(null);
 
   const waferKey = wafersFetchKey(wafers);
@@ -838,16 +839,25 @@ export function InfDutDistPanel({
             return;
           }
         }
-        const passes = mergeSiteBinPasses(results.map((r) => r.passes));
-        const mapSources = [
-          ...new Set(results.map((r) => r.mapSource ?? "unknown")),
-        ];
+        const passesFromMap = mergeSiteBinPasses(results.map((r) => r.passes));
+        let passes = passesFromMap;
+        let usedJbFallback = false;
+        if (passes.length === 0) {
+          const fromJb = siteBinPassesFromJbFallback(wafers);
+          if (fromJb.length > 0) {
+            passes = fromJb;
+            usedJbFallback = true;
+          }
+        }
+        const mapSources = usedJbFallback
+          ? ["jb"]
+          : [...new Set(results.map((r) => r.mapSource ?? "unknown"))];
         let badDieTotal = 0;
         for (const pass of passes) {
           badDieTotal += siteBinPassBadDieTotal(pass, goodBinNumbers);
         }
         setMergedPasses(passes);
-        setFetchMeta({ mapSources, badDieTotal });
+        setFetchMeta({ mapSources, badDieTotal, usedJbFallback });
         setError(null);
       } catch (e: unknown) {
         if (!cancelled) {
@@ -872,7 +882,9 @@ export function InfDutDistPanel({
     selectionSummary ??
     `LOT ${lot} · ${wafers.length} 片 · Device ${device}`;
   const sourceLabel = fetchMeta
-    ? ` · 数据源 ${fetchMeta.mapSources.join("+")} · 不良 die ${fetchMeta.badDieTotal}`
+    ? ` · 数据源 ${fetchMeta.mapSources.join("+")}${
+        fetchMeta.usedJbFallback ? "（无 site 图，按 JB 层 BIN）" : ""
+      } · 不良 die ${fetchMeta.badDieTotal}`
     : "";
 
   return (
@@ -926,7 +938,20 @@ export function InfDutDistPanel({
         <div>
           {mergedPasses.length === 0 && (
             <div style={{ color: "var(--muted)", fontSize: 14 }}>
-              未找到匹配的 pass 数据
+              未找到匹配的 pass 数据（Oracle/INF 无 bin×DUT 图，且该层 JB bins
+              为空）
+            </div>
+          )}
+          {fetchMeta?.usedJbFallback && mergedPasses.length > 0 && (
+            <div
+              style={{
+                color: "var(--dimmed)",
+                fontSize: 12,
+                marginBottom: 8,
+              }}
+            >
+              本层无 probe site 图（TESTSITELAST 空），已用 JB 明细 BIN
+              颗数按 Single DUT 展示；无法按 DUT 分解。
             </div>
           )}
           {mergedPasses.map((pass) => {

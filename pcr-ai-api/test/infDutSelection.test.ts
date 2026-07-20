@@ -13,7 +13,7 @@ import {
   buildInfDutCtxFromDrillBarKeys,
   waferSpecFromJbRow,
 } from "../../pcr-ai-report/src/utils/infDutSelection.js";
-import { mergeSiteBinPasses } from "../../pcr-ai-report/src/utils/mergeSiteBinPasses.js";
+import { mergeSiteBinPasses, siteBinPassesFromJbFallback } from "../../pcr-ai-report/src/utils/mergeSiteBinPasses.js";
 
 test("buildInfDutCtxFromDetailListIndices groups wafers and requires same device+lot", () => {
   const rows = getInfcontrolLayerBinDummyRows().filter(
@@ -88,6 +88,39 @@ test("waferSpecFromJbRow carries keynumber passNum testEnd for layer fetch", () 
   assert.ok(spec!.keynumber && spec!.keynumber > 0);
   assert.ok(spec!.passNum && spec!.passNum > 0);
   assert.ok(spec!.testEnd);
+});
+
+test("waferSpecFromJbRow + siteBinPassesFromJbFallback when map empty (93K no-site)", () => {
+  const row = {
+    DEVICE: "W01M62C",
+    LOT: "DR46281.1C",
+    SLOT: 5,
+    PASSID: 1,
+    PASSNUM: 1,
+    KEYNUMBER: 10245604,
+    TESTEND: "2026-07-19T11:28:00.000Z",
+    CARDID: "9313-11",
+    bins: [
+      { n: 1, value: 4, isGoodBin: true },
+      { n: 3, value: 6, isGoodBin: false },
+      { n: 8, value: 26, isGoodBin: false },
+    ],
+  };
+  const spec = waferSpecFromJbRow(row as never);
+  assert.ok(spec);
+  assert.deepEqual(spec!.jbFallbackBins, [
+    { n: 1, value: 4 },
+    { n: 3, value: 6 },
+    { n: 8, value: 26 },
+  ]);
+  const passes = siteBinPassesFromJbFallback([spec!]);
+  assert.equal(passes.length, 1);
+  assert.equal(passes[0]!.passId, 1);
+  assert.deepEqual(passes[0]!.bins, [
+    { bin: "bin1", duts: [{ dut: "single", dieCount: 4 }] },
+    { bin: "bin3", duts: [{ dut: "single", dieCount: 6 }] },
+    { bin: "bin8", duts: [{ dut: "single", dieCount: 26 }] },
+  ]);
 });
 
 test("mergeSiteBinPasses matches mergeSiteBinByLotData (report client vs API)", () => {
