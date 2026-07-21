@@ -30,6 +30,18 @@ export function isProbeCardVeroPilotReady(): boolean {
   return isProbeCardVeroPilotEnabled() && getVeroAccessToken().length > 0;
 }
 
+/** Feature flag: the generic ReAct loop (all free-form questions, not just
+ * probe-card×tester) uses Vero when true — see docs/superpowers/specs/
+ * 2026-07-21-vero-generic-agent-loop-design.md. */
+export function isVeroGenericLoopEnabled(): boolean {
+  return isEnvTruthy(process.env.AGENT_VERO_GENERIC_LOOP);
+}
+
+/** Generic loop is usable only when flag is on and a bearer token is present. */
+export function isVeroGenericLoopReady(): boolean {
+  return isVeroGenericLoopEnabled() && getVeroAccessToken().length > 0;
+}
+
 function veroTlsInsecure(): boolean {
   if (isEnvTruthy(process.env.VERO_TLS_STRICT)) return false;
   const env = process.env.VERO_TLS_INSECURE?.trim();
