@@ -125,6 +125,13 @@ test("buildWaferMapPassSpecs single passId: all block dies are non-empty", async
   }
 });
 
+test("infNotchAngleToSvg maps INF dNotchAngle to SVG canvas degrees", () => {
+  assert.equal(infNotchAngleToSvg(180), 90); // bottom
+  assert.equal(infNotchAngleToSvg(270), 180); // left
+  assert.equal(infNotchAngleToSvg(90), 0); // right
+  assert.equal(infNotchAngleToSvg(0), 270); // top
+});
+
 test("getDiesForPassId(passTypes:TEST) keeps BIN that RETEST merge would wipe", async () => {
   const root = await parseInf(fixture);
   const psbn = findPsbn(root);
