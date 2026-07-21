@@ -58,6 +58,12 @@ const ORACLE_FORWARD_KEYS = [
   "AGENT_STREAM_TIMEOUT_MS",
   "PCR_FEEDBACK_DIR",
   "SESSION_LOG_DIR",
+  // Vero Path B pilot (probe-card × tester only)
+  "AGENT_PROBE_CARD_VERO_PILOT",
+  "WCHAT_ACCESS_TOKEN",
+  "VERO_BASE_URL",
+  "VERO_TLS_INSECURE",
+  "VERO_TLS_STRICT",
 ];
 
 function forwardEnvFromProcess(keys) {

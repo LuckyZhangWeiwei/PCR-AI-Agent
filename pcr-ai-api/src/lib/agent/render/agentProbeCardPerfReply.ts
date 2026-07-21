@@ -20,6 +20,19 @@ import {
   DETERMINISTIC_COMMENTARY_SECTION_TITLE,
 } from "../jb/agentJbOverviewMarkdown.js";
 
+/** Optional non-streaming commentary (e.g. Vero simple-agent). */
+export type ProbeCardCommentaryInvoker = (
+  userQuestion: string,
+  tablesMarkdown: string
+) => Promise<string>;
+
+export type EmitProbeCardPerfReplyOptions = {
+  /** When set, skip SiliconFlow stream and use this one-shot commentary. */
+  invokeCommentary?: ProbeCardCommentaryInvoker;
+  /** Status line while generating commentary (default: SiliconFlow wording). */
+  commentaryStatusMessage?: string;
+};
+
 /**
  * 从 aggregate_probe_card_tester_performance JSON 直出四表 + 解读 LLM（与总结轮共用）。
  */
@@ -28,7 +41,8 @@ export async function emitDeterministicProbeCardPerfReply(
   userQuestion: string,
   payload: Record<string, unknown>,
   agentConfig: AgentConfig,
-  emit: (event: AgentSseEvent) => void
+  emit: (event: AgentSseEvent) => void,
+  options?: EmitProbeCardPerfReplyOptions
 ): Promise<boolean> {
   const groups = Array.isArray(payload["groups"])
     ? (payload["groups"] as Array<Record<string, unknown>>)
@@ -67,53 +81,76 @@ export async function emitDeterministicProbeCardPerfReply(
   emit({ type: "status", message: "正在输出服务端探针卡/机台组合排名表…" });
   emitTextInChunks(tablesBlock, emit);
 
-  emit({ type: "status", message: "正在生成数据解读与专业建议…" });
+  emit({
+    type: "status",
+    message:
+      options?.commentaryStatusMessage ?? "正在生成数据解读与专业建议…",
+  });
   emit({
     type: "text",
     delta: `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n`,
   });
 
-  const commFilter = createDeepSeekFilter(emit);
+  let commentaryOrFallback: string;
   let streamError: string | undefined;
 
-  await streamSiliconFlow(
-    {
-      model: agentConfig.subAgentModel,
-      messages: [
-        { role: "system", content: PROBE_CARD_PERF_COMMENTARY_SYSTEM },
-        {
-          role: "user",
-          content: buildBriefCommentaryUserMessage(userQuestion, tables),
-        },
-      ],
-      max_tokens: 1024,
-    },
-    agentConfig,
-    (chunk) => {
-      switch (chunk.type) {
-        case "delta":
-          commFilter.push(chunk.text);
-          break;
-        case "error":
-          streamError = chunk.message;
-          break;
-        default:
-          break;
+  if (options?.invokeCommentary) {
+    try {
+      const text = (await options.invokeCommentary(userQuestion, tables)).trim();
+      if (text) {
+        commentaryOrFallback = text;
+        emitTextInChunks(text, emit);
+      } else {
+        commentaryOrFallback =
+          "*（模型未返回解读；以上实测数据表为准。）*";
+        emit({ type: "text", delta: commentaryOrFallback });
       }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      commentaryOrFallback = `*（解读生成失败：${cleanStreamErrorMessage(msg)}；以上实测数据表为准。）*`;
+      emit({ type: "text", delta: commentaryOrFallback });
     }
-  );
-
-  commFilter.finalize();
-  const commentary = commFilter.cleanText.trim();
-
-  let commentaryOrFallback: string;
-  if (commentary) {
-    commentaryOrFallback = commentary;
   } else {
-    commentaryOrFallback = streamError
-      ? `*（解读生成失败：${cleanStreamErrorMessage(streamError)}；以上实测数据表为准。）*`
-      : `*（模型未返回解读；以上实测数据表为准。）*`;
-    emit({ type: "text", delta: commentaryOrFallback });
+    const commFilter = createDeepSeekFilter(emit);
+
+    await streamSiliconFlow(
+      {
+        model: agentConfig.subAgentModel,
+        messages: [
+          { role: "system", content: PROBE_CARD_PERF_COMMENTARY_SYSTEM },
+          {
+            role: "user",
+            content: buildBriefCommentaryUserMessage(userQuestion, tables),
+          },
+        ],
+        max_tokens: 1024,
+      },
+      agentConfig,
+      (chunk) => {
+        switch (chunk.type) {
+          case "delta":
+            commFilter.push(chunk.text);
+            break;
+          case "error":
+            streamError = chunk.message;
+            break;
+          default:
+            break;
+        }
+      }
+    );
+
+    commFilter.finalize();
+    const commentary = commFilter.cleanText.trim();
+
+    if (commentary) {
+      commentaryOrFallback = commentary;
+    } else {
+      commentaryOrFallback = streamError
+        ? `*（解读生成失败：${cleanStreamErrorMessage(streamError)}；以上实测数据表为准。）*`
+        : `*（模型未返回解读；以上实测数据表为准。）*`;
+      emit({ type: "text", delta: commentaryOrFallback });
+    }
   }
 
   const full =

@@ -15,10 +15,16 @@ import {
   inferMaskFromHistory,
   inferRecentMonthsWindow,
 } from "../../agentQueryScope.js";
+import { isProbeCardVeroPilotReady } from "../../../vero/veroSimpleAgent.js";
+import { tryRunProbeCardVeroPilot } from "./agentProbeCardVeroPilot.js";
 
 /**
  * 「WA03P02G …最好的探针卡+机台组合…」：PRE_LLM 直调 aggregate_probe_card_tester_performance，
  * 不依赖 LLM 选工具（真库 DeepSeek 仍常误选 query_jb_bins 单 lot 表）。
+ *
+ * When AGENT_PROBE_CARD_VERO_PILOT=true + WCHAT_ACCESS_TOKEN：Path B via Vero
+ * simple-agent (extract → tool → deterministic tables → Vero commentary).
+ * On Vero extract/tool failure, falls back to the regex + SiliconFlow path below.
  */
 export async function tryRunProbeCardPerfDirectRoute(
   sessionId: string,
@@ -27,6 +33,20 @@ export async function tryRunProbeCardPerfDirectRoute(
   emit: (event: AgentSseEvent) => void
 ): Promise<boolean> {
   if (!isProbeCardTesterPerformanceQuestion(userQuestion)) return false;
+
+  if (isProbeCardVeroPilotReady()) {
+    try {
+      const handled = await tryRunProbeCardVeroPilot(
+        sessionId,
+        userQuestion,
+        agentConfig,
+        emit
+      );
+      if (handled) return true;
+    } catch {
+      // Fall through to SiliconFlow regex path.
+    }
+  }
 
   const history = getHistory(sessionId);
   const device =
