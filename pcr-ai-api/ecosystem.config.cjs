@@ -64,6 +64,8 @@ const ORACLE_FORWARD_KEYS = [
   "VERO_BASE_URL",
   "VERO_TLS_INSECURE",
   "VERO_TLS_STRICT",
+  // Vero 驱动的通用 Agent 循环内核（子项目 A）
+  "AGENT_VERO_GENERIC_LOOP",
 ];
 
 function forwardEnvFromProcess(keys) {
