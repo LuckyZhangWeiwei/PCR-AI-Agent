@@ -20,15 +20,24 @@ import {
   DETERMINISTIC_COMMENTARY_SECTION_TITLE,
 } from "../jb/agentJbOverviewMarkdown.js";
 
-/** Optional non-streaming commentary (e.g. Vero simple-agent). */
+/** Optional non-streaming commentary (e.g. tests / legacy simple-agent). */
 export type ProbeCardCommentaryInvoker = (
   userQuestion: string,
   tablesMarkdown: string
 ) => Promise<string>;
 
+/** Streaming commentary: call onDelta for each token; return full text for history. */
+export type ProbeCardCommentaryStreamer = (
+  userQuestion: string,
+  tablesMarkdown: string,
+  onDelta: (text: string) => void
+) => Promise<string>;
+
 export type EmitProbeCardPerfReplyOptions = {
-  /** When set, skip SiliconFlow stream and use this one-shot commentary. */
+  /** One-shot commentary (emitted in chunks after completion). */
   invokeCommentary?: ProbeCardCommentaryInvoker;
+  /** Preferred for WChat: true SSE token streaming into the UI. */
+  streamCommentary?: ProbeCardCommentaryStreamer;
   /** Status line while generating commentary (default: SiliconFlow wording). */
   commentaryStatusMessage?: string;
 };
@@ -94,7 +103,26 @@ export async function emitDeterministicProbeCardPerfReply(
   let commentaryOrFallback: string;
   let streamError: string | undefined;
 
-  if (options?.invokeCommentary) {
+  if (options?.streamCommentary) {
+    try {
+      const text = (
+        await options.streamCommentary(userQuestion, tables, (delta) => {
+          if (delta) emit({ type: "text", delta });
+        })
+      ).trim();
+      if (text) {
+        commentaryOrFallback = text;
+      } else {
+        commentaryOrFallback =
+          "*（模型未返回解读；以上实测数据表为准。）*";
+        emit({ type: "text", delta: commentaryOrFallback });
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      commentaryOrFallback = `*（解读生成失败：${cleanStreamErrorMessage(msg)}；以上实测数据表为准。）*`;
+      emit({ type: "text", delta: commentaryOrFallback });
+    }
+  } else if (options?.invokeCommentary) {
     try {
       const text = (await options.invokeCommentary(userQuestion, tables)).trim();
       if (text) {

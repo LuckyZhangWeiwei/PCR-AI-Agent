@@ -23,6 +23,8 @@ import {
   invokeVeroSimpleAgent,
   parseJsonLoose,
   isProbeCardVeroPilotReady,
+  streamVeroAgentChat,
+  buildVeroChatMessageWithSystem,
 } from "../../../vero/veroSimpleAgent.js";
 import {
   PROBE_CARD_PERF_COMMENTARY_SYSTEM,
@@ -54,9 +56,16 @@ export type VeroInvokeFn = (
   systemPrompt: string
 ) => Promise<string>;
 
+export type VeroStreamFn = (
+  message: string,
+  onToken: (token: string) => void
+) => Promise<string>;
+
 export type ProbeCardVeroPilotDeps = {
-  /** Injectable for tests; defaults to invokeVeroSimpleAgent. */
+  /** Injectable for tests; defaults to invokeVeroSimpleAgent (JSON extract). */
   invokeVero?: VeroInvokeFn;
+  /** Injectable for tests; defaults to streamVeroAgentChat (SSE commentary). */
+  streamVero?: VeroStreamFn;
 };
 
 function historyBlock(history: ChatMessage[]): string {
@@ -155,6 +164,12 @@ export async function tryRunProbeCardVeroPilot(
 
   const invoke: VeroInvokeFn =
     deps?.invokeVero ?? ((p, s) => invokeVeroSimpleAgent(p, s));
+  const streamReply: VeroStreamFn =
+    deps?.streamVero ??
+    (async (message, onToken) => {
+      const { reply } = await streamVeroAgentChat(message, onToken);
+      return reply;
+    });
   const history = getHistory(sessionId);
 
   emit({ type: "status", message: "Vero 试点：正在解析探针卡/机台组合查询参数…" });
@@ -247,8 +262,8 @@ Extract the next action JSON now.`;
     return false;
   }
 
-  // Tables from server; commentary via Vero. On Vero commentary failure,
-  // emitDeterministicProbeCardPerfReply shows a fallback note (tables stay authoritative).
+  // Tables from server; commentary via WChat SSE (agent/chat + conversations/stream).
+  // Extract stays on simple-agent/invoke (needs full JSON). See wchat/c/268418.
   return emitDeterministicProbeCardPerfReply(
     sessionId,
     userQuestion,
@@ -256,12 +271,15 @@ Extract the next action JSON now.`;
     agentConfig,
     emit,
     {
-      commentaryStatusMessage: "Vero 试点：正在生成数据解读与专业建议…",
-      invokeCommentary: (q, tables) =>
-        invoke(
-          buildBriefCommentaryUserMessage(q, tables),
-          PROBE_CARD_PERF_COMMENTARY_SYSTEM
-        ),
+      commentaryStatusMessage:
+        "Vero 试点：正在流式生成数据解读与专业建议…",
+      streamCommentary: async (q, tables, onDelta) => {
+        const message = buildVeroChatMessageWithSystem(
+          PROBE_CARD_PERF_COMMENTARY_SYSTEM,
+          buildBriefCommentaryUserMessage(q, tables)
+        );
+        return streamReply(message, onDelta);
+      },
     }
   );
 }

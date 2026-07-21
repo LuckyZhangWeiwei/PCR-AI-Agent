@@ -125,7 +125,9 @@ test("tryRunProbeCardVeroPilot extract→tool→tables→commentary with mocks",
 
   const events: AgentSseEvent[] = [];
   const emit = (e: AgentSseEvent) => events.push(e);
-  let call = 0;
+  let extractCalls = 0;
+  let streamCalls = 0;
+  const tokenDeltas: string[] = [];
 
   const ok = await tryRunProbeCardVeroPilot(
     `vero-pilot-tool-${Date.now()}`,
@@ -133,21 +135,36 @@ test("tryRunProbeCardVeroPilot extract→tool→tables→commentary with mocks",
     stubConfig,
     emit,
     {
-      invokeVero: async (_prompt, system) => {
-        call += 1;
-        if (system.includes("parameter extractor")) {
-          return JSON.stringify({
-            action: "tool",
-            tool: "aggregate_probe_card_tester_performance",
-            args: { device: "WA03P02G", passId: 1 },
-          });
+      invokeVero: async () => {
+        extractCalls += 1;
+        return JSON.stringify({
+          action: "tool",
+          tool: "aggregate_probe_card_tester_performance",
+          args: { device: "WA03P02G", passId: 1 },
+        });
+      },
+      streamVero: async (_message, onToken) => {
+        streamCalls += 1;
+        const parts = [
+          "### 数据解读\n",
+          "组合表现稳定。\n\n",
+          "### 专业建议\n",
+          "1. Wafer Test：关注 pass1。\n",
+          "2. Probe Card：按排名优先用高置信卡。\n",
+          "3. DUT 维护：低良率卡做针尖检查。",
+        ];
+        for (const p of parts) {
+          onToken(p);
+          tokenDeltas.push(p);
         }
-        return "### 数据解读\n组合表现稳定。\n\n### 专业建议\n1. Wafer Test：关注 pass1。\n2. Probe Card：按排名优先用高置信卡。\n3. DUT 维护：低良率卡做针尖检查。";
+        return parts.join("");
       },
     }
   );
   assert.equal(ok, true);
-  assert.ok(call >= 2, `expected extract+summarize, got ${call}`);
+  assert.equal(extractCalls, 1);
+  assert.equal(streamCalls, 1);
+  assert.ok(tokenDeltas.length >= 2, "expected multiple streamed deltas");
   assert.ok(events.some((e) => e.type === "tool_start"));
   assert.ok(events.some((e) => e.type === "tool_result"));
   assert.ok(events.some((e) => e.type === "done"));

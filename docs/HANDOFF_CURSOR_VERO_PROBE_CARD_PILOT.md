@@ -12,39 +12,38 @@
 
 | 项 | 状态 | 说明 |
 |---|---|---|
-| **目标** | ✅ 已合入 | 用 Vero Studio / WChat `POST /api/simple-agent/invoke` 做抽参 + 解读（demo Path B） |
+| **目标** | ✅ 已合入 | 抽参：`simple-agent/invoke`；解读：WChat **SSE 流式**（`agent/chat` + `conversations/{id}/stream`，对齐 [wchat/c/268418](https://verostudio.sw.nxp.com/wchat/c/268418)） |
 | **数字权威** | ✅ 不变 | 仍 `aggregate_probe_card_tester_performance` + 服务端四表；模型不得改表 |
 | **开关** | ✅ 默认关 | `AGENT_PROBE_CARD_VERO_PILOT=true` **且** `WCHAT_ACCESS_TOKEN` 有值才走 Vero |
 | **降级** | ✅ | extract/工具失败 → 原 regex + SiliconFlow 解读 |
-| **真连冒烟** | ✅ Dummy+真 Vero | `scripts/smoke-vero-probe-card-pilot.mjs`：ping PONG、抽参 WA03P02G、四表+中文解读 |
-| **Path A MCP** | ❌ 未做 | 避免 Vero 需访问本机 MCP URL |
+| **真连冒烟** | ✅ Dummy+真 Vero | `scripts/smoke-vero-probe-card-pilot.mjs`：ping / 抽参 / 四表+解读 |
+| **Path A MCP 工具** | ❌ 未做 MCP 服务 | 解读走 `agent/chat` SSE；提示词禁止调工具（若用户已注册 MCP，偶发误调需观察） |
 | **前端** | 无需改 | 仍 `AiAgentReport` → `/api/v4/agent/chat` SSE |
 | **部署** | ⏭ 待 API 机 | 改服务器 `.env` + `build` + `pm2 reload`（见 §5） |
 
 ---
 
-## 1. 架构（Path B）
+## 1. 架构（抽参 Path B + 解读 WChat SSE）
 
 ```text
 AiAgentReport
   → agentLoop PRE_LLM
   → isProbeCardTesterPerformanceQuestion
   → flag+token?
-       yes → Vero extract JSON
+       yes → extract JSON (POST /api/simple-agent/invoke，非流式)
             → runTool(aggregate_probe_card_tester_performance)  # Oracle/Dummy
-            → SSE 确定性四表
-            → Vero commentary（数据解读 / 专业建议）
+            → SSE 确定性四表（一次写出）
+            → commentary：POST /api/agent/chat → GET …/stream（token 事件真流式）
        no / 失败 → 原 regex 抽参 + SiliconFlow 流式解读
 ```
 
-与 `vero-agent-demo/agent-b.js` 对应：
+与 demo / 文档对应：
 
-| demo | 本仓库 |
+| 来源 | 本仓库 |
 |---|---|
-| `simpleAgent` | `pcr-ai-api/src/lib/vero/veroSimpleAgent.ts` |
-| `parseJsonLoose` | 同文件 |
-| HTTP 调 PCR 列表 | 本机 `runTool("aggregate_probe_card_tester_performance")` |
-| 第二次 LLM 总结 | Vero commentary；表服务端直出 |
+| `vero-agent-demo/agent-b.js` `simpleAgent` | `invokeVeroSimpleAgent`（抽参） |
+| `vero-agent-demo/agent.js` chat+SSE | `streamVeroAgentChat`（解读） |
+| wchat/c/268418 流式要点 | 模型 stream + 传输 SSE；工具阶段用 status |
 
 ---
 
@@ -52,10 +51,10 @@ AiAgentReport
 
 | 路径 | 作用 |
 |---|---|
-| `pcr-ai-api/src/lib/vero/veroSimpleAgent.ts` | Bearer + `simple-agent/invoke`（`node:https`，无 undici） |
-| `pcr-ai-api/src/lib/agent/dispatch/directRoutes/agentProbeCardVeroPilot.ts` | Path B：extract → tool → tables → Vero 解读 |
+| `pcr-ai-api/src/lib/vero/veroSimpleAgent.ts` | `invokeVeroSimpleAgent` + **`streamVeroAgentChat`（SSE）** |
+| `pcr-ai-api/src/lib/agent/dispatch/directRoutes/agentProbeCardVeroPilot.ts` | extract → tool → tables → **streamCommentary** |
 | `pcr-ai-api/src/lib/agent/dispatch/directRoutes/agentProbeCardDirectRoutes.ts` | flag 分支 + 降级 |
-| `pcr-ai-api/src/lib/agent/render/agentProbeCardPerfReply.ts` | `invokeCommentary` 可插拔 |
+| `pcr-ai-api/src/lib/agent/render/agentProbeCardPerfReply.ts` | `streamCommentary` / `invokeCommentary` 可插拔 |
 | `pcr-ai-api/ecosystem.config.cjs` | PM2 透传 `AGENT_PROBE_CARD_VERO_*` / `WCHAT_*` / `VERO_*` |
 | `pcr-ai-api/.env.example` | 变量说明（无真实 token） |
 | `pcr-ai-api/test/veroProbeCardPilot.test.ts` | mock 单测 |
