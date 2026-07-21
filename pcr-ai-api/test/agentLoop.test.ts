@@ -29,6 +29,7 @@ import {
 import { runTool } from "../src/lib/agent/tools/agentToolHandlers.js";
 import type { ChatMessage } from "../src/lib/agent/agentHistory.js";
 import { resolveJbRoute } from "../src/lib/agent/jbRouteResolver.js";
+import { isVeroGenericLoopReady } from "../src/lib/vero/veroSimpleAgent.js";
 
 const THINK_OPEN = "<" + "think>";
 const THINK_CLOSE = "</" + "think>";
@@ -581,10 +582,10 @@ test("runAgentLoop: Vero generic loop stays off when AGENT_VERO_GENERIC_LOOP is 
   try {
     delete process.env.AGENT_VERO_GENERIC_LOOP;
     delete process.env.WCHAT_ACCESS_TOKEN;
-    // isVeroGenericLoopReady() itself is unit-tested in veroAgentLoopConfig.test.ts;
-    // this just asserts the default test environment (no flag set) matches the
-    // "gate falls through to SiliconFlow" precondition agentLoop.ts's runAgentLoop relies on.
-    assert.equal(process.env.AGENT_VERO_GENERIC_LOOP, undefined);
+    // Calls the real gate condition agentLoop.ts's runAgentLoop uses
+    // (`if (isVeroGenericLoopReady()) return runVeroAgentLoop(...)`), so this test
+    // actually fails if that condition or its underlying flag logic regresses.
+    assert.equal(isVeroGenericLoopReady(), false);
   } finally {
     if (prevFlag === undefined) delete process.env.AGENT_VERO_GENERIC_LOOP;
     else process.env.AGENT_VERO_GENERIC_LOOP = prevFlag;

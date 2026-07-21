@@ -1,133 +1,56 @@
-# Task 1 Report: Manifest — agent + admin endpoints
+# Task 1 Report: Vero generic-loop flag + calibration constants
 
 ## Status: DONE
 
 ## Commits Created
 
-- `7d9a579` — feat(manifest): register agent chat/feedback and admin config endpoints
+- `d2229d9` — feat(agent): add Vero generic-loop flag + 128K calibration constants
+  (originally committed as `64d06e0` in a stray isolated worktree the implementer
+  subagent created due to a controller dispatch mistake — `isolation: "worktree"`
+  was passed even though the controller had already set up a shared worktree via
+  EnterWorktree; the commit was cherry-picked cleanly onto the correct worktree
+  branch `worktree-vero-generic-agent-loop`, and the stray worktree/branch were
+  removed. No code content was affected by this — only the commit's replay location.)
 
-## Summary
+## What Was Implemented
 
-Successfully implemented manifest entries for four API routes: `POST /api/v4/agent/chat`, `POST /api/v4/agent/feedback`, `GET /PATCH /api/v4/admin/config`, and `POST /api/v4/admin/agent-enabled`. All work follows TDD methodology: test-first, implementation, verification.
+1. `pcr-ai-api/src/lib/vero/veroSimpleAgent.ts` — added `isVeroGenericLoopEnabled()`
+   and `isVeroGenericLoopReady()` directly below the existing `isProbeCardVeroPilotReady`,
+   mirroring its exact pattern (same `isEnvTruthy` + `getVeroAccessToken` composition).
+2. `pcr-ai-api/src/lib/agent/core/veroAgentLoopConfig.ts` (new) — three calibration
+   constants: `VERO_SUMMARIZE_THRESHOLD = 60`, `VERO_TOOL_RESULT_MAX_HISTORY_CHARS = 15000`,
+   `VERO_PROMPT_CHAR_BUDGET = 180_000`.
+3. `pcr-ai-api/test/veroAgentLoopConfig.test.ts` (new) — 2 tests: flag toggling with
+   env vars (save/restore in `finally`), and constants sanity-checked against the
+   SiliconFlow large-context bucket comparison point.
 
-## Implementation Details
+## Test Results (re-verified by controller after cherry-pick, in the correct worktree)
 
-### Files Created
+Command: `npx tsx --test test/veroAgentLoopConfig.test.ts` (from `pcr-ai-api/`)
 
-1. **`pcr-ai-api/src/lib/manifest/agentManifestEndpoints.ts`**
-   - Exports `agentManifestEndpoints` array with 2 entries
-   - Covers `POST /api/v4/agent/chat` (ReAct loop over Yield Monitor/JB STAR, SSE response)
-   - Covers `POST /api/v4/agent/feedback` (thumbs-up/down feedback persistence)
-   - Each entry includes path, method, purpose, requestBody, and responseShape fields
-
-2. **`pcr-ai-api/src/lib/manifest/adminManifestEndpoints.ts`**
-   - Exports `adminManifestEndpoints` array with 3 entries
-   - Covers `GET /api/v4/admin/config` (returns full RuntimeConfig)
-   - Covers `PATCH /api/v4/admin/config` (merge-patch RuntimeConfig)
-   - Covers `POST /api/v4/admin/agent-enabled` (deprecated shortcut, marked `deprecated: true`)
-   - Each entry documents full RuntimeConfig shape and semantics
-
-3. **`pcr-ai-api/test/manifestAgentAdminEndpoints.test.ts`**
-   - 4 test cases per brief specification:
-     1. POST /api/v4/agent/chat presence + requestBody validation
-     2. POST /api/v4/agent/feedback presence + requestBody validation
-     3. GET and PATCH /api/v4/admin/config presence + PATCH requestBody validation
-     4. POST /api/v4/admin/agent-enabled presence + deprecated flag validation
-
-### File Modified
-
-**`pcr-ai-api/src/lib/manifest/index.ts`**
-- Added imports: `agentManifestEndpoints`, `adminManifestEndpoints`
-- Added spreads to `endpoints` array: `...agentManifestEndpoints`, `...adminManifestEndpoints`
-- Updated `description` to clarify agent/admin routes are v4-only and reference GET /openapi.json
-
-## TDD Evidence
-
-### RED — Test fails before implementation
 ```
-Command: cd pcr-ai-api && npx tsx --test test/manifestAgentAdminEndpoints.test.ts
-Result: 4 failures
-
-not ok 1 - manifest includes POST /api/v4/agent/chat with a requestBody
-  error: 'expected /api/v4/agent/chat POST entry'
-
-not ok 2 - manifest includes POST /api/v4/agent/feedback with a requestBody
-  error: 'expected /api/v4/agent/feedback POST entry'
-
-not ok 3 - manifest includes GET and PATCH /api/v4/admin/config
-  error: 'expected /api/v4/admin/config GET entry'
-
-not ok 4 - manifest includes deprecated POST /api/v4/admin/agent-enabled
-  error: 'expected /api/v4/admin/agent-enabled POST entry'
-
-# tests 4
-# pass 0
-# fail 4
-```
-
-### GREEN — Test passes after implementation
-```
-Command: cd pcr-ai-api && npx tsx --test test/manifestAgentAdminEndpoints.test.ts
-Result: 4 passes
-
-ok 1 - manifest includes POST /api/v4/agent/chat with a requestBody
-ok 2 - manifest includes POST /api/v4/agent/feedback with a requestBody
-ok 3 - manifest includes GET and PATCH /api/v4/admin/config
-ok 4 - manifest includes deprecated POST /api/v4/admin/agent-enabled
-
-# tests 4
-# pass 4
+# tests 2
+# suites 0
+# pass 2
 # fail 0
+# cancelled 0
+# skipped 0
+# todo 0
 ```
 
-### Typecheck
-```
-Command: cd pcr-ai-api && npm run typecheck
-Result: Clean (no errors, no warnings)
-```
+Both tests pass:
+- `isVeroGenericLoopEnabled / isVeroGenericLoopReady toggle with env`
+- `Vero loop calibration constants are sane relative to SiliconFlow large-context bucket`
 
-## Self-Review Checklist
+## Files Changed
 
-### Completeness
-- [x] All 5 manifest entries present (2 agent + 3 admin)
-- [x] Correct paths (/api/v4/agent/chat, /api/v4/agent/feedback, /api/v4/admin/config, /api/v4/admin/agent-enabled)
-- [x] Correct HTTP methods (POST, POST, GET, PATCH, POST)
-- [x] All required fields present (path, method, purpose, requestBody, responseShape)
-- [x] Deprecated flag correctly set on admin/agent-enabled
+- Modified: `pcr-ai-api/src/lib/vero/veroSimpleAgent.ts` (+12 lines)
+- Created: `pcr-ai-api/src/lib/agent/core/veroAgentLoopConfig.ts`
+- Created: `pcr-ai-api/test/veroAgentLoopConfig.test.ts`
 
-### Quality & Conventions
-- [x] Code matches existing manifest file conventions (object literals, `unknown[]` type)
-- [x] Import paths use explicit `.js` extensions (ESM Node16 compliance)
-- [x] Field names align with existing endpoints (purpose, requestBody, responseShape, deprecated)
-- [x] Descriptions are informative (SSE note, network boundary warning, deprecation context)
-- [x] No extra fields or entries beyond brief specification
+## Self-Review / Concerns
 
-### Discipline
-- [x] No restructuring of manifest/ directory
-- [x] No modifications to other files outside the scope
-- [x] No unnecessary changes to index.ts beyond imports + spreads + description update
-- [x] Test file follows node:test/node:assert pattern consistently with codebase
-
-### Testing
-- [x] Test failures before implementation clearly show missing entries
-- [x] Test passes after implementation with all 4 assertions green
-- [x] Typecheck clean with no errors or warnings
-- [x] No regressions introduced
-
-## Concerns
-
-None. All requirements met, all tests pass, typecheck clean, code follows conventions.
-
-## Files Changed Summary
-
-- **Created:** `pcr-ai-api/src/lib/manifest/agentManifestEndpoints.ts` (109 lines)
-- **Created:** `pcr-ai-api/src/lib/manifest/adminManifestEndpoints.ts` (68 lines)
-- **Modified:** `pcr-ai-api/src/lib/manifest/index.ts` (+2 imports, +2 spreads, +1 description update)
-- **Created:** `pcr-ai-api/test/manifestAgentAdminEndpoints.test.ts` (42 lines)
-
-**Net:** 4 files changed (+219 insertions, -1 deletion)
-
----
-
-**Task Status:** DONE  
-**Date:** 2026-07-18
+None reported by the implementer. Independently confirmed by the task reviewer
+(direct diff read): spec-compliant, default-off semantics correct, no secrets
+committed, no scope creep. Reviewer's only finding was the report-file mismatch
+documented above (controller-side process issue, now corrected), not a code defect.
