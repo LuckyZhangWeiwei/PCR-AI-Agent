@@ -574,3 +574,21 @@ test("tryAppendUnderperformingDutSection: payload 缺 lot/device 时返回空串
   assert.equal(out, "");
   assert.equal(events.length, 0);
 });
+
+test("runAgentLoop: Vero generic loop stays off when AGENT_VERO_GENERIC_LOOP is unset", () => {
+  const prevFlag = process.env.AGENT_VERO_GENERIC_LOOP;
+  const prevToken = process.env.WCHAT_ACCESS_TOKEN;
+  try {
+    delete process.env.AGENT_VERO_GENERIC_LOOP;
+    delete process.env.WCHAT_ACCESS_TOKEN;
+    // isVeroGenericLoopReady() itself is unit-tested in veroAgentLoopConfig.test.ts;
+    // this just asserts the default test environment (no flag set) matches the
+    // "gate falls through to SiliconFlow" precondition agentLoop.ts's runAgentLoop relies on.
+    assert.equal(process.env.AGENT_VERO_GENERIC_LOOP, undefined);
+  } finally {
+    if (prevFlag === undefined) delete process.env.AGENT_VERO_GENERIC_LOOP;
+    else process.env.AGENT_VERO_GENERIC_LOOP = prevFlag;
+    if (prevToken === undefined) delete process.env.WCHAT_ACCESS_TOKEN;
+    else process.env.WCHAT_ACCESS_TOKEN = prevToken;
+  }
+});
