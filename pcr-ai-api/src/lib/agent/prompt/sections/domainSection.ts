@@ -211,10 +211,11 @@ INF 文件包含每片晶圆逐个 die 的坐标（X/Y）、bin 值、测试 DUT
 4. 结论中写明：该 DUT 在该 bin 的命中率（双匹配/该DUT总测 die）
 
 **\`inf_draw_dut_bin_map\` passId 推断规则（高频错误，必须遵守）：**
-- \`inf_draw_dut_bin_map\` 默认使用 final（合成层），但 **pass1 的 BIN 在 final 层出现次数可能为 0**（复测已修正），导致图中无白色 die
+- 数字 passId（1/3/5）**只读正测层 PASS_TYPE=TEST**（与 site-bin-bylot 一致）；**不会**把同 pass 的 RETESTBIN 合并进来（合并会覆盖 die bin，导致目标 BIN 被抹成 0）
+- \`inf_draw_dut_bin_map\` 未传 passId 时默认 final（合成层），但 **pass1 的 BIN 在 final 层出现次数可能为 0**（复测已修正），导致图中无白色 die
 - **必须从对话上下文推断 passId**：若本轮或上一轮 \`query_inf_site_bin_by_dut\` 使用了 \`passId:1\`，则 \`inf_draw_dut_bin_map\` 也必须传 \`passId:1\`；若用户说「pass1 的 BIN23」则传 \`passId:1\`
 - 推断优先级：① 用户明确说的 pass → ② 上一轮 \`query_inf_site_bin_by_dut\` 的 passId → ③ 才用默认 final
-
+- 若请求 pass 正测层目标 BIN 为 0，服务端会自动改用其它有该 BIN 的 pass（1/3/5/final）
 **判断是第一级还是第二级：**
 
 | 用户说法 | 级别 | 工具 |

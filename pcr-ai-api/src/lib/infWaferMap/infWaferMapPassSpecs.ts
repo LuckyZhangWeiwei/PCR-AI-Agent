@@ -16,6 +16,17 @@ import {
 
 // ── Die map for a specific pass / segment ─────────────────────────────────
 
+export type GetDiesForPassIdOptions = {
+  /**
+   * When set, plain PASS_ID resolution only merges SmWaferPass blocks whose
+   * PASS_TYPE is in this list (case-insensitive). Used by DUT×BIN maps to match
+   * site-bin-bylot (PASS_TYPE=TEST only) — merging RETESTBIN overwrites die bins
+   * and can wipe the target BIN to 0.
+   * Segment / RETESTBIN:N / final ignore this filter.
+   */
+  passTypes?: readonly string[];
+};
+
 /**
  * Resolve a pass_id string to a list of DieEntry.
  * Supports: "final", PASS_ID number, "N@pre", "N@post", "RETESTBIN:N".
@@ -23,7 +34,8 @@ import {
 export function getDiesForPassId(
   root: InfBlock,
   goodBins: Set<number>,
-  passIdStr: string
+  passIdStr: string,
+  opts?: GetDiesForPassIdOptions
 ): DieEntry[] {
   const ps = passIdStr.trim().toLowerCase();
 
@@ -57,14 +69,80 @@ export function getDiesForPassId(
     return buildDieMapForSmWaferPass(chosen.block, goodBins);
   }
 
-  // Plain PASS_ID — merge all blocks for that id
-  const matching = findSmWaferPassesForId(root, passIdStr);
+  // Plain PASS_ID — merge blocks for that id (optionally PASS_TYPE-filtered)
+  let matching = findSmWaferPassesForId(root, passIdStr);
+  if (opts?.passTypes && opts.passTypes.length > 0) {
+    const allow = new Set(opts.passTypes.map((t) => t.toUpperCase()));
+    matching = matching.filter((p) => allow.has(p.passType.toUpperCase()));
+  }
   if (matching.length === 0) return [];
   const merged = new Map<string, DieEntry>();
   for (const pi of matching)
     for (const d of buildDieMapForSmWaferPass(pi.block, goodBins))
       merged.set(`${d.x},${d.y}`, d);
   return [...merged.values()];
+}
+
+/** DUT×BIN map: numeric PASS_ID merges PASS_TYPE=TEST only (align site-bin-bylot). */
+const DUT_BIN_MAP_TEST_ONLY = { passTypes: ["TEST"] as const };
+
+function diesForDutBinMapPass(
+  root: InfBlock,
+  goodBins: Set<number>,
+  passKey: string
+): DieEntry[] {
+  const key = passKey.trim();
+  if (/^\d+$/.test(key)) {
+    return getDiesForPassId(root, goodBins, key, DUT_BIN_MAP_TEST_ONLY);
+  }
+  return getDiesForPassId(root, goodBins, key);
+}
+
+/**
+ * Resolve dies for inf_draw_dut_bin_map.
+ * Prefer the requested pass (TEST-only for 1/3/5). If that layer has 0 of the
+ * target BIN — often because a caller previously merged RETESTBIN — scan
+ * other common layers and pick the one with the most hits.
+ */
+export function resolveDutBinMapDies(
+  root: InfBlock,
+  goodBins: Set<number>,
+  preferredPass: string,
+  targetBin: number
+): { passId: string; dies: DieEntry[]; fallbackNote?: string } {
+  const preferred = preferredPass.trim() || "final";
+  const preferredDies = diesForDutBinMapPass(root, goodBins, preferred);
+  const preferredBinTotal = preferredDies.filter((d) => d.bin === targetBin).length;
+  if (preferredBinTotal > 0) {
+    return { passId: preferred, dies: preferredDies };
+  }
+
+  const candidates = ["1", "3", "5", "final"].filter(
+    (p) => p.toLowerCase() !== preferred.toLowerCase()
+  );
+  let bestPass = preferred;
+  let bestDies = preferredDies;
+  let bestBin = preferredBinTotal;
+  for (const c of candidates) {
+    const dies = diesForDutBinMapPass(root, goodBins, c);
+    const n = dies.filter((d) => d.bin === targetBin).length;
+    if (n > bestBin) {
+      bestBin = n;
+      bestPass = c;
+      bestDies = dies;
+    }
+  }
+
+  if (bestBin > 0 && bestPass !== preferred) {
+    return {
+      passId: bestPass,
+      dies: bestDies,
+      fallbackNote:
+        `ℹ️ 请求的 pass（${preferred}）中 BIN${targetBin} 为 0（正测层，不含复测覆盖）；` +
+        `已改用 Pass ${bestPass === "final" ? "最终合成" : bestPass}（BIN${targetBin}×${bestBin}）。`,
+    };
+  }
+  return { passId: preferred, dies: preferredDies };
 }
 
 // ── Wafer map pass tabs (incl. interrupt / retest segments) ────────────────

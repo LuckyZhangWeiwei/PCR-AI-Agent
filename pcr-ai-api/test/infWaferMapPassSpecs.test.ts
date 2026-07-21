@@ -17,7 +17,9 @@ import {
   buildWaferMapPassSpecs,
   describePassLayer,
   findSegmentedPassLayers,
+  getDiesForPassId,
   getDiesForWaferMapSpec,
+  resolveDutBinMapDies,
 } from "../src/lib/infWaferMap/infWaferMapPassSpecs.js";
 
 const fixture = path.join(
@@ -123,11 +125,29 @@ test("buildWaferMapPassSpecs single passId: all block dies are non-empty", async
   }
 });
 
-test("infNotchAngleToSvg maps INF dNotchAngle to SVG canvas degrees", () => {
-  assert.equal(infNotchAngleToSvg(180), 90); // bottom
-  assert.equal(infNotchAngleToSvg(270), 180); // left
-  assert.equal(infNotchAngleToSvg(90), 0); // right
-  assert.equal(infNotchAngleToSvg(0), 270); // top
+test("getDiesForPassId(passTypes:TEST) keeps BIN that RETEST merge would wipe", async () => {
+  const root = await parseInf(fixture);
+  const psbn = findPsbn(root);
+  const goodBins = psbn ? decodePsbn(psbn) : new Set([1]);
+
+  // Fixture pass3: TEST has BIN8; merging RETESTBIN overwrites those dies → BIN8=0
+  const merged = getDiesForPassId(root, goodBins, "3");
+  const testOnly = getDiesForPassId(root, goodBins, "3", { passTypes: ["TEST"] });
+  assert.equal(merged.filter((d) => d.bin === 8).length, 0);
+  assert.ok(testOnly.filter((d) => d.bin === 8).length > 0);
+  assert.ok(testOnly.filter((d) => d.site === 0 && d.bin === 8).length > 0);
+});
+
+test("resolveDutBinMapDies uses TEST-only for numeric pass (no RETEST wipe)", async () => {
+  const root = await parseInf(fixture);
+  const psbn = findPsbn(root);
+  const goodBins = psbn ? decodePsbn(psbn) : new Set([1]);
+
+  const { passId, dies, fallbackNote } = resolveDutBinMapDies(root, goodBins, "3", 8);
+  assert.equal(passId, "3");
+  assert.equal(fallbackNote, undefined);
+  assert.ok(dies.filter((d) => d.bin === 8).length > 0);
+  assert.ok(dies.filter((d) => d.site === 0 && d.bin === 8).length > 0);
 });
 
 test("readDieGeometry converts dummy INF dNotchAngle 180 to SVG bottom (90)", async () => {

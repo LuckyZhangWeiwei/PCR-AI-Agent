@@ -5,9 +5,9 @@
 
 import { readPossibleDieCoords, type DieEntry } from "../../infWaferMap/infWaferMapGeometry.js";
 import {
-  getDiesForPassId,
   getDiesForWaferMapSpec,
   buildWaferMapPassSpecs,
+  resolveDutBinMapDies,
 } from "../../infWaferMap/infWaferMapPassSpecs.js";
 import { generateWaferMapHtml, type WaferMapPass } from "../../infWaferMap/html/waferMapHtml.js";
 import { generateDutBinMapHtml } from "../../infWaferMap/html/dutBinMapHtml.js";
@@ -113,8 +113,13 @@ export async function runDrawDutBinMap(
   if (!Number.isFinite(bin)) return "inf_draw_dut_bin_map 参数错误: bin 不能为空";
 
   const ctx = await loadInfWafer(device, lot, slot);
-  const passIdStr = resolvePassId(args, "final");
-  const dies = getDiesForPassId(ctx.root, ctx.goodBins, passIdStr);
+  const requestedPass = resolvePassId(args, "final");
+  const { passId: passIdStr, dies, fallbackNote } = resolveDutBinMapDies(
+    ctx.root,
+    ctx.goodBins,
+    requestedPass,
+    bin
+  );
 
   if (dies.length === 0) return `无 die 数据（pass_id=${passIdStr}）`;
 
@@ -156,7 +161,7 @@ export async function runDrawDutBinMap(
   const binTotal = dies.filter((d) => d.bin === bin).length;
 
   const note = binTotal === 0
-    ? `⚠️ 该 pass（${passIdStr}）中 BIN${bin} 出现次数为 0，图中无白色或竖线 die——请改用其他 pass_id（如 "1"/"3"/"5"）或确认 bin 编号`
+    ? `⚠️ 各 pass（含正测层 1/3/5）中 BIN${bin} 出现次数均为 0，图中无白色或竖线 die——请确认 bin 编号`
     : matchCount === 0
     ? `ℹ️ BIN${bin} 存在（${binTotal} 个），但均不由 DUT${dut} 测试（图中仅竖线，无白色 die）`
     : "";
@@ -172,6 +177,7 @@ export async function runDrawDutBinMap(
     `DUT${dut} 测的 die: ${dutTotal}  BIN${bin} 出现: ${binTotal}  双匹配: ${matchCount}`,
     `DUT${dut} 中 BIN${bin} 占比: ${dutTotal > 0 ? ((matchCount / dutTotal) * 100).toFixed(1) : 0}%`,
     inferredNote,
+    fallbackNote,
     note,
     `图例: ■ 白色=DUT${dut}且BIN${bin}  横线=该DUT其他bin  竖线=BIN${bin}由其他DUT测得  极暗=其他`,
   ].filter(Boolean).join("\n");
