@@ -39,7 +39,7 @@ interface ToolSchemaEntry {
  * for the Vero system prompt. Adding a tool only requires editing
  * agentToolSchemas.ts; this renderer picks it up automatically.
  */
-export function renderToolSchemasAsText(schemas: unknown[]): string {
+export function renderToolSchemasAsText(schemas: readonly unknown[]): string {
   const entries = schemas as ToolSchemaEntry[];
   return entries
     .map(({ function: fn }) => {
