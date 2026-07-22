@@ -4,6 +4,7 @@ import test from "node:test";
 import { emitBriefCommentaryOrFallback } from "../src/lib/agent/render/agentBriefCommentary.js";
 import { resolveAgentConfig } from "../src/lib/agent/agentConfig.js";
 import type { AgentSseEvent } from "../src/lib/agent/core/agentLoop.js";
+import { DETERMINISTIC_COMMENTARY_SECTION_TITLE } from "../src/lib/agent/jb/agentJbOverviewMarkdown.js";
 
 const baseConfig = resolveAgentConfig({
   apiKey: "sk-test",
@@ -49,7 +50,7 @@ test("emitBriefCommentaryOrFallback: Vero ready + invoke returns text -> chunks 
       .filter((e): e is Extract<AgentSseEvent, { type: "text" }> => e.type === "text")
       .map((e) => e.delta)
       .join("");
-    assert.ok(text.includes(`${"###"} 数据解读`) || text.includes("数据解读"));
+    assert.ok(text.includes(DETERMINISTIC_COMMENTARY_SECTION_TITLE));
     assert.ok(text.includes("这是解读内容。"));
   });
 });

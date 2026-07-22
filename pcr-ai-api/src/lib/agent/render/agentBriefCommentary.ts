@@ -24,6 +24,7 @@ import {
 import {
   BRIEF_COMMENTARY_SYSTEM,
   buildBriefCommentaryUserMessage,
+  DETERMINISTIC_COMMENTARY_SECTION_TITLE,
 } from "../jb/agentJbOverviewMarkdown.js";
 
 export type BriefCommentaryContext = {
@@ -42,9 +43,9 @@ const VERO_COMMENTARY_SYSTEM_PLACEHOLDER =
   "You write brief Chinese engineering commentary only. No tools. No tables.";
 
 /**
- * Emits the "### 数据解读 / ### 专业建议" section for a deterministic table
- * reply and returns the commentary-or-fallback text so the caller can
- * append it to session history.
+ * Emits the DETERMINISTIC_COMMENTARY_SECTION_TITLE ("## 分析结论") section header
+ * and generates commentary text via Vero or SiliconFlow. Returns the commentary
+ * or a fallback message for the caller to append to session history.
  */
 export async function emitBriefCommentaryOrFallback(
   userQuestion: string,
@@ -60,7 +61,7 @@ export async function emitBriefCommentaryOrFallback(
   });
   emit({
     type: "text",
-    delta: "\n\n### 数据解读\n\n",
+    delta: `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n`,
   });
 
   if (isVeroGenericLoopReady()) {
