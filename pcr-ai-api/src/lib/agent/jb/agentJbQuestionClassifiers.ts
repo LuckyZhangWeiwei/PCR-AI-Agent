@@ -145,6 +145,13 @@ export function isProbeCardTesterPerformanceQuestion(text: string): boolean {
   ) {
     return true;
   }
+  // 「WC06N84R 和机台以及probecard 的组合情况」— 口语组合概况
+  if (
+    /组合\s*情况|搭配\s*情况/i.test(t) &&
+    /(?:卡|探针|probecard|probe\s*card|机台|tester)/i.test(t)
+  ) {
+    return true;
+  }
   if (isCardYieldCompareQuestion(t) && !isProbeCardComboRankingQuestion(t)) return false;
   if (/探针卡.*(?:表现|组合).*(?:排名|最好|最差)/i.test(t)) return true;
   if (/(?:组合|表现).*(?:排名).*(?:探针卡|机台)/i.test(t)) return true;

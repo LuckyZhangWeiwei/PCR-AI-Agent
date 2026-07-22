@@ -177,6 +177,7 @@ const TOOL_DISPLAY_LABELS: Record<string, string> = {
   query_jb_bins: "JB 测试数据查询",
   aggregate_jb_bins: "JB BIN 聚合统计",
   get_filter_values: "可选值查询",
+  aggregate_probe_card_tester_performance: "探针卡+机台组合",
   query_lot_dut_bin_agg: "DUT×BIN 聚合",
   query_inf_site_bin_by_dut: "DUT 分布查询",
   inf_draw_wafer_map: "绘制晶圆图",
