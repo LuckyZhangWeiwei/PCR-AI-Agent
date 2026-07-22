@@ -7,15 +7,13 @@ import { runTool } from "../../tools/agentToolHandlers.js";
 import {
   emitTextInChunks,
   lastToolMessage,
-  cleanStreamErrorMessage,
 } from "../../core/agentLoopShared.js";
 import type { AgentSseEvent } from "../../core/agentLoop.js";
-import { streamSiliconFlow } from "../../core/agentStream.js";
-import { createDeepSeekFilter } from "../../core/agentEmbeddedToolParsing.js";
 import {
   tryEmitDutBinBarChart,
   buildDutBinAggMarkdown,
 } from "../../render/agentChartEmitters.js";
+import { emitBriefCommentaryOrFallback } from "../../render/agentBriefCommentary.js";
 import {
   tryEmitUnderperformingDutScatter,
 } from "../../tools/agentToolUnderperformingDutsRender.js";
@@ -26,8 +24,6 @@ import { inferLotFromHistory, findLastToolCallArgs } from "../../agentQueryScope
 import { getCachedJbPayloadForLot } from "../../agentJbOverviewRoute.js";
 import { resolveJbToolPayload } from "../../jb/agentJbPayloadResolve.js";
 import {
-  BRIEF_COMMENTARY_SYSTEM,
-  buildBriefCommentaryUserMessage,
   buildEngineeringContextFromPayload,
   DETERMINISTIC_DATA_SECTION_TITLE,
   DETERMINISTIC_COMMENTARY_SECTION_TITLE,
@@ -114,44 +110,18 @@ async function emitFocusDutBinsReply(
     `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n${tableMd}`
   );
   emitTextInChunks(tablesBlock, emit);
-  emit({ type: "status", message: "正在生成数据解读…" });
-  emit({ type: "text", delta: `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n` });
 
-  const commFilter = createDeepSeekFilter(emit);
-  let streamError: string | undefined;
-  await streamSiliconFlow(
+  const commentaryOrFallback = await emitBriefCommentaryOrFallback(
+    userQuestion,
+    tableMd,
     {
-      model: agentConfig.subAgentModel,
-      messages: [
-        { role: "system", content: BRIEF_COMMENTARY_SYSTEM },
-        {
-          role: "user",
-          content: buildBriefCommentaryUserMessage(userQuestion, tableMd, {
-            engineeringContext: opts.commentaryPayload
-              ? buildEngineeringContextFromPayload(opts.commentaryPayload)
-              : undefined,
-          }),
-        },
-      ],
-      max_tokens: 1024,
+      engineeringContext: opts.commentaryPayload
+        ? buildEngineeringContextFromPayload(opts.commentaryPayload)
+        : undefined,
     },
     agentConfig,
-    (chunk) => {
-      if (chunk.type === "delta") commFilter.push(chunk.text);
-      if (chunk.type === "error") streamError = chunk.message;
-    }
+    emit
   );
-  commFilter.finalize();
-  const commentary = commFilter.cleanText.trim();
-  let commentaryOrFallback: string;
-  if (commentary) {
-    commentaryOrFallback = commentary;
-  } else {
-    commentaryOrFallback = streamError
-      ? `*（解读生成失败：${cleanStreamErrorMessage(streamError)}；以上实测数据表为准。）*`
-      : `*（模型未返回解读；以上实测数据表为准。）*`;
-    emit({ type: "text", delta: commentaryOrFallback });
-  }
 
   const full =
     tablesBlock +
@@ -481,43 +451,13 @@ export async function tryRunDutBinAggAutoRoute(
   emitTextInChunks(tablesBlock, emit);
   // DUT 分布数据点 ≥3 时自动生成 bar chart，直观展示哪个 DUT 集中出 BIN
   tryEmitDutBinBarChart(rawContent, focusBin, emit);
-  emit({ type: "status", message: "正在生成数据解读…" });
-  emit({ type: "text", delta: `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n` });
-
-  const commFilter = createDeepSeekFilter(emit);
-  let streamError: string | undefined;
-  await streamSiliconFlow(
-    {
-      model: agentConfig.subAgentModel,
-      messages: [
-        { role: "system", content: BRIEF_COMMENTARY_SYSTEM },
-        {
-          role: "user",
-          content: buildBriefCommentaryUserMessage(userQuestion, tableMd, {
-            engineeringContext: buildEngineeringContextFromPayload(payload),
-          }),
-        },
-      ],
-      max_tokens: 1024,
-    },
+  const commentaryOrFallback = await emitBriefCommentaryOrFallback(
+    userQuestion,
+    tableMd,
+    { engineeringContext: buildEngineeringContextFromPayload(payload) },
     agentConfig,
-    (chunk) => {
-      if (chunk.type === "delta") commFilter.push(chunk.text);
-      if (chunk.type === "error") streamError = chunk.message;
-    }
+    emit
   );
-  commFilter.finalize();
-  const commentary = commFilter.cleanText.trim();
-
-  let commentaryOrFallback: string;
-  if (commentary) {
-    commentaryOrFallback = commentary;
-  } else {
-    commentaryOrFallback = streamError
-      ? `*（解读生成失败：${cleanStreamErrorMessage(streamError)}；以上实测数据表为准。）*`
-      : `*（模型未返回解读；以上实测数据表为准。）*`;
-    emit({ type: "text", delta: commentaryOrFallback });
-  }
 
   const full =
     tablesBlock +
