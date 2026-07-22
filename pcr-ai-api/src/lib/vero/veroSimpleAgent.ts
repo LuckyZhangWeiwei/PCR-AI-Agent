@@ -39,11 +39,25 @@ export function isProbeCardVeroPilotReady(): boolean {
   return isProbeCardVeroPilotEnabled() && getVeroAccessToken().length > 0;
 }
 
-/** Feature flag: the generic ReAct loop (all free-form questions, not just
- * probe-card×tester) uses Vero when true — see docs/superpowers/specs/
- * 2026-07-21-vero-generic-agent-loop-design.md. */
+const ENV_FALSY_VALUES = new Set(["0", "false", "no", "off"]);
+
+/**
+ * Feature flag: the generic ReAct loop (all free-form questions, not just
+ * probe-card×tester) uses Vero — see docs/superpowers/specs/
+ * 2026-07-21-vero-generic-agent-loop-design.md.
+ *
+ * Defaults to **on** (unset/empty -> true) since 2026-07-22: code review +
+ * Cursor's real-network validation against the live Vero backend
+ * (docs/HANDOFF_CURSOR_VERO_GENERIC_LOOP_TEST_RESULTS.md) found no blocking
+ * issues. Set AGENT_VERO_GENERIC_LOOP=false (or 0/no/off) to opt back out to
+ * the SiliconFlow loop — actual activation still requires WCHAT_ACCESS_TOKEN
+ * (see isVeroGenericLoopReady), so environments without a token keep
+ * falling back to SiliconFlow automatically regardless of this flag.
+ */
 export function isVeroGenericLoopEnabled(): boolean {
-  return isEnvTruthy(process.env.AGENT_VERO_GENERIC_LOOP);
+  const raw = process.env.AGENT_VERO_GENERIC_LOOP?.trim().toLowerCase();
+  if (!raw) return true;
+  return !ENV_FALSY_VALUES.has(raw);
 }
 
 /** Generic loop is usable only when flag is on and a bearer token is present. */

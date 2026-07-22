@@ -15,10 +15,15 @@ test("isVeroGenericLoopEnabled / isVeroGenericLoopReady toggle with env", () => 
   const prevFlag = process.env.AGENT_VERO_GENERIC_LOOP;
   const prevToken = process.env.WCHAT_ACCESS_TOKEN;
   try {
+    // Defaults to enabled (unset -> true) since 2026-07-22; readiness still
+    // gates on a token, so no-token environments stay on SiliconFlow.
     delete process.env.AGENT_VERO_GENERIC_LOOP;
     delete process.env.WCHAT_ACCESS_TOKEN;
+    assert.equal(isVeroGenericLoopEnabled(), true);
+    assert.equal(isVeroGenericLoopReady(), false); // no token yet
+
+    process.env.AGENT_VERO_GENERIC_LOOP = "false";
     assert.equal(isVeroGenericLoopEnabled(), false);
-    assert.equal(isVeroGenericLoopReady(), false);
 
     process.env.AGENT_VERO_GENERIC_LOOP = "true";
     assert.equal(isVeroGenericLoopEnabled(), true);

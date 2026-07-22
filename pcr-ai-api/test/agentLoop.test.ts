@@ -576,7 +576,7 @@ test("tryAppendUnderperformingDutSection: payload 缺 lot/device 时返回空串
   assert.equal(events.length, 0);
 });
 
-test("runAgentLoop: Vero generic loop stays off when AGENT_VERO_GENERIC_LOOP is unset", () => {
+test("runAgentLoop: Vero generic loop stays off without a WCHAT_ACCESS_TOKEN, even though the flag now defaults on", () => {
   const prevFlag = process.env.AGENT_VERO_GENERIC_LOOP;
   const prevToken = process.env.WCHAT_ACCESS_TOKEN;
   try {
@@ -585,6 +585,9 @@ test("runAgentLoop: Vero generic loop stays off when AGENT_VERO_GENERIC_LOOP is 
     // Calls the real gate condition agentLoop.ts's runAgentLoop uses
     // (`if (isVeroGenericLoopReady()) return runVeroAgentLoop(...)`), so this test
     // actually fails if that condition or its underlying flag logic regresses.
+    // AGENT_VERO_GENERIC_LOOP itself defaults to enabled since 2026-07-22 (see
+    // veroSimpleAgent.ts's isVeroGenericLoopEnabled) — this test's "stays off"
+    // guarantee now comes entirely from the missing token, not the flag.
     assert.equal(isVeroGenericLoopReady(), false);
   } finally {
     if (prevFlag === undefined) delete process.env.AGENT_VERO_GENERIC_LOOP;
