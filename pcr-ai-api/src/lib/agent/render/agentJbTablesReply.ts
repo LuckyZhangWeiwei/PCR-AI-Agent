@@ -6,7 +6,6 @@ import { getHistory, appendMessages, type ChatMessage } from "../agentHistory.js
 import {
   lastToolMessage,
   emitTextInChunks,
-  cleanStreamErrorMessage,
 } from "../core/agentLoopShared.js";
 import {
   tryEmitTopBinBarChart,
@@ -24,8 +23,6 @@ import {
   inferLotListingPresentation,
 } from "../jb/agentJbListingMarkdown.js";
 import {
-  BRIEF_COMMENTARY_SYSTEM,
-  buildBriefCommentaryUserMessage,
   buildDeterministicJbTables,
   buildEngineeringContextFromPayload,
   DETERMINISTIC_DATA_SECTION_TITLE,
@@ -38,8 +35,7 @@ import {
 } from "../jb/agentJbPayloadResolve.js";
 import { jbListingScopeLabel, resolveJbListingScope } from "../agentQueryScope.js";
 import { tryAppendUnderperformingDutSection } from "../tools/agentToolUnderperformingDutsRender.js";
-import { createDeepSeekFilter } from "../core/agentEmbeddedToolParsing.js";
-import { streamSiliconFlow } from "../core/agentStream.js";
+import { emitBriefCommentaryOrFallback } from "./agentBriefCommentary.js";
 
 /** 同轮若已查 Yield Monitor，摘一句供专业建议引用。 */
 function yieldMonitorNoteFromHistory(history: ChatMessage[]): string | undefined {
@@ -209,60 +205,17 @@ export async function emitDeterministicJbTablesReply(
     return true;
   }
 
-  emit({ type: "status", message: "正在生成数据解读与专业建议…" });
-  // 先推送分段标题，避免解读文字与上方表格落在同一 Markdown 块里被 GFM 当成表尾行
-  emit({
-    type: "text",
-    delta: `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n`,
-  });
-
-  const commFilter = createDeepSeekFilter(emit);
-  let streamError: string | undefined;
-
-  await streamSiliconFlow(
+  const commentaryOrFallback = await emitBriefCommentaryOrFallback(
+    userQuestion,
+    tables,
     {
-      model: agentConfig.subAgentModel, // 表解读：结构化输入/有界输出，sub-agent 模型即可
-      messages: [
-        { role: "system", content: BRIEF_COMMENTARY_SYSTEM },
-        {
-          role: "user",
-          content: buildBriefCommentaryUserMessage(userQuestion, tables, {
-            engineeringContext: buildEngineeringContextFromPayload(payload),
-            yieldMonitorNote: yieldMonitorNoteFromHistory(history),
-          }),
-        },
-      ],
-      // No tool schemas: commentary is text-only (数据解读 + 专业建议 ≈ 300-600 tokens)
-      max_tokens: 1024,
+      engineeringContext: buildEngineeringContextFromPayload(payload),
+      yieldMonitorNote: yieldMonitorNoteFromHistory(history),
     },
     agentConfig,
-    (chunk) => {
-      switch (chunk.type) {
-        case "delta":
-          commFilter.push(chunk.text);
-          break;
-        case "error":
-          streamError = chunk.message;
-          break;
-        default:
-          break;
-      }
-    }
+    emit,
+    { statusMessage: "正在生成数据解读与专业建议…" }
   );
-
-  commFilter.finalize();
-  const commentary = commFilter.cleanText.trim();
-
-  // 标题已 SSE 流出；若解读为空则 emit fallback，保持用户所见与 history 一致
-  let commentaryOrFallback: string;
-  if (commentary) {
-    commentaryOrFallback = commentary;
-  } else {
-    commentaryOrFallback = streamError
-      ? `*（解读生成失败：${cleanStreamErrorMessage(streamError)}；以上实测数据表为准。）*`
-      : `*（模型未返回解读；以上实测数据表为准。）*`;
-    emit({ type: "text", delta: commentaryOrFallback });
-  }
 
   const full =
     tablesBlock +
