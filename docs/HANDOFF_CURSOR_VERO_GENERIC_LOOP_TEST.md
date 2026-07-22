@@ -24,6 +24,23 @@
 
 ---
 
+## 0.5 官方澄清（2026-07-22）——"Claude 4.6 / 128K"这个前提未经证实
+
+设计文档和 `veroAgentLoopConfig.ts` 里的 128K 校准常量（`VERO_SUMMARIZE_THRESHOLD=60`、`VERO_TOOL_RESULT_MAX_HISTORY_CHARS=15000`、`VERO_PROMPT_CHAR_BUDGET=180_000`），全部基于 2026-07-21 会话里的一句转述"wchat 是 claude4.6 的模型，上下文是 128K"——**这不是官方信息，只是当时的印象**。
+
+官方口径（NXP IT 提供）：
+
+> Vero Studio 的 LLM provider 是 **AWS Bedrock**。上下文窗口是"该模型在 AWS Bedrock 上支持的标准值"——具体是多少要看 NXP AIAC 批准的是 Bedrock 目录里哪一个 Claude 型号（**不是 Bedrock 全部模型 VeroStudio 都能看到**）。
+
+也就是说，背后可能是 Claude 3.x/3.7（Bedrock 上通常 200K）、Claude 4.x（Bedrock 上通常也是 200K，除非另开了更大上下文的 beta），也可能真的接近 128K——**方向未知，不能再当作已确认的事实**。§3.5 的字符预算实测，请先做以下两件事再测：
+
+1. **确认背后到底是哪个模型。** 可以直接问 Vero："你是基于哪个模型/哪个版本？"（模型自报不一定准，但作为交叉验证的第一步）；如果有权限，检查 Vero Studio 后台/管理界面里 AIAC 批准的具体 Bedrock 模型 ID（`anthropic.claude-...`）。
+2. **确认真实上下文窗口。** 用递增长度的 prompt 测试实际何时开始报错/截断/质量骤降，不要假设 128K。
+
+如果实测发现真实上下文比 128K **更小**，现有护栏（180K 字符 ≈ 128K token 的保守估算）可能不够，需要收紧；如果**更大**（比如 200K），现有护栏只是偏保守、浪费一点摘要触发的余量，不算 bug，但值得放宽以减少不必要的历史压缩。两种情况都请回填进 §4 结果表。
+
+---
+
 ## 1. 这次 code review 发现并已修的两处问题（供你验证修复是否生效）
 
 1. **`PRE_LLM_DIRECT_ROUTES` 之前每轮都会重跑**，而不是像旧 SiliconFlow 循环那样只在本轮第一次工具调用前跑一次。如果第一轮 Vero 选的工具往 history 写入了 device/card 之类信息，第二轮某个直连路由（例如 lot 列表路由 `resolveJbListingScope`）可能因为能从 history 里"倒推"出 device 而突然从"匹配不上"变成"匹配上"，把模型正在做的多轮分析中途打断、抢答一张确定性表格。现已改为只在 `!historyAwaitingToolSummary(history)` 时才跑直连路由表，与旧循环行为对齐。见 `pcr-ai-api/src/lib/agent/core/veroAgentLoop.ts` 的 gate + `pcr-ai-api/test/veroAgentLoop.test.ts` 新增的回归测试（"PRE_LLM_DIRECT_ROUTES does not re-run mid-turn..."）。
@@ -86,13 +103,15 @@ npx tsx scripts/smoke-vero-generic-loop.mjs
 
 如果你有办法模拟一次"Vero 响应很慢/挂起"（例如临时把 `VERO_BASE_URL` 指向一个会阻塞但不断开连接的地址，或者观察一次真实的慢响应），确认：60 秒后是否真的收到 SSE `error` 事件而不是无限转圈？如果没有条件模拟，就跳过，标注"未测试，需要专门场景"。
 
-### 3.5 单轮字符预算（spec §8.2 开放问题）
+### 3.5 单轮字符预算（spec §8.2 开放问题）+ 模型身份确认（见 §0.5）
 
-用一个会触发**大结果集**的问题（例如让某条 lot 的全量 JB 数据、多轮 `aggregate_jb_bins` 累积），观察：
+**先做 §0.5 的两步确认**（问 Vero 自己是什么模型/版本；有权限的话查 Vero Studio 后台的 AIAC 批准型号），把结果记在下面的表里——不要跳过，这决定了这条测试本身的解读方式。
+
+然后用一个会触发**大结果集**的问题（例如让某条 lot 的全量 JB 数据、多轮 `aggregate_jb_bins` 累积），观察：
 
 - `status` 事件里是否出现过"正在压缩历史对话…"（说明 `isVeroPromptOverBudget` 的 18 万字符阈值被触发）？
 - 触发压缩后，Vero 后续轮次是否仍能正常给出合理回答（没有因为摘要丢失关键信息而答非所问）？
-- 记录一次实际观察到的、未触发压缩前的单轮 prompt 大致字符量级（哪怕是估算），用于回填校准 `VERO_PROMPT_CHAR_BUDGET` / `VERO_TOOL_RESULT_MAX_HISTORY_CHARS`（当前 15000，`veroAgentLoopConfig.ts`）是否需要调整。
+- 记录一次实际观察到的、未触发压缩前的单轮 prompt 大致字符量级（哪怕是估算），用于回填校准 `VERO_PROMPT_CHAR_BUDGET` / `VERO_TOOL_RESULT_MAX_HISTORY_CHARS`（当前 15000，`veroAgentLoopConfig.ts`）是否需要调整——**调整方向请结合模型身份确认的结果**：如果背后模型上下文明显大于 128K，可以放宽；如果更小，必须收紧。
 
 ### 3.6 最后一轮强约束（spec §8.4 开放问题）
 
@@ -113,11 +132,12 @@ npx tsx scripts/smoke-vero-generic-loop.mjs
 
 | 测试项 | 结果 | 备注/异常日志 |
 |---|---|---|
+| 0.5 背后模型身份 + 真实上下文窗口 | ✅/❌/未确认 | 模型自报的版本、Vero Studio 后台 AIAC 批准的 Bedrock 型号（若有权限查）、实测上下文大小 |
 | 3.1 冒烟脚本 | ✅/❌ | 是否命中了直连路由（未测到多轮） |
 | 3.2 多轮 JSON 协议 | ✅/❌ | JSON 稳定性、是否需要加强 `parseJsonLoose` |
 | 3.3 direct-route 劫持修复验证 | ✅/❌ | 是否复现过劫持（应复现不了） |
 | 3.4 超时 | ✅/❌/未测试 | |
-| 3.5 字符预算 | ✅/❌ | 实测单轮 prompt 量级，是否需要调常量 |
+| 3.5 字符预算 | ✅/❌ | 实测单轮 prompt 量级，是否需要调常量（结合 0.5 的结果判断调整方向） |
 | 3.6 最后一轮强约束 | ✅/❌ | 模型遵守率 |
 | 3.7 TLS | ✅/❌ | |
 
