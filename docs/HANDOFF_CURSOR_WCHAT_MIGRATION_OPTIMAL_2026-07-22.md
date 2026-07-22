@@ -21,6 +21,7 @@
 | **与现试点关系** | 探针卡组合已是 ① 的样板；本方案是把同一范式扩到全 Agent |
 | **硅基** | 过渡期双后端（flag）；稳定后默认 WChat，硅基作 fallback |
 | **MCP（Path A）** | **可选旁路**，仅服务「人在 WChat UI 里聊」；与看板编排隔离，本文不实现 |
+| **上下文上限** | Bedrock 模型本身约 **1M**；**WChat 平台实际 `context_window_max=200000`（20 万）** — 设计须按 **200k** 预算，勿按 1M 塞目录/历史（见 §2.1） |
 
 产品方已确认该两段式路由为当前约束下的工程最优解（可信数字 + 长尾覆盖 + 可迁移）。
 
@@ -76,6 +77,36 @@ AiAgentReport  POST /api/v4/agent/chat (SSE 形状不变)
 | 长尾问法 | ② 覆盖 | 模型自选，不可控 |
 
 **不要做：** 把看板主循环改成「把用户话丢给 WChat agent/chat，指望 MCP 调 PCR」。
+
+---
+
+## 2.1 WChat 上下文 ≠ Bedrock 模型 1M（2026-07-22 实测，必读）
+
+产品方在 WChat 内核对 `acc_bedrock` 三模型与会话用量后确认：
+
+| 层 | 上限 | 说明 |
+|---|---|---|
+| **Bedrock 模型能力**（Sonnet 4.6 / Opus 4.6 / Opus 4.8） | 输入约 **1M** tokens；输出约 64k（Sonnet）/ **128k**（Opus）；1M 为标准配置、一般无需 context-1m beta | 官方对照以 Opus 4.8 最明确；4.6 同代推断 + Vero 内部「1M context」描述 |
+| **WChat 平台喂给模型** | **`context_window_max = 200_000`（20 万）** | 实测 `GET /api/usage/current-session`（例 conversation 270201） |
+
+要点：
+
+1. **走 WChat / Vero Bot / `simple-agent`，按 200k 设计，不要按 1M。** 平台层截断/压缩，与选哪个 Claude 无关。  
+2. `context_usage_percent` 可 **>100%**：统计的是会话**累计** input tokens / 200k，不是「当前窗口已塞满」；每一轮仍会被压回 200k 内，早期历史会被裁或摘要。  
+3. 若将来 **直连 Bedrock**（不经 WChat），才可能用满 1M；**本迁移方案不直连 Bedrock**。  
+4. 输出 300k 需 Batch API + beta 头；看板 Agent 解读/选工具用不到，忽略。
+
+### 对本仓库实现的约束（Claude Code 须遵守）
+
+| 做法 | 要求 |
+|---|---|
+| ② 工具目录 | **按域切片**（jb / yield / inf / meta），禁止一次塞全量冗长 JSON Schema |
+| 历史 | 续用现有 `agentHistory` 压缩；送给 WChat 的 `prompt` 控制短历史（试点已用 `historyBlock` 近 8 轮 × 截断） |
+| 工具结果 | 继续 `toolResultMaxChars` + 专用 serialize；**勿**把整份大 JSON 再贴进下一轮 WChat prompt（确定性表已 SSE 直出） |
+| `detectLargeContext` | 现按 MiniMax/GLM 抬阈值；接 WChat 时应视为 **中等窗口（~200k）**，不要误当成 1M 而关掉压缩 |
+| 监控（可选） | 若有 token：可调 `GET {VERO}/api/usage/current-session` 核对 `context_window_max`；若平台日后改上限，以该字段为准并更新本文 |
+
+**待确认（非阻塞）：** 200k 是全局固定还是可按 bot/provider 配置——实现前可再查 WChat provider/bot 设置；**在未证实可调高之前，一律按 200k 预算。**
 
 ---
 
@@ -199,7 +230,8 @@ VERO_BASE_URL=https://verostudio.sw.nxp.com
 4. **工具已 emit `tool_start` 后** — 失败须 `done` 结束本轮，禁止 fallthrough 再查同一工具（见 `f29b5b4`）。  
 5. **工具 JSON** — 大结果用专用 serialize（如 `serializeProbeCardPerfForAgent`），禁止 `truncateResult` 硬切导致 `JSON.parse` 失败。  
 6. **勿把 `WCHAT_ACCESS_TOKEN` 写入仓库 / 前端 / handoff 正文。**  
-7. **看板主链路禁用 MCP**；总结轮禁止再选工具。
+7. **看板主链路禁用 MCP**；总结轮禁止再选工具。  
+8. **WChat 有效上下文按 200k 设计**（§2.1），勿按 Bedrock 1M 塞目录/历史。
 
 ---
 
