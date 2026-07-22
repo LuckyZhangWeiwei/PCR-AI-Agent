@@ -73,6 +73,7 @@ import {
   tryRunProbeCardPerfDirectRoute,
   tryRunDeterministicProbeCardPerfSummary,
 } from "../dispatch/directRoutes/agentProbeCardDirectRoutes.js";
+import { PRE_LLM_DIRECT_ROUTES } from "./agentPreLlmDirectRoutes.js";
 // ── Round 4 split: setup / prompt / tool-call / guard / finalize helpers ──────
 import { prepareRunAgentLoopContext } from "./agentLoopSetup.js";
 import { mergeStructuredWithEmbedded } from "./agentToolCallMerge.js";
@@ -118,26 +119,10 @@ export async function runAgentLoop(
   );
 
   // 声明式有序直连调度表(范围 B / spec §4.2):取代原 5 条顺序 if。各 runner 内部 self-gate,
-  // 顺序即优先级,与旧 if 链按构造等价(同序、同 runner、同门槛)。新增 pre-LLM 直连只需加进此数组。
+  // 顺序即优先级,与旧 if 链按构造等价(同序、同 runner、同门槛)。新增 pre-LLM 直连只需加进
+  // agentPreLlmDirectRoutes.ts 一处,两套循环(本文件 + veroAgentLoop.ts)自动同步。
   // 注:不按 detectJbReplyMode 的 mode 建表——mode 与 canRunXxx 门槛非 1:1(mode 更宽),
   // 按 mode 路由会把门槛不满足的问句误路由;有序 runner 列表才是真正等价的声明式形式。
-  const PRE_LLM_DIRECT_ROUTES: Array<typeof tryRunLotListingDirectRoute> = [
-    tryRunUnderperformingDutDirectRoute,
-    tryRunGoodBinValueDirectRoute,
-    tryRunProbeCardPerfDirectRoute,
-    tryRunDutFocusBinsDirectRoute,
-    tryRunDutBinAggDirectRoute,
-    tryRunBinLotRankingDirectRoute,
-    tryRunListingTimeClarifyDirectRoute,
-    tryRunLotListingDirectRoute,
-    tryRunScopedBadBinDirectRoute,
-    tryRunMaskScopeDirectRoute,
-    tryRunLotOverviewDirectRoute,
-    tryRunEquipmentDirectRoute,
-    tryRunPerSlotBinRankingDirectRoute,
-    tryRunSemanticDispatchDirectRoute,
-    tryRunUnscopedBinClarifyDirectRoute,
-  ];
 
   const maxRounds = agentConfig.maxRounds;
   // 首轮"只承诺查询、未真正调用工具"时的一次性纠正重试标记(跨 round 迭代持久)。

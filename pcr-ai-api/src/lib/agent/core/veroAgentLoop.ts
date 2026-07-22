@@ -30,52 +30,13 @@ import {
 } from "./veroAgentProtocol.js";
 import { executeVeroToolDecision } from "./veroAgentToolExecutor.js";
 
-// ── PRE_LLM direct routes: same server-side, model-agnostic logic the old
-// SiliconFlow loop uses (agentLoop.ts's PRE_LLM_DIRECT_ROUTES array).
-// Imported directly rather than duplicated. ─────────────────────────────────
-import { tryRunSemanticDispatchDirectRoute } from "../dispatch/agentSemanticDispatch.js";
-import {
-  tryRunLotOverviewDirectRoute,
-  tryRunMaskScopeDirectRoute,
-  tryRunListingTimeClarifyDirectRoute,
-  tryRunLotListingDirectRoute,
-  tryRunEquipmentDirectRoute,
-  tryRunPerSlotBinRankingDirectRoute,
-} from "../dispatch/directRoutes/agentJbLotDirectRoutes.js";
-import {
-  tryRunScopedBadBinDirectRoute,
-  tryRunBinLotRankingDirectRoute,
-  tryRunGoodBinValueDirectRoute,
-  tryRunUnscopedBinClarifyDirectRoute,
-} from "../dispatch/directRoutes/agentJbBinDirectRoutes.js";
-import {
-  tryRunDutBinAggDirectRoute,
-  tryRunDutFocusBinsDirectRoute,
-  tryRunUnderperformingDutDirectRoute,
-} from "../dispatch/directRoutes/agentDutAggDirectRoutes.js";
-import { tryRunProbeCardPerfDirectRoute } from "../dispatch/directRoutes/agentProbeCardDirectRoutes.js";
-
-// Same table as agentLoop.ts's PRE_LLM_DIRECT_ROUTES. Deterministic JB/probe-
-// card summary calls and the awaitingSummary-gated mid-loop recovery
-// branches (wafer-map plan, touchdown, DUT×BIN map/yield chart) are NOT
-// ported in this first version — see plan Task 6 / design doc §1.2.
-const PRE_LLM_DIRECT_ROUTES: Array<typeof tryRunLotListingDirectRoute> = [
-  tryRunUnderperformingDutDirectRoute,
-  tryRunGoodBinValueDirectRoute,
-  tryRunProbeCardPerfDirectRoute,
-  tryRunDutFocusBinsDirectRoute,
-  tryRunDutBinAggDirectRoute,
-  tryRunBinLotRankingDirectRoute,
-  tryRunListingTimeClarifyDirectRoute,
-  tryRunLotListingDirectRoute,
-  tryRunScopedBadBinDirectRoute,
-  tryRunMaskScopeDirectRoute,
-  tryRunLotOverviewDirectRoute,
-  tryRunEquipmentDirectRoute,
-  tryRunPerSlotBinRankingDirectRoute,
-  tryRunSemanticDispatchDirectRoute,
-  tryRunUnscopedBinClarifyDirectRoute,
-];
+// PRE_LLM direct routes: same server-side, model-agnostic logic the old
+// SiliconFlow loop uses. Extracted to a shared module (agentPreLlmDirectRoutes.ts)
+// so this array can't drift out of sync with agentLoop.ts's copy. Deterministic
+// JB/probe-card summary calls and the awaitingSummary-gated mid-loop recovery
+// branches (wafer-map plan, touchdown, DUT×BIN map/yield chart) are NOT ported
+// in this first version — see plan Task 6 / design doc §1.2.
+import { PRE_LLM_DIRECT_ROUTES } from "./agentPreLlmDirectRoutes.js";
 
 const MAX_VERO_ROUND_RETRIES = 1;
 
