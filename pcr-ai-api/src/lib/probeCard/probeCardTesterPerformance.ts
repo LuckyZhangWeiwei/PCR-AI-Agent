@@ -237,6 +237,244 @@ function mdTable(headers: string[], rows: string[][]): string {
   return [head, sep, body].join("\n");
 }
 
+/** Agent / 确定性直出：表体行数上限（真库 device 可有几十种组合，全量 markdown 易超 toolResultMaxChars）。 */
+export const PROBE_CARD_PERF_MD_CAPS = {
+  combo: 25,
+  card: 25,
+  trend: 60,
+  badBin: 30,
+} as const;
+
+export type ProbeCardPerfMdCaps = {
+  combo: number;
+  card: number;
+  trend: number;
+  badBin: number;
+};
+
+function mdTableCapped(
+  headers: string[],
+  allRows: string[][],
+  maxRows: number,
+  omittedLabel: string
+): string {
+  if (allRows.length === 0) return "(无数据)";
+  if (allRows.length <= maxRows) return mdTable(headers, allRows);
+  const shown = allRows.slice(0, maxRows);
+  const omitted = allRows.length - maxRows;
+  return (
+    mdTable(headers, shown) +
+    `\n\n*…另有 ${omitted} ${omittedLabel}未列出（表已截断，排名仍基于全量统计）*`
+  );
+}
+
+/**
+ * Slim + size-bounded JSON for the agent tool / deterministic reply path.
+ * Never hard-slices mid-JSON (that breaks JSON.parse and triggers re-query cascades).
+ */
+export function serializeProbeCardPerfForAgent(
+  meta: {
+    device?: string;
+    mask?: string;
+    passIdFilter: number | null;
+    totalRowsMatching: number;
+  },
+  groups: PassGroupResult[],
+  maxChars: number
+): string {
+  const slimGroups = (g: PassGroupResult, caps: ProbeCardPerfMdCaps) => {
+    const comboMd = titledMarkdown(
+      `${passGroupHeader(g.passId)}\n\n**🏆 探针卡+机台组合排名**（平均良率降序 · 最好在前）`,
+      mdTableCapped(
+        ["排名", "CardId", "TesterId", "平均良率", "标准差", "片数", "Lot 数", "置信度"],
+        g.comboRanking.map((r, i) => [
+          comboRankLabel(i + 1),
+          r.cardId,
+          r.testerId,
+          fmtPct(r.avgYieldPct),
+          fmtPct(r.stdDevYieldPct),
+          String(r.recordCount),
+          String(r.lotCount),
+          confidenceLabel(r.confidenceTier),
+        ]),
+        caps.combo,
+        "种组合"
+      )
+    );
+    const cardMd = titledMarkdown(
+      `${passGroupHeader(g.passId)}\n\n**⚠️ 探针卡排名**（平均良率升序 · 最差在前）`,
+      mdTableCapped(
+        ["排名", "CardId", "平均良率", "标准差", "片数", "Lot 数", "评估", "置信度"],
+        g.cardRanking.map((r, i) => [
+          cardRankLabel(i + 1),
+          r.cardId,
+          fmtPct(r.avgYieldPct),
+          fmtPct(r.stdDevYieldPct),
+          String(r.recordCount),
+          String(r.lotCount),
+          assessmentLabel(r.assessment),
+          confidenceLabel(r.confidenceTier),
+        ]),
+        caps.card,
+        "张卡"
+      )
+    );
+    const trendRows = g.cardTrend.map((r) => [
+      r.cardId,
+      r.month,
+      fmtPct(r.avgYieldPct),
+      String(r.recordCount),
+    ]);
+    const trendMd =
+      g.cardTrend.length > 0
+        ? titledMarkdown(
+            `${passGroupHeader(g.passId)}\n\n**📈 按卡月度良率走势**`,
+            mdTableCapped(
+              ["CardId", "月份", "当月平均良率", "当月样本数"],
+              trendRows,
+              caps.trend,
+              "行走势"
+            )
+          )
+        : `${passGroupHeader(g.passId)}\n\n*📈 月度趋势：每卡不足 2 个月数据，暂无趋势表*`;
+    const badMd = titledMarkdown(
+      `${passGroupHeader(g.passId)}\n\n**🔬 按卡坏 bin Top3 频率**（编号频率，非空间分布）`,
+      mdTableCapped(
+        ["CardId", "Top 3 坏 bin"],
+        g.cardBadBin.map((r) => [
+          r.cardId,
+          r.topBins.map((b) => `BIN${b.bin} (${b.pct.toFixed(2)}%)`).join(", "),
+        ]),
+        caps.badBin,
+        "张卡"
+      )
+    );
+
+    // Keep only what deterministic summary needs (best/worst combo + worst cards).
+    const comboSlim =
+      g.comboRanking.length <= 2
+        ? g.comboRanking
+        : [g.comboRanking[0]!, g.comboRanking[g.comboRanking.length - 1]!];
+    const cardSlim = g.cardRanking.slice(0, 5);
+
+    return {
+      passId: g.passId,
+      comboRanking: comboSlim,
+      cardRanking: cardSlim,
+      comboRankingMarkdown: comboMd,
+      cardRankingMarkdown: cardMd,
+      cardTrendMarkdown: trendMd,
+      cardBadBinMarkdown: badMd,
+      comboCount: g.comboRanking.length,
+      cardCount: g.cardRanking.length,
+    };
+  };
+
+  const attempts: ProbeCardPerfMdCaps[] = [
+    { ...PROBE_CARD_PERF_MD_CAPS },
+    { combo: 15, card: 15, trend: 30, badBin: 15 },
+    { combo: 10, card: 10, trend: 0, badBin: 10 },
+    { combo: 8, card: 8, trend: 0, badBin: 0 },
+  ];
+
+  for (const caps of attempts) {
+    const payload = {
+      ...(meta.device ? { device: meta.device } : {}),
+      ...(meta.mask ? { mask: meta.mask } : {}),
+      passIdFilter: meta.passIdFilter,
+      totalRowsMatching: meta.totalRowsMatching,
+      groups: groups.map((g) => {
+        const slim = slimGroups(g, caps);
+        if (caps.trend === 0) {
+          slim.cardTrendMarkdown = `${passGroupHeader(g.passId)}\n\n*📈 月度趋势表已省略（结果体积受限）*`;
+        }
+        if (caps.badBin === 0) {
+          slim.cardBadBinMarkdown = `${passGroupHeader(g.passId)}\n\n*🔬 坏 bin 频率表已省略（结果体积受限）*`;
+        }
+        return slim;
+      }),
+    };
+    const s = JSON.stringify(payload);
+    if (s.length <= maxChars) return s;
+  }
+
+  // Last resort: summary-only (still valid JSON).
+  const minimal = {
+    ...(meta.device ? { device: meta.device } : {}),
+    ...(meta.mask ? { mask: meta.mask } : {}),
+    passIdFilter: meta.passIdFilter,
+    totalRowsMatching: meta.totalRowsMatching,
+    truncatedForSize: true,
+    groups: groups.map((g) => ({
+      passId: g.passId,
+      comboRanking:
+        g.comboRanking.length <= 2
+          ? g.comboRanking
+          : [g.comboRanking[0]!, g.comboRanking[g.comboRanking.length - 1]!],
+      cardRanking: g.cardRanking.slice(0, 3),
+      comboRankingMarkdown: titledMarkdown(
+        `${passGroupHeader(g.passId)}\n\n**🏆 组合排名（精简）**`,
+        mdTableCapped(
+          ["排名", "CardId", "TesterId", "平均良率", "Lot 数", "置信度"],
+          g.comboRanking.map((r, i) => [
+            comboRankLabel(i + 1),
+            r.cardId,
+            r.testerId,
+            fmtPct(r.avgYieldPct),
+            String(r.lotCount),
+            confidenceLabel(r.confidenceTier),
+          ]),
+          5,
+          "种组合"
+        )
+      ),
+      cardRankingMarkdown: titledMarkdown(
+        `${passGroupHeader(g.passId)}\n\n**⚠️ 探针卡排名（精简）**`,
+        mdTableCapped(
+          ["排名", "CardId", "平均良率", "评估", "置信度"],
+          g.cardRanking.map((r, i) => [
+            cardRankLabel(i + 1),
+            r.cardId,
+            fmtPct(r.avgYieldPct),
+            assessmentLabel(r.assessment),
+            confidenceLabel(r.confidenceTier),
+          ]),
+          5,
+          "张卡"
+        )
+      ),
+      cardTrendMarkdown: "",
+      cardBadBinMarkdown: "",
+      comboCount: g.comboRanking.length,
+      cardCount: g.cardRanking.length,
+    })),
+  };
+  const out = JSON.stringify(minimal);
+  if (out.length <= maxChars) return out;
+  // Absolute floor: drop markdown bodies entirely; keep summary arrays.
+  return JSON.stringify({
+    ...(meta.device ? { device: meta.device } : {}),
+    ...(meta.mask ? { mask: meta.mask } : {}),
+    passIdFilter: meta.passIdFilter,
+    totalRowsMatching: meta.totalRowsMatching,
+    truncatedForSize: true,
+    groups: groups.map((g) => ({
+      passId: g.passId,
+      comboRanking:
+        g.comboRanking.length <= 2
+          ? g.comboRanking
+          : [g.comboRanking[0]!, g.comboRanking[g.comboRanking.length - 1]!],
+      cardRanking: g.cardRanking.slice(0, 3),
+      comboRankingMarkdown: `${passGroupHeader(g.passId)}\n\n*（表体过长已省略；见一眼重点）*`,
+      cardRankingMarkdown: "",
+      cardTrendMarkdown: "",
+      cardBadBinMarkdown: "",
+      comboCount: g.comboRanking.length,
+      cardCount: g.cardRanking.length,
+    })),
+  });
+}
+
 // ─── grouping ────────────────────────────────────────────────────────────
 
 const VALID_PASS_IDS = [1, 3, 5];

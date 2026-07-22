@@ -22,8 +22,11 @@ import {
 } from "../../apiV3ListSql.js";
 import { infcontrolLayerBinV3BaseWhereBlock } from "../../infcontrolLayerBinPasstypeScope.js";
 import { readMemoryAggregateOracleMaxRows } from "../../memoryAggregateOracleLimits.js";
-import { computeProbeCardTesterPerformance } from "../../probeCard/probeCardTesterPerformance.js";
-import { truncateResult, enrichJbRow } from "./agentToolHandlers.js";
+import {
+  computeProbeCardTesterPerformance,
+  serializeProbeCardPerfForAgent,
+} from "../../probeCard/probeCardTesterPerformance.js";
+import { enrichJbRow } from "./agentToolHandlers.js";
 
 export function probeCardPerfRowLimitExceededMessage(count: number, maxRows: number): string {
   return `aggregate_probe_card_tester_performance 错误：匹配行数 (${count}) 超过上限 (${maxRows})，请缩小 passId 或 testEndFrom/testEndTo 时间范围。`;
@@ -97,14 +100,16 @@ export async function toolAggregateProbeCardTesterPerformance(
     return `aggregate_probe_card_tester_performance: ${scope} 在指定范围内未查到有效良率数据（GROSSDIE 缺失，或 PASSID 不在 1/3/5 范围内）。可尝试放宽 testEndFrom/testEndTo。`;
   }
 
-  return truncateResult(
+  // Must stay valid JSON under maxChars — hard-slice (truncateResult) breaks
+  // JSON.parse in the deterministic / Vero path and triggers re-query cascades.
+  return serializeProbeCardPerfForAgent(
     {
       ...(device ? { device } : {}),
       ...(mask ? { mask } : {}),
       passIdFilter: typeof args["passId"] === "number" ? args["passId"] : null,
       totalRowsMatching: rawRows.length,
-      groups,
     },
+    groups,
     maxChars
   );
 }

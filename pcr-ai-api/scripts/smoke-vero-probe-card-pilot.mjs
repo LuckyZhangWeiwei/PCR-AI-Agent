@@ -37,7 +37,14 @@ loadDotEnv();
 process.env.INFCONTROL_LAYER_BINS_DUMMY = process.env.INFCONTROL_LAYER_BINS_DUMMY || "true";
 process.env.AGENT_PROBE_CARD_VERO_PILOT = "true";
 
-const { invokeVeroSimpleAgent, parseJsonLoose, isProbeCardVeroPilotReady, getVeroBaseUrl } =
+const {
+  invokeVeroSimpleAgent,
+  parseJsonLoose,
+  isProbeCardVeroPilotReady,
+  getVeroBaseUrl,
+  streamVeroAgentChat,
+  buildVeroChatMessageWithSystem,
+} =
   await import("../src/lib/vero/veroSimpleAgent.ts");
 const { tryRunProbeCardVeroPilot, PROBE_CARD_VERO_EXTRACT_SYSTEM } = await import(
   "../src/lib/agent/dispatch/directRoutes/agentProbeCardVeroPilot.ts"
@@ -61,6 +68,23 @@ const ping = await invokeVeroSimpleAgent(
   "You are a ping checker. Reply with only the word PONG."
 );
 console.log("ping response:", JSON.stringify(ping).slice(0, 200));
+
+// 1b) WChat SSE stream ping (agent/chat + conversations/stream)
+console.log("\n--- 1b) agent/chat SSE stream ping ---");
+process.stdout.write("stream: ");
+let sseTokens = 0;
+const streamed = await streamVeroAgentChat(
+  buildVeroChatMessageWithSystem(
+    "Reply with only the word STREAM_OK. Do not call tools.",
+    "Say STREAM_OK"
+  ),
+  (t) => {
+    sseTokens += 1;
+    process.stdout.write(t);
+  }
+);
+console.log(`\nstream tokens=${sseTokens} conversationId=${streamed.conversationId}`);
+console.log("stream reply:", JSON.stringify(streamed.reply).slice(0, 200));
 
 // 2) Extract JSON for probe-card question
 console.log("\n--- 2) extract args ---");
@@ -98,6 +122,7 @@ const ok = await tryRunProbeCardVeroPilot(
     if (e.type === "status") console.log("[status]", e.message);
     if (e.type === "tool_start") console.log("[tool_start]", e.name, e.args);
     if (e.type === "tool_result") console.log("[tool_result]", e.summary?.slice(0, 120));
+    if (e.type === "text") process.stdout.write(e.delta); // live stream like UI
     if (e.type === "error") console.log("[error]", e.message);
   }
 );

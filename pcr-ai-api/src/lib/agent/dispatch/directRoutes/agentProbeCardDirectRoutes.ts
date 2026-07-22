@@ -3,9 +3,9 @@
 // core/agentLoop.ts (Round 3 split, Task 9).
 import type { AgentConfig } from "../../agentConfig.js";
 import type { AgentSseEvent } from "../../core/agentLoop.js";
-import { getHistory, appendSyntheticToolTurn } from "../../agentHistory.js";
+import { getHistory, appendSyntheticToolTurn, appendMessages } from "../../agentHistory.js";
 import { runTool } from "../../tools/agentToolHandlers.js";
-import { lastToolMessage } from "../../core/agentLoopShared.js";
+import { lastToolMessage, emitTextInChunks } from "../../core/agentLoopShared.js";
 import { emitDeterministicProbeCardPerfReply } from "../../render/agentProbeCardPerfReply.js";
 import { isProbeCardTesterPerformanceQuestion } from "../../jb/agentJbQuestionClassifiers.js";
 import {
@@ -85,7 +85,13 @@ export async function tryRunProbeCardPerfDirectRoute(
       history,
     });
     raw = typeof result === "string" ? result : JSON.stringify(result);
-    if (raw.startsWith("aggregate_probe_card_tester_performance")) return false;
+    if (raw.startsWith("aggregate_probe_card_tester_performance")) {
+      // Error string from tool — finish turn; avoid LLM re-query loop.
+      emitTextInChunks(raw, emit);
+      appendMessages(sessionId, { role: "assistant", content: raw });
+      emit({ type: "done" });
+      return true;
+    }
     emit({
       type: "tool_result",
       name: "aggregate_probe_card_tester_performance",
@@ -106,7 +112,14 @@ export async function tryRunProbeCardPerfDirectRoute(
   try {
     payload = JSON.parse(raw) as Record<string, unknown>;
   } catch {
-    return false;
+    // Should not happen with serializeProbeCardPerfForAgent; if it does, stop
+    // the turn so the main LLM loop does not re-query the same device.
+    const msg =
+      "工具结果无法解析。请缩小 passId 或时间窗后重试。";
+    emitTextInChunks(msg, emit);
+    appendMessages(sessionId, { role: "assistant", content: msg });
+    emit({ type: "done" });
+    return true;
   }
   return emitDeterministicProbeCardPerfReply(
     sessionId,
