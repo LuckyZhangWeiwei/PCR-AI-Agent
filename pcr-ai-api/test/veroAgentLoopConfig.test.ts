@@ -35,10 +35,12 @@ test("isVeroGenericLoopEnabled / isVeroGenericLoopReady toggle with env", () => 
 });
 
 test("Vero loop calibration constants are sane relative to SiliconFlow large-context bucket", () => {
-  // Claude 4.6 (128K) is smaller than the existing MiniMax-M2.5 large-context
-  // bucket (192K, SUMMARIZE_THRESHOLD=80 in agentHistory.ts usage), so the
-  // Vero-specific threshold must stay below it (see design doc §4.1).
-  assert.ok(VERO_SUMMARIZE_THRESHOLD > 0 && VERO_SUMMARIZE_THRESHOLD < 80);
-  assert.ok(VERO_TOOL_RESULT_MAX_HISTORY_CHARS > 0 && VERO_TOOL_RESULT_MAX_HISTORY_CHARS < 20000);
-  assert.ok(VERO_PROMPT_CHAR_BUDGET > 100_000);
+  // Vero's real context window (measured 200K, per
+  // docs/HANDOFF_CURSOR_WCHAT_MIGRATION_OPTIMAL_2026-07-22.md §2.1) is close
+  // enough to the existing MiniMax-M2.5 large-context bucket (192K,
+  // SUMMARIZE_THRESHOLD=80 in agentHistory.ts usage) that the Vero constants
+  // now track it directly rather than sitting strictly below it.
+  assert.ok(VERO_SUMMARIZE_THRESHOLD > 0 && VERO_SUMMARIZE_THRESHOLD <= 80);
+  assert.ok(VERO_TOOL_RESULT_MAX_HISTORY_CHARS > 0 && VERO_TOOL_RESULT_MAX_HISTORY_CHARS <= 20000);
+  assert.ok(VERO_PROMPT_CHAR_BUDGET > 200_000);
 });
