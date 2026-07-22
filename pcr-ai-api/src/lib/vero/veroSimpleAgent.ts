@@ -281,6 +281,9 @@ async function readVeroConversationSse(
               eventType === "end" ||
               eventType === "error"
             ) {
+              // Match vero-agent-demo/agent.js: ignore premature done before any
+              // token (WChat may emit done after an empty/tool phase, then stream
+              // the real reply). Only terminate once tokens started, or on error.
               if (eventType === "error") {
                 const err =
                   event.error ?? event.content ?? JSON.stringify(event);
@@ -291,6 +294,9 @@ async function readVeroConversationSse(
                   /* ignore */
                 }
                 return;
+              }
+              if (parts.length === 0) {
+                continue;
               }
               finish();
               try {

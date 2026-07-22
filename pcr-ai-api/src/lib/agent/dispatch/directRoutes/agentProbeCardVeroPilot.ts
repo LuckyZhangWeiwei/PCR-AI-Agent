@@ -23,7 +23,6 @@ import {
   invokeVeroSimpleAgent,
   parseJsonLoose,
   isProbeCardVeroPilotReady,
-  streamVeroAgentChat,
   buildVeroChatMessageWithSystem,
 } from "../../../vero/veroSimpleAgent.js";
 import {
@@ -56,16 +55,9 @@ export type VeroInvokeFn = (
   systemPrompt: string
 ) => Promise<string>;
 
-export type VeroStreamFn = (
-  message: string,
-  onToken: (token: string) => void
-) => Promise<string>;
-
 export type ProbeCardVeroPilotDeps = {
-  /** Injectable for tests; defaults to invokeVeroSimpleAgent (JSON extract). */
+  /** Injectable for tests; defaults to invokeVeroSimpleAgent. */
   invokeVero?: VeroInvokeFn;
-  /** Injectable for tests; defaults to streamVeroAgentChat (SSE commentary). */
-  streamVero?: VeroStreamFn;
 };
 
 function historyBlock(history: ChatMessage[]): string {
@@ -152,6 +144,10 @@ export function normalizeProbeCardPerfArgs(
 /**
  * Path B pilot entry. Returns true if the turn was fully handled (including chat-only).
  * Returns false to let the caller fall back to the SiliconFlow regex direct route.
+ *
+ * Commentary uses simple-agent/invoke (same WChat model stack, no agent tools).
+ * Do NOT use /api/agent/chat for commentary: if MCP tools are registered, WChat
+ * may re-query and emit duplicate replies → timeouts.
  */
 export async function tryRunProbeCardVeroPilot(
   sessionId: string,
@@ -164,12 +160,6 @@ export async function tryRunProbeCardVeroPilot(
 
   const invoke: VeroInvokeFn =
     deps?.invokeVero ?? ((p, s) => invokeVeroSimpleAgent(p, s));
-  const streamReply: VeroStreamFn =
-    deps?.streamVero ??
-    (async (message, onToken) => {
-      const { reply } = await streamVeroAgentChat(message, onToken);
-      return reply;
-    });
   const history = getHistory(sessionId);
 
   emit({ type: "status", message: "Vero 试点：正在解析探针卡/机台组合查询参数…" });
@@ -239,7 +229,13 @@ Extract the next action JSON now.`;
       history,
     });
     raw = typeof result === "string" ? result : JSON.stringify(result);
-    if (raw.startsWith("aggregate_probe_card_tester_performance")) return false;
+    if (raw.startsWith("aggregate_probe_card_tester_performance")) {
+      // Tool error string — finish the turn; do not fall through (would re-run tool).
+      emitTextInChunks(raw, emit);
+      appendMessages(sessionId, { role: "assistant", content: raw });
+      emit({ type: "done" });
+      return true;
+    }
     emit({
       type: "tool_result",
       name: "aggregate_probe_card_tester_performance",
@@ -252,18 +248,27 @@ Extract the next action JSON now.`;
       toolCallId: `probe_card_perf_vero_${Date.now()}`,
     });
   } catch {
-    return false;
+    // Tool threw after tool_start — still consume the turn to avoid duplicate query.
+    const msg = "探针卡/机台组合查询失败，请稍后重试或缩小时间范围。";
+    emitTextInChunks(msg, emit);
+    appendMessages(sessionId, { role: "assistant", content: msg });
+    emit({ type: "done" });
+    return true;
   }
 
   let payload: Record<string, unknown> | null = null;
   try {
     payload = JSON.parse(raw) as Record<string, unknown>;
   } catch {
-    return false;
+    const msg =
+      "工具结果无法解析（可能体积过大）。请缩小 passId 或时间窗后重试；勿重复查询同一范围。";
+    emitTextInChunks(msg, emit);
+    appendMessages(sessionId, { role: "assistant", content: msg });
+    emit({ type: "done" });
+    return true;
   }
 
-  // Tables from server; commentary via WChat SSE (agent/chat + conversations/stream).
-  // Extract stays on simple-agent/invoke (needs full JSON). See wchat/c/268418.
+  // Tables from server; commentary via simple-agent (no MCP / no double agent turn).
   return emitDeterministicProbeCardPerfReply(
     sessionId,
     userQuestion,
@@ -272,13 +277,14 @@ Extract the next action JSON now.`;
     emit,
     {
       commentaryStatusMessage:
-        "Vero 试点：正在流式生成数据解读与专业建议…",
-      streamCommentary: async (q, tables, onDelta) => {
+        "Vero 试点：正在生成数据解读与专业建议…",
+      invokeCommentary: async (q, tables) => {
         const message = buildVeroChatMessageWithSystem(
           PROBE_CARD_PERF_COMMENTARY_SYSTEM,
           buildBriefCommentaryUserMessage(q, tables)
         );
-        return streamReply(message, onDelta);
+        // system_prompt empty: instructions already folded into message.
+        return invoke(message, "You write brief Chinese engineering commentary only. No tools. No tables.");
       },
     }
   );

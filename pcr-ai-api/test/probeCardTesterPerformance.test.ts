@@ -7,6 +7,7 @@ import {
   sampleStdDev,
   computeProbeCardTesterPerformance,
   buildProbeCardPerfSummaryMarkdown,
+  serializeProbeCardPerfForAgent,
 } from "../src/lib/probeCard/probeCardTesterPerformance.js";
 
 describe("probeCardTesterPerformance: stats helpers", () => {
@@ -264,5 +265,48 @@ describe("computeProbeCardTesterPerformance: grouping and ranking", () => {
     ];
     const groups = computeProbeCardTesterPerformance(rows);
     assert.equal(groups.length, 0);
+  });
+
+  test("serializeProbeCardPerfForAgent always returns valid JSON under maxChars", () => {
+    const rows = [];
+    for (let i = 0; i < 40; i++) {
+      rows.push(
+        jbRow({
+          cardId: `C-${String(i).padStart(2, "0")}`,
+          testerId: `T${i % 8}`,
+          passId: 1,
+          lot: `L${i}`,
+          testEnd: `2026-0${(i % 6) + 1}-01`,
+          grossDie: 1000,
+          badBins: [{ n: 7, value: 10 + i }],
+        })
+      );
+      rows.push(
+        jbRow({
+          cardId: `C-${String(i).padStart(2, "0")}`,
+          testerId: `T${i % 8}`,
+          passId: 3,
+          lot: `L${i}`,
+          testEnd: `2026-0${(i % 6) + 1}-15`,
+          grossDie: 1000,
+          badBins: [{ n: 9, value: 20 + i }],
+        })
+      );
+    }
+    const groups = computeProbeCardTesterPerformance(rows);
+    assert.ok(groups.length >= 1);
+    for (const maxChars of [12000, 8000, 4000, 2500]) {
+      const raw = serializeProbeCardPerfForAgent(
+        { device: "WC06N84R", passIdFilter: null, totalRowsMatching: rows.length },
+        groups,
+        maxChars
+      );
+      assert.ok(raw.length <= maxChars, `len ${raw.length} > ${maxChars}`);
+      assert.doesNotMatch(raw, /数据已截断/);
+      const parsed = JSON.parse(raw);
+      assert.equal(parsed.device, "WC06N84R");
+      assert.ok(Array.isArray(parsed.groups));
+      assert.ok(parsed.groups.length >= 1);
+    }
   });
 });
