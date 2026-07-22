@@ -22,6 +22,7 @@
 | **硅基** | 过渡期双后端（flag）；稳定后默认 WChat，硅基作 fallback |
 | **MCP（Path A）** | **可选旁路**，仅服务「人在 WChat UI 里聊」；与看板编排隔离，本文不实现 |
 | **上下文上限** | Bedrock 模型本身约 **1M**；**WChat 平台实际 `context_window_max=200000`（20 万）** — 设计须按 **200k** 预算，勿按 1M 塞目录/历史（见 §2.1） |
+| **选模型** | **账号级** API（§2.2）；`simple-agent`/`agent/chat` **不传** `model`；demo：`vero-agent-demo` 的 `npm run models` / `models:select` |
 
 产品方已确认该两段式路由为当前约束下的工程最优解（可信数字 + 长尾覆盖 + 可迁移）。
 
@@ -107,6 +108,54 @@ AiAgentReport  POST /api/v4/agent/chat (SSE 形状不变)
 | 监控（可选） | 若有 token：可调 `GET {VERO}/api/usage/current-session` 核对 `context_window_max`；若平台日后改上限，以该字段为准并更新本文 |
 
 **待确认（非阻塞）：** 200k 是全局固定还是可按 bot/provider 配置——实现前可再查 WChat provider/bot 设置；**在未证实可调高之前，一律按 200k 预算。**
+
+---
+
+## 2.2 账号级模型选取（Vero **不在** chat / simple-agent 请求里传 `model`）
+
+WChat/Vero 的模型是 **员工账号级配置**，不是每次 `invoke` / `agent/chat` 的请求字段。看板 `agentConfig.model`（硅基用的那种）**对 WChat 后端无效**——换模型须调账号 API 或 demo 脚本。
+
+### API（已实测列表可用）
+
+| 方法 | 路径 | 作用 |
+|---|---|---|
+| `GET` | `/api/employees/me/llm-provider` | 列出当前可用 provider + models |
+| `PUT` | `/api/employees/me/llm-provider` | body `{ provider_name }` 选 provider |
+| `PUT` | `/api/employees/me/llm-provider/{provider}/config` | body `{ model_id }` 选模型 |
+
+鉴权：与试点相同，`Authorization: Bearer <WCHAT_ACCESS_TOKEN>`。
+
+### 当前账号可用（`acc_bedrock`）
+
+| 显示名 | Bedrock / Vero `model_id` |
+|---|---|
+| Claude Sonnet 4.6 | `us.anthropic.claude-sonnet-4-6` |
+| Claude Opus 4.6 | `us.anthropic.claude-opus-4-6-v1` |
+| Claude Opus 4.8 | `us.anthropic.claude-opus-4-8` |
+
+上下文见 §2.1：平台仍按 **200k** 喂模型，与上表哪个 id 无关。
+
+### 运维用法（参考实现，不在本仓库）
+
+路径：`C:\Users\nxf83192\vero-agent-demo\register-mcp.js`（`package.json` scripts）。
+
+```bash
+cd C:\Users\nxf83192\vero-agent-demo
+# .env 需有 WCHAT_ACCESS_TOKEN（及可选 VERO_BASE_URL）
+
+npm run models                 # 列出 provider + model
+npm run models:select          # 交互选择
+node register-mcp.js --skip-mcp --model us.anthropic.claude-opus-4-6-v1
+node register-mcp.js --skip-mcp --provider acc_bedrock --model us.anthropic.claude-opus-4-8
+# 去掉 --skip-mcp 时可在注册 MCP 时一并设模型（看板 Path B 不依赖 MCP）
+```
+
+### 对 Claude Code / 看板实现的含义
+
+1. **`invokeVeroSimpleAgent` / `streamVeroAgentChat` 请求体不要加 `model`**（平台会忽略或报错；以账号配置为准）。  
+2. **不要**把前端 Settings 的 `agentConfig.model` 误当成 WChat 模型开关；若 UI 要显示「当前 WChat 模型」，应 `GET /api/employees/me/llm-provider` 只读展示，或文档写明「到 WChat/脚本改」。  
+3. 多环境/多 token：每个 `WCHAT_ACCESS_TOKEN` 对应一个员工账号的模型选择；CI/服务器用的 token 与个人调试 token 可能指向不同模型。  
+4. 可选后续（非本迁移阻塞）：在 `pcr-ai-api` 加 admin 只读代理「当前 llm-provider」，便于排障；**写模型**仍建议运维脚本，避免看板误改账号全局模型。
 
 ---
 
@@ -231,7 +280,8 @@ VERO_BASE_URL=https://verostudio.sw.nxp.com
 5. **工具 JSON** — 大结果用专用 serialize（如 `serializeProbeCardPerfForAgent`），禁止 `truncateResult` 硬切导致 `JSON.parse` 失败。  
 6. **勿把 `WCHAT_ACCESS_TOKEN` 写入仓库 / 前端 / handoff 正文。**  
 7. **看板主链路禁用 MCP**；总结轮禁止再选工具。  
-8. **WChat 有效上下文按 200k 设计**（§2.1），勿按 Bedrock 1M 塞目录/历史。
+8. **WChat 有效上下文按 200k 设计**（§2.1），勿按 Bedrock 1M 塞目录/历史。  
+9. **勿在 WChat 出站请求里传 `model`**；换模型用账号级 llm-provider API / demo 脚本（§2.2）。
 
 ---
 
@@ -251,7 +301,7 @@ VERO_BASE_URL=https://verostudio.sw.nxp.com
 
 - 不删除 SiliconFlow 代码路径（至少保留 fallback 一个版本周期）  
 - 不把 `TOOL_SCHEMAS` 注册进 WChat MCP 作为看板默认  
-- 不要求 WChat 请求体带 `model`（账号级模型在 WChat 侧选择）  
+- 不要求 WChat 请求体带 `model`（账号级模型在 WChat 侧选择；见 §2.2 / `vero-agent-demo/register-mcp.js`）
 - 不在本任务做前端大改版
 
 ---

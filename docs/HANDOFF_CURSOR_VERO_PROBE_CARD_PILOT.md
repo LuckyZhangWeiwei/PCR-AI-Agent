@@ -78,6 +78,7 @@ VERO_BASE_URL=https://verostudio.sw.nxp.com
 
 - 进程须能访问 `verostudio.sw.nxp.com`（NXP 内网/VPN）。
 - Token 与 `vero-agent-demo` / WChat 同源即可。
+- **换 Claude 模型（账号级，不在 chat 请求里传 model）：** 见 [`HANDOFF_CURSOR_WCHAT_MIGRATION_OPTIMAL_2026-07-22.md`](HANDOFF_CURSOR_WCHAT_MIGRATION_OPTIMAL_2026-07-22.md) §2.2；demo：`npm run models` / `models:select`（`vero-agent-demo`）。
 - **关闭试点：** `AGENT_PROBE_CARD_VERO_PILOT=false` 或清空 token → `pm2 reload` → 回 SiliconFlow。
 
 ---
