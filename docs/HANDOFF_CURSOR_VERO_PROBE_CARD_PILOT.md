@@ -141,7 +141,7 @@ pm2 reload ecosystem.config.cjs
 |---|---|
 | 真库复验 | 生产 Oracle + 真实 device 问组合排名 |
 | Token 轮换 | 若 token 曾出现在聊天记录，建议 WChat/SSO 侧轮换 |
-| 其它 Agent 能力迁 Vero | 按同 Path B 模板逐条加 flag，勿一次切全量 |
+| 其它 Agent 能力迁 Vero | **已出最优方案 handoff**：[`HANDOFF_CURSOR_WCHAT_MIGRATION_OPTIMAL_2026-07-22.md`](HANDOFF_CURSOR_WCHAT_MIGRATION_OPTIMAL_2026-07-22.md)（①拦截 + ②目录选工具；交 Claude Code） |
 
 ---
 
