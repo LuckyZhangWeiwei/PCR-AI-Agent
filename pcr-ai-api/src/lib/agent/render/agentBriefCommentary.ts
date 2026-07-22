@@ -1,0 +1,129 @@
+// pcr-ai-api/src/lib/agent/render/agentBriefCommentary.ts
+// Shared "数据解读/专业建议" LLM commentary step used by JB table replies
+// (agentJbTablesReply.ts) and DUT×BIN focus replies
+// (agentDutAggDirectRoutes.ts). Vero when AGENT_VERO_GENERIC_LOOP is ready
+// (see veroSimpleAgent.ts's isVeroGenericLoopReady), else the existing
+// SiliconFlow streaming path — same branch shape already shipped in
+// agentProbeCardPerfReply.ts's invokeCommentary option (Path B), just DRYed
+// across the call sites that share BRIEF_COMMENTARY_SYSTEM instead of the
+// probe-card-specific system prompt.
+import type { AgentConfig } from "../agentConfig.js";
+import type { AgentSseEvent } from "../core/agentLoop.js";
+import {
+  cleanStreamErrorMessage,
+  emitTextInChunks,
+} from "../core/agentLoopShared.js";
+import { createDeepSeekFilter } from "../core/agentEmbeddedToolParsing.js";
+import { streamSiliconFlow } from "../core/agentStream.js";
+import type { VeroInvokeFn } from "../core/veroAgentLoopSetup.js";
+import {
+  invokeVeroSimpleAgent,
+  buildVeroChatMessageWithSystem,
+  isVeroGenericLoopReady,
+} from "../../vero/veroSimpleAgent.js";
+import {
+  BRIEF_COMMENTARY_SYSTEM,
+  buildBriefCommentaryUserMessage,
+} from "../jb/agentJbOverviewMarkdown.js";
+
+export type BriefCommentaryContext = {
+  engineeringContext?: string;
+  yieldMonitorNote?: string;
+};
+
+export type EmitBriefCommentaryOptions = {
+  /** SSE status line while generating (default: "正在生成数据解读…"). */
+  statusMessage?: string;
+  /** Test seam: override the Vero invoke function (default: invokeVeroSimpleAgent). */
+  invoke?: VeroInvokeFn;
+};
+
+const VERO_COMMENTARY_SYSTEM_PLACEHOLDER =
+  "You write brief Chinese engineering commentary only. No tools. No tables.";
+
+/**
+ * Emits the "### 数据解读 / ### 专业建议" section for a deterministic table
+ * reply and returns the commentary-or-fallback text so the caller can
+ * append it to session history.
+ */
+export async function emitBriefCommentaryOrFallback(
+  userQuestion: string,
+  tablesMarkdown: string,
+  context: BriefCommentaryContext,
+  agentConfig: AgentConfig,
+  emit: (event: AgentSseEvent) => void,
+  options?: EmitBriefCommentaryOptions
+): Promise<string> {
+  emit({
+    type: "status",
+    message: options?.statusMessage ?? "正在生成数据解读…",
+  });
+  emit({
+    type: "text",
+    delta: "\n\n### 数据解读\n\n",
+  });
+
+  if (isVeroGenericLoopReady()) {
+    const invoke = options?.invoke ?? invokeVeroSimpleAgent;
+    try {
+      const message = buildVeroChatMessageWithSystem(
+        BRIEF_COMMENTARY_SYSTEM,
+        buildBriefCommentaryUserMessage(userQuestion, tablesMarkdown, context)
+      );
+      const text = (
+        await invoke(message, VERO_COMMENTARY_SYSTEM_PLACEHOLDER)
+      ).trim();
+      if (text) {
+        emitTextInChunks(text, emit);
+        return text;
+      }
+      const emptyFallback = "*（模型未返回解读；以上实测数据表为准。）*";
+      emit({ type: "text", delta: emptyFallback });
+      return emptyFallback;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const errFallback = `*（解读生成失败：${cleanStreamErrorMessage(msg)}；以上实测数据表为准。）*`;
+      emit({ type: "text", delta: errFallback });
+      return errFallback;
+    }
+  }
+
+  const commFilter = createDeepSeekFilter(emit);
+  let streamError: string | undefined;
+  try {
+    await streamSiliconFlow(
+      {
+        model: agentConfig.subAgentModel,
+        messages: [
+          { role: "system", content: BRIEF_COMMENTARY_SYSTEM },
+          {
+            role: "user",
+            content: buildBriefCommentaryUserMessage(
+              userQuestion,
+              tablesMarkdown,
+              context
+            ),
+          },
+        ],
+        max_tokens: 1024,
+      },
+      agentConfig,
+      (chunk) => {
+        if (chunk.type === "delta") commFilter.push(chunk.text);
+        if (chunk.type === "error") streamError = chunk.message;
+      }
+    );
+  } catch (err) {
+    streamError =
+      err instanceof Error ? err.message : String(err);
+  }
+  commFilter.finalize();
+  const commentary = commFilter.cleanText.trim();
+  if (commentary) return commentary;
+
+  const fallback = streamError
+    ? `*（解读生成失败：${cleanStreamErrorMessage(streamError)}；以上实测数据表为准。）*`
+    : `*（模型未返回解读；以上实测数据表为准。）*`;
+  emit({ type: "text", delta: fallback });
+  return fallback;
+}
