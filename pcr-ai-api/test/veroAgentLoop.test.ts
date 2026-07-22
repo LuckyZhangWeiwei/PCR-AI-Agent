@@ -65,6 +65,56 @@ test("runVeroAgentLoop: tool round then final round", async () => {
   clearHistory(sessionId);
 });
 
+test("runVeroAgentLoop: PRE_LLM_DIRECT_ROUTES does not re-run mid-turn after a tool call populates history (regression for code-review finding)", async () => {
+  process.env["INFCONTROL_LAYER_BINS_DUMMY"] = "true";
+  process.env["NODE_ENV"] = "test";
+  const sessionId = `vero-loop-no-hijack-${Date.now()}`;
+  const events: AgentSseEvent[] = [];
+  let call = 0;
+
+  // Round 1: entity-free question (see comment above), Vero calls a tool
+  // whose args include device "WA03P02G". appendSyntheticToolTurn writes
+  // this into history as an assistant tool_calls entry, which
+  // inferDeviceFromHistory (agentQueryScope.ts) can pick up for ANY later
+  // round's resolveJbListingScope call — even though the user's own text
+  // never mentioned a device. Before the fix, PRE_LLM_DIRECT_ROUTES ran on
+  // every round using getHistory(sessionId), so round 2 could newly satisfy
+  // canRunLotListingDirectRoute purely from round 1's tool-call args and
+  // short-circuit the turn via tryRunLotListingDirectRoute — even though the
+  // old SiliconFlow loop only ever runs these routes once, before any tool
+  // has executed (agentLoop.ts's `if (!awaitingSummary)` guard). The fix
+  // mirrors that guard here. If it regresses, this test's second `invoke()`
+  // call is skipped (hijacked by the direct route) and `call` never reaches 2.
+  await runVeroAgentLoop(
+    "帮我看一下最近的整体情况，随便分析一下",
+    sessionId,
+    stubConfig,
+    (e) => events.push(e),
+    undefined,
+    {
+      invoke: async () => {
+        call += 1;
+        if (call === 1) {
+          return JSON.stringify({
+            action: "tool",
+            tool: "aggregate_probe_card_tester_performance",
+            args: { device: "WA03P02G" },
+          });
+        }
+        return JSON.stringify({ action: "final", reply: "第二轮 Vero 决策生效，未被直连路由劫持。" });
+      },
+    }
+  );
+
+  assert.equal(call, 2, "round 2 must reach invoke(), not be short-circuited by a direct route");
+  const text = events
+    .filter((e): e is Extract<AgentSseEvent, { type: "text" }> => e.type === "text")
+    .map((e) => e.delta)
+    .join("");
+  assert.ok(text.includes("未被直连路由劫持"));
+  clearHistory(sessionId);
+});
+
 test("runVeroAgentLoop: chat-only round finalizes without a tool call", async () => {
   const sessionId = `vero-loop-chat-${Date.now()}`;
   const events: AgentSseEvent[] = [];

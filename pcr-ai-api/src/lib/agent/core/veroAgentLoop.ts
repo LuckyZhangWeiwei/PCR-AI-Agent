@@ -9,6 +9,7 @@ import {
   type ChatMessage,
 } from "../agentHistory.js";
 import { invokeVeroSimpleAgent } from "../../vero/veroSimpleAgent.js";
+import { historyAwaitingToolSummary } from "./agentToolStatus.js";
 import { lastUserMessageText, emitTextInChunks } from "./agentLoopShared.js";
 import { chartToolFallbackMessage } from "./agentJbFallbackReply.js";
 import type { AgentSseEvent } from "./agentLoop.js";
@@ -156,14 +157,21 @@ export async function runVeroAgentLoop(
     const history = getHistory(sessionId);
     const userQuestion = lastUserMessageText(history, message);
 
-    let handledByDirectRoute = false;
-    for (const runDirectRoute of PRE_LLM_DIRECT_ROUTES) {
-      if (await runDirectRoute(sessionId, userQuestion, agentConfig, emit)) {
-        handledByDirectRoute = true;
-        break;
+    // Mirrors agentLoop.ts: PRE_LLM_DIRECT_ROUTES only runs before any tool has
+    // executed this turn. Without this gate, a tool result written into history
+    // by an earlier round in this same turn can flip a route's own gating
+    // (e.g. resolveJbListingScope inferring a device/card from history) from
+    // false to true, hijacking the turn mid-analysis. See code review finding.
+    if (!historyAwaitingToolSummary(history)) {
+      let handledByDirectRoute = false;
+      for (const runDirectRoute of PRE_LLM_DIRECT_ROUTES) {
+        if (await runDirectRoute(sessionId, userQuestion, agentConfig, emit)) {
+          handledByDirectRoute = true;
+          break;
+        }
       }
+      if (handledByDirectRoute) return;
     }
-    if (handledByDirectRoute) return;
 
     const isLastRound = round === maxRounds - 1;
     const systemPrompt = buildVeroRoundSystemPrompt({ manifest, feedbackInjection, isLastRound });

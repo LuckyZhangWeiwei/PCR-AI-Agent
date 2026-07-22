@@ -7,6 +7,15 @@ import { URL } from "node:url";
 
 const DEFAULT_VERO_BASE = "https://verostudio.sw.nxp.com";
 
+/**
+ * Client-level socket timeout. Without this, a hung Vero backend leaves the
+ * request pending indefinitely — the generic ReAct loop (veroAgentLoop.ts)
+ * can chain up to maxRounds x (1 + retries) of these per turn, so an
+ * unbounded call here means an SSE connection that never resolves (kept
+ * alive only by routes/agent.ts's heartbeat) instead of a visible error.
+ */
+const DEFAULT_VERO_REQUEST_TIMEOUT_MS = 60_000;
+
 export function isEnvTruthy(raw: string | undefined): boolean {
   const v = (raw ?? "").trim().toLowerCase();
   return v === "1" || v === "true" || v === "yes" || v === "on";
@@ -83,7 +92,8 @@ export function parseJsonLoose(text: string): unknown {
 async function postJsonHttps(
   urlStr: string,
   body: string,
-  headers: Record<string, string>
+  headers: Record<string, string>,
+  timeoutMs: number = DEFAULT_VERO_REQUEST_TIMEOUT_MS
 ): Promise<{ status: number; text: string }> {
   const u = new URL(urlStr);
   const insecure = veroTlsInsecure();
@@ -115,6 +125,9 @@ async function postJsonHttps(
       }
     );
     req.on("error", reject);
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error(`Vero request timed out after ${timeoutMs}ms`));
+    });
     req.write(body);
     req.end();
   });
@@ -129,7 +142,7 @@ async function postJsonHttps(
 export async function invokeVeroSimpleAgent(
   prompt: string,
   systemPrompt: string,
-  options?: { token?: string; baseUrl?: string }
+  options?: { token?: string; baseUrl?: string; timeoutMs?: number }
 ): Promise<string> {
   const token = (options?.token ?? getVeroAccessToken()).trim();
   if (!token) {
@@ -140,7 +153,12 @@ export async function invokeVeroSimpleAgent(
   const body = JSON.stringify({ prompt, system_prompt: systemPrompt });
   const headers = authHeaders(token);
 
-  const { status, text } = await postJsonHttps(url, body, headers);
+  const { status, text } = await postJsonHttps(
+    url,
+    body,
+    headers,
+    options?.timeoutMs ?? DEFAULT_VERO_REQUEST_TIMEOUT_MS
+  );
   if (status < 200 || status >= 300) {
     throw new Error(`simple-agent failed (${status}): ${text.slice(0, 500)}`);
   }
