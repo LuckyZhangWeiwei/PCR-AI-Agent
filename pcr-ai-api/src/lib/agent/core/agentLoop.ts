@@ -7,6 +7,8 @@ import {
   type ChatMessage,
 } from "../agentHistory.js";
 import { streamSiliconFlow, type CollectedToolCall } from "./agentStream.js";
+import { isVeroGenericLoopReady } from "../../vero/veroSimpleAgent.js";
+import { runVeroAgentLoop } from "./veroAgentLoop.js";
 import {
   lastToolMessage,
   emitTextInChunks,
@@ -103,6 +105,10 @@ export async function runAgentLoop(
   emit: (event: AgentSseEvent) => void,
   options?: { resume?: boolean }
 ): Promise<void> {
+  if (isVeroGenericLoopReady()) {
+    return runVeroAgentLoop(message, sessionId, agentConfig, emit, options);
+  }
+
   const { feedbackInjection, manifest } = await prepareRunAgentLoopContext(
     message,
     sessionId,

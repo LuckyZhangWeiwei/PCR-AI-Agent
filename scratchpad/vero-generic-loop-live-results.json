@@ -1,0 +1,238 @@
+[
+  {
+    "label": "3.7-tls",
+    "ok": true,
+    "ms": 2273,
+    "mode": "bare_json",
+    "decisionOk": true,
+    "decisionSummary": "chat:replyLen=4",
+    "rawPreview": "{\"action\":\"chat\",\"reply\":\"PONG\"}",
+    "rawLen": 32
+  },
+  {
+    "label": "3.2a",
+    "question": "最近整体测试情况怎么样，有什么值得关注的吗",
+    "elapsedMs": 76999,
+    "done": true,
+    "error": null,
+    "veroCallCount": 5,
+    "veroModes": [
+      "bare_json",
+      "bare_json",
+      "bare_json",
+      "bare_json",
+      "bare_json"
+    ],
+    "veroDecisions": [
+      "tool:aggregate_yield_triggers",
+      "tool:aggregate_yield_triggers",
+      "tool:aggregate_jb_bins",
+      "tool:aggregate_jb_bins",
+      "final:replyLen=1377"
+    ],
+    "toolNames": [
+      "aggregate_yield_triggers",
+      "aggregate_yield_triggers",
+      "aggregate_jb_bins",
+      "aggregate_jb_bins"
+    ],
+    "toolCount": 4,
+    "multiRoundTools": true,
+    "hitDirectOrPilot": false,
+    "compressed": false,
+    "maxPromptChars": 73068,
+    "textLen": 1377,
+    "textPreview": "## 最近整体测试情况概览（2026-05-10 ~ 2026-05-13）\n\n根据系统数据快照，以下是近期值得关注的情况：\n\n### Yield Monitor 报警情况\n\n当前查询时间段内（2026-05-10 ~ 2026-05-13）Yield Monitor 未返回聚合数据，但系统快照显示该时段主要报警 device 如下：\n\n| 排名 | Device | 触发次数 |\n|---|---|---|\n| 1 | WD08N87J | 17 |\n| 2 | WA03P02G | 16 |\n| 3 | WC11N25F | 14 |\n| 4 | WC04N11X | 12 |\n| 5 | WC13N82Y | 11 |\n| 6 | WA01N88M | 10 |\n| 7 | WA00P32P | 10 |\n| 8 | WA01P33R | 7 |\n| 9 | WC09M91W | 4 |\n| 10 | WB01N62R | 4 |\n\n> ⚠️ 以上为系统快照近似统计，精确数字以实时查询为准。\n\n### JB STAR 测试记录情况\n\n2026-05-12 ~ 2026-05-13",
+    "statuses": [
+      "正在准备系统信息…",
+      "正在良率监控统计…",
+      "正在分析工具结果…",
+      "正在良率监控统计…",
+      "正在分析工具结果…",
+      "正在JB BIN 聚合统计…",
+      "正在分析工具结果…",
+      "正在JB BIN 聚合统计…",
+      "正在分析工具结果…"
+    ]
+  },
+  {
+    "label": "3.2b",
+    "question": "帮我看看现在有没有什么异常趋势",
+    "elapsedMs": 32853,
+    "done": true,
+    "error": null,
+    "veroCallCount": 4,
+    "veroModes": [
+      "bare_json",
+      "bare_json",
+      "bare_json",
+      "bare_json"
+    ],
+    "veroDecisions": [
+      "tool:aggregate_yield_triggers",
+      "tool:aggregate_yield_triggers",
+      "tool:aggregate_yield_triggers",
+      "final:replyLen=1276"
+    ],
+    "toolNames": [
+      "aggregate_yield_triggers",
+      "aggregate_yield_triggers",
+      "aggregate_yield_triggers"
+    ],
+    "toolCount": 3,
+    "multiRoundTools": true,
+    "hitDirectOrPilot": false,
+    "compressed": false,
+    "maxPromptChars": 73195,
+    "textLen": 1276,
+    "textPreview": "## Yield Monitor 异常趋势概览（历史记录）\n\n> ⚠️ 以下数据未限定时间范围，为系统现有全量历史记录（共 149 条触发）。\n\n---\n\n### 按 Device 触发次数排名\n\n| 排名 | Device | 触发次数 |\n|---|---|---|\n| 1 | WD08N87J | 17 |\n| 2 | WA03P02G | 15 |\n| 3 | WC11N25F | 14 |\n| 4 | WC04N11X | 12 |\n| 5 | WC13N82Y | 11 |\n| 6 | WA01N88M | 10 |\n| 7 | WA00P32P | 10 |\n| 8 | WA01P33R | 7 |\n| 9 | WC09M91W | 4 |\n| 10 | WB01N62R | 4 |\n\n### 按探针卡触发次数排名\n\n| 排名 | 探针卡 | 触发次数 |\n|---|---|---|\n| 1 | 8041-01 | 14 |\n| 2 | 7772-01 | 12 |\n| 3 | 7759-02 | 9 |\n| 4 | 7747-03 | 7 |\n| 5 | 7792-05",
+    "statuses": [
+      "正在准备系统信息…",
+      "正在良率监控统计…",
+      "正在分析工具结果…",
+      "正在良率监控统计…",
+      "正在分析工具结果…",
+      "正在良率监控统计…",
+      "正在分析工具结果…"
+    ]
+  },
+  {
+    "label": "3.2c",
+    "question": "随便挑一个最近的批次，分析一下良率",
+    "elapsedMs": 22446,
+    "done": true,
+    "error": null,
+    "veroCallCount": 2,
+    "veroModes": [
+      "bare_json",
+      "bare_json"
+    ],
+    "veroDecisions": [
+      "tool:query_jb_bins",
+      "final:replyLen=933"
+    ],
+    "toolNames": [
+      "query_jb_bins"
+    ],
+    "toolCount": 1,
+    "multiRoundTools": false,
+    "hitDirectOrPilot": false,
+    "compressed": false,
+    "maxPromptChars": 83601,
+    "textLen": 933,
+    "textPreview": "## 批次 NF12536.1F（device：WA11P55A）良率分析\n\n**分测试层（sort）批次良率**\n\n| 测试层 | passId | 片数 | 总die | 坏die | 良率% |\n|---|---:|---:|---:|---:|---:|\n| pass3 | 3 | 1 | 1990 | 7 | 99.65% |\n\n**各测试层探针卡**\n\n| 测试层 | passId | 卡号 | 同层中途换卡 |\n|---|---:|---|---|\n| pass3 | 3 | 8023-05 | 否 |\n\n**坏 BIN 分布（Top 5）**\n\n| BIN 编号 | 坏 die 颗数 |\n|---:|---:|\n| BIN200 | 2 |\n| BIN223 | 2 |\n| BIN30 | 1 |\n| BIN121 | 1 |\n| BIN228 | 1 |\n\n---\n\n### 数据解读\n\n- **本批次仅有 pass3 测试层**，共测 1 片 wafer（waferId 4），良率高达 **99.65%**，坏 die 仅 7 颗，属于优良批次。\n- **无聚集性坏 ",
+    "statuses": [
+      "正在准备系统信息…",
+      "正在JB 测试数据查询…",
+      "正在分析工具结果…"
+    ]
+  },
+  {
+    "label": "3.3",
+    "question": "请先查一下最近有哪些 device 在测，再挑其中一个分析它最近批次的良率概况，不要只列名单",
+    "elapsedMs": 33494,
+    "done": true,
+    "error": null,
+    "veroCallCount": 5,
+    "veroModes": [
+      "bare_json",
+      "bare_json",
+      "bare_json",
+      "bare_json",
+      "bare_json"
+    ],
+    "veroDecisions": [
+      "tool:query_jb_bins",
+      "tool:query_jb_bins",
+      "tool:query_jb_bins",
+      "tool:query_jb_bins",
+      "final:replyLen=850"
+    ],
+    "toolNames": [
+      "query_jb_bins",
+      "query_jb_bins",
+      "query_jb_bins",
+      "query_jb_bins"
+    ],
+    "toolCount": 4,
+    "multiRoundTools": true,
+    "hitDirectOrPilot": false,
+    "compressed": false,
+    "maxPromptChars": 74746,
+    "textLen": 850,
+    "textPreview": "## 查询结果说明\n\n我已尝试以下四个时间范围查询 JB STAR 数据，均返回空结果：\n\n| 查询时间范围 | 结果 |\n|---|---|\n| 2026-07-15 ~ 2026-07-22 | 0 条记录 |\n| 2026-06-22 ~ 2026-07-22 | 0 条记录 |\n| 2026-05-01 ~ 2026-07-22 | 0 条记录 |\n| 2026-05-10 ~ 2026-05-13（快照时间范围）| 0 条记录 |\n\n### 数据解读\n\n根据系统提示词中的数据快照，JB STAR 数据时间范围为 **2026-05-12 ~ 2026-05-13**，但实际查询均返回空。这可能是以下原因之一：\n\n1. **查询参数问题**：不带 device/lot/cardId 等过滤条件的纯时间范围查询，可能因数据量过大被服务端限制返回\n2. **数据库连接或权限问题**：当前环境可能无法访问完整数据\n3. **快照数据已过期**：系统快照约每小时刷新，实际数据库状态可能与快照不一致\n\n### 建议替代方案\n\n由于无法通过时间范围枚举所有 device，建议您直接指定已知",
+    "statuses": [
+      "正在准备系统信息…",
+      "正在JB 测试数据查询…",
+      "正在分析工具结果…",
+      "正在JB 测试数据查询…",
+      "正在分析工具结果…",
+      "正在JB 测试数据查询…",
+      "正在分析工具结果…",
+      "正在JB 测试数据查询…",
+      "正在分析工具结果…"
+    ]
+  },
+  {
+    "label": "3.5",
+    "question": "请尽量多查几轮：先拉最近 lot 列表，再聚合坏 bin，再按机台聚合，把能查的都查了再总结",
+    "elapsedMs": 5876,
+    "done": true,
+    "error": null,
+    "veroCallCount": 1,
+    "veroModes": [
+      "bare_json"
+    ],
+    "veroDecisions": [
+      "tool:ask_clarification"
+    ],
+    "toolNames": [
+      "ask_clarification"
+    ],
+    "toolCount": 1,
+    "multiRoundTools": false,
+    "hitDirectOrPilot": false,
+    "compressed": false,
+    "maxPromptChars": 72073,
+    "textLen": 0,
+    "textPreview": "",
+    "statuses": [
+      "正在准备系统信息…",
+      "正在请求澄清…"
+    ]
+  },
+  {
+    "label": "3.6-maxRounds2",
+    "question": "请依次：1) 查最近 lot 列表 2) 再查其中一个 lot 的明细 3) 再聚合坏 bin 趋势，最后给出完整结论",
+    "elapsedMs": 7640,
+    "done": true,
+    "error": null,
+    "veroCallCount": 1,
+    "veroModes": [
+      "bare_json"
+    ],
+    "veroDecisions": [
+      "tool:ask_clarification"
+    ],
+    "toolNames": [
+      "ask_clarification"
+    ],
+    "toolCount": 1,
+    "multiRoundTools": false,
+    "hitDirectOrPilot": false,
+    "compressed": false,
+    "maxPromptChars": 72086,
+    "textLen": 0,
+    "textPreview": "",
+    "statuses": [
+      "正在准备系统信息…",
+      "正在请求澄清…"
+    ]
+  },
+  {
+    "label": "3.4-timeout",
+    "outcome": "timeout_ok",
+    "errMsg": "Vero request timed out after 5000ms",
+    "timeoutMs": 5000
+  }
+]

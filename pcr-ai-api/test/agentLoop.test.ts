@@ -29,6 +29,7 @@ import {
 import { runTool } from "../src/lib/agent/tools/agentToolHandlers.js";
 import type { ChatMessage } from "../src/lib/agent/agentHistory.js";
 import { resolveJbRoute } from "../src/lib/agent/jbRouteResolver.js";
+import { isVeroGenericLoopReady } from "../src/lib/vero/veroSimpleAgent.js";
 
 const THINK_OPEN = "<" + "think>";
 const THINK_CLOSE = "</" + "think>";
@@ -573,4 +574,22 @@ test("tryAppendUnderperformingDutSection: payload 缺 lot/device 时返回空串
   const out = await tryAppendUnderperformingDutSection({}, (e) => events.push(e));
   assert.equal(out, "");
   assert.equal(events.length, 0);
+});
+
+test("runAgentLoop: Vero generic loop stays off when AGENT_VERO_GENERIC_LOOP is unset", () => {
+  const prevFlag = process.env.AGENT_VERO_GENERIC_LOOP;
+  const prevToken = process.env.WCHAT_ACCESS_TOKEN;
+  try {
+    delete process.env.AGENT_VERO_GENERIC_LOOP;
+    delete process.env.WCHAT_ACCESS_TOKEN;
+    // Calls the real gate condition agentLoop.ts's runAgentLoop uses
+    // (`if (isVeroGenericLoopReady()) return runVeroAgentLoop(...)`), so this test
+    // actually fails if that condition or its underlying flag logic regresses.
+    assert.equal(isVeroGenericLoopReady(), false);
+  } finally {
+    if (prevFlag === undefined) delete process.env.AGENT_VERO_GENERIC_LOOP;
+    else process.env.AGENT_VERO_GENERIC_LOOP = prevFlag;
+    if (prevToken === undefined) delete process.env.WCHAT_ACCESS_TOKEN;
+    else process.env.WCHAT_ACCESS_TOKEN = prevToken;
+  }
 });
