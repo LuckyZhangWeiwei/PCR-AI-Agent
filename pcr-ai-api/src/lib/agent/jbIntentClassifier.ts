@@ -2,6 +2,13 @@
 import type { AgentConfig } from "./agentConfig.js";
 import { type JbReplyMode } from "./jb/agentJbQuestionClassifiers.js";
 import { type JbRouteParams } from "./jbRouteResolver.js";
+import {
+  invokeVeroSimpleAgent,
+  buildVeroChatMessageWithSystem,
+  isVeroGenericLoopReady,
+} from "../vero/veroSimpleAgent.js";
+
+export type VeroInvokeFn = (prompt: string, systemPrompt: string) => Promise<string>;
 
 const VALID_MODES: ReadonlySet<string> = new Set([
   "lot_overview","single_slot","bin_trend","slot_pass_yield","interrupt_count",
@@ -22,7 +29,15 @@ export type ChatFn = (prompt: string, agentConfig: AgentConfig) => Promise<strin
 const SYSTEM = `你是测试数据问句的意图分类器。仅输出 JSON:{"mode":<枚举>,"confidence":"high|low","focusBin":<数字或null>,"lot":<字符串或null>,"cardId":<字符串或null>,"isMultiCardCompare":<bool>,"isMultiLotCompare":<bool>,"isDutLevel":<bool>}。mode 必须是以下之一:` +
   [...VALID_MODES].join(",") + `。多卡对比/模糊/跨实体一律 mode=generic。isMultiCardCompare:对比≥2张卡;isMultiLotCompare:对比/枚举多个lot;isDutLevel:问dut/嫌疑die。`;
 
-async function defaultChat(prompt: string, agentConfig: AgentConfig): Promise<string> {
+async function defaultChat(
+  prompt: string,
+  agentConfig: AgentConfig,
+  invokeVero: VeroInvokeFn
+): Promise<string> {
+  if (isVeroGenericLoopReady()) {
+    const message = buildVeroChatMessageWithSystem(SYSTEM, prompt);
+    return invokeVero(message, "You are a JSON-only classifier. No tools, no prose.");
+  }
   const { streamSiliconFlow } = await import("./core/agentStream.js");
   let out = "";
   await streamSiliconFlow(
@@ -40,9 +55,10 @@ export async function callJbIntentClassifier(
   q: string,
   ctx: { lastToolName?: string; cachedLot?: string },
   agentConfig: AgentConfig,
-  deps?: { chat?: ChatFn }
+  deps?: { chat?: ChatFn; invokeVero?: VeroInvokeFn }
 ): Promise<JbClassifierResult | null> {
-  const chat = deps?.chat ?? defaultChat;
+  const invokeVero = deps?.invokeVero ?? invokeVeroSimpleAgent;
+  const chat = deps?.chat ?? ((prompt, cfg) => defaultChat(prompt, cfg, invokeVero));
   const prompt = `问题:${q}\n上一工具:${ctx.lastToolName ?? "无"}\n缓存lot:${ctx.cachedLot ?? "无"}`;
   let raw: string;
   let timer: ReturnType<typeof setTimeout> | undefined;
