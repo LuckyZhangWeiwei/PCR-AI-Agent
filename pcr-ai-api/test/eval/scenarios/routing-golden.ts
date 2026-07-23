@@ -29,6 +29,12 @@ export const routingGolden: GoldenCase[] = [
     seed: "log mqygf9mq turn1 所答非所问",
   },
   {
+    question:
+      "WA00P32P，近3个月，bin90，按照bin fail，显示哪个probe card多些，并显示出集中哪些dut，并列出数据包含的lot列表",
+    expected: F({ mode: "bin_card_attribution", focusBin: 90 }),
+    seed: "2026-07-23 cross-lot probe card + DUT + lot list must not be equipment/P-F",
+  },
+  {
     question: "BIN35 集中在哪张卡",
     expected: F({ mode: "bin_card_attribution", focusBin: 35 }),
     seed: "SEC_BIN_ON_CARD",

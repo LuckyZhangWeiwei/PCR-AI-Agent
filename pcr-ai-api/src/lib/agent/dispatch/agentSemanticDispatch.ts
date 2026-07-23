@@ -22,6 +22,9 @@ import {
   emitTextInChunks,
   toolResultForHistory,
 } from "../core/agentLoopShared.js";
+import { isLotListingQuestion } from "../jb/agentJbQuestionClassifiers.js";
+import { buildLotListingQueryArgs } from "../agentQueryScope.js";
+import { buildRecentLotsListingMarkdown } from "../jb/agentJbListingMarkdown.js";
 
 type LotYieldRankEntry = {
   lot: string;
@@ -180,9 +183,57 @@ export async function tryRunSemanticDispatchDirectRoute(
     const scopeLabel = buildScopeLabelFromAggregateArgs(plan.args);
     const rendered = renderAggregateJbBinsResult(raw, userQuestion, scopeLabel);
     if (!rendered?.table?.trim()) return false; // 渲染空 → 落回 LLM
+    let tables = rendered.table;
+    // 同句还要 lot 列表时，补查 query_jb_bins 直出 recentLots（避免只出卡表丢列表）
+    if (decision.mode === "bin_card_attribution" && isLotListingQuestion(userQuestion)) {
+      const listArgs = buildLotListingQueryArgs(userQuestion, history);
+      if (listArgs) {
+        if (plan.args["testEndFrom"] && !listArgs["testEndFrom"]) {
+          listArgs["testEndFrom"] = plan.args["testEndFrom"];
+          listArgs["testEndTo"] = plan.args["testEndTo"];
+        }
+        emit({ type: "status", message: "正在列出范围内 lot…" });
+        emit({ type: "tool_start", name: "query_jb_bins", args: listArgs });
+        try {
+          let listCache: string | undefined;
+          const listResult = await runTool("query_jb_bins", listArgs, {
+            toolResultMaxChars: agentConfig.toolResultMaxChars,
+            history: getHistory(sessionId),
+            onJbBinsWrapped: (wrapped) => {
+              listCache = storeJbQuerySessionCache(sessionId, wrapped);
+            },
+          });
+          const listRaw =
+            typeof listResult === "string" ? listResult : JSON.stringify(listResult);
+          emit({
+            type: "tool_result",
+            name: "query_jb_bins",
+            summary: listRaw.slice(0, 200),
+          });
+          appendMessages(sessionId, {
+            role: "tool",
+            name: "query_jb_bins",
+            tool_call_id: `jb_dispatch_lots_${Date.now()}`,
+            content: listRaw.slice(0, agentConfig.toolResultMaxChars ?? 12000),
+          });
+          const listPayload =
+            (listCache ? parseJbToolPayload(listCache) : null) ??
+            parseJbToolPayload(listRaw);
+          if (listPayload) {
+            const lotMd = buildRecentLotsListingMarkdown(listPayload, {
+              scopeLabel,
+              presentation: { includeYield: true, includeAverageYield: false },
+            });
+            if (lotMd?.trim()) tables = `${tables}\n\n${lotMd}`;
+          }
+        } catch {
+          /* lot 列表失败不阻断卡表 */
+        }
+      }
+    }
     const block = stampFirstTestNote(
       (rendered.withDataTitle ? `${DETERMINISTIC_DATA_SECTION_TITLE}\n\n` : "") +
-        rendered.table +
+        tables +
         (rendered.commentaryNote
           ? `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n${rendered.commentaryNote}`
           : "")

@@ -13,8 +13,14 @@ import {
   questionHasIdentifiableToolScope,
 } from "../src/lib/agent/dispatch/agentQuestionHeuristics.js";
 import { equipmentRouteDutLevelBail } from "../src/lib/agent/jb/agentJbQuestionClassifiers.js";
+import {
+  detectJbReplyMode,
+  isBinCardAttributionQuestion,
+} from "../src/lib/agent/jb/agentJbQuestionClassifiers.js";
+import { canRunLotListingDirectRoute } from "../src/lib/agent/agentJbLotListingRoute.js";
 import { renderAggregateJbBinsResult } from "../src/lib/agent/render/agentAggregateBinsRender.js";
 import { tryRunSemanticDispatchDirectRoute } from "../src/lib/agent/dispatch/agentSemanticDispatch.js";
+import { getConfig, patchConfig } from "../src/lib/runtimeConfig.js";
 import {
   tryEmitUnderperformingDutScatter,
   tryAppendUnderperformingDutSection,
@@ -518,11 +524,16 @@ test("renderAggregateJbBinsResult: 各 groupBy 形状选对渲染器", () => {
 });
 
 test("tryRunSemanticDispatchDirectRoute: flag 未开时整体短路 return false", async () => {
-  delete process.env.JB_DETERMINISTIC_DISPATCH;
-  const sid = "t-flag-off-" + Date.now();
-  const handled = await tryRunSemanticDispatchDirectRoute(
-    sid, "n55z 哪个卡测出bin35 多", {} as any, () => {});
-  assert.equal(handled, false);
+  const prev = getConfig().jbDeterministicDispatch;
+  patchConfig({ jbDeterministicDispatch: false });
+  try {
+    const sid = "t-flag-off-" + Date.now();
+    const handled = await tryRunSemanticDispatchDirectRoute(
+      sid, "n55z 哪个卡测出bin35 多", {} as any, () => {});
+    assert.equal(handled, false);
+  } finally {
+    patchConfig({ jbDeterministicDispatch: prev });
+  }
 });
 
 // A1-2 修复：区分 DUT 级集中度（P-F）vs 卡级归因（bin_card_attribution 语义派发）。
@@ -537,6 +548,22 @@ test("isDutBinConcentrationQuestion: 卡级归因让给 bin_card_attribution，D
   assert.equal(isDutBinConcentrationQuestion("bin35 哪个触点集中"), true);
   // 无 bin 编号 → false。
   assert.equal(isDutBinConcentrationQuestion("哪张卡良率最低"), false);
+});
+
+// 跨 lot / 时间窗 / lot 列表：禁止 P-F 用 history 单 lot 代答「近3个月哪张卡 + DUT + lot 列表」
+test("isDutBinConcentrationQuestion: cross-lot time window + probe card + lot list → not P-F", () => {
+  const q =
+    "WA00P32P，近3个月，bin90，按照bin fail，显示哪个probe card多些，并显示出集中哪些dut，并列出数据包含的lot列表";
+  assert.equal(isDutBinConcentrationQuestion(q), false);
+  assert.equal(isBinCardAttributionQuestion(q), true);
+  assert.equal(detectJbReplyMode(q), "bin_card_attribution");
+  assert.equal(canRunLotListingDirectRoute(q), false);
+  assert.equal(isDutBinConcentrationQuestion("WA00P32P 近3个月 bin90 集中哪些dut"), false);
+  // 句中已点名 lot → 仍可单 lot P-F
+  assert.equal(
+    isDutBinConcentrationQuestion("DR44948.1H bin90 哪个dut最多"),
+    true
+  );
 });
 
 // 「模型只承诺查询、未真正调用工具」的代码兜底重试——用于判断问题是否含明确实体

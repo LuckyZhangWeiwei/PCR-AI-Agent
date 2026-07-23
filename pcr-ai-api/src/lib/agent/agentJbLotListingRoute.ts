@@ -11,6 +11,7 @@ import {
   isDeviceTestOverviewQuestion,
   isLotListingQuestion,
   isTesterTestOverviewQuestion,
+  isBinCardAttributionQuestion,
 } from "./jb/agentJbQuestionClassifiers.js";
 import {
   buildAggregateJbBinsScopeArgs,
@@ -36,6 +37,9 @@ export function canRunLotListingDirectRoute(
   history: ChatMessage[] = []
 ): boolean {
   if (!isLotListingOrOverviewQuestion(userText)) return false;
+  // BIN×卡归因（含「哪个 probe card 多 + 顺带列 lot」）优先走 bin_card_attribution /
+  // LLM 多工具，禁止本路由只吐 lot 表而丢掉卡排行。
+  if (isBinCardAttributionQuestion(userText)) return false;
   if (!hasResolvedTimeWindow(userText, history)) return false;
   return resolveJbListingScope(userText, history) != null;
 }

@@ -2,6 +2,17 @@
 
 ---
 
+## 2026-07-23 — 跨 lot「probe card + DUT + lot 列表」被单 lot DUT 抢答
+
+**完成内容：**
+- 根因：`isDutBinConcentrationQuestion` 见 dut 即走 P-F；`isBinCardAttributionQuestion` 不认英文 probe card；lot 列表路由抢在卡归因前。
+- 跨 lot/时间窗/lot 列表（句中无 lot）→ 禁止 P-F；扩展卡归因正则；卡归因时 lot 列表 bail；语义派发卡表后可补 lot 列表。
+- 交接：`docs/HANDOFF_CURSOR_FIX_CROSS_LOT_PROBE_CARD_ROUTING_2026-07-23.md`。
+
+**测试：** agentLoop + semantic + dutBinMap 50/50。
+
+---
+
 ## 2026-07-23 — DUT 集中度表「卡号」列恒为空
 
 **完成内容：**

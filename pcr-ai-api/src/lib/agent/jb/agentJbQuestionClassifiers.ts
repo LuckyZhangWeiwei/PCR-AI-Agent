@@ -71,7 +71,15 @@ export function isBinCardAttributionQuestion(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
   if (!/\bBIN\s*\d{1,3}\b|\bbin\s*\d{1,3}\b/i.test(t)) return false;
-  return /哪张.*卡|哪个.*卡|是.*卡|哪块卡|用的.*卡|什么.*卡|属于.*卡|哪张.*探针|哪些.*卡|哪些.*探针|和.*探针.*有关|探针.*有关|卡.*有关|哪些.*channel/i.test(t);
+  // 中文「哪张/哪个卡」+ 英文 probe card / card（「哪个probe card多些」）
+  return (
+    /哪张.*卡|哪个.*卡|是.*卡|哪块卡|用的.*卡|什么.*卡|属于.*卡|哪张.*探针|哪些.*卡|哪些.*探针|和.*探针.*有关|探针.*有关|卡.*有关|哪些.*channel/i.test(
+      t
+    ) ||
+    /哪个.*(?:probe\s*)?card|哪张.*(?:probe\s*)?card|(?:probe\s*)?card.*(?:多|少|集中)|各.*(?:probe\s*)?card/i.test(
+      t
+    )
+  );
 }
 
 /**

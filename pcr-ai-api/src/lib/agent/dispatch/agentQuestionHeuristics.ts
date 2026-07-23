@@ -1,10 +1,25 @@
 // pcr-ai-api/src/lib/agent/dispatch/agentQuestionHeuristics.ts
 // Question-classification heuristics used by the pre-LLM direct routes, extracted from agentLoop.ts.
-import { extractBinFromUserText, isBinCardAttributionQuestion } from "../jb/agentJbQuestionClassifiers.js";
+import {
+  extractBinFromUserText,
+  isBinCardAttributionQuestion,
+  isLotListingQuestion,
+} from "../jb/agentJbQuestionClassifiers.js";
 import { extractLotFromUserText } from "../tools/agentInfWaferMapTool.js";
-import { inferDeviceFromText } from "../agentQueryScope.js";
+import { inferDeviceFromText, inferRecentMonthsWindow } from "../agentQueryScope.js";
 import { deviceBaseMask } from "../../deviceMask.js";
 import { userWantsDutBinRelationMap } from "../agentDutBinMapRoute.js";
+
+/**
+ * 无具体 lot +（时间窗 / 要 lot 列表）→ 跨 lot 场景。
+ * 单 lot 的 query_lot_dut_bin_agg 答不了「近3个月哪张卡多 / 列出 lot」。
+ */
+export function isCrossLotBinCardOrListingScope(text: string): boolean {
+  if (extractLotFromUserText(text)) return false;
+  if (isLotListingQuestion(text)) return true;
+  if (inferRecentMonthsWindow(text).testEndFrom) return true;
+  return false;
+}
 
 /**
  * 用户是否在问 lot 级 DUT×BIN 集中度（DUT/触点/探针 级，非卡级归因）。
@@ -14,6 +29,8 @@ import { userWantsDutBinRelationMap } from "../agentDutBinMapRoute.js";
  * - 纯卡级归因（"BINnn 集中在哪张卡"，无 dut）→ 让给 bin_card_attribution 语义派发
  *   （aggregate_jb_bins groupBy:bin,cardId），勿被 P-F 用 history primary lot 抢成
  *   单 lot DUT 集中度（A1-2 误路由根因）。
+ * - 跨 lot / 时间窗 / 要 lot 列表（无句中 lot）→ 禁止 P-F：否则会用 history 旧 lot
+ *   答「近3个月 + probe card + lot 列表」（2026-07-23 WA00P32P/bin90）。
  */
 export function isDutBinConcentrationQuestion(text: string): boolean {
   const focusBin = extractBinFromUserText(text);
@@ -26,6 +43,7 @@ export function isDutBinConcentrationQuestion(text: string): boolean {
   ) {
     return false;
   }
+  if (isCrossLotBinCardOrListingScope(text)) return false;
   if (/(dut|触点|探针)/i.test(text)) return true;
   if (/(卡|card)/i.test(text)) return !isBinCardAttributionQuestion(text);
   return false;
@@ -52,9 +70,16 @@ export function requiresNewDataQuery(text: string): boolean {
   // 跨 tester / 机台 比较
   if (/不同.*(tester|机台|测试机)/i.test(text)) return true;
   // 多批次列表
-  if (/(各批次|所有批次|多批次|批次.*列表|列表.*批次)/i.test(text)) return true;
-  // 时间范围 + 批次
-  if (/(三周|一个月|两个月|三个月|过去\s*\d+\s*(天|周|月)|最近\s*\d+\s*(天|周|月)).*(批次|lot)/i.test(text)) return true;
+  if (/(各批次|所有批次|多批次|批次.*列表|列表.*批次|lot\s*列表|列表.*lot)/i.test(text)) return true;
+  // 时间范围 + 批次 / lot / 卡排行（「近3个月…lot列表」「近3个月…probe card」）
+  if (
+    /(?:三周|一个月|两个月|三个月|近\s*\d+\s*个?\s*月|过去\s*\d+\s*(?:天|周|月)|最近\s*\d+\s*(?:天|周|月))/i.test(
+      text
+    ) &&
+    /(批次|lot|卡|card|bin\s*\d)/i.test(text)
+  ) {
+    return true;
+  }
   // 消息中含 2 个以上明确的 lot ID（如 DR45487.1K、DR45246.1N...）
   const lots = text.match(/\b[A-Z]{2}\d{5}\.\d[A-Z]\b/g) ?? [];
   if (lots.length >= 2) return true;
