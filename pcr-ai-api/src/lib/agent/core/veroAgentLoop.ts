@@ -20,9 +20,11 @@ import {
 } from "./veroAgentLoopSetup.js";
 import {
   buildVeroRoundSystemPrompt,
+  buildVeroForceFinalSystemPrompt,
   serializeHistoryForVeroPrompt,
   isVeroPromptOverBudget,
 } from "./veroAgentLoopPrompt.js";
+import type { DataManifest } from "../agentManifest.js";
 import {
   parseVeroRoundDecision,
   type VeroRoundDecision,
@@ -64,6 +66,30 @@ async function invokeVeroRoundWithRetry(
     }
   }
   throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
+
+/**
+ * One forced-final retry for the last round, used when the model returned
+ * action:"tool" despite the last-round instruction. Returns the reply
+ * decision if the model now complies, or null if it still won't (or the
+ * retry call itself fails) — callers must not execute a tool in either
+ * null case, since the round is about to be discarded regardless.
+ */
+async function tryForceLastRoundFinal(
+  invoke: VeroInvokeFn,
+  manifest: DataManifest | undefined,
+  feedbackInjection: string,
+  historyText: string
+): Promise<VeroReplyDecision | null> {
+  const forcedSystemPrompt = buildVeroForceFinalSystemPrompt({ manifest, feedbackInjection });
+  const forcedPrompt = `${forcedSystemPrompt}\n\n对话记录：\n${historyText}\n\n请给出下一步 action JSON。`;
+  try {
+    const raw = await invoke(forcedPrompt, forcedSystemPrompt);
+    const decision = parseVeroRoundDecision(raw);
+    return isVeroReplyDecision(decision) ? decision : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Distinct tool names that produced a (non-error) result in this session's history so far. */
@@ -160,6 +186,19 @@ export async function runVeroAgentLoop(
     } catch (err) {
       emit({ type: "error", message: `Vero 返回内容无法解析: ${err instanceof Error ? err.message : String(err)}` });
       return;
+    }
+
+    if (isLastRound && !isVeroReplyDecision(decision)) {
+      // Model ignored the last-round instruction in the system prompt and
+      // still wants a tool. Give it one forced-final retry with a stronger
+      // prompt instead of executing a tool on a round that's about to be
+      // discarded either way.
+      const forced = await tryForceLastRoundFinal(invoke, manifest, feedbackInjection, historyText);
+      if (forced) {
+        decision = forced;
+      } else {
+        break;
+      }
     }
 
     if (isVeroReplyDecision(decision)) {

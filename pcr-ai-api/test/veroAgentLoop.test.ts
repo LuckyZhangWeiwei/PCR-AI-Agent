@@ -174,7 +174,8 @@ test("runVeroAgentLoop: exhausting maxRounds after a tool ran falls back to a te
   process.env["NODE_ENV"] = "test";
   const sessionId = `vero-loop-maxrounds-${Date.now()}`;
   const events: AgentSseEvent[] = [];
-  const config: AgentConfig = { ...stubConfig, maxRounds: 1 };
+  const config: AgentConfig = { ...stubConfig, maxRounds: 2 };
+  let call = 0;
   await runVeroAgentLoop(
     "随便问点什么，且不匹配任何 direct route",
     sessionId,
@@ -182,18 +183,24 @@ test("runVeroAgentLoop: exhausting maxRounds after a tool ran falls back to a te
     (e) => events.push(e),
     undefined,
     {
-      invoke: async () =>
-        JSON.stringify({
+      invoke: async () => {
+        call += 1;
+        // Round 0 (not last): runs normally and executes the tool.
+        // Round 1 (last): the forced retry logic kicks in, but we break
+        // without executing the last-round tool. Summary uses the round 0 tool.
+        return JSON.stringify({
           action: "tool",
           tool: "aggregate_probe_card_tester_performance",
           args: { device: "WA03P02G" },
-        }),
+        });
+      },
     }
   );
-  // A tool did run this turn (even though it never reached "final"), so the
-  // loop must not show a bare error — it should summarize what ran and let
-  // the user retry/narrow the question (design doc §3.3: "有数据就整理成
-  // 文字，不生造内容").
+  // A tool did run in round 0, so the loop must not show a bare error — it
+  // should summarize what ran and let the user retry/narrow the question
+  // (design doc §3.3: "有数据就整理成文字，不生造内容"). Round 1's attempt
+  // is rejected by the forced retry logic (still returns tool), so that tool
+  // never executes; the summary reflects only round 0's tool.
   assert.ok(!events.some((e) => e.type === "error"));
   assert.ok(events.some((e) => e.type === "done"));
   const text = events
@@ -202,6 +209,140 @@ test("runVeroAgentLoop: exhausting maxRounds after a tool ran falls back to a te
     .join("");
   assert.ok(text.includes("aggregate_probe_card_tester_performance"));
   assert.ok(text.includes("重试"));
+  clearHistory(sessionId);
+});
+
+test("runVeroAgentLoop: last round returns tool, forced retry returns final -> uses the forced final reply, never executes the tool", async () => {
+  const sessionId = `vero-loop-force-final-ok-${Date.now()}`;
+  const events: AgentSseEvent[] = [];
+  const config: AgentConfig = { ...stubConfig, maxRounds: 1 };
+  let call = 0;
+  await runVeroAgentLoop(
+    "随便问点什么，且不匹配任何 direct route",
+    sessionId,
+    config,
+    (e) => events.push(e),
+    undefined,
+    {
+      invoke: async () => {
+        call += 1;
+        if (call === 1) {
+          // Regular (non-forced) attempt on the only/last round: model
+          // ignores the isLastRound hint and still wants a tool.
+          return JSON.stringify({
+            action: "tool",
+            tool: "aggregate_probe_card_tester_performance",
+            args: { device: "WA03P02G" },
+          });
+        }
+        // Forced retry: model complies this time.
+        return JSON.stringify({ action: "final", reply: "强制收尾后的结论。" });
+      },
+    }
+  );
+
+  assert.equal(call, 2, "must make exactly one forced-retry call after the last round's initial tool decision");
+  assert.ok(!events.some((e) => e.type === "tool_start"), "the tool from the non-compliant first attempt must never execute");
+  assert.ok(!events.some((e) => e.type === "error"));
+  assert.ok(events.some((e) => e.type === "done"));
+  const text = events
+    .filter((e): e is Extract<AgentSseEvent, { type: "text" }> => e.type === "text")
+    .map((e) => e.delta)
+    .join("");
+  assert.ok(text.includes("强制收尾后的结论"));
+  clearHistory(sessionId);
+});
+
+test("runVeroAgentLoop: last round returns tool, forced retry also returns tool -> falls back to deterministic summary of earlier-round tools, still never executes the last-round tool", async () => {
+  process.env["INFCONTROL_LAYER_BINS_DUMMY"] = "true";
+  process.env["NODE_ENV"] = "test";
+  const sessionId = `vero-loop-force-final-fail-${Date.now()}`;
+  const events: AgentSseEvent[] = [];
+  const config: AgentConfig = { ...stubConfig, maxRounds: 2 };
+  let call = 0;
+  await runVeroAgentLoop(
+    "随便问点什么，且不匹配任何 direct route",
+    sessionId,
+    config,
+    (e) => events.push(e),
+    undefined,
+    {
+      invoke: async () => {
+        call += 1;
+        if (call === 1) {
+          // Round 0 (not last): a real tool call that succeeds normally.
+          return JSON.stringify({
+            action: "tool",
+            tool: "aggregate_probe_card_tester_performance",
+            args: { device: "WA03P02G" },
+          });
+        }
+        // Round 1 (last, calls 2 and 3: the regular attempt and the forced
+        // retry): model never complies, keeps asking for a tool.
+        return JSON.stringify({
+          action: "tool",
+          tool: "query_jb_bins",
+          args: { lot: "SHOULD_NOT_RUN" },
+        });
+      },
+    }
+  );
+
+  assert.equal(call, 3, "round 0's real call, round 1's regular attempt, and round 1's forced retry");
+  const toolStarts = events.filter((e) => e.type === "tool_start");
+  assert.equal(toolStarts.length, 1, "only round 0's tool should have executed — the last round's tool must never run, even after the failed forced retry");
+  assert.equal(
+    (toolStarts[0] as Extract<AgentSseEvent, { type: "tool_start" }>).name,
+    "aggregate_probe_card_tester_performance"
+  );
+  assert.ok(!events.some((e) => e.type === "error"));
+  const text = events
+    .filter((e): e is Extract<AgentSseEvent, { type: "text" }> => e.type === "text")
+    .map((e) => e.delta)
+    .join("");
+  assert.ok(text.includes("aggregate_probe_card_tester_performance"));
+  assert.ok(text.includes("重试"));
+  clearHistory(sessionId);
+});
+
+test("runVeroAgentLoop: last round returns tool, forced retry call itself throws -> falls back gracefully, not a hard error", async () => {
+  process.env["INFCONTROL_LAYER_BINS_DUMMY"] = "true";
+  process.env["NODE_ENV"] = "test";
+  const sessionId = `vero-loop-force-final-throws-${Date.now()}`;
+  const events: AgentSseEvent[] = [];
+  const config: AgentConfig = { ...stubConfig, maxRounds: 1 };
+  let call = 0;
+  await runVeroAgentLoop(
+    "随便问点什么，且不匹配任何 direct route",
+    sessionId,
+    config,
+    (e) => events.push(e),
+    undefined,
+    {
+      invoke: async () => {
+        call += 1;
+        if (call === 1) {
+          return JSON.stringify({
+            action: "tool",
+            tool: "aggregate_probe_card_tester_performance",
+            args: { device: "WA03P02G" },
+          });
+        }
+        throw new Error("vero unreachable on forced retry");
+      },
+    }
+  );
+
+  // maxRounds=1 with the only round's tool never executed (rejected pre-
+  // forced-retry, forced retry itself failed) means there is genuinely
+  // nothing gathered this turn — same "nothing to fall back on" case as the
+  // existing maxRounds=0 test, so a plain error is correct here, not a
+  // silent success.
+  assert.equal(call, 2);
+  assert.ok(!events.some((e) => e.type === "tool_start"));
+  const errEvent = events.find((e) => e.type === "error");
+  assert.ok(errEvent);
+  assert.ok(String((errEvent as { message: string }).message).includes("最大轮数"));
   clearHistory(sessionId);
 });
 
