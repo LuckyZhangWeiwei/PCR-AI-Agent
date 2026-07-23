@@ -109,5 +109,25 @@ export function parseVeroRoundDecision(raw: string): VeroRoundDecision {
     return { action, reply };
   }
 
+  // Real-network deviation observed via Cursor's 2026-07-23 verification
+  // (scratchpad/realdb-vero-q2-partial-2026-07-23.json, Q2-4-ambiguous):
+  // Vero sometimes returns ask_clarification as a top-level action instead
+  // of the instructed {"action":"tool","tool":"ask_clarification",...}
+  // shape, even though ask_clarification is registered as a normal tool
+  // (agentToolSchemas.ts) with the exact same args. Normalize instead of
+  // erroring the whole round — args may be nested under "args" or given
+  // flat at the top level.
+  if (action === "ask_clarification") {
+    const nestedArgs =
+      obj["args"] && typeof obj["args"] === "object" && !Array.isArray(obj["args"])
+        ? (obj["args"] as Record<string, unknown>)
+        : undefined;
+    const args = nestedArgs ?? {
+      ...(typeof obj["question"] === "string" ? { question: obj["question"] } : {}),
+      ...(Array.isArray(obj["options"]) ? { options: obj["options"] } : {}),
+    };
+    return { action: "tool", tool: "ask_clarification", args };
+  }
+
   throw new Error(`Vero round decision has unknown action "${action}": ${raw.slice(0, 200)}`);
 }

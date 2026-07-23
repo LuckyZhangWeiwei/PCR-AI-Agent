@@ -83,6 +83,31 @@ test("parseVeroRoundDecision throws on unknown action", () => {
   assert.throws(() => parseVeroRoundDecision('{"action":"nope"}'), /unknown action/);
 });
 
+test("parseVeroRoundDecision normalizes a top-level ask_clarification action into a tool decision (real model deviation observed via Cursor's real-network verification, 2026-07-23)", () => {
+  // Vero returned this exact payload for an ambiguous question instead of
+  // the instructed {"action":"tool","tool":"ask_clarification",...} shape —
+  // see scratchpad/realdb-vero-q2-partial-2026-07-23.json (Q2-4-ambiguous).
+  const d = parseVeroRoundDecision(
+    '{"action":"ask_clarification","args":{"question":"请提供要查询的批次号（lot ID）或产品代码（device）"}}'
+  );
+  assert.deepEqual(d, {
+    action: "tool",
+    tool: "ask_clarification",
+    args: { question: "请提供要查询的批次号（lot ID）或产品代码（device）" },
+  });
+});
+
+test("parseVeroRoundDecision normalizes ask_clarification even when question/options are flat (no nested args)", () => {
+  const d = parseVeroRoundDecision(
+    '{"action":"ask_clarification","question":"是哪个 device？","options":["WA03P02G","WA00P32P"]}'
+  );
+  assert.deepEqual(d, {
+    action: "tool",
+    tool: "ask_clarification",
+    args: { question: "是哪个 device？", options: ["WA03P02G", "WA00P32P"] },
+  });
+});
+
 test("parseVeroRoundDecision throws on non-object JSON", () => {
   assert.throws(() => parseVeroRoundDecision("[1,2,3]"), /not a JSON object/);
 });
