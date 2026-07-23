@@ -1,0 +1,13 @@
+ask_clarification 复验（部署后 · 2026-07-23）
+API: http://10.192.130.89:30008
+被测：mcp-branch 含 13aa568（顶层 ask_clarification 归一）
+零硅基：远端 agentApiBase 仍为不可达地址；请求仅占位 apiKey=1
+
+| 问句 | 结果 |
+|---|---|
+| 这批数据怎么样 | ✅ tool:ask_clarification → SSE clarification → done；无 unknown action；无硅基错 |
+| 帮我看看整体情况 | ✅ 同上 |
+
+结论：13aa568 真网复验通过。原先「Vero round decision has unknown action ask_clarification」已修复。
+
+原始：scratchpad/realdb-vero-ask-clarification-reverify-2026-07-23.json

@@ -1,0 +1,44 @@
+[
+  {
+    "q": "这批数据怎么样",
+    "ms": 13751,
+    "ok": true,
+    "badParseUnknownAction": false,
+    "siliconFail": false,
+    "hasClarificationEvent": true,
+    "tools": [
+      "tool:ask_clarification {\"question\":\"请提供您想查询的批次号（lot ID）或产品代码（device），例如「NF12551.1N」或「WA03P02G」，以便我为您分析测试数据。\"}"
+    ],
+    "events": [
+      "status:已连接，正在分析…",
+      "status:正在准备系统信息…",
+      "tool:ask_clarification {\"question\":\"请提供您想查询的批次号（lot ID）或产品代码（device），例如「NF12551.1N」或「WA03P02G」，以便我为您分析测试数据。\"}",
+      "status:正在请求澄清…",
+      "clarification:{\"type\":\"clarification\",\"question\":\"请提供您想查询的批次号（lot ID）或产品代码（device），例如「NF12551.1N」或「WA03P02G」，以便我为您分析测试数据。\"}",
+      "tool_result:ask_clarification",
+      "done"
+    ],
+    "text": ""
+  },
+  {
+    "q": "帮我看看整体情况",
+    "ms": 7252,
+    "ok": true,
+    "badParseUnknownAction": false,
+    "siliconFail": false,
+    "hasClarificationEvent": true,
+    "tools": [
+      "tool:ask_clarification {\"question\":\"请问您想查看哪个批次（lot）或产品（device）的整体情况？请提供 lot 号（如 NF12551.1N）或产品代码（如 WA03P02G），也可以告知时间范围。\"}"
+    ],
+    "events": [
+      "status:已连接，正在分析…",
+      "status:正在准备系统信息…",
+      "tool:ask_clarification {\"question\":\"请问您想查看哪个批次（lot）或产品（device）的整体情况？请提供 lot 号（如 NF12551.1N）或产品代码（如 WA03P02G），也可以告知时间范围。\"}",
+      "status:正在请求澄清…",
+      "clarification:{\"type\":\"clarification\",\"question\":\"请问您想查看哪个批次（lot）或产品（device）的整体情况？请提供 lot 号（如 NF12551.1N）或产品代码（如 WA03P02G），也可以告知时间范围。\"}",
+      "tool_result:ask_clarification",
+      "done"
+    ],
+    "text": ""
+  }
+]
