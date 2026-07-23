@@ -268,33 +268,16 @@ Extract the next action JSON now.`;
   // (real invokeVeroSimpleAgent, or the test-injected deps.invokeVero) as the
   // veroInvoke seam — same message shape this pilot used to build inline,
   // now deduplicated with the JB/DUT/probe-card-default commentary path.
-  // If a test mock was injected, temporarily set up the environment so the helper
-  // sees isProbeCardVeroPilotReady() as true.
-  const hadTestMock = !!deps?.invokeVero;
-  const prevToken = process.env.WCHAT_ACCESS_TOKEN;
-  const prevFlag = process.env.AGENT_PROBE_CARD_VERO_PILOT;
-  if (hadTestMock && !prevToken) {
-    process.env.WCHAT_ACCESS_TOKEN = "test-token";
-    process.env.AGENT_PROBE_CARD_VERO_PILOT = "true";
-  }
-  try {
-    return await emitDeterministicProbeCardPerfReply(
-      sessionId,
-      userQuestion,
-      payload,
-      agentConfig,
-      emit,
-      {
-        commentaryStatusMessage:
-          "Vero 试点：正在生成数据解读与专业建议…",
-        veroInvoke: invoke,
-      }
-    );
-  } finally {
-    if (hadTestMock && !prevToken) {
-      delete process.env.WCHAT_ACCESS_TOKEN;
-      if (prevFlag === undefined) delete process.env.AGENT_PROBE_CARD_VERO_PILOT;
-      else process.env.AGENT_PROBE_CARD_VERO_PILOT = prevFlag;
+  return emitDeterministicProbeCardPerfReply(
+    sessionId,
+    userQuestion,
+    payload,
+    agentConfig,
+    emit,
+    {
+      commentaryStatusMessage:
+        "Vero 试点：正在生成数据解读与专业建议…",
+      veroInvoke: invoke,
     }
-  }
+  );
 }
