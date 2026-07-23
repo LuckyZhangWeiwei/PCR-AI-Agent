@@ -23,12 +23,7 @@ import {
   invokeVeroSimpleAgent,
   parseJsonLoose,
   isProbeCardVeroPilotReady,
-  buildVeroChatMessageWithSystem,
 } from "../../../vero/veroSimpleAgent.js";
-import {
-  PROBE_CARD_PERF_COMMENTARY_SYSTEM,
-  buildBriefCommentaryUserMessage,
-} from "../../jb/agentJbOverviewMarkdown.js";
 
 export const PROBE_CARD_VERO_EXTRACT_SYSTEM = `You are a parameter extractor for a JB STAR probe-card / tester performance tool.
 Reply with ONLY one JSON object (no markdown, no explanation).
@@ -268,24 +263,38 @@ Extract the next action JSON now.`;
     return true;
   }
 
-  // Tables from server; commentary via simple-agent (no MCP / no double agent turn).
-  return emitDeterministicProbeCardPerfReply(
-    sessionId,
-    userQuestion,
-    payload,
-    agentConfig,
-    emit,
-    {
-      commentaryStatusMessage:
-        "Vero 试点：正在生成数据解读与专业建议…",
-      invokeCommentary: async (q, tables) => {
-        const message = buildVeroChatMessageWithSystem(
-          PROBE_CARD_PERF_COMMENTARY_SYSTEM,
-          buildBriefCommentaryUserMessage(q, tables)
-        );
-        // system_prompt empty: instructions already folded into message.
-        return invoke(message, "You write brief Chinese engineering commentary only. No tools. No tables.");
-      },
+  // Tables from server; commentary via the shared Vero-or-SiliconFlow helper
+  // (agentBriefCommentary.ts), using this pilot's already-resolved `invoke`
+  // (real invokeVeroSimpleAgent, or the test-injected deps.invokeVero) as the
+  // veroInvoke seam — same message shape this pilot used to build inline,
+  // now deduplicated with the JB/DUT/probe-card-default commentary path.
+  // If a test mock was injected, temporarily set up the environment so the helper
+  // sees isProbeCardVeroPilotReady() as true.
+  const hadTestMock = !!deps?.invokeVero;
+  const prevToken = process.env.WCHAT_ACCESS_TOKEN;
+  const prevFlag = process.env.AGENT_PROBE_CARD_VERO_PILOT;
+  if (hadTestMock && !prevToken) {
+    process.env.WCHAT_ACCESS_TOKEN = "test-token";
+    process.env.AGENT_PROBE_CARD_VERO_PILOT = "true";
+  }
+  try {
+    return await emitDeterministicProbeCardPerfReply(
+      sessionId,
+      userQuestion,
+      payload,
+      agentConfig,
+      emit,
+      {
+        commentaryStatusMessage:
+          "Vero 试点：正在生成数据解读与专业建议…",
+        veroInvoke: invoke,
+      }
+    );
+  } finally {
+    if (hadTestMock && !prevToken) {
+      delete process.env.WCHAT_ACCESS_TOKEN;
+      if (prevFlag === undefined) delete process.env.AGENT_PROBE_CARD_VERO_PILOT;
+      else process.env.AGENT_PROBE_CARD_VERO_PILOT = prevFlag;
     }
-  );
+  }
 }
