@@ -122,3 +122,75 @@ test("emitBriefCommentaryOrFallback: Vero not ready -> never calls invoke, falls
     assert.ok(events.some((e) => e.type === "status"));
   });
 });
+
+test("emitBriefCommentaryOrFallback: systemPrompt override is used in the Vero branch instead of BRIEF_COMMENTARY_SYSTEM", async () => {
+  await withVeroFlag(true, "tok", async () => {
+    let sawCustomSystemInMessage = false;
+    await emitBriefCommentaryOrFallback(
+      "问题",
+      "| a | b |",
+      {},
+      baseConfig,
+      () => {},
+      {
+        systemPrompt: "CUSTOM_PROBE_CARD_SYSTEM_MARKER",
+        invoke: async (message) => {
+          sawCustomSystemInMessage = message.includes("CUSTOM_PROBE_CARD_SYSTEM_MARKER");
+          return "解读文本。";
+        },
+      }
+    );
+    assert.ok(sawCustomSystemInMessage, "systemPrompt override must reach the Vero invoke call");
+  });
+});
+
+test("emitBriefCommentaryOrFallback: alsoReadyWhen()=true routes to Vero even when AGENT_VERO_GENERIC_LOOP is off", async () => {
+  await withVeroFlag(false, "tok", async () => {
+    let invokeCalled = false;
+    const result = await emitBriefCommentaryOrFallback(
+      "问题",
+      "| a | b |",
+      {},
+      baseConfig,
+      () => {},
+      {
+        alsoReadyWhen: () => true,
+        invoke: async () => {
+          invokeCalled = true;
+          return "解读文本。";
+        },
+      }
+    );
+    assert.equal(invokeCalled, true, "alsoReadyWhen()=true must force the Vero branch");
+    assert.equal(result, "解读文本。");
+  });
+});
+
+test("emitBriefCommentaryOrFallback: alsoReadyWhen()=false and AGENT_VERO_GENERIC_LOOP off -> still falls back to SiliconFlow", async () => {
+  await withVeroFlag(false, undefined, async () => {
+    let invokeCalled = false;
+    const config = resolveAgentConfig({
+      apiKey: "sk-test",
+      apiBase: "https://127.0.0.1:1",
+      model: "test-model",
+      subAgentModel: "test-sub-model",
+      streamTimeoutMs: 200,
+    });
+    const result = await emitBriefCommentaryOrFallback(
+      "问题",
+      "| a | b |",
+      {},
+      config,
+      () => {},
+      {
+        alsoReadyWhen: () => false,
+        invoke: async () => {
+          invokeCalled = true;
+          return "should not be called";
+        },
+      }
+    );
+    assert.equal(invokeCalled, false);
+    assert.ok(result.length > 0);
+  });
+});

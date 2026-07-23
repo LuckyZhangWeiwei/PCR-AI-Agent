@@ -37,6 +37,21 @@ export type EmitBriefCommentaryOptions = {
   statusMessage?: string;
   /** Test seam: override the Vero invoke function (default: invokeVeroSimpleAgent). */
   invoke?: VeroInvokeFn;
+  /**
+   * System prompt for both the Vero and the SiliconFlow branch (default:
+   * BRIEF_COMMENTARY_SYSTEM). Callers with a domain-specific commentary
+   * system prompt (e.g. probe-card's PROBE_CARD_PERF_COMMENTARY_SYSTEM) pass
+   * it here instead of duplicating this function's branch logic.
+   */
+  systemPrompt?: string;
+  /**
+   * Additional Vero-readiness check, OR'd with isVeroGenericLoopReady().
+   * Lets a caller with its own independently-gated Vero pilot flag (e.g.
+   * probe-card's AGENT_PROBE_CARD_VERO_PILOT / isProbeCardVeroPilotReady)
+   * route through Vero here too, without this function knowing about that
+   * flag by name.
+   */
+  alsoReadyWhen?: () => boolean;
 };
 
 const VERO_COMMENTARY_SYSTEM_PLACEHOLDER =
@@ -64,11 +79,13 @@ export async function emitBriefCommentaryOrFallback(
     delta: `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n`,
   });
 
-  if (isVeroGenericLoopReady()) {
+  const systemPrompt = options?.systemPrompt ?? BRIEF_COMMENTARY_SYSTEM;
+
+  if (isVeroGenericLoopReady() || options?.alsoReadyWhen?.()) {
     const invoke = options?.invoke ?? invokeVeroSimpleAgent;
     try {
       const message = buildVeroChatMessageWithSystem(
-        BRIEF_COMMENTARY_SYSTEM,
+        systemPrompt,
         buildBriefCommentaryUserMessage(userQuestion, tablesMarkdown, context)
       );
       const text = (
@@ -96,7 +113,7 @@ export async function emitBriefCommentaryOrFallback(
       {
         model: agentConfig.subAgentModel,
         messages: [
-          { role: "system", content: BRIEF_COMMENTARY_SYSTEM },
+          { role: "system", content: systemPrompt },
           {
             role: "user",
             content: buildBriefCommentaryUserMessage(
