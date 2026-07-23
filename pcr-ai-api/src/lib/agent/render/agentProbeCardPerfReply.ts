@@ -7,18 +7,20 @@ import {
   emitTextInChunks,
   cleanStreamErrorMessage,
 } from "../core/agentLoopShared.js";
-import { createDeepSeekFilter } from "../core/agentEmbeddedToolParsing.js";
-import { streamSiliconFlow } from "../core/agentStream.js";
 import {
   buildProbeCardPerfSummaryMarkdown,
   type PassGroupResult,
 } from "../../probeCard/probeCardTesterPerformance.js";
 import {
   PROBE_CARD_PERF_COMMENTARY_SYSTEM,
-  buildBriefCommentaryUserMessage,
   DETERMINISTIC_DATA_SECTION_TITLE,
   DETERMINISTIC_COMMENTARY_SECTION_TITLE,
 } from "../jb/agentJbOverviewMarkdown.js";
+import { isProbeCardVeroPilotReady } from "../../vero/veroSimpleAgent.js";
+import {
+  emitBriefCommentaryOrFallback,
+  type EmitBriefCommentaryOptions,
+} from "./agentBriefCommentary.js";
 
 /** Optional non-streaming commentary (e.g. tests / legacy simple-agent). */
 export type ProbeCardCommentaryInvoker = (
@@ -40,6 +42,12 @@ export type EmitProbeCardPerfReplyOptions = {
   streamCommentary?: ProbeCardCommentaryStreamer;
   /** Status line while generating commentary (default: SiliconFlow wording). */
   commentaryStatusMessage?: string;
+  /**
+   * Test/pilot seam for the default branch's Vero call (passed straight to
+   * emitBriefCommentaryOrFallback's `invoke` option). Only used when neither
+   * invokeCommentary nor streamCommentary is given.
+   */
+  veroInvoke?: EmitBriefCommentaryOptions["invoke"];
 };
 
 /**
@@ -90,20 +98,18 @@ export async function emitDeterministicProbeCardPerfReply(
   emit({ type: "status", message: "正在输出服务端探针卡/机台组合排名表…" });
   emitTextInChunks(tablesBlock, emit);
 
-  emit({
-    type: "status",
-    message:
-      options?.commentaryStatusMessage ?? "正在生成数据解读与专业建议…",
-  });
-  emit({
-    type: "text",
-    delta: `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n`,
-  });
-
   let commentaryOrFallback: string;
-  let streamError: string | undefined;
 
   if (options?.streamCommentary) {
+    emit({
+      type: "status",
+      message:
+        options?.commentaryStatusMessage ?? "正在生成数据解读与专业建议…",
+    });
+    emit({
+      type: "text",
+      delta: `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n`,
+    });
     try {
       const text = (
         await options.streamCommentary(userQuestion, tables, (delta) => {
@@ -123,6 +129,15 @@ export async function emitDeterministicProbeCardPerfReply(
       emit({ type: "text", delta: commentaryOrFallback });
     }
   } else if (options?.invokeCommentary) {
+    emit({
+      type: "status",
+      message:
+        options?.commentaryStatusMessage ?? "正在生成数据解读与专业建议…",
+    });
+    emit({
+      type: "text",
+      delta: `\n\n${DETERMINISTIC_COMMENTARY_SECTION_TITLE}\n\n`,
+    });
     try {
       const text = (await options.invokeCommentary(userQuestion, tables)).trim();
       if (text) {
@@ -139,46 +154,21 @@ export async function emitDeterministicProbeCardPerfReply(
       emit({ type: "text", delta: commentaryOrFallback });
     }
   } else {
-    const commFilter = createDeepSeekFilter(emit);
-
-    await streamSiliconFlow(
-      {
-        model: agentConfig.subAgentModel,
-        messages: [
-          { role: "system", content: PROBE_CARD_PERF_COMMENTARY_SYSTEM },
-          {
-            role: "user",
-            content: buildBriefCommentaryUserMessage(userQuestion, tables),
-          },
-        ],
-        max_tokens: 1024,
-      },
+    // emitBriefCommentaryOrFallback emits its own status + section-header
+    // events, so the default branch does not emit them itself.
+    commentaryOrFallback = await emitBriefCommentaryOrFallback(
+      userQuestion,
+      tables,
+      {},
       agentConfig,
-      (chunk) => {
-        switch (chunk.type) {
-          case "delta":
-            commFilter.push(chunk.text);
-            break;
-          case "error":
-            streamError = chunk.message;
-            break;
-          default:
-            break;
-        }
+      emit,
+      {
+        statusMessage: options?.commentaryStatusMessage,
+        systemPrompt: PROBE_CARD_PERF_COMMENTARY_SYSTEM,
+        alsoReadyWhen: isProbeCardVeroPilotReady,
+        invoke: options?.veroInvoke,
       }
     );
-
-    commFilter.finalize();
-    const commentary = commFilter.cleanText.trim();
-
-    if (commentary) {
-      commentaryOrFallback = commentary;
-    } else {
-      commentaryOrFallback = streamError
-        ? `*（解读生成失败：${cleanStreamErrorMessage(streamError)}；以上实测数据表为准。）*`
-        : `*（模型未返回解读；以上实测数据表为准。）*`;
-      emit({ type: "text", delta: commentaryOrFallback });
-    }
   }
 
   const full =
