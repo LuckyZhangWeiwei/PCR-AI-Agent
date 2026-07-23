@@ -1,0 +1,123 @@
+{
+  "sessionId": "cursor-q1-budget-1784806320072",
+  "turns": [
+    {
+      "i": 1,
+      "q": "WA00P32P 最近一年整体良率概况和主要坏 bin 是什么，请用工具查",
+      "ms": 31284,
+      "bytes": 1858,
+      "compress": false,
+      "siliconFail": false,
+      "ok": true,
+      "events": [
+        "status:已连接，正在分析…",
+        "status:正在准备系统信息…",
+        "status:正在聚合 JB 坏 BIN 排行…",
+        "tool:aggregate_jb_bins",
+        "status:仍在处理中（查询或模型推理可能较慢）…",
+        "status:仍在处理中（查询或模型推理可能较慢）…",
+        "status:正在输出坏 BIN 排行表…",
+        "done"
+      ]
+    },
+    {
+      "i": 2,
+      "q": "按月份分别怎么样，把坏 die 趋势也查出来",
+      "ms": 104969,
+      "bytes": 5342,
+      "compress": false,
+      "siliconFail": false,
+      "ok": true,
+      "events": [
+        "status:已连接，正在分析…",
+        "status:正在准备系统信息…",
+        "tool:aggregate_jb_bins",
+        "status:正在JB BIN 聚合统计…",
+        "status:仍在处理中（查询或模型推理可能较慢）…",
+        "status:仍在处理中（查询或模型推理可能较慢）…",
+        "status:正在分析工具结果…",
+        "status:仍在处理中（查询或模型推理可能较慢）…",
+        "tool:aggregate_jb_bins",
+        "status:正在JB BIN 聚合统计…",
+        "status:正在分析工具结果…",
+        "tool:query_jb_bins",
+        "status:正在JB 测试数据查询…",
+        "status:正在分析工具结果…",
+        "status:仍在处理中（查询或模型推理可能较慢）…",
+        "tool:aggregate_jb_bins",
+        "status:正在JB BIN 聚合统计…",
+        "status:正在分析工具结果…",
+        "tool:aggregate_jb_bins",
+        "status:正在JB BIN 聚合统计…",
+        "status:正在分析工具结果…",
+        "status:仍在处理中（查询或模型推理可能较慢）…",
+        "status:仍在处理中（查询或模型推理可能较慢）…",
+        "done"
+      ]
+    },
+    {
+      "i": 3,
+      "q": "哪几张探针卡表现最差，按卡聚合一下",
+      "ms": 13657,
+      "bytes": 1444,
+      "compress": false,
+      "siliconFail": false,
+      "ok": true,
+      "events": [
+        "status:已连接，正在分析…",
+        "status:正在准备系统信息…",
+        "status:正在输出服务端预计算表…",
+        "status:正在生成数据解读与专业建议…",
+        "done"
+      ]
+    },
+    {
+      "i": 4,
+      "q": "最近测过的 lot 都列出来，带良率",
+      "ms": 5417,
+      "bytes": 5886,
+      "compress": false,
+      "siliconFail": false,
+      "ok": true,
+      "events": [
+        "status:已连接，正在分析…",
+        "status:正在准备系统信息…",
+        "status:正在查询 JB STAR lot 列表…",
+        "tool:query_jb_bins",
+        "status:正在输出服务端预计算表…",
+        "done"
+      ]
+    },
+    {
+      "i": 5,
+      "q": "挑坏 die 最多的那几个 lot，各自详细概况",
+      "ms": 2323,
+      "bytes": 1744,
+      "compress": false,
+      "siliconFail": false,
+      "ok": true,
+      "events": [
+        "status:已连接，正在分析…",
+        "status:正在准备系统信息…",
+        "status:正在聚合 JB 坏 BIN 排行…",
+        "tool:aggregate_jb_bins",
+        "status:正在输出坏 BIN 排行表…",
+        "done"
+      ]
+    },
+    {
+      "i": 6,
+      "q": "我们最开始问的是哪个 device？请直接回答",
+      "ms": 9639,
+      "bytes": 180,
+      "compress": false,
+      "siliconFail": false,
+      "ok": true,
+      "events": [
+        "status:已连接，正在分析…",
+        "status:正在准备系统信息…",
+        "done"
+      ]
+    }
+  ]
+}

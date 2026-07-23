@@ -1,0 +1,38 @@
+环境：mcp-branch commit = 76c28bb（含 5e4e50c JB 分类器迁 Vero），API 已部署 http://10.192.130.89:30008
+验证时间：2026-07-23（UTC+8 晚）
+npm test 结果：未在本机对本 commit 重跑全量（直接打已部署 API）；本地 HEAD=76c28bb 与 origin/mcp-branch 一致
+金丝雀：远端 admin/config 的 agentApiBase 已是不可达地址 https://apiaa.siliconfloaaw.cn/v1（等价金丝雀）；请求仅传占位 apiKey=1 过门禁，全程未配置可用硅基流动密钥/可用 base
+Dummy：以部署机为准（dist 生产路径应强制关 Dummy）；本测命中真实工具链路（aggregate/query 均有耗时与结果）
+
+Q1 真实字符预算
+  测试方式：脚本驱动同 session 连续 6 轮真库追问（device=WA00P32P），sessionId=cursor-q1-budget-1784806320072
+  实测到的最大单轮 promptText 长度：未知（远端未打 promptText.length 日志；仅观测 SSE，最大单轮 SSE 体积约 5.8KB，不能代表 prompt 字符数）
+  是否触发"正在压缩历史对话…"：否（6 轮均未出现）
+  若触发：N/A
+  若未触发：临时调低 VERO_PROMPT_CHAR_BUDGET 快速验证压缩机制=<未做>（部署机上未手改常量，避免动生产文件；建议 Claude Code/运维在专用机按交接 §2.3 临时验证，或灌 history 强制触发）
+  压缩后早期信息是否还在：未触发压缩；但 turn6 追问「最开始问的是哪个 device」→ 回答正确「WA00P32P」（SSE delta 文本）
+
+Q2 全程零硅基流动
+  金丝雀设置本身是否验证有效（先用简单问题跑通）=是（JB lot 概况正常完成；若误调硅基应因不可达 base 失败，本测无此类失败）
+  场景1 JB表解读：是（DR43782.1A / query_jb_bins + 预计算表；另有「正在生成数据解读与专业建议」未报硅基错 → 解读侧也应走了 Vero）
+  场景2 DUT×BIN聚焦解读：是（query_lot_underperforming_duts 直连完成）
+  场景3 探针卡组合解读：是（status「Vero 试点…」+ aggregate_probe_card_tester_performance；AGENT_PROBE_CARD_VERO_PILOT 开着）
+  场景4（重点）JB意图分类器路径：未能确认 classifier 被调用；模糊问直接进 Vero 主循环并报协议错（见下）。是否走 Vero 而非硅基=是（错误文案为 Vero 解析失败，非硅基连接失败）
+  场景5 兜底通用问答：是（多轮 YM/JB aggregate 后 done，约 91s，无硅基错）
+  全程是否出现任何因 AGENT_API_BASE 不可达导致的报错（=发现残留硅基调用）=否
+
+发现问题（不改代码，交 Claude Code）
+  1) Vero 通用循环协议不接受 action=ask_clarification
+     复现：「这批数据怎么样」「帮我看看整体情况」
+     SSE error: Vero round decision has unknown action "ask_clarification"（模型想澄清 lot/device）
+     期望：映射到 ask_clarification 工具 / chat 回复，而不是整轮 error
+  2) Q1 在 280k 预算下自然多轮仍未撞压缩；远端无法观测 promptText.length
+     建议：专用环境临时降预算 §2.3，或脚本向 session history 灌大 tool 消息强制触发
+  3) 探针卡问法时间窗出现 testEndFrom=2025-06-13（相对「今天 2026-07-23」像偏差一年）— 是否服务器时钟/窗解析问题请 Claude Code 自查（本任务非必改）
+
+总判：零硅基目标在本部署上基本成立（Vero 路径可完成业务问法，未见硅基连接失败）。发现需改代码的真实问题：ask_clarification 协议缺口。字符预算压缩仍未在真实 280k 阈值下被撞到。
+
+原始片段：
+  scratchpad/realdb-vero-q2-partial-2026-07-23.json
+  scratchpad/realdb-vero-q2-more-2026-07-23.json
+  scratchpad/realdb-vero-q1-turns-2026-07-23.json

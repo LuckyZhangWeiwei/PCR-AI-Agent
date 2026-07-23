@@ -1,0 +1,53 @@
+[
+  {
+    "id": "Q2-3-probe-card",
+    "q": "WA03P02G 最近一个月探针卡和机台组合表现怎么样",
+    "ms": 4936,
+    "bytes": 580,
+    "ok": true,
+    "compress": false,
+    "siliconFail": false,
+    "tools": [
+      "tool:aggregate_probe_card_tester_performance {\"device\":\"WA03P02G\",\"testEndFrom\":\"2025-06-13\",\"testEndTo\":\"2025-07-13\"}"
+    ],
+    "statuses": [
+      "status:已连接，正在分析…",
+      "status:正在准备系统信息…",
+      "status:Vero 试点：正在解析探针卡/机台组合查询参数…",
+      "status:Vero 试点：正在聚合 WA03P02G 探针卡+机台组合表现…"
+    ],
+    "errors": []
+  },
+  {
+    "id": "Q2-4b-ambiguous",
+    "q": "帮我看看整体情况",
+    "ms": 7255,
+    "bytes": 341,
+    "ok": false,
+    "compress": false,
+    "siliconFail": false,
+    "tools": [],
+    "statuses": [
+      "status:已连接，正在分析…",
+      "status:正在准备系统信息…"
+    ],
+    "errors": [
+      "error:Vero 返回内容无法解析: Vero round decision has unknown action \"ask_clarification\": {\"action\":\"ask_clarification\",\"question\":\"请问您想查看哪个批次（lot）或产品（device）的整体情况？请提供 lot 号（如 NF12551.1N）或产品代码（如 WA03N06N），以便我为您查询。\"}"
+    ]
+  },
+  {
+    "id": "Q2-4c-ambiguous",
+    "q": "有什么问题吗",
+    "ms": 12657,
+    "bytes": 368,
+    "ok": true,
+    "compress": false,
+    "siliconFail": false,
+    "tools": [],
+    "statuses": [
+      "status:已连接，正在分析…",
+      "status:正在准备系统信息…"
+    ],
+    "errors": []
+  }
+]

@@ -1,0 +1,79 @@
+[
+  {
+    "id": "Q2-1-jb-overview",
+    "ok": true,
+    "hitSiliconSuspect": false,
+    "ms": 7514,
+    "tools": [
+      "tool:query_jb_bins"
+    ],
+    "statuses": [
+      "status:已连接，正在分析…",
+      "status:正在准备系统信息…",
+      "status:正在查询 DR43782.1A JB STAR 数据…",
+      "status:正在输出服务端预计算表…",
+      "status:正在补充各 DUT 良率分析（较慢）…"
+    ],
+    "errors": []
+  },
+  {
+    "id": "Q2-2-dut",
+    "ok": true,
+    "hitSiliconSuspect": false,
+    "ms": 5883,
+    "tools": [
+      "tool:query_lot_underperforming_duts"
+    ],
+    "statuses": [
+      "status:已连接，正在分析…",
+      "status:正在准备系统信息…",
+      "status:正在分析各 DUT 良率（含 INF 取数，稍慢）…"
+    ],
+    "errors": []
+  },
+  {
+    "id": "Q2-4-ambiguous",
+    "ok": false,
+    "hitSiliconSuspect": false,
+    "ms": 9872,
+    "tools": [],
+    "statuses": [
+      "status:已连接，正在分析…",
+      "status:正在准备系统信息…"
+    ],
+    "errors": [
+      "error:Vero 返回内容无法解析: Vero round decision has unknown action \"ask_clarification\": {\"action\":\"ask_clarification\",\"args\":{\"question\":\"请提供要查询的批次号（lot ID）或产品代码（device），例如「DR44117.1Y」或「WA03N06N」，以便为您查询测试情况。\"}}"
+    ]
+  },
+  {
+    "id": "Q2-5-generic",
+    "ok": true,
+    "hitSiliconSuspect": false,
+    "ms": 91737,
+    "tools": [
+      "tool:aggregate_yield_triggers",
+      "tool:aggregate_jb_bins",
+      "tool:aggregate_jb_bins",
+      "tool:aggregate_jb_bins"
+    ],
+    "statuses": [
+      "status:已连接，正在分析…",
+      "status:正在准备系统信息…",
+      "status:正在良率监控统计…",
+      "status:正在分析工具结果…",
+      "status:仍在处理中（查询或模型推理可能较慢）…",
+      "status:正在JB BIN 聚合统计…",
+      "status:正在分析工具结果…",
+      "status:正在JB BIN 聚合统计…",
+      "status:仍在处理中（查询或模型推理可能较慢）…",
+      "status:仍在处理中（查询或模型推理可能较慢）…",
+      "status:正在分析工具结果…",
+      "status:仍在处理中（查询或模型推理可能较慢）…",
+      "status:正在JB BIN 聚合统计…",
+      "status:正在分析工具结果…",
+      "status:仍在处理中（查询或模型推理可能较慢）…",
+      "status:仍在处理中（查询或模型推理可能较慢）…"
+    ],
+    "errors": []
+  }
+]
