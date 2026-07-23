@@ -62,7 +62,14 @@ const stubConfig = {
 };
 
 const events = [];
-const q = "WA03P02G 最近的探针卡机台组合表现怎么样";
+// Entity-free question (no device/lot/card code, no "探针卡"+"机台"+"组合"
+// phrasing) so none of the 15 PRE_LLM_DIRECT_ROUTES runners match and this
+// smoke test actually exercises Vero's multi-round tool-selection protocol
+// instead of being silently answered by a direct route before Vero is ever
+// called. The previous question, "WA03P02G 最近的探针卡机台组合表现怎么样",
+// matched the Path B probe-card pilot and never reached the generic loop —
+// see docs/HANDOFF_CURSOR_VERO_GENERIC_LOOP_TEST_RESULTS.md §3.1.
+const q = "帮我看一下最近的整体情况，随便分析一下";
 console.log("\n--- runVeroAgentLoop (real Vero, Dummy JB tool data) ---");
 await runVeroAgentLoop(q, `smoke-vero-loop-${Date.now()}`, stubConfig, (e) => {
   events.push(e);
@@ -79,6 +86,22 @@ const text = events
 console.log("\ndone event:", events.some((e) => e.type === "done"));
 console.log("text length:", text.length);
 console.log("text preview:\n", text.slice(0, 1200));
+
+const toolStartCount = events.filter((e) => e.type === "tool_start").length;
+console.log("tool_start count:", toolStartCount);
+
+const hitPathBPilot = events.some(
+  (e) => e.type === "status" && typeof e.message === "string" && e.message.includes("Vero 试点")
+);
+if (hitPathBPilot) {
+  console.warn(
+    "\nWARN: this run was answered by the Path B probe-card pilot (a status " +
+      'message contained "Vero 试点"), not the generic multi-round loop — ' +
+      "the question matched a PRE_LLM direct route. This smoke run did not " +
+      "actually exercise the generic loop's multi-round Vero protocol; " +
+      "pick a different entity-free question."
+  );
+}
 
 if (!events.some((e) => e.type === "done")) {
   console.error("\nFAIL: loop did not complete with a done event");
