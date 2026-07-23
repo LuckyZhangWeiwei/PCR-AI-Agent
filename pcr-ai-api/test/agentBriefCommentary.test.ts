@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
+import https from "node:https";
 import test from "node:test";
 
 import { emitBriefCommentaryOrFallback } from "../src/lib/agent/render/agentBriefCommentary.js";
@@ -192,5 +194,60 @@ test("emitBriefCommentaryOrFallback: alsoReadyWhen()=false and AGENT_VERO_GENERI
     );
     assert.equal(invokeCalled, false);
     assert.ok(result.length > 0);
+  });
+});
+
+test("emitBriefCommentaryOrFallback: systemPrompt override also reaches the SiliconFlow branch, not just Vero (regression guard for the bug this helper's generalization fixed)", async () => {
+  await withVeroFlag(false, undefined, async () => {
+    const originalRequest = https.request;
+    let capturedBody = "";
+
+    const fakeReq = new EventEmitter() as EventEmitter & {
+      setTimeout: (ms: number, cb: () => void) => typeof fakeReq;
+      write: (body: string) => boolean;
+      end: () => void;
+      destroy: (err?: Error) => void;
+    };
+    fakeReq.setTimeout = () => fakeReq;
+    fakeReq.write = (chunk: string) => {
+      capturedBody += chunk;
+      return true;
+    };
+    fakeReq.end = () => undefined;
+    fakeReq.destroy = (err?: Error) => {
+      fakeReq.emit("error", err ?? new Error("destroyed"));
+    };
+    (https as typeof https & { request: unknown }).request = () => fakeReq;
+
+    try {
+      const config = resolveAgentConfig({
+        apiKey: "sk-test",
+        apiBase: "https://api.siliconflow.cn/v1",
+        model: "test-model",
+        subAgentModel: "test-sub-model",
+        streamTimeoutMs: 50,
+      });
+      await Promise.race([
+        emitBriefCommentaryOrFallback(
+          "问题",
+          "| a | b |",
+          {},
+          config,
+          () => {},
+          { systemPrompt: "CUSTOM_PROBE_CARD_SYSTEM_MARKER_FOR_SILICONFLOW" }
+        ),
+        new Promise((resolve) => setTimeout(resolve, 500)),
+      ]);
+    } finally {
+      (https as typeof https & { request: unknown }).request = originalRequest;
+    }
+
+    const parsedBody = JSON.parse(capturedBody);
+    assert.equal(parsedBody.messages[0].role, "system");
+    assert.equal(
+      parsedBody.messages[0].content,
+      "CUSTOM_PROBE_CARD_SYSTEM_MARKER_FOR_SILICONFLOW",
+      "systemPrompt override must reach the SiliconFlow branch's system message, not just the Vero branch's"
+    );
   });
 });
