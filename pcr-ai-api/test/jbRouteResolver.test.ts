@@ -111,13 +111,14 @@ test("classifyJbIntent: 非 generic 模式不调 LLM（lot_yield_ranking 保 reg
   }
 });
 
-test("classifyJbIntent: LLM 失败 + mask 概况降级 lot_overview", async () => {
+test("classifyJbIntent: LLM 失败 + mask 概况降级 lot_listing", async () => {
   process.env.JB_LLM_INTENT_CLASSIFIER = "true";
   const chat = async () => "garbage";
   try {
+    // 正则已识别 mask 概况 → lot_listing（非 generic），不调 LLM；失败降级路径仅对 generic
     const d = await classifyJbIntent(
       "P11C 最近的测试情况", {}, { subAgentModel: "x" } as any, { chat });
-    assert.equal(d.mode, "lot_overview");
+    assert.equal(d.mode, "lot_listing");
     assert.equal(d.source, "regex");
   } finally {
     delete process.env.JB_LLM_INTENT_CLASSIFIER;

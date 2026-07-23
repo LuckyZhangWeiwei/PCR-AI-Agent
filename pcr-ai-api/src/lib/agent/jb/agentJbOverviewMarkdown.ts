@@ -650,6 +650,7 @@ export function buildDeterministicJbTables(
         includeAverageYield: true,
         includeCards: true,
         includeFailBins: true,
+        includeSuspectDuts: true,
       },
     });
     if (listing) return withPatterns(listing, toolPayload);
@@ -872,7 +873,20 @@ export function buildDeterministicJbTables(
     // mask/device 级「测试情况 / 概况」但 payload 含多个 lot（如「P11C 最近一个月测试情况」
     // → query_jb_bins(mask) 只锁定最新单 lot）。出该单 lot 概况会答非所问，改出多 lot 列表。
     if (isMaskLevelQuestionOnMultiLotPayload(userMessage, toolPayload)) {
-      const listing = buildRecentLotsListingMarkdown(toolPayload, listingCtx);
+      const presentation =
+        listingCtx?.presentation ?? inferLotListingPresentation(userMessage);
+      const listing = buildRecentLotsListingMarkdown(toolPayload, {
+        ...listingCtx,
+        presentation: {
+          ...presentation,
+          includeYield: true,
+          includeAverageYield: true,
+          includeCards: true,
+          includeFailBins: true,
+          includeSuspectDuts: true,
+          topN: presentation.topN ?? 20,
+        },
+      });
       if (listing?.trim()) return listing;
     }
     // 卡型级「9416 卡的测试情况」：payload 仅该卡型最新单 lot，不能代表整卡型 →

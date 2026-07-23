@@ -42,6 +42,7 @@ import {
   isTesterMachineQuestion,
   isProbeCardTesterPerformanceQuestion,
 } from "../../jb/agentJbQuestionClassifiers.js";
+import { inferLotListingPresentation } from "../../jb/agentJbListingMarkdown.js";
 import {
   requiresNewDataQuery,
   cachedJbScopeMismatchReason,
@@ -312,7 +313,11 @@ export async function tryRunLotListingDirectRoute(
     return true;
   }
 
-  if (isLotDetailListingQuestion(userQuestion)) {
+  // 富表需要 per-lot 主要坏 bin：detail 列表或概况（含 mask/device「测试情况」）均补 aggregate
+  const needsFailBinAgg =
+    isLotDetailListingQuestion(userQuestion) ||
+    Boolean(inferLotListingPresentation(userQuestion).includeFailBins);
+  if (needsFailBinAgg) {
     const aggArgs = lotListingAggregateArgsFromUser(
       userQuestion,
       getHistory(sessionId),

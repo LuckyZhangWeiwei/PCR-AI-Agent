@@ -27,7 +27,9 @@ import {
 import {
   buildRecentLotsListingMarkdown,
   extractYmLotsFromHistory,
+  inferLotListingPresentation,
 } from "../src/lib/agent/jb/agentJbListingMarkdown.js";
+import { canRunLotListingDirectRoute } from "../src/lib/agent/agentJbLotListingRoute.js";
 import {
   buildAggregateBinRankingMarkdown,
   buildBinCardAggregateMarkdown,
@@ -660,11 +662,14 @@ describe("agentJbDeterministicReply", () => {
       lotYieldOverviewMarkdown: "**TR23373.1T 单 lot 概况不应出现**",
       agentTablesDigest: { lotOverview: "**TR23373.1T 单 lot 概况不应出现**" },
     };
-    // "P11C 最近一个月的测试情况" → lot_overview 模式，但 mask 级多 lot
-    assert.equal(detectJbReplyMode("P11C 最近一个月的测试情况"), "lot_overview");
+    // "P11C 最近一个月的测试情况" → mask 概况走 lot_listing 富表（非单 lot 概况）
+    assert.equal(detectJbReplyMode("P11C 最近一个月的测试情况"), "lot_listing");
+    assert.equal(detectJbReplyMode("P02G 最近一个月的测试情况"), "lot_listing");
     const md = buildDeterministicJbTables("P11C 最近一个月的测试情况", payload);
     assert.ok(md?.includes("TR22423.1A"), "应列出其它 lot");
     assert.equal(md?.includes("单 lot 概况不应出现"), false);
+    assert.ok(md?.includes("良率%"), "mask 概况须出富表良率列");
+    assert.ok(md?.includes("主要坏 bin") || md?.includes("TOP fail"), "须含坏 bin 列");
   });
 
   it("buildDeterministicJbTables lot-scoped 测试情况 keeps single-lot overview (regression)", () => {
@@ -1107,6 +1112,47 @@ describe("JB listing scope (card / device)", () => {
       detectJbReplyMode("b3uflex25 最近一个月的测试情况"),
       "lot_listing"
     );
+    assert.equal(detectJbReplyMode("P02G 最近一个月的测试情况"), "lot_listing");
+    assert.ok(canRunLotListingDirectRoute("P02G 最近一个月的测试情况", []));
+  });
+
+  it("inferLotListingPresentation: mask 概况默认前20 + 平均良率 + DUT 列", () => {
+    const p = inferLotListingPresentation("P02G 最近一个月的测试情况");
+    assert.equal(p.topN, 20);
+    assert.equal(p.includeYield, true);
+    assert.equal(p.includeAverageYield, true);
+    assert.equal(p.includeFailBins, true);
+    assert.equal(p.includeSuspectDuts, true);
+    const p20 = inferLotListingPresentation(
+      "P02G 最近一个月的测试情况，显示前20条"
+    );
+    assert.equal(p20.topN, 20);
+  });
+
+  it("shouldSkipTopBadBinDistChart: mask/device 测试情况不挂坏 BIN 分布图", async () => {
+    const { shouldSkipTopBadBinDistChart } = await import(
+      "../src/lib/agent/render/agentJbTablesReply.js"
+    );
+    const multi = {
+      multiLotYieldScope: true,
+      totalDistinctLots: 16,
+      recentLotsByTestEnd: [{ lot: "A" }, { lot: "B" }],
+    };
+    assert.equal(
+      shouldSkipTopBadBinDistChart("lot_listing", "P02G 最近一个月的测试情况", multi),
+      true
+    );
+    assert.equal(
+      shouldSkipTopBadBinDistChart("lot_overview", "P02G 最近一个月的测试情况", multi),
+      true
+    );
+    // 单 lot 概况仍允许出图
+    assert.equal(
+      shouldSkipTopBadBinDistChart("lot_overview", "NF13816.1J 整体测试情况", {
+        lot: "NF13816.1J",
+      }),
+      false
+    );
   });
 
   it("buildRecentLotsListingMarkdown rich columns: yield + cards + fail bins", () => {
@@ -1143,8 +1189,10 @@ describe("JB listing scope (card / device)", () => {
           includeAverageYield: true,
           includeCards: true,
           includeFailBins: true,
+          includeSuspectDuts: true,
         },
         topFailBinByLot: new Map([["DR43370.1W", "BIN7（12）、BIN11（5）"]]),
+        ymSuspectDutsByLot: new Map([["DR43370.1W", ["DUT3", "DUT12"]]]),
       }
     );
     assert.ok(md?.includes("96.42%"));
@@ -1152,6 +1200,8 @@ describe("JB listing scope (card / device)", () => {
     assert.ok(md?.includes("6081-04"));
     assert.ok(md?.includes("BIN7"));
     assert.ok(md?.includes("平均良率"));
+    assert.ok(md?.includes("相关 DUT"));
+    assert.ok(md?.includes("DUT3"));
   });
 });
 

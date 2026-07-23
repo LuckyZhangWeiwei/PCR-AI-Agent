@@ -18,6 +18,11 @@ import {
   jbReplySkipsCommentaryLlm,
   lotOverviewSkipsCommentaryAfterAlerts,
   payloadCoversMultipleLots,
+  isDeviceTestOverviewQuestion,
+  isTesterTestOverviewQuestion,
+  isCardTestOverviewQuestion,
+  isLotListingQuestion,
+  isMaskLevelQuestionOnMultiLotPayload,
 } from "../jb/agentJbQuestionClassifiers.js";
 import {
   buildLotListingContext,
@@ -41,6 +46,31 @@ import { tryAppendUnderperformingDutSection } from "../tools/agentToolUnderperfo
 import { createDeepSeekFilter } from "../core/agentEmbeddedToolParsing.js";
 import { streamSiliconFlow } from "../core/agentStream.js";
 
+/**
+ * mask/device/机台/卡「测试情况」与跨 lot 列表：只出 lot 富表，
+ * 禁止再挂单 lot「坏 BIN 分布」柱状图（易误导成最新 primary lot 的分布）。
+ */
+export function shouldSkipTopBadBinDistChart(
+  mode: string,
+  userQuestion: string,
+  payload: Record<string, unknown>
+): boolean {
+  if (
+    mode === "lot_listing" ||
+    mode === "card_test_overview"
+  ) {
+    return true;
+  }
+  if (
+    isDeviceTestOverviewQuestion(userQuestion) ||
+    isTesterTestOverviewQuestion(userQuestion) ||
+    isCardTestOverviewQuestion(userQuestion) ||
+    isLotListingQuestion(userQuestion)
+  ) {
+    return true;
+  }
+  return isMaskLevelQuestionOnMultiLotPayload(userQuestion, payload);
+}
 /** 同轮若已查 Yield Monitor，摘一句供专业建议引用。 */
 function yieldMonitorNoteFromHistory(history: ChatMessage[]): string | undefined {
   for (let i = history.length - 1; i >= 0; i--) {
@@ -171,8 +201,12 @@ export async function emitDeterministicJbTablesReply(
   emit({ type: "status", message: "正在输出服务端预计算表…" });
   emitTextInChunks(tablesBlock, emit);
 
-  // 主分析 / lot 概况场景：topBadBins ≥3 项时自动生成坏 BIN bar chart
-  if (mode === "generic" || mode === "lot_overview") {
+  // 主分析 / 单 lot 概况：topBadBins ≥3 时出「坏 BIN 分布」图。
+  // 跨 lot 列表 / mask·device·机台「测试情况」禁止挂单 lot 分布图（答非所问）。
+  if (
+    (mode === "generic" || mode === "lot_overview") &&
+    !shouldSkipTopBadBinDistChart(mode, userQuestion, payload)
+  ) {
     tryEmitTopBinBarChart(payload, emit);
     // 探针卡问题：自动追加 DUT 坏 die 总量对比图（失败静默跳过，不阻断主流程）
     await tryEmitCardDutBadDieChart(userQuestion, payload, agentConfig, emit);

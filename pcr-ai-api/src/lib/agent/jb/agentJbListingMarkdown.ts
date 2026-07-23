@@ -6,6 +6,7 @@ import {
   isCardTestOverviewQuestion,
   isDeviceTestOverviewQuestion,
   isLotListingQuestion,
+  isTesterTestOverviewQuestion,
 } from "./agentJbQuestionClassifiers.js";
 
 /** Yield Monitor 侧 lot 条目（合并进 lot 列表表）。 */
@@ -163,6 +164,8 @@ export type LotListingPresentation = {
   includeCards?: boolean;
   /** 主要坏 bin（TOP fail） */
   includeFailBins?: boolean;
+  /** 相关 / 嫌疑 DUT（YM TRIGGER_LABEL 或同列） */
+  includeSuspectDuts?: boolean;
 };
 
 const ZH_NUM_LISTING: Record<string, number> = {
@@ -182,9 +185,15 @@ const ZH_NUM_LISTING: Record<string, number> = {
 export function inferLotListingPresentation(text: string): LotListingPresentation {
   const t = text.trim();
   let topN: number | undefined;
-  const nMatch = t.match(/top\s*(\d+)|(\d+)\s*个/i);
+  // top5 / 5个 / 前20 / 前20条 / 显示前20条
+  const nMatch = t.match(
+    /top\s*(\d+)|(\d+)\s*个|(?:显示)?前\s*(\d+)\s*条?/i
+  );
   if (nMatch) {
-    topN = Math.min(Math.max(1, Number(nMatch[1] ?? nMatch[2])), 50);
+    topN = Math.min(
+      Math.max(1, Number(nMatch[1] ?? nMatch[2] ?? nMatch[3])),
+      50
+    );
   }
   const zhMatch = t.match(/([一两二三四五六七八九十两])\s*个\s*(lot|批次)/i);
   if (!topN && zhMatch) {
@@ -192,18 +201,21 @@ export function inferLotListingPresentation(text: string): LotListingPresentatio
     if (n) topN = n;
   }
 
-  // 列出 lot / 卡或 device 概况：必须带良率、全部卡、主要坏 bin、平均良率
-  const richListing =
-    isLotListingQuestion(t) ||
+  // 列出 lot / 卡 / device / mask / 机台概况：必须带良率、全部卡、主要坏 bin、平均良率
+  const overviewListing =
     isCardTestOverviewQuestion(t) ||
-    isDeviceTestOverviewQuestion(t);
+    isDeviceTestOverviewQuestion(t) ||
+    isTesterTestOverviewQuestion(t);
+  const richListing = isLotListingQuestion(t) || overviewListing;
   if (richListing) {
     return {
-      topN,
+      // 概况类默认前 20；「所有 lot」枚举不截断（仍受 recentLots 上限 50）
+      topN: topN ?? (overviewListing ? 20 : undefined),
       includeYield: true,
       includeAverageYield: true,
       includeCards: true,
       includeFailBins: true,
+      includeSuspectDuts: true,
     };
   }
 
@@ -211,12 +223,14 @@ export function inferLotListingPresentation(text: string): LotListingPresentatio
   const includeAverageYield =
     /平均.*(良率|yield|良品率)/i.test(t) ||
     (includeYield && topN != null);
+  const includeSuspectDuts = /dut|嫌疑/i.test(t);
   return {
     topN,
     includeYield,
     includeAverageYield,
     includeCards: includeYield,
     includeFailBins: includeYield,
+    includeSuspectDuts: includeSuspectDuts || includeYield,
   };
 }
 
@@ -454,7 +468,11 @@ function collectListingRows(
 
 function isRichPresentation(p: LotListingPresentation): boolean {
   return Boolean(
-    p.includeYield || p.includeCards || p.includeFailBins || p.includeAverageYield
+    p.includeYield ||
+      p.includeCards ||
+      p.includeFailBins ||
+      p.includeAverageYield ||
+      p.includeSuspectDuts
   );
 }
 
@@ -513,8 +531,12 @@ function renderListingTable(
       ]
     : rich
       ? [
-          "| # | Lot | Device | 良率% | 探针卡 | 主要坏 bin | 测试结束 | 片数 |",
-          "|---:|---|---|---:|---|---|---|---:|",
+          presentation.includeSuspectDuts
+            ? "| # | Lot | Device | 良率% | 探针卡 | 主要坏 bin | 相关 DUT | 测试结束 | 片数 |"
+            : "| # | Lot | Device | 良率% | 探针卡 | 主要坏 bin | 测试结束 | 片数 |",
+          presentation.includeSuspectDuts
+            ? "|---:|---|---|---:|---|---|---|---|---:|"
+            : "|---:|---|---|---:|---|---|---|---:|",
           ...displayRows.map((r, i) => {
             const failBin = presentation.includeFailBins
               ? topFail.get(r.lot) ?? "—"
@@ -526,6 +548,10 @@ function renderListingTable(
                 ? `${r.yieldPct.toFixed(2)}%`
                 : "—";
             const cards = presentation.includeCards ? r.cardIds : "—";
+            if (presentation.includeSuspectDuts) {
+              const duts = ymSuspect.get(r.lot)?.join("、") ?? "—";
+              return `| ${i + 1} | ${r.lot} | ${r.device} | ${y} | ${cards} | ${failBin} | ${duts} | ${r.testEnd} | ${r.slotCount} |`;
+            }
             return `| ${i + 1} | ${r.lot} | ${r.device} | ${y} | ${cards} | ${failBin} | ${r.testEnd} | ${r.slotCount} |`;
           }),
         ]

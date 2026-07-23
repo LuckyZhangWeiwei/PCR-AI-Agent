@@ -91,10 +91,10 @@ export async function classifyJbIntent(
     if (isLotOverviewQuestion(q) && inferMaskFromText(q)) {
       return {
         ...base,
-        mode: "lot_overview",
+        mode: "lot_listing",
         source: "regex",
         confidence: "high",
-        reason: "LLM 分类失败,mask 概况降级纯正则",
+        reason: "LLM 分类失败,mask 概况降级 lot_listing",
       };
     }
     return { ...base, source: "default", confidence: "low", reason: "LLM 分类失败,降级 generic" };

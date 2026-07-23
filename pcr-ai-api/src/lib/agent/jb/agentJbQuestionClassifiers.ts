@@ -281,15 +281,16 @@ export function isCardTestOverviewQuestion(text: string): boolean {
 }
 
 /**
- * 用户询问某个完整 device 的概况（如「WA01N39W 怎样」），无具体 lot。
- * 须列该 device 时间窗内 lot（含良率 / 卡 / 主要坏 bin），禁止用单 lot 概况代答。
+ * 用户询问某个完整 device 或 4 位 mask 的概况（如「WA01N39W 怎样」「P02G 最近一个月的测试情况」），无具体 lot。
+ * 须列该 device/mask 时间窗内 lot（含良率 / 卡 / 主要坏 bin / 相关 DUT），禁止用单 lot 概况代答。
  */
 export function isDeviceTestOverviewQuestion(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
   if (extractLotFromUserText(t)) return false;
   if (CARD_NUMBER_RE.test(t)) return false; // 具体卡号走 card_test_overview
-  if (!inferDeviceFromText(t)) return false;
+  // 完整 device 或独立 mask（P02G / N55Z）；mask 不能只靠 lot_overview 再降级列表（会丢富表列）
+  if (!inferDeviceFromText(t) && !inferMaskFromText(t)) return false;
   if (isLotListingQuestion(t) || isLotYieldRankingQuestion(t)) return false;
   if (isBadBinRankingQuestion(t) || isProbeCardTesterPerformanceQuestion(t)) {
     return false;
@@ -306,7 +307,7 @@ export function isTesterTestOverviewQuestion(text: string): boolean {
   if (!t) return false;
   if (extractLotFromUserText(t)) return false;
   if (CARD_NUMBER_RE.test(t)) return false;
-  if (inferDeviceFromText(t)) return false; // device 概况另走
+  if (inferDeviceFromText(t) || inferMaskFromText(t)) return false; // device/mask 概况另走
   if (!inferTesterIdFromText(t)) return false;
   if (isLotListingQuestion(t) || isLotYieldRankingQuestion(t)) return false;
   if (isBadBinRankingQuestion(t) || isProbeCardTesterPerformanceQuestion(t)) {
