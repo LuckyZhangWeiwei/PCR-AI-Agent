@@ -44,6 +44,18 @@ test("query_lot_dut_bin_agg result includes DUT concentration verdict table for 
   assert.ok(titlePos < jsonPos, "Concentration table should precede JSON data");
 });
 
+// ── CARDID from JB rows must fill 卡号 column (was always "—" when cardByPassId=[]) ──
+test("query_lot_dut_bin_agg concentration table includes probe card from JB CARDID", async () => {
+  const out = (await runTool("query_lot_dut_bin_agg", {
+    device: "WA10P29E",
+    lot: "DR43782.1A",
+  })) as string;
+  const tableEnd = out.indexOf("{");
+  const table = tableEnd >= 0 ? out.slice(0, tableEnd) : out;
+  assert.ok(table.includes("7804-02"), `卡号列应有 JB CARDID 7804-02，表片段: ${table.slice(0, 400)}`);
+  assert.ok(!/\| — \|/.test(table) || table.includes("7804-02"), "至少一行应有真实卡号");
+});
+
 // ── Task 5: attachDutConcentrationToJbPayload ────────────────────────────────
 
 import { attachDutConcentrationToJbPayload } from "../src/lib/agent/tools/agentToolHandlers.js";

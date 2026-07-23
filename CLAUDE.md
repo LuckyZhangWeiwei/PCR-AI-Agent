@@ -39,6 +39,7 @@ This is a two-package monorepo (no shared workspace tooling — each package has
 > **Agent 准确性修复清单（2026-07-11 会话日志复盘 · 交接 Cursor）：** [`docs/HANDOFF_CURSOR_AGENT_ACCURACY_2026-07-11.md`](docs/HANDOFF_CURSOR_AGENT_ACCURACY_2026-07-11.md) — ⏭ 8 项待修：探针卡四表无标题/无 pass 分组（P0-1）、JB vs DUT 表良率同屏矛盾 `goodBinsByPassId` 未打通（P0-2）、good bin≠BIN1 全 0 大表照出（P0-3）、「good bin 是多少」被概况表劫持（P0-4）、lot 列表误挂单 lot DUT 表（P1-5）、listing scope 误带机台致 5↔4 lot 不一致（P1-6）、解读跨温度层对比/写出 pass2（P1-7）、cardId count=0 回归 + DUT 表重复（P2-8）。  
 > **Cursor 交接（2026-07-20 · Agent 列表 limit 200→500）：** [`docs/HANDOFF_CURSOR_AGENT_TOOL_LIMIT_500_2026-07-20.md`](docs/HANDOFF_CURSOR_AGENT_TOOL_LIMIT_500_2026-07-20.md) — `AGENT_TOOL_LIST_LIMIT_MAX=500`（JB+YM）；默认仍 50；lot 列表富列仍靠 ≤20 全量行，非单靠抬 limit。
 > **Cursor 修复（2026-07-21 · DUT×BIN 图 RETEST 抹 BIN）：** [`docs/HANDOFF_CURSOR_FIX_DUT_BIN_MAP_RETEST_WIPE_2026-07-21.md`](docs/HANDOFF_CURSOR_FIX_DUT_BIN_MAP_RETEST_WIPE_2026-07-21.md) — `inf_draw_dut_bin_map` 数字 pass 只读 TEST；⏭ 真库 NF13390.1K 复验。
+> **Cursor 修复（2026-07-23 · DUT 集中度表卡号空）：** [`docs/HANDOFF_CURSOR_FIX_DUT_CONCENTRATION_CARDID_2026-07-23.md`](docs/HANDOFF_CURSOR_FIX_DUT_CONCENTRATION_CARDID_2026-07-23.md) — `query_lot_dut_bin_agg` 传入 `cardByPassId` + Oracle SELECT `CARDID`；⏭ 真库 WA00P32P/bin90 复验。
 
 ---
 

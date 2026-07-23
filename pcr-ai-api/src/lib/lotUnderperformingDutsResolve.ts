@@ -155,8 +155,10 @@ export async function fetchJbTestRowsForLot(
     const result = await conn.execute<{
       PASSID: number;
       PASSBIN: string | null;
+      CARDID: string | null;
     }>(
-      `SELECT lb.PASSID AS PASSID, lb.PASSBIN AS PASSBIN
+      // CARDID：DUT 集中度表「卡号」列依赖 buildCardByPassId；Dummy 全行已含 CARDID。
+      `SELECT lb.PASSID AS PASSID, lb.PASSBIN AS PASSBIN, lb.CARDID AS CARDID
        FROM INFCONTROL t1
        INNER JOIN INFLAYERBINLIST lb ON t1.KEYNUMBER = lb.KEYNUMBER
        WHERE UPPER(TRIM(t1.DEVICE)) = UPPER(TRIM(:device))

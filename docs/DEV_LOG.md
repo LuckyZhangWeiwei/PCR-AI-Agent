@@ -2,6 +2,18 @@
 
 ---
 
+## 2026-07-23 — DUT 集中度表「卡号」列恒为空
+
+**完成内容：**
+- `query_lot_dut_bin_agg` 生成「坏 die 的 DUT 集中度」时，`buildDutConcentrationInsights` 第二参曾写死 `[]`，卡号列恒为 `—`。
+- `lotDutConcentrationContext`：同一次 JB TEST 行产出 `goodBins` + `cardByPassId`；四处 handler 传入卡号。
+- `fetchJbTestRowsForLot` Oracle SQL 增选 `CARDID`（Dummy 全行本就有）。
+- 交接：`docs/HANDOFF_CURSOR_FIX_DUT_CONCENTRATION_CARDID_2026-07-23.md`。
+
+**测试：** `agentDutBinAggInsight` + `agentDutConcentration` 17/17；含 Dummy `7804-02` 卡号断言。真库复验待 deploy。
+
+---
+
 ## 2026-07-18 — 同步 SDD Task 1 报告文件
 
 **完成内容：**
